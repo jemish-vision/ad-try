@@ -27,6 +27,11 @@ const {
 } = require('./chatbotReporting/reportResponse');
 const { analyzeReport, appendAnalysis } = require('./chatbotReporting/reportAnalysis');
 const { readKeywordInventory } = require('./chatbotReporting/keywordInventory');
+const {
+  isInventoryRequest,
+  isTacosRequest,
+  buildProductInsightReport,
+} = require('./chatbotReporting/productInsights');
 
 function requireAuthenticatedIdentity(authContext) {
   const identity = value => typeof value === 'string' ? value : value?.toHexString?.();
@@ -317,6 +322,17 @@ function createReportService({
 
     const capturedNow = now();
     const { periods, warnings: periodWarnings } = resolvePeriods(request, scope, handler, capturedNow);
+
+    // Low-stock and TACOS live outside the generic ad-metric pipeline; they are
+    // assembled from inventory / total-ordered-sales collections and handed to the
+    // same contract-validated response builder.
+    if (isInventoryRequest(request) || isTacosRequest(request)) {
+      const insight = await buildProductInsightReport({ db: database, request, scope, periods, reportId: makeReportId() });
+      if (insight) {
+        return insight;
+      }
+    }
+
     const state = createReportState();
     periodWarnings.forEach(warning => state.warnings.add(warning));
 

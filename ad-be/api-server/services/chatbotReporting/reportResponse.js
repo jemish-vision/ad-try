@@ -101,9 +101,55 @@ function reportText(request, status, analysisText = []) {
   return `Read-only ${request.category} report. Each table keeps its own profile, currency, ad type and period. ${availability} ${analysisPending}`.trim();
 }
 
-function buildDefaultFollowUps(request, scope, status) {
-  if (['unavailable', 'error'].includes(status)) {
+// When a question is deliberately withheld (e.g. profit needs product costs,
+// hourly conversion needs verified orders, budget exhaustion needs budget history,
+// "today" is still partial), don't dead-end. Offer the honestly-labelled report the
+// engine CAN verify as a one-click follow-up, so the user still gets usable data.
+function buildAlternativeFollowUps(request, scope) {
+  if (!scope || !Array.isArray(scope.profiles) || scope.profiles.length === 0) {
     return [];
+  }
+  const profileIds = scope.profiles.map(p => p.profileId);
+  const adTypes = Array.isArray(request.adTypes) && request.adTypes.length ? request.adTypes : ['SP'];
+  const period = request.period || { preset: 'last_7_days' };
+  const base = { schemaVersion: '1.0', profileIds, adTypes };
+  const metrics = Array.isArray(request.metrics) ? request.metrics : [];
+  const groupBy = Array.isArray(request.groupBy) ? request.groupBy : [];
+  const alts = [];
+
+  // Intraday "today" -> same report for the last complete day.
+  if (request.period && request.period.preset === 'today') {
+    const yesterday = { ...base, category: request.category, period: { preset: 'yesterday' }, metrics };
+    if (groupBy.length) yesterday.groupBy = groupBy;
+    alts.push({ label: 'Check yesterday instead', request: yesterday });
+  }
+
+  if (request.category === 'products' && metrics.some(m => ['profit', 'tacos', 'stock', 'days_of_stock'].includes(m))) {
+    alts.push({
+      label: 'Show ad spend & sales by product',
+      request: { ...base, category: 'products', period, groupBy: ['product'], metrics: ['spend', 'sales', 'orders', 'clicks'] },
+    });
+  } else if (request.category === 'time' && metrics.some(m => ['cvr', 'orders', 'aov'].includes(m))) {
+    alts.push({
+      label: 'Show spend & clicks by hour',
+      request: { ...base, category: 'time', period, groupBy: ['hour', 'weekday'], metrics: ['clicks', 'spend', 'cpc'], sort: { field: 'clicks', direction: 'desc' }, presentation: 'heatmap' },
+    });
+  } else if (request.category === 'growth' && groupBy.includes('campaign')) {
+    alts.push({
+      label: 'Show campaign spend & sales',
+      request: { ...base, category: 'waste', period, groupBy: ['campaign'], metrics: ['spend', 'sales', 'clicks', 'orders'] },
+    });
+  }
+
+  return alts.slice(0, 3);
+}
+
+function buildDefaultFollowUps(request, scope, status) {
+  if (status === 'error') {
+    return [];
+  }
+  if (status === 'unavailable') {
+    return buildAlternativeFollowUps(request, scope);
   }
   if (!scope || !Array.isArray(scope.profiles) || scope.profiles.length === 0) {
     return [];
@@ -332,5 +378,6 @@ module.exports = {
   glossaryReport,
   createReportState,
   buildDefaultFollowUps,
+  buildAlternativeFollowUps,
   buildReportResponse
 };
