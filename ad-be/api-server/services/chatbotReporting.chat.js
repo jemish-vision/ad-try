@@ -541,6 +541,9 @@ function safeReportFailure(error) {
     const currency = /^[A-Z]{3}$/.test(error.currencyCode || '') ? error.currencyCode : 'the account currency';
     return `This profile reports in ${currency}. What spending threshold would you like to use in ${currency}? I cannot convert a dollar amount without a verified exchange rate.`;
   }
+  if (error?.code === 'CAMPAIGN_NOT_FOUND') {
+    return 'I could not find a campaign by that name in the selected profile. Please paste the campaign name exactly as it appears in your campaigns, or pick one from your campaign list.';
+  }
   if (error?.statusCode === 403) {
     return 'You do not have permission to view reporting for the requested profile or report section.';
   }

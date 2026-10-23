@@ -1,7 +1,56 @@
 'use strict';
 
 const { randomUUID } = require('node:crypto');
+const { Types } = require('mongoose');
 const moment = require('moment-timezone');
+
+const CAMPAIGN_COLLECTIONS = { SP: 'campaigns', SB: 'sbcampaigns', SD: 'sdcampaigns' };
+
+// Users name campaigns ("A-2073-Men-Raincoat-Fri"), but the report entity filter needs
+// the numeric campaignId. Resolve any non-numeric campaign ids to their id, and give a
+// clear "not found" error instead of a generic "unsupported selection".
+async function resolveCampaignEntity(database, scope, request) {
+  const entity = request.entity;
+  if (!entity || entity.dimension !== 'campaign') {
+    return request;
+  }
+  const names = [...new Set(entity.ids.filter(id => !/^[1-9]\d*$/.test(String(id))))];
+  if (!names.length) {
+    return request;
+  }
+
+  let configId;
+  try {
+    configId = new Types.ObjectId(String(scope.configId));
+  } catch (_) {
+    return request;
+  }
+  const resolved = new Map();
+  for (const name of names) {
+    for (const profile of scope.profiles) {
+      if (resolved.has(name)) break;
+      for (const adType of request.adTypes) {
+        const collection = CAMPAIGN_COLLECTIONS[adType];
+        if (!collection) continue;
+        // eslint-disable-next-line no-await-in-loop
+        const doc = await database.collection(collection).findOne(
+          { configId, profileId: Number(profile.profileId), name },
+          { projection: { campaignId: 1 }, maxTimeMS: 5000 },
+        );
+        if (doc && Number.isSafeInteger(doc.campaignId) && doc.campaignId > 0) {
+          resolved.set(name, String(doc.campaignId));
+          break;
+        }
+      }
+    }
+  }
+
+  const unresolved = names.filter(name => !resolved.has(name));
+  if (unresolved.length) {
+    throw reportError(400, 'CAMPAIGN_NOT_FOUND', `No campaign named "${unresolved[0]}" was found in the selected profile`);
+  }
+  return { ...request, entity: { ...entity, ids: entity.ids.map(id => resolved.get(String(id)) || String(id)) } };
+}
 const { validateReportSelection } = require('../contracts/chatbotReporting.contract');
 const { resolveReportPeriods } = require('../helper/chatbotReporting.dates');
 const { resolveReportScope, checkReportPagePermission } = require('./chatbotReporting.scope');
@@ -297,7 +346,9 @@ function createReportService({
   makeReportId = randomUUID,
 } = {}) {
   return async function executeReport(input, authContext) {
-    const { request, handler } = prepareRequest(input);
+    const prepared = prepareRequest(input);
+    let request = prepared.request;
+    const handler = prepared.handler;
 
     requireAuthenticatedIdentity(authContext);
 
@@ -322,6 +373,9 @@ function createReportService({
     });
 
     validateSelection(request, scope);
+
+    // Resolve any campaign names the user typed into campaign ids before reads.
+    request = await resolveCampaignEntity(database, scope, request);
 
     const capturedNow = now();
     const { periods, warnings: periodWarnings } = resolvePeriods(request, scope, handler, capturedNow);
