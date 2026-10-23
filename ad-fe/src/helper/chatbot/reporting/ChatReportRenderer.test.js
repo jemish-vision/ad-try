@@ -187,4 +187,46 @@ describe("ChatReportRenderer", () => {
     expect(passedItem.request.category).toBe("comparison");
     expect(passedItem.request.profileIds).toEqual(["1001"]);
   });
+
+  test("a single-value report hides the aggregate table that just restates the KPI card", () => {
+    const report = {
+      status: "ok",
+      category: "summary",
+      cards: [{ metric: "acos", label: "ACOS", value: 17.3, unit: "percent" }],
+      blocks: [{ type: "table", datasetId: "agg", title: "Performance" }],
+      datasets: [{
+        id: "agg",
+        columns: [
+          { key: "adType", type: "string" },
+          { key: "name", type: "string" },
+          { key: "acos", type: "number", unit: "percent" },
+        ],
+        rows: [{ adType: "SP", name: "Tagdo", acos: 17.3 }],
+      }],
+    };
+    const { container } = render(<ChatReportRenderer report={report} />);
+    expect(screen.getByText("ACOS")).toBeInTheDocument(); // KPI card stays
+    expect(container.querySelector("table")).toBeNull(); // duplicate table gone
+  });
+
+  test("a per-entity breakdown table still renders even with a single row", () => {
+    const report = {
+      status: "ok",
+      category: "change",
+      cards: [{ metric: "acos", label: "ACOS", value: 17.3, unit: "percent" }],
+      blocks: [{ type: "table", datasetId: "bd", title: "By campaign" }],
+      datasets: [{
+        id: "bd",
+        columns: [
+          { key: "campaignId", type: "string" },
+          { key: "name", type: "string" },
+          { key: "acos", type: "number", unit: "percent" },
+        ],
+        rows: [{ campaignId: "777", name: "A-2073-Men-Raincoat", acos: 17.3 }],
+      }],
+    };
+    const { container } = render(<ChatReportRenderer report={report} />);
+    expect(container.querySelector("table")).not.toBeNull();
+    expect(screen.getByText("A-2073-Men-Raincoat")).toBeInTheDocument();
+  });
 });

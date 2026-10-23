@@ -9,6 +9,25 @@ import { ReportEmptyState, ReportUnavailableState, ReportWarningsBanner } from "
 import { friendlyTableTitle } from "./reportDisplay";
 import "./ReportWorkspace.css";
 
+// Columns that mark a real per-entity / per-time breakdown. If a dataset has
+// none of these, its rows are just the account/profile aggregate.
+const BREAKDOWN_KEYS = new Set([
+  "campaignId", "keywordId", "adGroupId", "targetId", "ruleId", "entityId",
+  "campaign", "keyword", "adGroup", "ad_group", "search_term", "searchTerm",
+  "placement", "product", "asin", "rule", "date", "hour", "weekday",
+]);
+
+// A single aggregate row with no breakdown dimension just restates the KPI
+// cards (e.g. "yesterday's ACOS" -> one SP / selected-profile row). When cards
+// already show those numbers, the table is a duplicate and adds only noise.
+function duplicatesKpiCards(dataset, hasCards) {
+  if (!hasCards || !dataset) return false;
+  const rows = Array.isArray(dataset.rows) ? dataset.rows : [];
+  if (rows.length !== 1) return false;
+  const columns = Array.isArray(dataset.columns) ? dataset.columns : [];
+  return !columns.some(column => BREAKDOWN_KEYS.has(column.key));
+}
+
 export default function ChatReportRenderer({
   report,
   onFollowUp,
@@ -83,12 +102,13 @@ export default function ChatReportRenderer({
     b.datasetId && /(?:opportunities|no_sales|high_acos|movers)/.test(b.datasetId)
   );
   const datasets = Array.isArray(report.datasets) ? report.datasets : [];
+  const hasCards = Array.isArray(report.cards) && report.cards.length > 0;
   const visibleTableBlocks = (hasSpecializedTables
     ? tableBlocks.filter((b) => !/^report_\d+$/.test(b.datasetId || ""))
     : tableBlocks
   ).filter((tb) => {
     const ds = datasets.find((d) => d.id === tb.datasetId);
-    return ds && Array.isArray(ds.rows) && ds.rows.length > 0;
+    return ds && Array.isArray(ds.rows) && ds.rows.length > 0 && !duplicatesKpiCards(ds, hasCards);
   });
   const weekdayLabels = report.category === "time" && datasets.some(dataset => (
     dataset.columns?.some(column => column.key === "weekday")
@@ -185,7 +205,8 @@ export default function ChatReportRenderer({
         // Auto-render dataset table if datasets exist and there are no chart blocks
         chartBlocks.length === 0 &&
         datasets.length > 0 &&
-        datasets[0]?.rows?.length > 0 && (
+        datasets[0]?.rows?.length > 0 &&
+        !duplicatesKpiCards(datasets[0], hasCards) && (
           <div className="report-section-card relative z-10 hover:z-30 focus-within:z-30 transition-all overflow-visible">
             <ReportTable
               dataset={datasets[0]}
