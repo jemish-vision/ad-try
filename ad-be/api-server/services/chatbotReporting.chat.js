@@ -790,6 +790,21 @@ function createChatService({
       };
     }
 
+    // "Is 35% ACOS good?" is a judgment question, not a bare definition. Answer it
+    // with the break-even reasoning, reference the number, and offer to compare to
+    // their actual ACOS — without inventing a category benchmark.
+    const acosJudgment = message.match(/\bis\s+(\d+(?:\.\d+)?)\s*%?\s+acos\s+(?:good|bad|normal|ok|okay|fine|high|low)\b/i);
+    if (acosJudgment) {
+      const pct = acosJudgment[1];
+      return {
+        replyMessage: `A ${pct}% ACOS means you spend ${pct} on advertising for every 100 in attributed ad sales. Whether that is "good" depends on your product margin, not a category benchmark: if your break-even ACOS (your gross profit margin as a percentage) is above ${pct}%, those ad sales are still profitable; if it is below ${pct}%, you are paying more in ads than the margin they bring in. I do not assume a benchmark for your category. Tell me your target ACOS or margin, or ask for your current ACOS, and I can compare your actual performance against it.`,
+        report: null,
+        isReport: false,
+        stopConversion: false,
+        timings: { totalDurationMs: now() - startTime },
+      };
+    }
+
     const definitionMetrics = glossaryMetrics(message);
     if (definitionMetrics.length) {
       try {
