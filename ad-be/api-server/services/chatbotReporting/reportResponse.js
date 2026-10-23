@@ -105,7 +105,7 @@ function reportText(request, status, analysisText = []) {
 // hourly conversion needs verified orders, budget exhaustion needs budget history,
 // "today" is still partial), don't dead-end. Offer the honestly-labelled report the
 // engine CAN verify as a one-click follow-up, so the user still gets usable data.
-function buildAlternativeFollowUps(request, scope) {
+function buildAlternativeFollowUps(request, scope, missingInputs = []) {
   if (!scope || !Array.isArray(scope.profiles) || scope.profiles.length === 0) {
     return [];
   }
@@ -116,6 +116,16 @@ function buildAlternativeFollowUps(request, scope) {
   const metrics = Array.isArray(request.metrics) ? request.metrics : [];
   const groupBy = Array.isArray(request.groupBy) ? request.groupBy : [];
   const alts = [];
+
+  // Too much data to load in time: offer the same report over a single day so the
+  // query can complete, rather than leaving the user at a dead end. (The narrative
+  // also asks them to pick a shorter range or one campaign.)
+  const tooLarge = missingInputs.some(input => /too much|shorter date range|too large|row limit/i.test(input));
+  if (tooLarge && request.period?.preset !== 'yesterday') {
+    const oneDay = { ...base, category: request.category, metrics, period: { preset: 'yesterday' } };
+    if (groupBy.length) oneDay.groupBy = groupBy;
+    alts.push({ label: 'Try just yesterday', request: oneDay });
+  }
 
   // Intraday "today" -> same report for the last complete day.
   if (request.period && request.period.preset === 'today') {
@@ -144,12 +154,12 @@ function buildAlternativeFollowUps(request, scope) {
   return alts.slice(0, 3);
 }
 
-function buildDefaultFollowUps(request, scope, status) {
+function buildDefaultFollowUps(request, scope, status, missingInputs = []) {
   if (status === 'error') {
     return [];
   }
   if (status === 'unavailable') {
-    return buildAlternativeFollowUps(request, scope);
+    return buildAlternativeFollowUps(request, scope, missingInputs);
   }
   if (!scope || !Array.isArray(scope.profiles) || scope.profiles.length === 0) {
     return [];
@@ -347,7 +357,7 @@ function buildReportResponse(state, request, scope, periods, reportId) {
 
   const followUps = (state.followUps && state.followUps.length > 0)
     ? state.followUps
-    : buildDefaultFollowUps(request, scope, status);
+    : buildDefaultFollowUps(request, scope, status, [...state.missingInputs]);
 
   const report = {
     schemaVersion: '1.0',

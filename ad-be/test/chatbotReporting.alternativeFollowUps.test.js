@@ -85,6 +85,18 @@ test('a plain no-data report (basic metrics, not a withheld metric) offers no mi
   assert.deepEqual(alts, []);
 });
 
+test('a "too much data" report offers a single-day retry', () => {
+  const alts = buildAlternativeFollowUps(
+    req({ category: 'time', groupBy: ['hour', 'weekday'], metrics: ['clicks', 'spend', 'cpc'], period: { preset: 'last_7_days' } }),
+    scope,
+    ['1001/SP/current: This time range contains too much hourly data to analyze safely. Try a shorter date range or select one campaign.'],
+  );
+  const oneDay = alts.find(a => a.request.period && a.request.period.preset === 'yesterday');
+  assert.ok(oneDay, 'offers a single-day retry');
+  assert.equal(oneDay.request.category, 'time');
+  assertValidAlternatives(alts);
+});
+
 test('no scope -> no alternatives', () => {
   assert.deepEqual(buildAlternativeFollowUps(req({ category: 'products', metrics: ['profit'] }), null), []);
 });
