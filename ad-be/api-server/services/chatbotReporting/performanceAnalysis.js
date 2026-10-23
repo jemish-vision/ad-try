@@ -157,7 +157,7 @@ function describeChange(metric, current, previous) {
   return `${metric.toUpperCase()} ${direction} by ${amount}.`;
 }
 
-function addMovers(result, context, metrics, previousMetrics) {
+function addMovers(result, context, metrics, previousMetrics, provisional = false) {
   const { request, current, comparison, profile, idPrefix } = context;
   const dimensions = entityDimensions(request);
   let currentGroups;
@@ -181,7 +181,12 @@ function addMovers(result, context, metrics, previousMetrics) {
     result.missingInputs.push('The requested change metric is unavailable from advertising totals.');
     return;
   }
-  const keys = new Set([...currentGroups.keys(), ...previousGroups.keys()]);
+  // Verified coverage lets an absent entity count as zero activity. Observed
+  // (provisional) coverage cannot, so rank only entities seen in BOTH periods;
+  // an entity missing from one import must not read as a full-value mover.
+  const keys = provisional
+    ? new Set([...currentGroups.keys()].filter(key => previousGroups.has(key)))
+    : new Set([...currentGroups.keys(), ...previousGroups.keys()]);
   const zeroMetrics = calculateMetrics(aggregateTotals([]));
   const rows = [];
 
@@ -414,14 +419,23 @@ function analyzePerformance(context) {
   const metrics = sourceMetrics(current);
   const previousMetrics = sourceMetrics(comparison);
 
-  // Observed rows can supply provisional totals, but cannot prove that an
-  // absent campaign had zero activity. Mover rankings require full coverage.
   const currentCoverage = hasVerifiedCoverage(current);
   const comparisonCoverage = hasVerifiedCoverage(comparison);
   const knownAttribution = Number.isFinite(profile.attributionWindows?.[adType]);
+  const comparisonConflict = current?.verification === 'conflict' || comparison?.verification === 'conflict';
 
-  const canCompare = currentCoverage && comparisonCoverage &&
+  // A VERIFIED comparison can treat an absent entity as zero activity. An OBSERVED
+  // comparison (imported, but import coverage not independently verified) still lets us
+  // report the change the user asked about — the alternative is withholding a "why"
+  // answer entirely even though both periods have matching, usable totals. We report it
+  // as provisional and, for movers, only rank entities present in BOTH periods so an
+  // import gap cannot masquerade as a 100% new/dropped mover.
+  const canCompareVerified = currentCoverage && comparisonCoverage &&
     matchedWindows(periods) && knownAttribution && metrics && previousMetrics;
+  const canCompareObserved = !comparisonConflict && matchedWindows(periods) &&
+    knownAttribution && metrics && previousMetrics;
+  const canCompare = canCompareVerified || canCompareObserved;
+  const provisional = canCompare && !canCompareVerified;
 
   result.cards = createCards(request, profile, adType, metrics, canCompare ? previousMetrics : null, idPrefix);
   result.blocks = result.cards.map(card => ({ type: 'number_card', metricId: card.id }));
@@ -436,13 +450,17 @@ function analyzePerformance(context) {
     request.comparison?.mode && request.comparison.mode !== 'none';
 
   if (needsComparison && !canCompare) {
-    result.missingInputs.push('Verified, conflict-free, matched reporting periods with known attribution are required for changes and mover rankings.');
-    result.text.push('Changes are withheld because the two periods cannot be compared reliably.');
+    result.missingInputs.push('Matched reporting periods with known attribution and usable totals for both periods are required to compare changes.');
+    result.text.push('Changes cannot be compared: the two periods do not have matching, usable reporting totals.');
     return result;
   }
 
+  if (provisional) {
+    result.warnings.push('These comparisons use observed imported data; coverage is not independently verified, so treat the changes as provisional. New or dropped entities are excluded to avoid overstating change.');
+  }
+
   if (canCompare && (request.category === 'change' || request.analysis?.includeMovers)) {
-    addMovers(result, context, metrics, previousMetrics);
+    addMovers(result, context, metrics, previousMetrics, provisional);
   }
 
   if (canCompare && request.category === 'unusual') {

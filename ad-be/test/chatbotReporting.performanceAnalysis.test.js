@@ -50,13 +50,17 @@ test('summary calculates weighted ratios from summed raw totals and independent 
   assert.ok(result.cards.every(card => card.id.startsWith('analysis_1_')));
 });
 
-test('unverified observed rows retain current values but never comparison numbers', () => {
+test('unverified observed rows show provisional comparison numbers with a caveat', () => {
   const input = context();
   input.current.verification = 'unverified';
+  input.current.warnings = ['IMPORT_COVERAGE_UNVERIFIED'];
   const result = analyzePerformance(input);
-  assert.equal(result.cards[0].value, 100);
-  assert.ok(result.cards.every(card => card.comparison.previousValue === null));
-  assert.ok(result.missingInputs.length);
+  const cards = Object.fromEntries(result.cards.map(card => [card.metric, card]));
+  assert.equal(cards.spend.value, 100);
+  // Observed (unverified) matched periods now yield a provisional comparison
+  // instead of withholding it entirely.
+  assert.equal(cards.acos.comparison.previousValue, 25);
+  assert.ok(result.warnings.some(warning => /provisional/i.test(warning)), 'flags the comparison as provisional');
 });
 
 test('conflicting rows and absent unverified data never become zero totals', () => {
@@ -81,16 +85,25 @@ test('missing raw fields propagate missing ratios instead of treating them as ze
   assert.equal(result.cards.find(card => card.metric === 'spend').value, 10);
 });
 
-test('source warnings, unknown attribution and unmatched windows withhold changes', () => {
-  const cases = [context(), context(), context(), context()];
-  cases[0].comparison.warnings = ['NEWER_INCOMPLETE_IMPORT'];
-  cases[1].profile.attributionWindows.SP = null;
-  cases[2].periods.current.isPartial = true;
-  cases[3].periods.comparison.toDate = '2026-10-17';
+test('unknown attribution and unmatched windows still withhold changes', () => {
+  const cases = [context(), context(), context()];
+  cases[0].profile.attributionWindows.SP = null; // unknown attribution
+  cases[1].periods.current.isPartial = true;     // partial (intraday) window
+  cases[2].periods.comparison.toDate = '2026-10-17'; // mismatched window length
 
   for (const input of cases) {
-    assert.ok(analyzePerformance(input).cards.every(card => card.comparison.previousValue === null));
+    const result = analyzePerformance(input);
+    assert.ok(result.cards.every(card => card.comparison.previousValue === null));
+    assert.match(result.text.join(' '), /cannot be compared/);
   }
+});
+
+test('source-coverage warnings alone yield a provisional comparison, not a full withhold', () => {
+  const input = context();
+  input.comparison.warnings = ['NEWER_INCOMPLETE_IMPORT'];
+  const result = analyzePerformance(input);
+  assert.equal(result.cards.find(card => card.metric === 'acos').comparison.previousValue, 25);
+  assert.ok(result.warnings.some(warning => /provisional/i.test(warning)));
 });
 
 test('movers aggregate repeated daily entities before top three ranking', () => {
@@ -142,7 +155,7 @@ test('ACOS increase describes directionally consistent factors as associations',
   assert.match(text, /Change of \+75\.0 percentage points/);
 });
 
-test('explicit changes and movers never promote incomplete imports to verified coverage', () => {
+test('explicit changes and movers compare observed imports as provisional', () => {
   for (const request of [
     { category: 'change', metrics: ['sales'] },
     { category: 'comparison', analysis: { includeMovers: true } }
@@ -154,9 +167,11 @@ test('explicit changes and movers never promote incomplete imports to verified c
     const result = analyzePerformance(input);
 
     assert.equal(result.cards[0].value, request.category === 'change' ? 300 : 100);
-    assert.ok(result.cards.every(card => card.comparison.previousValue === null));
-    assert.equal(result.datasets.length, 0);
-    assert.match(result.text.join(' '), /cannot be compared reliably/);
+    // The comparison is now provided (provisional) rather than withheld, so a
+    // "why" question gets an answer with a clear caveat.
+    assert.ok(result.cards.some(card => card.comparison.previousValue !== null));
+    assert.ok(result.warnings.some(warning => /provisional/i.test(warning)));
+    assert.doesNotMatch(result.text.join(' '), /cannot be compared/);
   }
 });
 

@@ -56,7 +56,9 @@ function missingRequirements(report) {
   const raw = (report.freshness?.missingInputs || []).join(' ');
   const messages = [];
   if (/coverage|complete.*source|matched reporting periods|conflict.free/i.test(raw)) {
-    messages.push('Some advertising records are still being checked. Available figures may change as reporting completes.');
+    // Name the real reason rather than a blanket "records still being checked":
+    // spend/clicks/impressions settle quickly; recent sales/ACOS keep maturing.
+    messages.push('Figures are based on imported reporting. Recent sales and ACOS can still rise as Amazon attributes orders within the attribution window.');
   }
   if (/keyword inventory/i.test(raw)) messages.push('A current keyword list is needed to check which search terms are already keywords.');
   if (/target ACOS/i.test(raw)) messages.push('Tell me your target ACOS to evaluate growth opportunities.');
