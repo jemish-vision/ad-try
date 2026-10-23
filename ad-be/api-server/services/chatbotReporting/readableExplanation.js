@@ -55,7 +55,10 @@ function scopeLabel(report, profileId, adType, currencyCode) {
 function missingRequirements(report) {
   const raw = (report.freshness?.missingInputs || []).join(' ');
   const messages = [];
-  if (/coverage|complete.*source|matched reporting periods|conflict.free/i.test(raw)) {
+  // Only caveat figures when there ARE figures. On an unavailable report there is
+  // nothing to mature, so this attribution note just adds noise.
+  if (report.status !== 'unavailable' &&
+    /coverage|complete.*source|matched reporting periods|conflict.free/i.test(raw)) {
     // Name the real reason rather than a blanket "records still being checked":
     // spend/clicks/impressions settle quickly; recent sales/ACOS keep maturing.
     messages.push('Figures are based on imported reporting. Recent sales and ACOS can still rise as Amazon attributes orders within the attribution window.');
@@ -112,7 +115,7 @@ function explainReport(report) {
   if (report.status === 'partial') {
     paragraphs.push('Here are the available results. Some data is incomplete, so these figures may change.');
   }
-  if (report.status === 'unavailable') paragraphs.push('I do not have enough information to answer this reliably yet.');
+  if (report.status === 'unavailable') paragraphs.push("I can't show this exact view yet — here's what it needs, and you can use the suggestions below for what I can show now:");
   if (report.status === 'empty') {
     paragraphs.push(report.category === 'rules'
       ? 'No rule changes were recorded for this period.'

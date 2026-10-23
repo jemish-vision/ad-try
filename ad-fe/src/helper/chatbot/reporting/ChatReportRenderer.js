@@ -43,6 +43,7 @@ export default function ChatReportRenderer({
         />
         <ReportUnavailableState
           reason={report.text || "Report data is unavailable."}
+          hasSuggestions={Array.isArray(report.followUps) && report.followUps.length > 0}
         />
         <ReportWarningsBanner warnings={warnings} collapsible={isWorkspace} />
         <ReportFollowUps followUps={report.followUps} onFollowUp={onFollowUp} />
