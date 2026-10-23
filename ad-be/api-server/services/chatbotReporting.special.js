@@ -481,6 +481,60 @@ async function readRulesReport(input, filter) {
     rule: 'ruleId',
     campaign: 'campaignId'
   });
+
+  // Prefer the confirmed applied-execution log. Each row records state=APPLIED,
+  // the execution time (appliedAt) and the before→after value the rule set —
+  // the applied-execution proof that history snapshots lack.
+  const periodStart = moment.utc(input.period.fromDate, 'YYYY-MM-DD', true).startOf('day').toDate();
+  const periodEnd = moment.utc(input.period.toDate, 'YYYY-MM-DD', true).endOf('day').toDate();
+  const execFilter = {
+    configId: filter.configId,
+    profileId: filter.profileId,
+    state: 'APPLIED',
+    appliedAt: { $gte: periodStart, $lte: periodEnd }
+  };
+  if (filter.ruleId) {
+    execFilter.ruleId = filter.ruleId;
+  }
+
+  let executions = [];
+  try {
+    executions = await readRows(db, 'ruleactionexecutions', execFilter, {
+      ruleId: 1, ruleFamily: 1, amazonEntityType: 1, amazonEntityId: 1,
+      actionType: 1, previousValue: 1, desiredValue: 1, appliedAt: 1, state: 1, updatedAt: 1
+    });
+  } catch (error) {
+    if (error && error.code === 'REPORT_ROW_LIMIT') {
+      throw error;
+    }
+    executions = [];
+  }
+
+  if (executions.length) {
+    const applied = sourceResult('Confirmed applied rule actions');
+    setFreshness(applied, executions);
+    if (input.period.isPartial) {
+      applied.warnings.push("Today's rule actions are still being applied; these are the confirmed actions so far.");
+    }
+    applied.warnings.push('These are confirmed applied rule actions (state APPLIED): each shows when it ran and the before-to-after value it set. A performance change after a rule is observed, not proven to be caused by it.');
+    applied.rows = executions.map(row => ({
+      profileId: profile.profileId,
+      adType,
+      date: moment.utc(row.appliedAt).format('YYYY-MM-DD'),
+      ruleTime: moment.utc(row.appliedAt).format('HH:mm'),
+      ruleId: String(row.ruleId || ''),
+      ruleType: safeText(row.ruleFamily),
+      entityId: safeText(String(row.amazonEntityId ?? '')),
+      name: safeText(row.amazonEntityType),
+      changeType: safeText(row.actionType),
+      oldValue: settingValue(row.previousValue),
+      newValue: settingValue(row.desiredValue),
+      status: 'applied',
+      executionVerified: true
+    }));
+    return applied;
+  }
+
   filter.ruleDate = filter.reportDate;
   delete filter.reportDate;
   // The service passes this owner from authenticated context, never report JSON.

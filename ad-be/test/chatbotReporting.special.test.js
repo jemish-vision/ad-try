@@ -53,7 +53,7 @@ const product = (extra = {}) => ({
   ...extra
 });
 
-function setup(rows = []) {
+function setup(rows = [], execRows = []) {
   const calls = [];
   const db = {
     collection(name) {
@@ -73,7 +73,7 @@ function setup(rows = []) {
               return this;
             },
             async toArray() {
-              return rows;
+              return name === 'ruleactionexecutions' ? execRows : rows;
             }
           };
         }
@@ -310,11 +310,13 @@ test('current-week rule history reads available records through today with owner
   const report = await run({ category: 'rules', dimension: 'rule', period: {
     fromDate: '2026-10-19', toDate: '2026-10-22', isPartial: true
   } });
-  assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0].filter.ruleDate, { $gte: '2026-10-19', $lte: '2026-10-22' });
-  assert.equal(String(calls[0].filter.userId), userId);
-  assert.equal(String(calls[0].filter.configId), configId);
-  assert.equal(calls[0].filter.profileId, Number(profile.profileId));
+  // Executions are checked first (none here), then the history snapshots.
+  const histCall = calls.find(call => call.name === 'affectedcampaignbyrules');
+  assert.ok(histCall);
+  assert.deepEqual(histCall.filter.ruleDate, { $gte: '2026-10-19', $lte: '2026-10-22' });
+  assert.equal(String(histCall.filter.userId), userId);
+  assert.equal(String(histCall.filter.configId), configId);
+  assert.equal(histCall.filter.profileId, Number(profile.profileId));
   assert.equal(report.rows.length, 1);
   assert.equal(report.rows[0].status, 'history_snapshot');
   assert.ok(report.warnings.some(warning => warning.includes('still updating')));
@@ -323,7 +325,7 @@ test('current-week rule history reads available records through today with owner
 test('empty partial rule history describes missing records without claiming no changes', async () => {
   const { run, calls } = setup();
   const report = await run({ category: 'rules', dimension: 'rule', period: { ...period, isPartial: true } });
-  assert.equal(calls.length, 1);
+  assert.ok(calls.some(call => call.name === 'affectedcampaignbyrules'));
   assert.deepEqual(report.rows, []);
   assert.ok(report.missingInputs.some(message => message.startsWith('No matching rule-history records found')));
   assert.ok(report.missingInputs.some(message => message.includes('does not establish that no changes occurred')));
@@ -374,22 +376,52 @@ test('rule history projects no metric snapshots and labels records as history, n
       ids: ['507f1f77bcf86cd799439012']
     }
   });
-  assert.equal(calls[0].name, 'affectedcampaignbyrules');
-  assert.deepEqual(calls[0].filter.ruleDate, {
+  const histCall = calls.find(call => call.name === 'affectedcampaignbyrules');
+  assert.ok(histCall);
+  assert.deepEqual(histCall.filter.ruleDate, {
     $gte: period.fromDate,
     $lte: period.toDate
   });
-  assert.equal(calls[0].filter.reportDate, undefined);
-  assert.equal(calls[0].filter.profileId, 12345);
-  assert.equal(String(calls[0].filter.configId), configId);
-  assert.equal(calls[0].filter.type, 'SP');
-  assert.equal(calls[0].options.projection.metricsHistory, undefined);
-  assert.equal(String(calls[0].filter.userId), userId);
+  assert.equal(histCall.filter.reportDate, undefined);
+  assert.equal(histCall.filter.profileId, 12345);
+  assert.equal(String(histCall.filter.configId), configId);
+  assert.equal(histCall.filter.type, 'SP');
+  assert.equal(histCall.options.projection.metricsHistory, undefined);
+  assert.equal(String(histCall.filter.userId), userId);
   assert.equal(report.rows[0].status, 'history_snapshot');
   assert.equal(report.rows[0].oldValue, '10');
   assert.equal(report.rows[0].newValue, '15');
   assert.equal(report.rows[0].metricsHistory, undefined);
   assert.ok(report.warnings.includes('RULE_HISTORY_IS_NOT_APPLIED_EXECUTION_PROOF'));
+});
+
+test('confirmed applied rule actions are used instead of history snapshots', async () => {
+  const applied = {
+    ruleId: '507f1f77bcf86cd799439012', ruleFamily: 'budget-rules',
+    amazonEntityType: 'campaign', amazonEntityId: '12', actionType: 'BUDGET_UPDATE',
+    previousValue: 10, desiredValue: 15, state: 'APPLIED',
+    appliedAt: new Date('2026-10-02T10:30:00Z'), updatedAt: new Date('2026-10-02T10:31:00Z')
+  };
+  const { run, calls } = setup(
+    [{ ruleId: '507f1f77bcf86cd799439012', ruleDate: '2026-10-02', campaignId: 12 }], // history to ignore
+    [applied],
+  );
+  const report = await run({ category: 'rules', dimension: 'rule' });
+
+  const execCall = calls.find(call => call.name === 'ruleactionexecutions');
+  assert.ok(execCall, 'reads the confirmed execution log');
+  assert.equal(execCall.filter.state, 'APPLIED');
+  // When confirmed executions exist, the history snapshots are not read.
+  assert.ok(!calls.some(call => call.name === 'affectedcampaignbyrules'));
+
+  assert.equal(report.rows.length, 1);
+  assert.equal(report.rows[0].status, 'applied');
+  assert.equal(report.rows[0].date, '2026-10-02');
+  assert.equal(report.rows[0].changeType, 'BUDGET_UPDATE');
+  assert.equal(report.rows[0].oldValue, '10');
+  assert.equal(report.rows[0].newValue, '15');
+  assert.ok(!report.warnings.includes('RULE_HISTORY_IS_NOT_APPLIED_EXECUTION_PROOF'));
+  assert.ok(!report.missingInputs.some(message => /applied execution status\/timestamp is required/i.test(message)));
 });
 
 test('invalid scope, excessive/invalid dates, unsupported dimension/ad type/entity reject before reads', async () => {
@@ -517,7 +549,7 @@ test('rule history requires an authenticated owner before reading and accepts ca
     dimension: 'rule',
     userId: new ObjectId(userId)
   });
-  assert.equal(String(calls[0].filter.userId), userId);
+  assert.equal(String(calls.find(call => call.name === 'affectedcampaignbyrules').filter.userId), userId);
 });
 
 test('row cap withholds truncated hourly data and invalid numbers cannot become zero', async () => {

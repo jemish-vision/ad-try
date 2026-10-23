@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, Search, X, Table2 } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, Search, X, Table2, CheckCircle2 } from "lucide-react";
 import { formatMetricValue } from "./ReportKPICards";
 import { displayColumns, friendlyLabel, friendlyTableTitle } from "./reportDisplay";
 
@@ -35,6 +35,14 @@ function renderCellContent(col, val, row, { weekdayLabels, hourlyLabels, profile
     return (
       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium text-slate-400 dark:text-slate-500 bg-slate-100/60 dark:bg-slate-800/40 border border-slate-200/50 dark:border-slate-700/40">
         Snapshot
+      </span>
+    );
+  }
+
+  if (col.key === "status" && String(val) === "applied") {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20">
+        <CheckCircle2 size={9} /> Applied
       </span>
     );
   }

@@ -259,12 +259,21 @@ function analyzeRules({ request, current, comparison, profile, idPrefix }, resul
     }, 'Rule records classified by execution evidence');
   }
 
-  result.text.push('Rule history lists recorded old and new settings. A history snapshot is not proof that Amazon applied the action.');
-  result.missingInputs.push('Rule effectiveness requires a verified applied event with timestamp and equal, complete before/after performance windows.');
+  const hasConfirmedApplied = rows.some(row => row.evidence === 'applied');
+
+  if (hasConfirmedApplied) {
+    result.text.push('These are confirmed applied rule actions: each shows when it ran and the before-to-after value it set.');
+  } else {
+    result.text.push('Rule history lists recorded old and new settings. A history snapshot is not proof that Amazon applied the action.');
+    result.missingInputs.push('Rule effectiveness requires a verified applied event with timestamp and equal, complete before/after performance windows.');
+  }
+
   result.warnings.push('Other rules, overlapping changes, seasonality and attribution lag can affect a before/after comparison; a comparison alone cannot prove a rule caused the change.');
 
   if (comparison || request.comparison?.mode !== 'none') {
-    result.text.push('Rule effectiveness is unavailable: this source does not join confirmed applied events to comparable before/after advertising performance.');
+    result.text.push(hasConfirmedApplied
+      ? 'These confirmed actions show what changed and when; a numeric before/after performance comparison around each change is not computed in this view.'
+      : 'Rule effectiveness is unavailable: this source does not join confirmed applied events to comparable before/after advertising performance.');
   }
 }
 

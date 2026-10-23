@@ -149,8 +149,23 @@ test('rule analysis classifies execution evidence and warns against causal assum
   assert.ok(evidenceDataset);
   assert.equal(evidenceDataset.rows[0].evidence, 'applied');
   assert.equal(evidenceDataset.rows[1].evidence, 'history_snapshot'); // executionVerified is false
-  assert.ok(result.missingInputs.some(m => m.includes('Rule effectiveness requires a verified applied event')));
+  // A confirmed applied action is present, so effectiveness is no longer declared missing,
+  // but the causal-caution warning still stands.
+  assert.ok(!result.missingInputs.some(m => m.includes('Rule effectiveness requires a verified applied event')));
+  assert.ok(result.text.some(t => /confirmed applied rule actions/i.test(t)));
   assert.ok(result.warnings.some(w => w.includes('cannot prove a rule caused the change')));
+});
+
+test('history-only rule records still declare effectiveness as missing', () => {
+  const rows = [
+    { ruleId: 'R1', entityId: 'E1', date: '2026-10-19', changeType: 'BID', oldValue: '1.00', newValue: '1.20', status: 'history_snapshot' },
+  ];
+  const input = baseContext('rules', {
+    request: { category: 'rules', metrics: [], groupBy: [], filters: [], comparison: { mode: 'none' }, offset: 0, limit: 25 },
+    current: { verification: 'verified', rows },
+  });
+  const result = analyzeSpecial(input);
+  assert.ok(result.missingInputs.some(m => m.includes('Rule effectiveness requires a verified applied event')));
 });
 
 test('source conflict returns missing inputs and halts further specialized analysis', () => {
