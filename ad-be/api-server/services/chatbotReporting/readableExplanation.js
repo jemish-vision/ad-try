@@ -64,6 +64,9 @@ function missingRequirements(report) {
   if (/total.*sales.*organic|reconciled.*total.*sales/i.test(raw)) {
     messages.push('Total product sales, including organic sales, are needed to complete this product report.');
   }
+  if (/Seller account.*connection|SP-API/i.test(raw)) {
+    messages.push("This profile's Amazon Seller account is not connected, so product sales, inventory, profit and TACOS are unavailable. Connect the Seller account to enable these reports; advertising reports still work.");
+  }
   if (/costs|fees/i.test(raw)) messages.push('Product costs and fees are needed to calculate profit after advertising.');
   if (/inventory|sellable stock/i.test(raw) && !/keyword inventory/i.test(raw)) messages.push('Current product inventory is needed to identify low stock.');
   if (/No matching rule-history records/i.test(raw)) {

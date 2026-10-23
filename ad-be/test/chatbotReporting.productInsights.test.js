@@ -20,6 +20,17 @@ const SCOPE = {
   currencyGroups: [{ currencyCode: 'USD', profileIds: ['1001'] }],
 };
 
+function matchesFilter(row, filter) {
+  return Object.entries(filter).every(([key, value]) => {
+    if (value && typeof value === 'object' && !(value instanceof Date)) {
+      if ('$ne' in value) return String(row[key]) !== String(value.$ne);
+      return true; // range operators handled separately in find()
+    }
+    if (value === null) return row[key] === null || row[key] === undefined;
+    return String(row[key]) === String(value);
+  });
+}
+
 function fakeDb(data) {
   return { collection(name) {
     const all = data[name] || [];
@@ -34,14 +45,20 @@ function fakeDb(data) {
         });
         return { limit() { return { toArray: async () => rows }; }, sort() { return this; }, toArray: async () => rows };
       },
+      findOne: async (filter = {}) => all.find(row => matchesFilter(row, filter)) || null,
       countDocuments: async () => all.length,
     };
   } };
 }
 
+// An active, non-disconnected Seller (SP-API) connection for profile 1001.
+const SELLER_ACTIVE = [{ configId: HEX24, profileId: 1001, isActive: true, disconnectedAt: null, spRefreshToken: 'x' }];
+
 function service(data) {
+  // Default to a connected Seller account unless the test overrides it.
+  const withSeller = { sellerconfigs: SELLER_ACTIVE, ...data };
   return createReportService({
-    db: fakeDb(data),
+    db: fakeDb(withSeller),
     resolveScope: async () => SCOPE,
     checkReportPermission: async () => true,
     readKeywords: async () => ({ existingKeywords: new Set() }),
@@ -163,6 +180,44 @@ test('end-to-end: a "low stock" chat turn returns a rendered report', async () =
   assert.equal(res.isReport, true);
   assert.equal(res.report.status, 'partial');
   assert.ok(res.report.datasets.some(d => d.columns.some(c => c.key === 'stock')), 'stock data rendered');
+});
+
+test('seller not connected: TACOS says so clearly and offers the ads-only alternative', async () => {
+  const report = await service({ ...TACOS_DATA, sellerconfigs: [] })(
+    { ...base, category: 'products', groupBy: ['product'], metrics: ['tacos'], period: { preset: 'last_7_days' }, presentation: 'bar' }, AUTH);
+  validateReportResponse(report);
+  assert.equal(report.status, 'unavailable');
+  assert.ok(report.freshness.missingInputs.some(m => /Seller account.*connection|SP-API/i.test(m)), 'flags the seller connection');
+  assert.ok(report.followUps.some(f => /spend|sales/i.test(f.label)), 'offers the ads-only alternative');
+});
+
+test('seller not connected: low stock and profit are gated too', async () => {
+  for (const metric of ['stock', 'profit', 'days_of_stock']) {
+    const report = await service({ inventories: INVENTORY, sellerconfigs: [] })(
+      { ...base, category: 'products', groupBy: ['product'], metrics: [metric], period: { preset: 'last_7_days' }, presentation: 'bar' }, AUTH);
+    validateReportResponse(report);
+    assert.equal(report.status, 'unavailable', `${metric} gated`);
+    assert.ok(report.freshness.missingInputs.some(m => /Seller account.*connection|SP-API/i.test(m)), `${metric} flags seller connection`);
+  }
+});
+
+test('seller not connected: a disconnected sellerConfig is treated as not connected', async () => {
+  const disconnected = [{ configId: HEX24, profileId: 1001, isActive: false, disconnectedAt: new Date() }];
+  const report = await service({ ...TACOS_DATA, sellerconfigs: disconnected })(
+    { ...base, category: 'products', groupBy: ['product'], metrics: ['tacos'], period: { preset: 'last_7_days' }, presentation: 'bar' }, AUTH);
+  validateReportResponse(report);
+  assert.equal(report.status, 'unavailable');
+  assert.ok(report.freshness.missingInputs.some(m => /Seller account.*connection|SP-API/i.test(m)));
+});
+
+test('ads-only per-product report is NOT gated by the seller connection', async () => {
+  // "ad spend & sales by product" comes from product_ads (ads connection), so it must
+  // still work even when the Seller account is disconnected.
+  const report = await service({ product_ads: TACOS_DATA.product_ads, sellerconfigs: [] })(
+    { ...base, category: 'products', groupBy: ['product'], metrics: ['spend', 'sales', 'orders', 'clicks'], period: { preset: 'last_7_days' }, presentation: 'bar' }, AUTH);
+  validateReportResponse(report);
+  assert.notEqual(report.status, 'unavailable');
+  assert.ok(report.datasets.some(d => d.rows.length > 0), 'renders advertised-product rows');
 });
 
 test('end-to-end: a "TACOS" chat turn returns the headline TACOS card', async () => {

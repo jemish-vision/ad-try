@@ -30,6 +30,9 @@ const { readKeywordInventory } = require('./chatbotReporting/keywordInventory');
 const {
   isInventoryRequest,
   isTacosRequest,
+  needsSellerData,
+  anyProfileSellerConnected,
+  buildSellerNotConnectedReport,
   buildProductInsightReport,
 } = require('./chatbotReporting/productInsights');
 
@@ -322,6 +325,13 @@ function createReportService({
 
     const capturedNow = now();
     const { periods, warnings: periodWarnings } = resolvePeriods(request, scope, handler, capturedNow);
+
+    // Product/seller metrics (TACOS, profit, stock) need an active Amazon Seller
+    // (SP-API) connection. When no profile in scope has one, say so clearly instead
+    // of returning a generic "data unavailable" — the data simply isn't synced.
+    if (needsSellerData(request) && !(await anyProfileSellerConnected(database, scope))) {
+      return buildSellerNotConnectedReport({ request, scope, periods, reportId: makeReportId() });
+    }
 
     // Low-stock and TACOS live outside the generic ad-metric pipeline; they are
     // assembled from inventory / total-ordered-sales collections and handed to the

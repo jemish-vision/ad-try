@@ -321,6 +321,54 @@ async function buildTacosReport({ db, request, scope, periods, reportId }) {
   return buildReportResponse(state, { ...request, presentation: 'bar', metrics: ['tacos'] }, scope, periods, reportId);
 }
 
+// ─────────────────────── Seller (SP-API) connection ───────────────────────
+
+const SELLER_METRICS = ['tacos', 'profit', 'stock', 'days_of_stock'];
+const SELLER_MISSING_INPUT = 'Amazon Seller account (SP-API) connection for product, stock and total-sales reports';
+
+// These metrics are sourced from Seller Central imports (inventory, Sales & Traffic,
+// product listings). They exist only when the profile's Seller account is connected —
+// advertising data alone cannot supply them. Per-product AD metrics (spend/sales from
+// product_ads) come from the ads connection, so they are NOT gated here.
+function needsSellerData(request) {
+  return request.metrics.some(metric => SELLER_METRICS.includes(metric));
+}
+
+// Mirror the portal's isSpActive notion: an active, non-disconnected sellerConfig.
+async function hasActiveSellerConnection(db, configId, profileId) {
+  try {
+    const doc = await db.collection('sellerconfigs').findOne({
+      configId: objectId(configId),
+      profileId: Number(profileId),
+      isActive: true,
+      disconnectedAt: null,
+    }, { projection: { _id: 1 }, maxTimeMS: MAX_TIME_MS });
+    return Boolean(doc);
+  } catch (_) {
+    // If the connection cannot be verified, do not block with a false "not connected"
+    // message; let the normal data read decide availability.
+    return true;
+  }
+}
+
+async function anyProfileSellerConnected(db, scope) {
+  for (const profile of scope.profiles) {
+    // eslint-disable-next-line no-await-in-loop
+    if (await hasActiveSellerConnection(db, scope.configId, profile.profileId)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function buildSellerNotConnectedReport({ request, scope, periods, reportId }) {
+  const state = createReportState();
+  state.allVerified = false;
+  state.missingInputs.add(SELLER_MISSING_INPUT);
+  state.warnings.add("This profile's Amazon Seller account is not connected; only advertising data is available.");
+  return buildReportResponse(state, request, scope, periods, reportId);
+}
+
 function isInventoryRequest(request) {
   return request.category === 'products' && request.metrics.some(metric => ['stock', 'days_of_stock'].includes(metric));
 }
@@ -339,6 +387,9 @@ function buildProductInsightReport(context) {
 module.exports = {
   isInventoryRequest,
   isTacosRequest,
+  needsSellerData,
+  anyProfileSellerConnected,
+  buildSellerNotConnectedReport,
   buildProductInsightReport,
   buildInventoryReport,
   buildTacosReport,
