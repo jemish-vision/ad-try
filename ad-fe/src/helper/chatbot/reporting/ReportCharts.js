@@ -39,10 +39,20 @@ function chartOptions(isDark) {
     },
     theme: { mode: isDark ? "dark" : "light" },
     colors: CHART_COLORS,
-    grid: { borderColor: isDark ? "#334155" : "#e2e8f0", strokeDashArray: 3 },
+    grid: {
+      borderColor: isDark ? "#223049" : "#e8edf4",
+      strokeDashArray: 4,
+      xaxis: { lines: { show: false } },
+      padding: { left: 4, right: 8 },
+    },
     dataLabels: { enabled: false },
     stroke: { curve: "straight", width: 2 },
-    legend: { position: "bottom", fontSize: "11px" },
+    legend: {
+      position: "bottom",
+      fontSize: "11px",
+      markers: { radius: 12, width: 10, height: 10 },
+      itemMargin: { horizontal: 10, vertical: 2 },
+    },
     noData: { text: "Chart data is unavailable" },
   };
 }
@@ -132,11 +142,13 @@ function chartContent(block, dataset, isDark, isExpanded, currencyCode, chartWid
               height={horizontal ? Math.max(200, data.categories.length * 34 + 60) : (isExpanded ? 280 : 230)}
               options={{
                 ...options,
-                stroke: { ...options.stroke, width: block.type === "line" ? 2 : 0 },
+                stroke: block.type === "line"
+                  ? { ...options.stroke, width: 2 }
+                  : { show: true, width: isGrouped ? 2 : 0, colors: ["transparent"] },
                 plotOptions: {
                   bar: {
                     horizontal,
-                    borderRadius: 3,
+                    borderRadius: 4,
                     borderRadiusApplication: "end",
                     columnWidth: isGrouped
                       ? (displayCategories.length <= 6 ? "42%" : (displayCategories.length <= 10 ? "52%" : "65%"))

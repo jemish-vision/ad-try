@@ -149,7 +149,7 @@ describe("Round 3: Component Interaction and State Verification", () => {
 
     render(<ChatReportRenderer report={unavailReport} />);
 
-    expect(screen.getByText("More information needed")).toBeInTheDocument();
+    expect(screen.getByText("Here's what I can tell you")).toBeInTheDocument();
     expect(screen.getByText("Unavailable")).toBeInTheDocument();
   });
 });

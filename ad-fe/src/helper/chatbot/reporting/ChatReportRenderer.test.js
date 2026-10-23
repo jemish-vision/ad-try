@@ -163,7 +163,7 @@ describe("ChatReportRenderer", () => {
 
     render(<ChatReportRenderer report={report} />);
 
-    expect(screen.getByText("More information needed")).toBeInTheDocument();
+    expect(screen.getByText("Here's what I can tell you")).toBeInTheDocument();
   });
 
   test("Step 8: follow-up chips pass structured request object to onFollowUp handler", () => {
