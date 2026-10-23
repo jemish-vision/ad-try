@@ -209,6 +209,41 @@ describe("ChatReportRenderer", () => {
     expect(container.querySelector("table")).toBeNull(); // duplicate table gone
   });
 
+  const settlingNotes = [
+    "IMPORT_COVERAGE_UNVERIFIED",
+    "Attributed sales and orders may mature within their attribution window; imported figures are provisional.",
+  ];
+  const settlingReport = (current, freshness) => ({
+    status: "ok",
+    category: "summary",
+    freshness,
+    periods: [{ current }],
+    scope: { profiles: [{ attributionWindows: { SP: 7 } }] },
+    warnings: settlingNotes,
+    cards: [{ metric: "acos", label: "ACOS", value: 17.3, unit: "percent" }],
+    blocks: [],
+    datasets: [],
+  });
+
+  test("the 'still settling' note is hidden on a verified, fully-settled period", () => {
+    const report = settlingReport(
+      { fromDate: "2026-09-01", toDate: "2026-09-07" }, // ~6 weeks old
+      { status: "verified", dataAsOf: "2026-10-23T00:00:00Z" },
+    );
+    render(<ChatReportRenderer report={report} />);
+    expect(screen.queryByText(/About these numbers/)).toBeNull();
+    expect(screen.queryByText(/still updating/)).toBeNull();
+  });
+
+  test("the 'still settling' note still shows for a recent period inside the attribution window", () => {
+    const report = settlingReport(
+      { fromDate: "2026-10-22", toDate: "2026-10-22" }, // yesterday
+      { status: "verified", dataAsOf: "2026-10-23T00:00:00Z" },
+    );
+    render(<ChatReportRenderer report={report} />);
+    expect(screen.getByText("Data is still updating, so totals may change.")).toBeInTheDocument();
+  });
+
   test("a per-entity breakdown table still renders even with a single row", () => {
     const report = {
       status: "ok",

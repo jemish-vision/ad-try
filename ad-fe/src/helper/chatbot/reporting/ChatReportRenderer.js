@@ -6,8 +6,38 @@ import ReportCharts from "./ReportCharts";
 import ReportTable from "./ReportTable";
 import ReportFollowUps from "./ReportFollowUps";
 import { ReportEmptyState, ReportUnavailableState, ReportWarningsBanner } from "./ReportStates";
-import { friendlyTableTitle } from "./reportDisplay";
+import { friendlyTableTitle, resolvePeriodWindow } from "./reportDisplay";
 import "./ReportWorkspace.css";
+
+// The "data is still updating / Amazon is still attributing" caveats. They are
+// only meaningful while the numbers can still change — not on fully-settled,
+// fully-verified periods.
+const SETTLING_NOTE = /IMPORT_COVERAGE_UNVERIFIED|attribution window|imported figures are provisional|complete source coverage is unverified|complete data completeness is unverified|ROWS_NOT_FROM_COMPLETED_IMPORT|NEWER_INCOMPLETE_IMPORT|still updating|totals may change|mature within/i;
+
+function maxAttributionWindow(report) {
+  const windows = (report?.scope?.profiles || [])
+    .flatMap(profile => Object.values(profile?.attributionWindows || {}))
+    .filter(value => typeof value === "number" && value > 0);
+  return windows.length ? Math.max(...windows) : 14;
+}
+
+// True when the figures can genuinely still change: the report is flagged
+// incomplete, or its period is recent enough to still sit inside the
+// attribution window. A verified report over a settled period is done moving.
+function dataStillSettling(report) {
+  const freshness = report?.freshness?.status;
+  if (freshness && freshness !== "verified" && freshness !== "complete") return true;
+
+  const current = resolvePeriodWindow(report?.periods, "current");
+  const endText = current?.toDate;
+  if (!endText) return true; // unknown period — keep the caveat rather than hide a real one
+  const end = new Date(`${endText}T00:00:00Z`);
+  if (Number.isNaN(end.getTime())) return true;
+
+  const asOf = report?.freshness?.dataAsOf ? new Date(report.freshness.dataAsOf) : new Date();
+  const ageDays = (asOf.getTime() - end.getTime()) / 86400000;
+  return ageDays <= maxAttributionWindow(report) + 1;
+}
 
 // Columns that mark a real per-entity / per-time breakdown. If a dataset has
 // none of these, its rows are just the account/profile aggregate.
@@ -46,9 +76,14 @@ export default function ChatReportRenderer({
 
   const status = report.status || "ok";
   const isWorkspace = layoutVariant === "workspace";
-  const warnings = status === "unavailable"
+  const rawWarnings = status === "unavailable"
     ? [...(report.warnings || []), ...(report.freshness?.missingInputs || [])]
     : (report.warnings || []);
+  // Show the "still settling" attribution/coverage notes only when they apply;
+  // drop them on fully-settled, verified reports. Other warnings always pass.
+  const warnings = dataStillSettling(report)
+    ? rawWarnings
+    : rawWarnings.filter(warning => !SETTLING_NOTE.test(String(warning)));
 
   // Handle unavailable status
   if (status === "unavailable") {
