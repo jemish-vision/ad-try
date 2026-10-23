@@ -7,49 +7,59 @@ const moment = require('moment-timezone');
 const CAMPAIGN_COLLECTIONS = { SP: 'campaigns', SB: 'sbcampaigns', SD: 'sdcampaigns' };
 
 // Users name campaigns ("A-2073-Men-Raincoat-Fri"), but the report entity filter needs
-// the numeric campaignId. Resolve any non-numeric campaign ids to their id, and give a
-// clear "not found" error instead of a generic "unsupported selection".
+// the numeric campaignId. Resolve any non-numeric campaign ids to their id (clear
+// "not found" error otherwise), AND look up the display name for every campaign id so
+// the report can show which campaign it is scoped to.
 async function resolveCampaignEntity(database, scope, request) {
   const entity = request.entity;
   if (!entity || entity.dimension !== 'campaign') {
     return request;
   }
-  const names = [...new Set(entity.ids.filter(id => !/^[1-9]\d*$/.test(String(id))))];
-  if (!names.length) {
-    return request;
-  }
-
   let configId;
   try {
     configId = new Types.ObjectId(String(scope.configId));
   } catch (_) {
     return request;
   }
-  const resolved = new Map();
-  for (const name of names) {
+
+  const idByInput = new Map(); // original input -> resolved campaignId (string)
+  const nameById = new Map(); // campaignId (string) -> display name
+  for (const input of entity.ids) {
+    const isNumeric = /^[1-9]\d*$/.test(String(input));
     for (const profile of scope.profiles) {
-      if (resolved.has(name)) break;
+      if (idByInput.has(input)) break;
       for (const adType of request.adTypes) {
         const collection = CAMPAIGN_COLLECTIONS[adType];
         if (!collection) continue;
+        const query = isNumeric
+          ? { configId, profileId: Number(profile.profileId), campaignId: Number(input) }
+          : { configId, profileId: Number(profile.profileId), name: input };
         // eslint-disable-next-line no-await-in-loop
         const doc = await database.collection(collection).findOne(
-          { configId, profileId: Number(profile.profileId), name },
-          { projection: { campaignId: 1 }, maxTimeMS: 5000 },
+          query, { projection: { campaignId: 1, name: 1 }, maxTimeMS: 5000 },
         );
         if (doc && Number.isSafeInteger(doc.campaignId) && doc.campaignId > 0) {
-          resolved.set(name, String(doc.campaignId));
+          idByInput.set(input, String(doc.campaignId));
+          if (typeof doc.name === 'string' && doc.name) {
+            nameById.set(String(doc.campaignId), doc.name);
+          }
           break;
         }
       }
     }
   }
 
-  const unresolved = names.filter(name => !resolved.has(name));
+  // A typed campaign NAME that resolves to nothing is a clear user-facing error.
+  // A numeric id that isn't found still passes through (it may be a valid id with no
+  // rows in this period); it just won't have a display name.
+  const unresolved = entity.ids.filter(input => !/^[1-9]\d*$/.test(String(input)) && !idByInput.has(input));
   if (unresolved.length) {
     throw reportError(400, 'CAMPAIGN_NOT_FOUND', `No campaign named "${unresolved[0]}" was found in the selected profile`);
   }
-  return { ...request, entity: { ...entity, ids: entity.ids.map(id => resolved.get(String(id)) || String(id)) } };
+
+  const ids = entity.ids.map(input => idByInput.get(input) || String(input));
+  const entityLabels = ids.map(id => nameById.get(id) || id);
+  return { ...request, entity: { ...entity, ids }, entityLabels };
 }
 const { validateReportSelection } = require('../contracts/chatbotReporting.contract');
 const { resolveReportPeriods } = require('../helper/chatbotReporting.dates');

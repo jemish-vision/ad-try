@@ -85,8 +85,16 @@ test('an unknown campaign name fails with a clear, specific error', async () => 
   );
 });
 
-test('a numeric campaign id passes through without a name lookup', async () => {
+test('a numeric campaign id resolves its name and still renders', async () => {
   const report = await service()(timeByCampaign(['777']), AUTH);
   assert.equal(report.status, 'partial');
   assert.ok(report.blocks.some(block => block.type === 'heatmap'));
+});
+
+test('an entity-filtered report states which campaign it is scoped to', async () => {
+  for (const ids of [['A-2073-Men-Raincoat-Fri'], ['777']]) {
+    const report = await service()(timeByCampaign(ids), AUTH);
+    assert.match(report.text, /Showing data for campaign: A-2073-Men-Raincoat-Fri/,
+      `campaign named in report for ${JSON.stringify(ids)}`);
+  }
 });

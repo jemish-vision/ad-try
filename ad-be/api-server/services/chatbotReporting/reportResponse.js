@@ -323,11 +323,27 @@ function buildDefaultFollowUps(request, scope, status, missingInputs = []) {
   ];
 }
 
+// When a report is filtered to a specific campaign, say so up front so the user knows
+// which campaign the figures belong to (the rows themselves may not name it, e.g. a
+// time heatmap is keyed by hour/weekday).
+function entityScopeLabel(request) {
+  if (request.entity?.dimension !== 'campaign' ||
+    !Array.isArray(request.entityLabels) || !request.entityLabels.length) {
+    return null;
+  }
+  const labels = request.entityLabels.slice(0, 5).join(', ');
+  return `Showing data for campaign${request.entityLabels.length > 1 ? 's' : ''}: ${labels}.`;
+}
+
 function buildReportResponse(state, request, scope, periods, reportId) {
   const {
     status,
     complete
   } = reportStatus(state);
+  const scopeNote = entityScopeLabel(request);
+  if (scopeNote && !['unavailable', 'error'].includes(status) && Array.isArray(state.analysisText)) {
+    state.analysisText.unshift(scopeNote);
+  }
   const text = reportText(request, status, state.analysisText || []);
   const freshnessStatus = status === 'unavailable' ? 'unavailable' : complete ? 'complete' : 'partial';
 
