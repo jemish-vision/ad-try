@@ -199,7 +199,10 @@ async function readTimeReport(input, filter) {
     let aggregatedRows;
     try {
       const pipeline = hourlyPipeline(scopedFilter, profile.currencyCode, correctSalesWindow);
-      aggregatedRows = await db.collection('keywordshourlyperformances').aggregate(pipeline, { maxTimeMS: 15000 }).toArray();
+      // allowDiskUse lets the collapse spill large $group state to disk instead of
+      // failing/stalling on memory for high-volume accounts.
+      aggregatedRows = await db.collection('keywordshourlyperformances')
+        .aggregate(pipeline, { maxTimeMS: 15000, allowDiskUse: true }).toArray();
     } catch (error) {
       if (error.code === 50 || error.code === 'REPORT_ROW_LIMIT') {
         result.missingInputs.push('This time range contains too much hourly data to analyze safely. Try a shorter date range or select one campaign.');
