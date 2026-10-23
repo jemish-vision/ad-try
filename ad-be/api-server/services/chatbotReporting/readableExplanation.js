@@ -19,10 +19,13 @@ const LABELS = {
 };
 
 // Reuse the three formatting rules across cards and table summaries.
+// Match the KPI cards' grouping (ReportKPICards.formatMetricValue). Both are pinned
+// to en-US so the narrative and the cards never disagree (e.g. 1,507,100 in both,
+// never 15,07,100 in the text beside 1,507,100 on the card).
 const NUMBER_FORMATTERS = {
-  currency: new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-  count: new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }),
-  ratio: new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }),
+  currency: new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+  count: new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }),
+  ratio: new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }),
 };
 
 function formatValue(value, unit, currencyCode) {

@@ -34,7 +34,9 @@ export function formatMetricValue(value, unit, currencyCode = "USD") {
 
   switch (unit) {
     case "currency":
-      return `${symbol}${Number(value).toLocaleString(undefined, {
+      // Pin the locale so card grouping matches the backend narrative (en-US),
+      // instead of varying with each viewer's browser locale.
+      return `${symbol}${Number(value).toLocaleString("en-US", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       })}`;
@@ -43,7 +45,7 @@ export function formatMetricValue(value, unit, currencyCode = "USD") {
     case "multiple":
       return `${Number(value).toFixed(2)}x`;
     case "count":
-      return Number(value).toLocaleString();
+      return Number(value).toLocaleString("en-US");
     default:
       return String(value);
   }
