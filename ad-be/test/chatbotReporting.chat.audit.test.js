@@ -279,7 +279,6 @@ test('obvious glossary questions use exact approved metrics without calling AI',
     ['What is ROAS?', ['roas']],
     ['Explain cost per click', ['cpc']],
     ['What does total advertising cost of sales mean?', ['tacos']],
-    ['Is 35% ACOS good for my category?', ['acos']],
   ];
 
   for (const [message, expectedMetrics] of cases) {
@@ -298,6 +297,18 @@ test('obvious glossary questions use exact approved metrics without calling AI',
     assert.equal(result.isReport, true);
     assert.equal(result.replyMessage, 'Approved metric explanation');
   }
+});
+
+test('"is X% ACOS good" gets a tailored judgment answer, not a bare definition', async () => {
+  const service = createChatService({
+    aiProvider: { requestTurn: async () => assert.fail('Judgment answer must not call AI') },
+    reportService: async () => assert.fail('Judgment answer must not run a report'),
+  });
+  const result = await service({ message: 'Is 35% ACOS good for my category?', profileIds: ['123'] }, { userId: 'user', configId: 'config' });
+  assert.equal(result.isReport, false);
+  assert.match(result.replyMessage, /35/);
+  assert.match(result.replyMessage, /break-even|margin/i);
+  assert.match(result.replyMessage, /no.*benchmark|not a category benchmark/i);
 });
 
 test('numeric TACOS account questions continue through reporting intent selection', async () => {
