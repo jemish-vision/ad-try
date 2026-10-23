@@ -180,9 +180,15 @@ export function cleanCategoryLabel(value, profileNames = {}) {
 }
 
 export function displayColumns(dataset) {
-  return (dataset?.columns || []).filter(column => ![
+  const columns = (dataset?.columns || []).filter(column => ![
     "profileId", "campaignId", "adGroupId", "keywordId", "targetId", "ruleId", "entityId",
   ].includes(column.key));
+  // In a search-term report the "name" column repeats the search term verbatim,
+  // so drop it to avoid two identical columns.
+  if (columns.some(column => column.key === "searchTerm")) {
+    return columns.filter(column => column.key !== "name");
+  }
+  return columns;
 }
 
 export function createReportContext(report) {

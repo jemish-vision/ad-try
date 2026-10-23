@@ -94,6 +94,12 @@ test("internal identifiers are excluded from visible table columns", () => {
   expect(displayColumns({ columns: keys.map(key => ({ key })) }).map(column => column.key)).toEqual(["name", "sales"]);
 });
 
+test("the redundant name column is dropped when a search term column is present", () => {
+  const keys = ["adType", "searchTerm", "name", "spend", "acos"];
+  expect(displayColumns({ columns: keys.map(key => ({ key })) }).map(column => column.key))
+    .toEqual(["adType", "searchTerm", "spend", "acos"]);
+});
+
 test("safe rich text supports bold lines and markdown tables", () => {
   render(<ChatMessageText text={"## Results\n<b>Total sales</b><br/>**Updated today**\n| Metric | Value |\n| --- | --- |\n| ACOS | 12% |"} />);
   expect(screen.getByText("Results")).toBeInTheDocument();

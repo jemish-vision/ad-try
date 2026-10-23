@@ -34,6 +34,12 @@ function isExistingKeyword(row) {
     && String(row.status || '').toLowerCase() !== 'archived';
 }
 
+function isValidInventoryRow(row) {
+  return !!row && row.campaignId && row.adGroupId && normalizeKeyword(row.text)
+    && ['EXACT', 'PHRASE', 'BROAD'].includes(String(row.matchType || '').toUpperCase())
+    && ['enabled', 'paused', 'archived'].includes(String(row.status || '').toLowerCase());
+}
+
 function appendTable(result, rows, request, profile, idPrefix, title, sort) {
   const tableRequest = {
     ...request,
@@ -101,22 +107,18 @@ function analyzeGrowth(context, result, rows, thresholds) {
     return;
   }
 
-  if (current.verification !== 'verified') {
-    result.missingInputs.push('Verified reporting coverage is required for growth recommendations.');
-    if (request.groupBy.includes('search_term') && !keywordInventory?.verified) {
-      result.missingInputs.push('A complete, dated current keyword inventory is required.');
-      result.text.push('These are observed search-term results. I cannot confirm which terms are not already keywords without a current keyword list.');
-    }
-    if (targetAcos === null) {
-      result.missingInputs.push('Provide your target ACOS percentage to evaluate efficient growth.');
-    }
-    return;
-  }
-
+  // A target is always required to judge efficiency; never assume one.
   if (targetAcos === null) {
     result.missingInputs.push('Provide your target ACOS percentage to evaluate efficient growth.');
     result.text.push('A good ACOS depends on your margin or target; no category benchmark is assumed.');
     return;
+  }
+
+  // Observed (unverified) reporting no longer withholds the list — the numbers
+  // are real, just not yet reconciled against completed-import coverage. Show
+  // the candidates and mark them provisional.
+  if (current.verification !== 'verified') {
+    result.warnings.push('These growth candidates come from observed reporting that is not fully verified; treat them as provisional and confirm before acting.');
   }
 
   let candidates = rows.filter(row => (
@@ -128,34 +130,29 @@ function analyzeGrowth(context, result, rows, thresholds) {
   ));
 
   if (request.groupBy.includes('search_term')) {
-    if (!keywordInventory?.verified || !Number.isFinite(Date.parse(keywordInventory.dataAsOf))) {
-      result.missingInputs.push(...(keywordInventory?.missingInputs || [
+    const inventory = keywordInventory;
+    const usableInventory = !!inventory
+      && (inventory.verified || inventory.bestEffort)
+      && Number.isFinite(Date.parse(inventory.dataAsOf))
+      && Array.isArray(inventory.rows)
+      && inventory.rows.every(isValidInventoryRow);
+
+    if (!usableInventory) {
+      result.missingInputs.push(...(inventory?.missingInputs || [
         'A complete, dated current keyword inventory is required.',
       ]));
-      result.text.push('Historical reporting rows cannot prove that a search term is not already a keyword.');
+      result.text.push('These are observed search-term results. I cannot confirm which terms are not already keywords without a current keyword list.');
       return;
     }
 
-    const snapshotAge = new Date(context.now || new Date()).getTime() - Date.parse(keywordInventory.dataAsOf);
+    const snapshotAge = new Date(context.now || new Date()).getTime() - Date.parse(inventory.dataAsOf);
 
     if (!Number.isFinite(snapshotAge) || snapshotAge < 0 || snapshotAge > 86400000) {
-      result.missingInputs.push('The complete keyword inventory must be no older than 24 hours.');
+      result.missingInputs.push('The current keyword inventory must be no older than 24 hours.');
       return;
     }
 
-    const hasInvalidInventoryRows = !Array.isArray(keywordInventory.rows)
-      || keywordInventory.rows.some(row => (
-        !row.campaignId || !row.adGroupId || !normalizeKeyword(row.text)
-        || !['EXACT', 'PHRASE', 'BROAD'].includes(String(row.matchType || '').toUpperCase())
-        || !['enabled', 'paused', 'archived'].includes(String(row.status || '').toLowerCase())
-      ));
-
-    if (hasInvalidInventoryRows) {
-      result.missingInputs.push('Complete keyword identities, match types and states are required.');
-      return;
-    }
-
-    const existing = new Set(keywordInventory.rows.filter(isExistingKeyword)
+    const existing = new Set(inventory.rows.filter(isExistingKeyword)
       .map(row => inventoryKey(row, row.text)));
     const uniqueTerms = new Set();
 
@@ -169,6 +166,11 @@ function analyzeGrowth(context, result, rows, thresholds) {
       uniqueTerms.add(key);
       return true;
     });
+
+    result.text.push('Search terms that already exist as keywords in the same ad group are excluded.');
+    if (inventory.bestEffort) {
+      result.warnings.push('The already-a-keyword check uses the keywords in your recent reporting; one with no recent activity may not be detected, so confirm before adding.');
+    }
   } else if (request.groupBy.includes('keyword') || request.groupBy.includes('target')) {
     candidates = candidates.filter(row => Number.isFinite(row.impressions) && row.impressions < minImpressions);
   } else {

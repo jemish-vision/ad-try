@@ -94,12 +94,32 @@ for (const inventory of [
   });
 }
 
-test('withholds growth without explicit target or verified reporting', () => {
+test('growth still requires an explicit target', () => {
   const input = context();
   delete input.request.analysis;
   assert.match(analyzeOpportunities(input).missingInputs[0], /target ACOS/);
+});
+
+test('unverified coverage no longer withholds; candidates are marked provisional', () => {
+  const input = context();
   input.current.verification = 'unverified';
-  assert.match(analyzeOpportunities(input).missingInputs[0], /Verified reporting/);
+  const result = analyzeOpportunities(input);
+  assert.equal(result.datasets[0].rows.length, 1);
+  assert.match(result.warnings.join(' '), /provisional/);
+});
+
+test('a best-effort keyword inventory drives the anti-join and is labelled', () => {
+  const input = context();
+  input.current.verification = 'unverified';
+  input.keywordInventory = {
+    rows: [{ campaignId: 1, adGroupId: 2, text: 'red shoes', matchType: 'EXACT', status: 'enabled' }],
+    verified: false,
+    bestEffort: true,
+    dataAsOf: '2026-10-21T11:00:00.000Z',
+  };
+  const result = analyzeOpportunities(input);
+  assert.equal(result.datasets[0].rows.length, 0, 'excludes the existing keyword');
+  assert.match(result.warnings.join(' '), /recent reporting|confirm before adding/i);
 });
 
 test('rejects low sample and zero-sales growth candidates', () => {

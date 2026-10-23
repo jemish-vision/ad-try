@@ -417,6 +417,7 @@ function createReportService({
         profile: scope.profiles[0],
         configId: scope.configId,
         userId: authContext.userId,
+        now: capturedNow,
       });
     }
 
