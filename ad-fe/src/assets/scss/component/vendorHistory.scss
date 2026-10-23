@@ -1,0 +1,119 @@
+.vendor_history_modal_body {
+  .package_main_container {
+    height: 100%;
+    .active_border {
+      border: 5px solid #3498ff !important;
+    }
+    .package_container {
+      border-radius: 3px;
+      height: 100%;
+      overflow: auto;
+      .package_name_container {
+        height: 18%;
+        position: relative;
+        .trial_banner {
+          position: absolute;
+          transform: rotate(-45deg);
+          left: -13%;
+          top: 15px;
+          width: 50%;
+          text-align: center;
+          overflow: hidden;
+          padding: 3px 0 3px 0 !important;
+          background-color: white;
+          z-index: 9;
+        }
+      }
+      .price_container {
+        height: 25%;
+      }
+      .package_permission_container {
+        height: 57%;
+        div {
+          margin-left: 25%;
+        }
+      }
+      h6 {
+        font-weight: 600 !important;
+      }
+      p {
+        color: rgb(56, 56, 56);
+        font-size: 16px;
+        .profile_number {
+          font-size: 18px;
+          font-weight: 600;
+        }
+      }
+      input[type="checkbox"],
+      input[type="radio"] {
+        accent-color: grey;
+      }
+    }
+    .gold {
+      border: 1px solid #dbb700;
+      background-color: #fffdf2;
+      .package_name_container {
+        color: rgba(218, 182, 3, 0.829);
+        background-color: #fff7cd;
+        border-bottom: 1px solid #dbb700;
+      }
+      .package_permission_container {
+        background-color: #fff7cd;
+        border-top: 1px solid #dbb700;
+        i {
+          color: rgba(218, 182, 3, 0.829);
+        }
+      }
+    }
+    .platinum {
+      border: 1px solid #19314d;
+      background-color: #f5f8fc;
+      .package_name_container {
+        color: #0a54a8;
+        background-color: #e3f1ff;
+        border-bottom: 1px solid #19314d;
+      }
+      .package_permission_container {
+        background-color: #e3f1ff;
+        border-top: 1px solid #19314d;
+        i {
+          color: #19314d;
+        }
+      }
+    }
+    .silver {
+      border: 1px solid #cd7f32;
+      background-color: #fff7ee;
+      .package_name_container {
+        color: #cd7f32;
+        background-color: #f5ddc5;
+        border-bottom: 1px solid #cd7f32;
+      }
+      .package_permission_container {
+        background-color: #f5ddc5;
+        border-top: 1px solid #cd7f32;
+        i {
+          color: #cd7f32;
+        }
+      }
+    }
+  }
+}
+
+.search_option {
+  .rs-picker-toggle.rs-btn {
+    border: 1px solid #cecece;
+    border-radius: 0;
+  }
+}
+
+@media only screen and (max-width: 991px) {
+  .vendor_history_modal_body
+    .package_main_container
+    .package_container
+    .package_name_container
+    .trial_banner {
+    width: 64%;
+    padding: 1px 0 1px 0 !important;
+  }
+}

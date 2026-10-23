@@ -1,0 +1,226 @@
+.search_keyword {
+  .search_option {
+    button {
+      background: var(--add-bg-color);
+      border: none;
+      color: var(--add-text-color);
+      font-size: 14px;
+      font-style: normal;
+      font-weight: 500;
+      line-height: 21px;
+      display: inline-flex;
+      padding: 8px 10px;
+      align-items: center;
+      gap: 10px;
+      border-radius: 0px 4px 4px 0px;
+    }
+  }
+  .rs-picker-toggle.rs-btn{
+    padding: 9px 8px !important;
+    outline: none;
+    border: 2px solid rgb(226, 226, 226);
+    width: 100%;
+    border-radius: 3px;
+    height: 100%;
+  }
+
+  input,
+  select {
+    border: 2px solid rgb(226, 226, 226);
+    padding: 8px;
+    outline: none;
+    width: 100%;
+    border-radius: 3px;
+  }
+
+  .border-bottom {
+    border-bottom: 1px solid #E4E4E7
+  }
+
+  .set_values {
+    border-top: 1px solid #E4E4E7;
+  //   background-color: black;
+  //   opacity: 0.5;
+  }
+
+  .value_inputs {
+    input {
+      height: 41px;
+      font-size: 14px;
+      padding-left: 5px;
+      padding-right: 5px;
+    }
+  }
+}
+
+.data_table {
+  margin-top: 16px;
+
+.table_content {
+    .blue {
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 18px;
+    }
+
+    .rdt_TableHeadRow {
+      min-height: 0;
+      padding: 12px 0;
+      background: var(--table-header-bg);
+      color: var(--table-header-text);
+      font-size: 12px;
+      text-transform: uppercase;
+      font-weight: 500;
+    }
+
+    .rdt_TableRow {
+      color: var(--table-text-color) !important;
+      font-size: 14px;
+      line-height: 21px;
+      font-weight: 500;
+    }
+
+  }
+
+  .rdt_Pagination {
+    background-color: var(--table-pagination-bg-color) !important;
+  }
+}
+
+/* ================================================================
+   DARK THEME — Keyword Suggestion Filter Modals
+   ================================================================ */
+[data-theme="dark"] .kw-filter-modal {
+
+  // Shell
+  .modal-content {
+    background: #111827 !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55) !important;
+  }
+
+  // Header
+  .modal-header {
+    background: #0f172a !important;
+    border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+
+    .modal-title,
+    .fw-bold {
+      color: rgba(255, 255, 255, 0.90) !important;
+    }
+
+    // Filter icon wrapper (CampaignFilterModal)
+    .kw-filter-icon-wrap {
+      background: rgba(26, 159, 212, 0.15) !important;
+    }
+
+    // Bootstrap close button
+    .btn-close {
+      filter: invert(1) opacity(0.6) !important;
+    }
+  }
+
+  // Body
+  .modal-body {
+    background: #111827 !important;
+
+    // Left sidebar (grey panel)
+    .border-end {
+      background-color: #1e293b !important;
+      border-right-color: rgba(255, 255, 255, 0.08) !important;
+    }
+
+    // Radio / checkbox labels
+    .form-check-label {
+      color: rgba(255, 255, 255, 0.72) !important;
+    }
+
+    // Right content panel
+    .p-4 {
+      background-color: #111827 !important;
+    }
+
+    // Search input (bg-transparent keeps its class, target border-bottom)
+    .bg-transparent {
+      color: rgba(255, 255, 255, 0.85) !important;
+      border-bottom-color: rgba(255, 255, 255, 0.18) !important;
+
+      &::placeholder {
+        color: rgba(255, 255, 255, 0.28) !important;
+      }
+    }
+
+    // Magnifying glass icon
+    .fa-magnifying-glass {
+      color: rgba(255, 255, 255, 0.35) !important;
+    }
+
+    // Textarea
+    .form-control:not(.bg-transparent) {
+      background: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.12) !important;
+      color: rgba(255, 255, 255, 0.85) !important;
+
+      &:focus {
+        border-color: #1A9FD4 !important;
+        box-shadow: 0 0 0 3px rgba(26, 159, 212, 0.15) !important;
+      }
+
+      &::placeholder {
+        color: rgba(255, 255, 255, 0.28) !important;
+      }
+    }
+
+    // Form label above textarea
+    .form-label {
+      color: rgba(255, 255, 255, 0.45) !important;
+    }
+
+    // Option list items
+    .text-dark {
+      color: rgba(255, 255, 255, 0.80) !important;
+    }
+
+    .hover-bg-light:hover {
+      background: rgba(255, 255, 255, 0.05) !important;
+    }
+
+    // Loading / empty states
+    .text-muted {
+      color: rgba(255, 255, 255, 0.38) !important;
+    }
+
+    // "X Selected" label
+    .text-dark.smallest {
+      color: rgba(255, 255, 255, 0.75) !important;
+    }
+  }
+
+  // Footer
+  .modal-footer {
+    background: #0f172a !important;
+    border-top-color: rgba(255, 255, 255, 0.08) !important;
+
+    // Cancel / Clear text links
+    .btn-link {
+      color: rgba(255, 255, 255, 0.42) !important;
+    }
+
+    // Outline cancel button
+    .btn-outline-primary {
+      color: #1A9FD4 !important;
+      border-color: rgba(26, 159, 212, 0.45) !important;
+      background: transparent !important;
+
+      &:hover {
+        background: rgba(26, 159, 212, 0.12) !important;
+      }
+    }
+
+    // Primary Apply button — already gradient, looks fine
+    // Keep text white
+    .btn-primary {
+      color: #fff !important;
+    }
+  }
+}

@@ -1,0 +1,62 @@
+﻿.notification_superadmin {
+  // .h-500px {
+  //   height: 190px;
+  //   // padding: 10px;
+  // }
+  .h-maxContent {
+    height: max-content;
+  }
+  .notification_name {
+    padding: 10px;
+    // border-right: 1px solid;
+  }
+  .notification_name p {
+    display: flex;
+    justify-content: end;
+  }
+  .quill {
+    height: 75%;
+  }
+  .data_model_btn button {
+    border-radius: 2px;
+    background: #2374F2;
+    border: none;
+    color: #ffff;
+    font-size: 14px;
+    font-style: normal;
+    font-weight: 500;
+    line-height: 21px;
+    display: inline-flex;
+    padding: 8px 10px;
+    align-items: center;
+    gap: 10px;
+  }
+}
+
+.ql-toolbar.ql-snow + .ql-container.ql-snow {
+  height: 140px;
+}
+
+.notification-header {
+  // border: 1px solid #dee2e6;
+  padding: 1rem;
+  background: #f8f9fa;
+  color: #495057;
+  border-top-right-radius: 3px;
+  border-top-left-radius: 3px;
+}
+
+@media only screen and (max-width: 768px) {
+  .notification_superadmin .notification_name p {
+    font-size: 12px !important;
+  }
+  .notification_superadmin .quill {
+    height: 50%;
+  }
+  .cust-col-5 {
+    width: 100%;
+  }
+  .cust-col-6 {
+    width: 100%;
+  }
+}

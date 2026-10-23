@@ -1,0 +1,1418 @@
+﻿/* APlusContentModal.css — Matches Amazon A+ Content Preview exactly */
+
+.apc-modal-dialog .modal-content {
+    border: none;
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: 0 32px 80px rgba(2, 70, 139, 0.18), 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.apc-modal-dialog {
+    max-width: 1000px !important;
+    width: 90% !important;
+}
+
+/* ── Header ── */
+.apc-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px 16px;
+    background: linear-gradient(135deg, #1A9FD4 0%, #1a6bd4 100%);
+    position: relative;
+    overflow: hidden;
+}
+
+.apc-header::before {
+    content: '';
+    position: absolute;
+    top: -30px;
+    right: -30px;
+    width: 130px;
+    height: 130px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.07);
+    pointer-events: none;
+}
+
+.apc-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    z-index: 1;
+}
+
+.apc-header-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    color: #fff;
+    flex-shrink: 0;
+}
+
+.apc-header-title {
+    font-size: 19px;
+    color: #fff;
+    margin: 0;
+    line-height: 1.2;
+}
+
+.apc-header-badge {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 20px;
+    padding: 2px 8px;
+    margin-top: 3px;
+    display: inline-block;
+}
+
+.apc-close-btn {
+    z-index: 1;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.18s;
+    flex-shrink: 0;
+}
+
+.apc-close-btn:hover {
+    background: rgba(255, 255, 255, 0.24);
+}
+
+/* ── Product Strip ── */
+.apc-product-strip {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 24px;
+    background: #f4f8ff;
+    border-bottom: 1px solid #dde8f8;
+}
+
+.apc-product-thumb {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    object-fit: contain;
+    background: #fff;
+    border: 1px solid #dde8f8;
+    flex-shrink: 0;
+}
+
+.apc-product-thumb-ph {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    background: #e8eef7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9ab0cc;
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+.apc-product-name {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #1a2e4a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+}
+
+.apc-product-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.apc-meta-chip {
+    font-size: 10.5px;
+    color: #6b87a5;
+    font-weight: 500;
+}
+
+.apc-status-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    border: 1px solid;
+}
+
+/* ── Body / Scroll ── */
+.apc-body {
+    padding: 0;
+    overflow-y: auto;
+    max-height: 65vh;
+    background: #fff;
+}
+
+.apc-body h1,
+.apc-body h2,
+.apc-body h3 {
+    margin: 0px;
+}
+
+/* ═══════════════════════════════════════════════
+   AMAZON A+ CONTENT PREVIEW — exact match styles
+   White background, Arial/sans-serif, no cards
+   ═══════════════════════════════════════════════ */
+
+.apc-preview-container {
+    background: #fff;
+    font-family: Arial, sans-serif;
+    color: #111;
+    max-width: 970px;
+    margin: 0 auto;
+    padding: 0 0 32px;
+}
+
+.apc-module {
+    margin-bottom: 0;
+}
+
+/* ═══════════════════════════════════════════════
+   REVIEW MODE — generated banners, not yet published
+   Reuses the same edge-to-edge look as the real Amazon preview above,
+   instead of a card grid, so what you review matches what publishes.
+   ═══════════════════════════════════════════════ */
+
+.apc-review-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    max-width: 970px;
+    margin: 16px auto 16px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+}
+
+.apc-review-notice-icon {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fef3c7;
+    color: #b45309;
+    font-size: 13px;
+}
+
+.apc-review-notice-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #92400e;
+    margin-bottom: 2px;
+}
+
+.apc-review-notice-text {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #92400e;
+    margin: 0;
+}
+
+.apc-review-banner {
+    width: 100%;
+    background: #fff;
+    overflow: hidden;
+    position: relative;
+}
+
+.apc-review-banner-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.apc-review-banner-empty {
+    width: 100%;
+    height: 100%;
+    min-height: 140px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    font-size: 12px;
+    background: #f8fafc;
+}
+
+/* ── Logo Module ── */
+.apc-module-logo {
+    text-align: center;
+    padding: 24px 0 16px;
+    background: #fff;
+}
+
+.apc-logo-image {
+    object-fit: contain;
+}
+
+/* ── STANDARD_SINGLE_IMAGE_HIGHLIGHTS ──
+   Left: stacked product images with overlaid text labels
+   Right: headline + 3 text features + key advantages box
+*/
+.apc-module-hero {
+    background: #fff;
+    padding: 12px 0 24px;
+}
+
+.apc-hero-container {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+}
+
+.apc-hero-image {
+    flex: 0 0 300px;
+    width: 300px;
+    position: relative;
+}
+
+.apc-hero-image img {
+    width: 100%;
+    display: block;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.apc-hero-content {
+    flex: 1;
+    padding-top: 4px;
+}
+
+.apc-hero-title {
+    font-size: 21px;
+    font-weight: 700;
+    color: #111;
+    margin: 0 0 14px;
+    line-height: 1.3;
+    font-family: Arial, sans-serif;
+}
+
+/* Feature blocks — Amazon renders them as: bold subheadline + body text */
+.apc-hero-features {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-bottom: 14px;
+}
+
+.apc-feature-item h3 {
+    font-size: 16px;
+    font-weight: 700;
+    color: #565959;
+    /* Amazon orange-brown subheadline */
+    margin: 0 0 2px;
+    font-family: Arial, sans-serif;
+}
+
+.apc-feature-item p {
+    font-size: 14px;
+    line-height: 1.5;
+    color: #333;
+    margin: 0;
+    font-family: Arial, sans-serif;
+}
+
+/* Key Advantages box — right-side grey box on Amazon */
+.apc-key-advantages {
+    background: #f7f7f7;
+    border: 1px solid #ddd;
+    padding: 12px 14px;
+    border-radius: 0;
+}
+
+.apc-key-advantages h3 {
+    font-size: 13px;
+    font-weight: 700;
+    color: #111;
+    margin: 0 0 8px;
+    font-family: Arial, sans-serif;
+}
+
+.apc-key-advantages ul {
+    list-style: disc;
+    padding-left: 18px;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.apc-key-advantages li {
+    font-size: 12px;
+    color: #333;
+    font-family: Arial, sans-serif;
+    padding-left: 0;
+}
+
+.apc-key-advantages li::before {
+    display: none;
+}
+
+/* ── STANDARD_PRODUCT_DESCRIPTION ──
+   Full-width justified paragraph text, no background
+*/
+.apc-module-description {
+    background: #fff;
+    padding: 16px 0 8px;
+    border: none;
+}
+
+.apc-description-content p {
+    font-size: 13px;
+    line-height: 1.7;
+    color: #333;
+    margin: 0;
+    text-align: justify;
+    font-family: Arial, sans-serif;
+}
+
+/* ── Section Titles (shared) ──
+   Amazon: center-aligned, bold, black, no decoration
+*/
+.apc-section-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #111;
+    text-align: left;
+    margin: 0 0 20px;
+    font-family: Arial, sans-serif;
+}
+
+/* ── STANDARD_FOUR_IMAGE_TEXT ──
+   4-col grid: image top, bold headline, small body text below
+   Identical column widths, no background on cells
+*/
+.apc-module-four-grid {
+    padding: 24px 0 16px;
+    background: #fff;
+}
+
+.apc-four-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+}
+
+.apc-four-grid .apc-grid-item {
+    text-align: center;
+    padding: 0 10px 0;
+    background: #fff;
+    border-radius: 0;
+    transition: none;
+}
+
+.apc-four-grid .apc-grid-item:hover {
+    transform: none;
+}
+
+/* ── STANDARD_THREE_IMAGE_TEXT ──
+   3-col grid: same treatment as four-grid
+*/
+.apc-module-three-grid {
+    padding: 24px 0 16px;
+    background: #fff;
+}
+
+.apc-three-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+}
+
+.apc-three-grid .apc-grid-item {
+    text-align: center;
+    padding: 0 10px 0;
+    background: #fff;
+    border-radius: 0;
+    transition: none;
+}
+
+.apc-three-grid .apc-grid-item:hover {
+    transform: none;
+}
+
+/* Shared grid-item styles */
+.apc-grid-item {
+    text-align: center;
+    background: #fff;
+}
+
+.apc-grid-icon {
+    width: 100%;
+    height: auto;
+    margin: 0 0 10px;
+    background: none;
+    border-radius: 0;
+    display: block;
+    box-shadow: none;
+}
+
+.apc-grid-icon img {
+    width: 100%;
+    height: auto;
+    max-height: 200px;
+    object-fit: cover;
+    display: block;
+}
+
+.apc-grid-item h3 {
+    font-size: 16px;
+    font-weight: 700;
+    text-align: left;
+    color: #111;
+    margin: 0 0 3px;
+    font-family: Arial, sans-serif;
+}
+
+.apc-grid-item p {
+    font-size: 13px;
+    line-height: 1.5;
+    text-align: left;
+    color: #333;
+    font-family: Arial, sans-serif;
+    margin: 0;
+}
+
+/* ── STANDARD_HEADER_IMAGE_TEXT ──
+   Section heading, full-width image, then headline + body text below
+   Amazon: no background on text area, left-aligned
+*/
+.apc-module-header-image {
+    padding: 5px 0 8px;
+    background: #fff;
+}
+
+.apc-header-image-container {
+    position: relative;
+    border-radius: 0;
+    overflow: hidden;
+    /* Matches the 970x600 crop spec the banner was actually generated at, so the
+       box never needs to crop the image to fill a mismatched height. */
+    aspect-ratio: 970 / 600;
+    background: #fff;
+}
+
+.apc-header-image {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.apc-header-text {
+    padding: 8px 0 0;
+    text-align: left;
+    background: #fff;
+}
+
+.apc-header-text h3 {
+    font-size: 16px;
+    font-weight: 700;
+    color: #111;
+    margin: 0 0 8px;
+    font-family: Arial, sans-serif;
+}
+
+.apc-header-text p {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #333;
+    max-width: 100%;
+    margin: 0;
+    font-family: Arial, sans-serif;
+}
+
+/* ── STANDARD_IMAGE_TEXT_OVERLAY ──
+   Full-width image with text overlay box (dark/light)
+   Amazon: overlay box is inset bottom-right, not full-cover
+*/
+.apc-module-overlay {
+    padding: 12px 0 0;
+    background: #fff;
+}
+
+.apc-overlay-container {
+    position: relative;
+}
+
+.apc-overlay-bg {
+    /* Matches the 970x300 crop spec the banner was actually generated at, so the
+       box never needs to crop the image to fill a mismatched height. */
+    aspect-ratio: 970 / 300;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-color: #fff;
+    border-radius: 0;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+}
+
+/* Overlay text box: Amazon puts it as a floating panel bottom-right */
+.apc-overlay-content {
+    width: 38%;
+    padding: 24px 28px;
+    text-align: left;
+    margin: 24px 24px 24px 0;
+}
+
+.apc-overlay-content.dark {
+    background: rgba(0, 0, 0, 0.82);
+    color: #fff;
+}
+
+.apc-overlay-content.light {
+    background: rgba(255, 255, 255, 0.94);
+    color: #111;
+}
+
+.apc-overlay-content h2 {
+    font-size: 17px;
+    font-weight: 700;
+    margin: 0 0 10px;
+    font-family: Arial, sans-serif;
+    line-height: 1.3;
+}
+
+.apc-overlay-content p {
+    font-size: 12px;
+    line-height: 1.6;
+    margin: 0;
+    font-family: Arial, sans-serif;
+}
+
+/* ── Loading / Error States ── */
+.apc-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px;
+    text-align: center;
+}
+
+.apc-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid #e8edf5;
+    border-top-color: #1A9FD4;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-bottom: 16px;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* ── Create Mode ── */
+.apc-create-mode {
+    text-align: center;
+    padding: 48px 24px;
+}
+
+.apc-create-icon {
+    background: #f2f8ff;
+    border-radius: 60px;
+    width: 80px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 20px;
+    font-size: 36px;
+    color: #1A9FD4;
+}
+
+.apc-create-mode h3 {
+    font-size: 24px;
+    margin-bottom: 12px;
+    color: #1a2e4a;
+}
+
+.apc-create-mode p {
+    font-size: 14px;
+    color: #5f7f9e;
+    max-width: 380px;
+    margin: 0 auto 20px;
+}
+
+.apc-create-features {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 28px;
+}
+
+.apc-create-features span {
+    background: #eef4ff;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #2a5fa3;
+}
+
+.apc-create-features span i {
+    margin-right: 6px;
+}
+
+.apc-create-btn {
+    background: linear-gradient(135deg, #1A9FD4, #1a6bd4);
+    border: none;
+    padding: 14px 32px;
+    border-radius: 40px;
+    color: white;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    transition: transform 0.2s;
+}
+
+.apc-create-btn:hover {
+    transform: translateY(-2px);
+}
+
+.apc-ai-badge {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 20px;
+    padding: 2px 8px;
+    font-size: 10px;
+}
+
+/* ── Footer ── */
+.apc-footer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 24px;
+    border-top: 1px solid #eef2f8;
+    background: #fafcff;
+}
+
+.apc-footer-buttons {
+    display: flex;
+    gap: 12px;
+    flex: 1;
+}
+
+.apc-btn-secondary {
+    flex: 1;
+    padding: 10px 0;
+    border-radius: 10px;
+    border: 1.5px solid #ccddf8;
+    background: #f4f8ff;
+    color: #2a5fa3;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.18s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+}
+
+.apc-btn-secondary:hover {
+    background: #e6f0ff;
+    border-color: #a0c0ee;
+}
+
+.apc-btn-primary {
+    flex: 1;
+    padding: 10px 0;
+    border-radius: 10px;
+    border: none;
+    background: linear-gradient(135deg, #1A9FD4 0%, #1a6bd4 100%);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    box-shadow: 0 3px 10px rgba(2, 70, 139, 0.22);
+}
+
+/* Compact variant — hugs its content instead of stretching to fill the footer.
+   Used where only 1-2 buttons sit in the footer (e.g. review mode's Close/Publish),
+   so they don't balloon to half-width each. */
+.apc-btn-sm {
+    flex: none;
+    padding: 8px 20px;
+}
+
+.apc-btn-primary:hover {
+    transform: translateY(-1.5px);
+    box-shadow: 0 5px 16px rgba(2, 70, 139, 0.32);
+}
+
+.apc-btn-approve {
+    background: linear-gradient(135deg, #0f7b3a 0%, #23a55a 100%);
+    box-shadow: 0 3px 10px rgba(15, 123, 58, 0.25);
+}
+
+.apc-btn-approve:hover {
+    background: linear-gradient(135deg, #0e6b33 0%, #1f8c4c 100%);
+}
+
+.apc-btn-amazon {
+    background: linear-gradient(135deg, #1A9FD4 0%, #1a6bd4 100%);
+    box-shadow: 0 3px 10px rgba(255, 153, 0, 0.25);
+}
+
+.apc-btn-amazon:hover {
+    transform: translateY(-1.5px);
+    box-shadow: 0 5px 16px rgba(2, 70, 139, 0.32);
+}
+
+/* Outer wrapper: 3 columns, no background, no padding */
+.apc-module-hero {
+    background: #fff;
+    padding: 16px 0 24px;
+}
+
+.apc-hero-wrapper {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+    width: 100%;
+}
+
+/* ── Col 1: Image collage (~33%) ── */
+.apc-hero-image-col {
+    flex: 0 0 33%;
+    width: 33%;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+/* Top clean image — full width of column, no overlay */
+.apc-hero-img-top {
+    width: 100%;
+    overflow: hidden;
+}
+
+.apc-hero-img-top img {
+    width: 100%;
+    height: auto;
+    display: block;
+    object-fit: cover;
+}
+
+/* Overlay tiles row — sits below top image */
+.apc-hero-img-tiles {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+/* Each tile: image with text overlay at bottom-left */
+.apc-hero-tile {
+    position: relative;
+    overflow: hidden;
+}
+
+.apc-hero-tile img {
+    width: 100%;
+    height: auto;
+    display: block;
+    object-fit: cover;
+}
+
+.apc-hero-tile-text {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 8px 10px;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.55) 0%, transparent 100%);
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.apc-hero-tile-text strong {
+    font-size: 12px;
+    font-weight: 700;
+    font-family: Arial, sans-serif;
+    line-height: 1.3;
+    color: #fff;
+}
+
+.apc-hero-tile-text span {
+    font-size: 10px;
+    line-height: 1.4;
+    color: rgba(255, 255, 255, 0.9);
+    font-family: Arial, sans-serif;
+}
+
+/* ── Col 2: Features (~42%) ── */
+.apc-hero-features-col {
+    flex: 0 0 42%;
+    width: 42%;
+    padding: 4px 24px 0 24px;
+}
+
+/* Main bold headline — black, ~21px */
+.apc-hero-headline {
+    font-size: 16px;
+    font-weight: 700;
+    color: #111;
+    margin: 0 0 14px !important;
+    line-height: 1.3;
+    font-family: Arial, sans-serif;
+}
+
+/* Feature rows container */
+.apc-hero-features {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Each feature: teal subheadline + grey body */
+.apc-feature-item {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+/* Teal/green subheadline — matches Amazon's color exactly */
+.apc-feature-subhead {
+    font-size: 14px;
+    font-weight: 400;
+    /* Amazon renders these NOT bold */
+    color: #6A8C69;
+    /* muted sage/teal — matches screenshot */
+    margin: 0;
+    font-family: Arial, sans-serif;
+    line-height: 1.3;
+}
+
+/* Body text — dark grey, regular weight */
+.apc-feature-body {
+    font-size: 13px;
+    font-weight: 400;
+    color: #333;
+    margin: 0;
+    line-height: 1.5;
+    font-family: Arial, sans-serif;
+}
+
+/* ── Col 3: Key Advantages box (~25%) ── */
+.apc-key-advantages {
+    flex: 0 0 25%;
+    width: 25%;
+    border: 1px solid #ddd;
+    background: #f7f7f7;
+    padding: 14px 16px;
+    border-radius: 0;
+    align-self: flex-start;
+}
+
+/* "Key Advantages" title — no bold, slightly larger, black */
+.apc-advantages-title {
+    font-size: 15px;
+    font-weight: 400;
+    color: #111;
+    margin: 0 0 10px;
+    font-family: Arial, sans-serif;
+}
+
+/* Bullet list */
+.apc-advantages-list {
+    list-style: disc;
+    padding-left: 18px;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.apc-advantages-list li {
+    font-size: 13px;
+    color: #333;
+    line-height: 1.45;
+    font-family: Arial, sans-serif;
+}
+
+/* ════════════════════════════════════════════════════════════
+   APlusContentModal.css  — AI Loading additions
+   ════════════════════════════════════════════════════════════ */
+
+/* ── AI Loading wrapper ── */
+.apc-ai-loading {
+    gap: 6px;
+    padding: 40px 24px 32px;
+}
+
+/* ── Pulsing icon ring ── */
+.apc-ai-pulse-ring {
+    width: 76px;
+    height: 76px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 30px;
+    color: #fff;
+    margin-bottom: 18px;
+    animation: apcPulse 1.8s ease-in-out infinite;
+    flex-shrink: 0;
+}
+
+@keyframes apcPulse {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 var(--apc-glow, rgba(2, 70, 139, 0.35));
+    }
+
+    50% {
+        transform: scale(1.06);
+        box-shadow: 0 0 0 16px var(--apc-glow, rgba(2, 70, 139, 0));
+    }
+
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 var(--apc-glow, rgba(2, 70, 139, 0));
+    }
+}
+
+.apc-ai-pulse-ring .fa-wand-magic-sparkles {
+    color: #0c4c99 !important;
+    background-color: #e2eaf3 !important;
+    padding: 10px;
+    border-radius: 7px;
+}
+
+/* Rotate the wand icon subtly */
+.apc-ai-pulse-ring .fa-wand-magic-sparkles,
+.apc-ai-pulse-ring .fa-wand-sparkles {
+    animation: apcWandSpin 3s ease-in-out infinite;
+}
+
+@keyframes apcWandSpin {
+    0% {
+        transform: rotate(-8deg);
+    }
+
+    50% {
+        transform: rotate(8deg);
+    }
+
+    100% {
+        transform: rotate(-8deg);
+    }
+}
+
+/* ── Title & subtitle ── */
+.apc-loading-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0 0 6px;
+    text-align: center;
+}
+
+.apc-loading-sub {
+    font-size: 13px;
+    color: #64748b;
+    margin: 0 0 22px;
+    max-width: 300px;
+    text-align: center;
+    line-height: 1.6;
+}
+
+/* ── Steps card ── */
+.apc-loading-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    align-items: flex-start;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 16px 20px;
+    min-width: 260px;
+    width: 100%;
+    max-width: 340px;
+    margin-bottom: 22px;
+}
+
+.apc-step-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: #475569;
+}
+
+/* Blinking dot */
+.apc-step-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    animation: apcDotBlink 1.6s ease-in-out infinite;
+}
+
+@keyframes apcDotBlink {
+
+    0%,
+    100% {
+        opacity: 0.2;
+        transform: scale(0.8);
+    }
+
+    50% {
+        opacity: 1;
+        transform: scale(1.2);
+    }
+}
+
+/* Step icon */
+.apc-step-icon {
+    font-size: 12px;
+    animation: apcDotBlink 1.6s ease-in-out infinite;
+    flex-shrink: 0;
+}
+
+/* ── Shimmer progress bar ── */
+.apc-progress-bar-wrap {
+    width: 100%;
+    max-width: 340px;
+    height: 5px;
+    background: #e2e8f0;
+    border-radius: 99px;
+    overflow: hidden;
+}
+
+.apc-progress-bar-fill {
+    height: 100%;
+    width: 40%;
+    border-radius: 99px;
+    opacity: 0.85;
+    animation: apcProgressSlide 1.8s ease-in-out infinite;
+}
+
+@keyframes apcProgressSlide {
+    0% {
+        transform: translateX(-100%);
+    }
+
+    100% {
+        transform: translateX(350%);
+    }
+}
+
+/* ── Footer locked state ── */
+.apc-footer-loading {
+    justify-content: center !important;
+    background: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+}
+
+.apc-footer-loading-text {
+    font-size: 12.5px;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* ── Disable close button during loading ── */
+.apc-close-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+/* ================================================================
+   DARK THEME — A+ Content Modal
+   ================================================================ */
+
+/* ── Shell ── */
+[data-theme="dark"] .apc-modal-dialog .modal-content {
+    background: #111827 !important;
+    box-shadow: 0 32px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ── Product strip ── */
+[data-theme="dark"] .apc-product-strip {
+    background: #0f172a !important;
+    border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="dark"] .apc-product-thumb {
+    background: #1e293b !important;
+    border-color: rgba(255, 255, 255, 0.10) !important;
+}
+
+[data-theme="dark"] .apc-product-thumb-ph {
+    background: #1e293b !important;
+    color: rgba(255, 255, 255, 0.25) !important;
+}
+
+[data-theme="dark"] .apc-product-name {
+    color: rgba(255, 255, 255, 0.88) !important;
+}
+
+[data-theme="dark"] .apc-meta-chip {
+    color: rgba(255, 255, 255, 0.42) !important;
+}
+
+/* ── Body / preview area ── */
+[data-theme="dark"] .apc-body {
+    background: #111827 !important;
+    scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+}
+
+[data-theme="dark"] .apc-body::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.04) !important;
+}
+
+[data-theme="dark"] .apc-body::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.14) !important;
+    border-radius: 10px;
+}
+
+/* Preview container — slightly lighter surface to frame the "page" */
+[data-theme="dark"] .apc-preview-container {
+    background: #1e293b !important;
+    color: rgba(255, 255, 255, 0.88) !important;
+}
+
+[data-theme="dark"] .apc-review-notice {
+    background: rgba(180, 83, 9, 0.12) !important;
+    border-color: rgba(180, 83, 9, 0.35) !important;
+}
+
+[data-theme="dark"] .apc-review-notice-icon {
+    background: rgba(180, 83, 9, 0.22) !important;
+    color: #fbbf24 !important;
+}
+
+[data-theme="dark"] .apc-review-notice-title,
+[data-theme="dark"] .apc-review-notice-text {
+    color: #fde68a !important;
+}
+
+[data-theme="dark"] .apc-review-banner,
+[data-theme="dark"] .apc-review-banner-empty {
+    background: #1e293b !important;
+    color: rgba(255, 255, 255, 0.4) !important;
+}
+
+/* ── All module backgrounds ── */
+[data-theme="dark"] .apc-module-logo,
+[data-theme="dark"] .apc-module-hero,
+[data-theme="dark"] .apc-module-description,
+[data-theme="dark"] .apc-module-four-grid,
+[data-theme="dark"] .apc-module-three-grid,
+[data-theme="dark"] .apc-module-header-image,
+[data-theme="dark"] .apc-module-overlay {
+    background: #1e293b !important;
+}
+
+/* ── Hero module text ── */
+[data-theme="dark"] .apc-hero-title,
+[data-theme="dark"] .apc-hero-headline {
+    color: rgba(255, 255, 255, 0.92) !important;
+}
+
+[data-theme="dark"] .apc-feature-item h3 {
+    color: rgba(255, 255, 255, 0.62) !important;
+}
+
+[data-theme="dark"] .apc-feature-item p,
+[data-theme="dark"] .apc-feature-body {
+    color: rgba(255, 255, 255, 0.65) !important;
+}
+
+[data-theme="dark"] .apc-feature-subhead {
+    color: #3ECFA8 !important;
+}
+
+/* ── Key advantages box ── */
+[data-theme="dark"] .apc-key-advantages {
+    background: #0f172a !important;
+    border-color: rgba(255, 255, 255, 0.10) !important;
+}
+
+[data-theme="dark"] .apc-advantages-title,
+[data-theme="dark"] .apc-key-advantages h3 {
+    color: rgba(255, 255, 255, 0.88) !important;
+}
+
+[data-theme="dark"] .apc-advantages-list li,
+[data-theme="dark"] .apc-key-advantages li {
+    color: rgba(255, 255, 255, 0.62) !important;
+}
+
+/* ── Description ── */
+[data-theme="dark"] .apc-description-content p {
+    color: rgba(255, 255, 255, 0.65) !important;
+}
+
+/* ── Section titles ── */
+[data-theme="dark"] .apc-section-title {
+    color: rgba(255, 255, 255, 0.90) !important;
+}
+
+/* ── Grid items ── */
+[data-theme="dark"] .apc-grid-item,
+[data-theme="dark"] .apc-four-grid .apc-grid-item,
+[data-theme="dark"] .apc-three-grid .apc-grid-item {
+    background: #1e293b !important;
+}
+
+[data-theme="dark"] .apc-grid-item h3 {
+    color: rgba(255, 255, 255, 0.90) !important;
+}
+
+[data-theme="dark"] .apc-grid-item p {
+    color: rgba(255, 255, 255, 0.62) !important;
+}
+
+/* ── Header image text ── */
+[data-theme="dark"] .apc-header-text {
+    background: #1e293b !important;
+}
+
+[data-theme="dark"] .apc-header-text h3 {
+    color: rgba(255, 255, 255, 0.90) !important;
+}
+
+[data-theme="dark"] .apc-header-text p {
+    color: rgba(255, 255, 255, 0.62) !important;
+}
+
+/* ── Spinner ── */
+[data-theme="dark"] .apc-spinner {
+    border-color: rgba(255, 255, 255, 0.10) !important;
+    border-top-color: #1A9FD4 !important;
+}
+
+/* ── Create mode ── */
+[data-theme="dark"] .apc-create-mode {
+    background: #111827;
+}
+
+[data-theme="dark"] .apc-create-icon {
+    background: rgba(26, 159, 212, 0.12) !important;
+}
+
+[data-theme="dark"] .apc-create-mode h3 {
+    color: rgba(255, 255, 255, 0.90) !important;
+}
+
+[data-theme="dark"] .apc-create-mode p {
+    color: rgba(255, 255, 255, 0.50) !important;
+}
+
+[data-theme="dark"] .apc-create-features span {
+    background: rgba(26, 159, 212, 0.10) !important;
+    color: #5B9CF6 !important;
+}
+
+/* ── Footer ── */
+[data-theme="dark"] .apc-footer {
+    background: #0f172a !important;
+    border-top-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="dark"] .apc-btn-secondary {
+    background: #1e293b !important;
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    color: rgba(255, 255, 255, 0.72) !important;
+}
+
+[data-theme="dark"] .apc-btn-secondary:hover {
+    background: #334155 !important;
+    border-color: rgba(255, 255, 255, 0.20) !important;
+    color: rgba(255, 255, 255, 0.92) !important;
+}
+
+/* ── AI Loading state ── */
+[data-theme="dark"] .apc-loading-title {
+    color: rgba(255, 255, 255, 0.90) !important;
+}
+
+[data-theme="dark"] .apc-loading-sub {
+    color: rgba(255, 255, 255, 0.48) !important;
+}
+
+[data-theme="dark"] .apc-loading-steps {
+    background: #1e293b !important;
+    border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="dark"] .apc-step-row {
+    color: rgba(255, 255, 255, 0.60) !important;
+}
+
+[data-theme="dark"] .apc-progress-bar-wrap {
+    background: rgba(255, 255, 255, 0.10) !important;
+}
+
+[data-theme="dark"] .apc-footer-loading {
+    background: #0f172a !important;
+    border-top-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="dark"] .apc-footer-loading-text {
+    color: rgba(255, 255, 255, 0.38) !important;
+}
+
+[data-theme="dark"] .apc-ai-pulse-ring .fa-wand-magic-sparkles {
+    background-color: rgba(26, 159, 212, 0.15) !important;
+    color: #5B9CF6 !important;
+}

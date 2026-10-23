@@ -1,0 +1,201 @@
+.brand-analysis-container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: transparent;
+}
+
+/* Metric Card Styles */
+.brand-analysis-container .metric-card,
+.brand-analysis-container .rate-card {
+    transition: all 0.2s ease;
+    border: 1px solid #e9ecef;
+}
+
+.brand-analysis-container .metric-card:hover,
+.brand-analysis-container .rate-card:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .brand-analysis-container .data_model_btn {
+        padding: 12px !important;
+    }
+
+    .brand-analysis-container .ant-select {
+        width: 100% !important;
+    }
+
+    .brand-analysis-container .ant-card-body {
+        padding: 12px;
+    }
+
+    .brand-analysis-container .metric-card div[style*="font-size: 20px"] {
+        font-size: 16px;
+    }
+}
+
+.brand-analysis-container .h-maxContent {
+    min-height: calc(100vh - 200px);
+}
+
+/* Applied filters styling */
+.brand-analysis-container .applied-filters-wrapper {
+    flex-wrap: wrap;
+}
+
+/* Ensure grid has proper height */
+#brand-analysis-grid {
+    min-height: 400px;
+}
+
+/* Loading states */
+.brand-analysis-container .ant-spin-container {
+    min-height: 300px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.brand-funnel-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+}
+
+.brand-funnel-stage {
+    min-height: 90px;
+    margin-bottom: 12px;
+    background: linear-gradient(135deg,
+            #1A9FD4 0%,
+            #0f62b8 100%);
+    color: white;
+
+    clip-path: polygon(4% 0%,
+            96% 0%,
+            100% 100%,
+            0% 100%);
+
+    box-shadow: 0 4px 12px rgba(2, 70, 139, 0.15);
+
+    transition: all 0.25s ease;
+}
+
+.brand-funnel-stage:hover {
+    transform: translateY(-2px);
+}
+
+.funnel-stage-header {
+    padding: 10px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.stage-icon {
+    font-size: 16px;
+}
+
+.funnel-stage-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    padding: 14px 24px;
+}
+
+.metric-block {
+    display: flex;
+    flex-direction: column;
+}
+
+.metric-label {
+    font-size: 11px;
+    opacity: .8;
+}
+
+.metric-value {
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.metric-value.brand {
+    color: #ffc107;
+}
+
+.divider {
+    width: 1px;
+    height: 40px;
+    background: rgba(255, 255, 255, .25);
+}
+
+@media(max-width:768px) {
+
+    .brand-funnel-stage {
+        width: 100% !important;
+    }
+
+    .funnel-stage-content {
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .divider {
+        width: 100%;
+        height: 1px;
+    }
+}
+
+/* Remove inner borders/outlines from search input fields inside Select */
+.brand-analysis-container .ant-select-selection-search-input,
+.brand-analysis-container .ant-select-selection-search-input:focus,
+.brand-analysis-container .ant-select-selection-search-input:hover,
+.brand-analysis-container .ant-select-selection-search {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+/* Remove blue focus ring from Shadcn Command input wrapper */
+[cmdk-input-wrapper],
+.brand-analysis-container [cmdk-input-wrapper] {
+    outline: none !important;
+    box-shadow: none !important;
+}
+[cmdk-input-wrapper]:focus-within,
+.brand-analysis-container [cmdk-input-wrapper]:focus-within {
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+/* Override global dark-theme input:focus rule for cmdk inputs — must match specificity */
+[data-theme="dark"] [cmdk-input-wrapper] input:focus,
+[data-theme="dark"] [cmdk-input-wrapper] input,
+[data-theme="dark"] [cmdk-input]:focus,
+[data-theme="dark"] [cmdk-input],
+[data-theme="dark"] input[cmdk-input]:focus,
+[data-theme="dark"] input[cmdk-input] {
+    border-color: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
+    border: none !important;
+}
+
+/* Light mode too */
+[cmdk-input-wrapper] input:focus,
+[cmdk-input-wrapper] input,
+[cmdk-input]:focus,
+[cmdk-input] {
+    border-color: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
+    border: none !important;
+}

@@ -1,0 +1,3827 @@
+<!DOCTYPE html>
+<html lang="en" style="overflow-x: hidden; width: 100%;">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amazon Ads & SP-API Flowcharts (Combined)</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --sidebar-width: 290px;
+            --font-main: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            
+            /* Curated Dark Mode HSL Palette (Default) */
+            --bg-color: hsl(222, 47%, 6%);
+            --card-bg: rgba(15, 23, 42, 0.45);
+            --sidebar-bg: rgba(15, 23, 42, 0.65);
+            --border-color: rgba(51, 65, 85, 0.35);
+            --text-main: hsl(210, 40%, 98%);
+            --text-muted: hsl(217, 13%, 68%);
+            --active-accent: hsl(221, 91%, 62%);
+            --primary-blue: hsl(221, 91%, 62%);
+            --shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+            --glass-blur: blur(20px);
+
+            /* Dark theme flow colors */
+            --manual-bg: rgba(16, 185, 129, 0.08);
+            --manual-stroke: rgba(16, 185, 129, 0.35);
+            --manual-text: #34d399;
+            --cron-bg: rgba(245, 158, 11, 0.08);
+            --cron-stroke: rgba(245, 158, 11, 0.35);
+            --cron-text: #fbbf24;
+            --db-bg: rgba(99, 102, 241, 0.08);
+            --db-stroke: rgba(99, 102, 241, 0.35);
+            --db-text: #818cf8;
+            --eng-bg: rgba(236, 72, 153, 0.08);
+            --eng-stroke: rgba(236, 72, 153, 0.35);
+            --eng-text: #f472b6;
+            --logic-bg: rgba(14, 165, 233, 0.08);
+            --logic-stroke: rgba(14, 165, 233, 0.35);
+            --logic-text: #38bdf8;
+        }
+
+        [data-theme="light"] {
+            /* Curated Light Mode HSL Palette */
+            --bg-color: hsl(220, 25%, 97%);
+            --card-bg: rgba(255, 255, 255, 0.8);
+            --sidebar-bg: rgba(255, 255, 255, 0.85);
+            --border-color: rgba(226, 232, 240, 0.8);
+            --text-main: hsl(224, 71%, 4%);
+            --text-muted: hsl(215, 16%, 47%);
+            --active-accent: hsl(221, 83%, 53%);
+            --primary-blue: hsl(221, 83%, 53%);
+            --shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.04), 0 1px 3px 0 rgba(0, 0, 0, 0.02);
+
+            /* Light theme flow colors */
+            --manual-bg: rgba(16, 185, 129, 0.05);
+            --manual-stroke: rgba(16, 185, 129, 0.3);
+            --manual-text: #047857;
+            --cron-bg: rgba(245, 158, 11, 0.05);
+            --cron-stroke: rgba(245, 158, 11, 0.3);
+            --cron-text: #b45309;
+            --db-bg: rgba(99, 102, 241, 0.05);
+            --db-stroke: rgba(99, 102, 241, 0.3);
+            --db-text: #4f46e5;
+            --eng-bg: rgba(236, 72, 153, 0.05);
+            --eng-stroke: rgba(236, 72, 153, 0.3);
+            --eng-text: #db2777;
+            --logic-bg: rgba(14, 165, 233, 0.05);
+            --logic-stroke: rgba(14, 165, 233, 0.3);
+            --logic-text: #0284c7;
+        }
+
+        body {
+            font-family: var(--font-main);
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            width: 100%;
+            overflow-x: hidden;
+            min-height: 100vh;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.03) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(147, 51, 234, 0.03) 0px, transparent 50%);
+            background-attachment: fixed;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            font-size: 0.88rem; /* tighter text density */
+        }
+
+        /* Sidebar Styles */
+        .sidebar {
+            width: var(--sidebar-width);
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            height: 100vh;
+            position: fixed;
+            left: 0;
+            top: 0;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .sidebar-header {
+            height: 80px;
+            padding: 0 24px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-sizing: border-box;
+            flex-shrink: 0;
+        }
+
+        .sidebar-header .amazon-logo {
+            height: 24px;
+            width: auto;
+            opacity: 0.95;
+            transition: opacity 0.3s ease;
+        }
+
+        .sidebar-header .amazon-logo:hover {
+            opacity: 1;
+        }
+
+        [data-theme="dark"] .sidebar-header .amazon-logo {
+            filter: brightness(0) invert(1);
+        }
+
+        /* Interactive Sidebar Search */
+        .sidebar-search-box {
+            padding: 12px 16px 4px 16px;
+        }
+
+        .sidebar-search-box input {
+            width: 100%;
+            padding: 8px 12px 8px 32px;
+            background: rgba(0, 0, 0, 0.03);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-main);
+            font-family: var(--font-main);
+            font-size: 0.8rem;
+            box-sizing: border-box;
+            outline: none;
+            transition: all 0.2s ease;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='currentColor' class='w-4 h-4' %3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z'%3E%3C/path%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: 10px center;
+            background-size: 14px;
+        }
+
+        [data-theme="dark"] .sidebar-search-box input {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .sidebar-search-box input:focus {
+            border-color: var(--active-accent);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+        }
+
+        .sidebar-nav {
+            padding: 12px;
+            flex-grow: 1;
+            overflow-y: auto;
+        }
+
+        .sidebar-nav::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        .sidebar-nav::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 10px;
+        }
+
+        /* Sidebar Navigation Item */
+        .sidebar-item {
+            margin-bottom: 6px;
+        }
+
+        /* Menu Groups */
+        .menu-group {
+            margin-bottom: 8px;
+            border-radius: 12px;
+            background: rgba(0, 0, 0, 0.01);
+            border: 1px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        [data-theme="dark"] .menu-group {
+            background: rgba(255, 255, 255, 0.005);
+        }
+
+        .menu-group.expanded {
+            border-color: var(--border-color);
+            background: rgba(0, 0, 0, 0.015);
+        }
+
+        [data-theme="dark"] .menu-group.expanded {
+            background: rgba(255, 255, 255, 0.01);
+        }
+
+        .menu-group-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            padding: 10px 14px;
+            border: none;
+            background: none;
+            font-family: var(--font-main);
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: var(--text-main);
+            cursor: pointer;
+            border-radius: 10px;
+            text-align: left;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .menu-group-header:hover {
+            background-color: rgba(0, 0, 0, 0.03);
+        }
+
+        [data-theme="dark"] .menu-group-header:hover {
+            background-color: rgba(255, 255, 255, 0.03);
+        }
+
+        .menu-group-header .menu-label {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .menu-group-header .menu-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            flex-shrink: 0;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+        }
+
+        .menu-icon.ads {
+            background: hsl(210, 100%, 96%);
+            color: hsl(210, 100%, 40%);
+        }
+
+        .menu-icon.sp {
+            background: hsl(36, 100%, 96%);
+            color: hsl(36, 100%, 40%);
+        }
+
+        [data-theme="dark"] .menu-icon.ads {
+            background: hsl(210, 100%, 12%);
+            color: hsl(210, 100%, 65%);
+        }
+
+        [data-theme="dark"] .menu-icon.sp {
+            background: hsl(36, 100%, 10%);
+            color: hsl(36, 100%, 65%);
+        }
+
+        .menu-group-header .chevron {
+            font-size: 0.65rem;
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            color: var(--text-muted);
+        }
+
+        .menu-group.expanded .menu-group-header .chevron {
+            transform: rotate(90deg);
+        }
+
+        .menu-group-items {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            padding: 0 8px 8px 8px;
+        }
+
+        .menu-group.expanded .menu-group-items {
+            max-height: 1000px;
+        }
+
+        .menu-group-items .tab-btn {
+            font-size: 0.84rem;
+        }
+
+        /* Divider */
+        .sidebar-divider {
+            height: 1px;
+            background: var(--border-color);
+            margin: 10px 16px;
+        }
+
+        /* Button Styling */
+        .tab-btn {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            padding: 9px 12px;
+            margin: 3px 0;
+            border: none;
+            background: none;
+            font-family: var(--font-main);
+            font-size: 0.84rem;
+            font-weight: 500;
+            color: var(--text-main);
+            cursor: pointer;
+            border-radius: 8px;
+            text-align: left;
+            transition: all 0.25s ease;
+        }
+
+        .nav-icon {
+            width: 15px;
+            height: 15px;
+            opacity: 0.6;
+            stroke-width: 2.2px;
+            transition: all 0.2s ease;
+        }
+
+        .tab-btn:hover {
+            background-color: rgba(99, 102, 241, 0.08);
+            color: var(--active-accent);
+        }
+
+        .tab-btn:hover .nav-icon,
+        .tab-btn.active .nav-icon {
+            opacity: 1;
+            color: var(--active-accent);
+        }
+
+        .tab-btn.active {
+            background: rgba(99, 102, 241, 0.12);
+            color: var(--active-accent);
+            font-weight: 700;
+            position: relative;
+        }
+
+        .tab-btn.active::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 20%;
+            height: 60%;
+            width: 4px;
+            background: var(--active-accent);
+            border-radius: 0 4px 4px 0;
+            box-shadow: 0 0 8px var(--active-accent);
+        }
+
+        /* Content Area */
+        .content-wrapper {
+            position: fixed;
+            top: 0;
+            left: var(--sidebar-width);
+            right: 0;
+            bottom: 0;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        header {
+            background-color: var(--card-bg);
+            padding: 0 40px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 900;
+            height: 80px;
+            box-sizing: border-box;
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+        }
+
+        header h1 {
+            font-size: 1.25rem;
+            margin: 0;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            color: var(--text-main);
+            background: linear-gradient(135deg, var(--text-main) 30%, var(--primary-blue));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 2px 20px rgba(0, 0, 0, 0.05);
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+        }
+
+        #theme-toggle {
+            background: var(--card-bg) !important;
+            border: 1px solid var(--border-color) !important;
+            color: var(--text-main) !important;
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+        }
+
+        #theme-toggle:hover {
+            transform: translateY(-2px);
+            border-color: var(--primary-blue) !important;
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+            background: rgba(255, 255, 255, 0.08) !important;
+        }
+
+        main {
+            padding: 40px;
+            display: block;
+            flex-grow: 1;
+            box-sizing: border-box;
+            width: 100%;
+            overflow-x: hidden;
+        }
+
+        .tab-content {
+            display: none;
+            background: var(--card-bg);
+            padding: 40px;
+            border-radius: 24px;
+            box-shadow: var(--shadow);
+            width: 100%;
+            max-width: 100%;
+            border: 1px solid var(--border-color);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            box-sizing: border-box;
+            overflow-x: hidden;
+        }
+
+        .tab-content.active {
+            display: block;
+            animation: cubic-bezier(0.16, 1, 0.3, 1) 0.5s slideUp;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .tab-content h2 {
+            font-size: 1.6rem;
+            font-weight: 800;
+            margin-top: 0;
+            margin-bottom: 12px;
+            letter-spacing: -0.03em;
+        }
+
+        .description {
+            font-size: 0.92rem;
+            line-height: 1.6;
+            color: var(--text-muted);
+            margin-bottom: 32px;
+            max-width: 800px;
+        }
+
+        .diagram-box {
+            margin-top: 24px;
+            padding: 32px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+            overflow-x: auto;
+            display: flex;
+            justify-content: center;
+            box-shadow: inset 0 2px 8px rgba(0,0,0,0.01);
+            transition: all 0.3s ease;
+        }
+
+        [data-theme="dark"] .diagram-box {
+            background: rgba(15, 23, 42, 0.4);
+            box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
+        }
+
+        .diagram-box:hover {
+            border-color: var(--active-accent);
+        }
+
+        /* Section dividers */
+        .divider {
+            height: 1px;
+            border: none;
+            background: var(--border-color);
+            margin: 40px 0;
+        }
+
+        /* Flow Indicators labels */
+        .section-label {
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 10px;
+            border-radius: 6px;
+        }
+
+        .section-label.manual {
+            background: var(--manual-bg);
+            color: var(--manual-text);
+        }
+
+        .section-label.cron {
+            background: var(--cron-bg);
+            color: var(--cron-text);
+        }
+
+        .section-label.db {
+            background: var(--db-bg);
+            color: var(--db-text);
+        }
+
+        .section-label.eng {
+            background: var(--eng-bg);
+            color: var(--eng-text);
+        }
+
+        .section-label.logic {
+            background: var(--logic-bg);
+            color: var(--logic-text);
+        }
+
+        /* Flow Summary Panels */
+        .flow-summary {
+            background: rgba(0, 0, 0, 0.02);
+            border: 1px solid var(--border-color);
+            padding: 24px;
+            border-radius: 16px;
+            margin-bottom: 32px;
+        }
+
+        [data-theme="dark"] .flow-summary {
+            background: rgba(255, 255, 255, 0.015);
+        }
+
+        .flow-summary h4 {
+            margin-top: 0;
+            margin-bottom: 16px;
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: var(--active-accent);
+        }
+
+        .flow-summary ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+
+        .flow-summary li {
+            margin-bottom: 10px;
+            line-height: 1.6;
+            font-size: 0.88rem;
+            color: var(--text-main);
+        }
+
+        .flow-summary li:last-child {
+            margin-bottom: 0;
+        }
+
+        /* Pricing Section Cards */
+        .pricing-section {
+            margin-bottom: 32px;
+            display: block;
+        }
+
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 24px;
+        }
+
+        .pricing-card {
+            background: rgba(255, 255, 255, 0.4);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 28px;
+            box-sizing: border-box;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        [data-theme="dark"] .pricing-card {
+            background: rgba(15, 23, 42, 0.2);
+        }
+
+        .pricing-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow);
+            border-color: var(--active-accent);
+        }
+
+        .pricing-card h3 {
+            margin-top: 0;
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 1.1rem;
+            font-weight: 700;
+        }
+
+        .pricing-card ul {
+            padding-left: 20px;
+            margin: 0;
+        }
+
+        .pricing-card li {
+            margin-bottom: 12px;
+            line-height: 1.6;
+        }
+
+        /* Data Table Styles */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            background: var(--card-bg);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }
+
+        .data-table th,
+        .data-table td {
+            padding: 12px 18px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .data-table th {
+            background-color: rgba(59, 130, 246, 0.05);
+            color: var(--primary-blue);
+            font-weight: 700;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03rem;
+        }
+
+        .data-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .data-table tr:hover {
+            background-color: rgba(59, 130, 246, 0.02);
+        }
+
+        .section-label {
+            margin-top: 40px;
+            margin-bottom: 10px;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1rem;
+            display: inline-block;
+        }
+
+        .divider {
+            border: none;
+            border-top: 1px dashed var(--border-color);
+            margin: 40px 0;
+        }
+
+        /* Mobile Menu Toggle */
+        #mobile-menu-btn {
+            display: none;
+            background: var(--primary-blue);
+            color: white;
+            border: none;
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 1.2rem;
+            align-items: center;
+            justify-content: center;
+            margin-right: auto;
+            box-shadow: 0 4px 12px rgba(1, 87, 155, 0.2);
+        }
+
+        @media (max-width: 1024px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .sidebar.active {
+                transform: translateX(0);
+            }
+
+            .content-wrapper {
+                left: 0;
+                right: 0;
+            }
+
+            #mobile-menu-btn {
+                display: flex;
+            }
+
+            header {
+                padding: 15px 20px;
+                justify-content: flex-end;
+            }
+
+            main {
+                padding: 20px;
+            }
+
+            .tab-content {
+                padding: 24px;
+            }
+        }
+
+        .flow-summary {
+            background: rgba(59, 130, 246, 0.04);
+            border-left: 4px solid var(--primary-blue);
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 0 12px 12px 0;
+        }
+
+        [data-theme="dark"] .flow-summary {
+            background: rgba(59, 130, 246, 0.08);
+        }
+
+        .flow-summary h4 {
+            margin: 0 0 10px 0;
+            color: var(--primary-blue);
+            font-size: 0.95rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .flow-summary ul {
+            margin: 0;
+            padding-left: 20px;
+            list-style-type: none;
+        }
+
+        .flow-summary li {
+            position: relative;
+            margin-bottom: 8px;
+            font-size: 0.92rem;
+            line-height: 1.5;
+            color: var(--text-main);
+        }
+
+        .flow-summary li::before {
+            content: "→";
+            position: absolute;
+            left: -20px;
+            color: var(--primary-blue);
+            font-weight: bold;
+        }
+
+        /* Edge Label Background - Transparent in Dark Mode only */
+        [data-theme="dark"] .edgeLabel,
+        [data-theme="dark"] .labelBkg,
+        [data-theme="dark"] .edgeLabel p,
+        [data-theme="dark"] .label-container {
+            background-color: rgb(16, 18, 17) !important;
+            background: rgb(16, 18, 17) !important;
+            fill: rgb(16, 18, 17) !important;
+        }
+
+        .code-badge {
+            background-color: rgba(59, 130, 246, 0.05);
+            border: 1px solid var(--border-color);
+            padding: 3px 6px;
+            border-radius: 6px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.85rem;
+            color: var(--text-main);
+            display: inline-block;
+            margin: 2px;
+        }
+
+        [data-theme="dark"] .code-badge {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+
+        /* Client Setup Checklist Styles */
+        .setup-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 16px;
+            margin-top: 28px;
+        }
+
+        .setup-card {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 18px 20px;
+            transition: box-shadow 0.2s ease, transform 0.2s ease;
+        }
+
+        .setup-card:hover {
+            box-shadow: 0 6px 20px rgba(59, 130, 246, 0.12);
+            transform: translateY(-2px);
+        }
+
+        .setup-card .card-num {
+            flex-shrink: 0;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: #fff;
+            font-weight: 700;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+        }
+
+        .setup-card .card-body {
+            flex: 1;
+        }
+
+        .setup-card .card-title {
+            font-weight: 700;
+            font-size: 0.97rem;
+            color: var(--text-main);
+            margin: 0 0 4px;
+        }
+
+        .setup-card .card-desc {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            margin: 0;
+            line-height: 1.5;
+        }
+
+        /* Badges & Alert boxes styling */
+        .setup-badge {
+            display: inline-block;
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 3px 8px;
+            border-radius: 20px;
+            margin-left: 6px;
+            vertical-align: middle;
+        }
+
+        .badge-ads-only {
+            background: rgba(59, 130, 246, 0.08);
+            color: var(--active-accent);
+        }
+
+        .badge-sp-only {
+            background: rgba(249, 115, 22, 0.08);
+            color: hsl(24, 90%, 50%);
+        }
+
+        .badge-both {
+            background: rgba(16, 185, 129, 0.08);
+            color: hsl(142, 70%, 40%);
+        }
+
+        [data-theme="dark"] .badge-ads-only {
+            background: rgba(59, 130, 246, 0.15);
+            color: hsl(217, 91%, 60%);
+        }
+
+        [data-theme="dark"] .badge-sp-only {
+            background: rgba(249, 115, 22, 0.15);
+            color: hsl(24, 90%, 65%);
+        }
+
+        [data-theme="dark"] .badge-both {
+            background: rgba(16, 185, 129, 0.15);
+            color: hsl(142, 70%, 55%);
+        }
+
+        /* Notice & Alert Boxes */
+        .info-note {
+            margin-top: 28px;
+            margin-bottom: 28px;
+            padding: 20px 24px;
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+            border-left-width: 4px;
+            font-size: 0.92rem;
+            line-height: 1.6;
+            background: var(--card-bg);
+            box-shadow: var(--shadow);
+        }
+
+        .info-note-title {
+            margin: 0 0 8px;
+            font-weight: 800;
+            font-size: 1.05rem;
+            letter-spacing: -0.01em;
+        }
+
+        .info-note-desc {
+            margin: 0;
+            color: var(--text-main);
+            opacity: 0.95;
+        }
+
+        .info-note-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.84rem;
+            padding: 6px 14px;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+            margin-top: 14px;
+        }
+
+        .info-note.ads-alert {
+            border-left-color: hsl(36, 100%, 50%);
+        }
+
+        .info-note.ads-alert .info-note-title {
+            color: hsl(36, 100%, 35%);
+        }
+
+        .info-note.ads-alert .info-note-link {
+            color: hsl(36, 100%, 35%);
+            background: rgba(249, 115, 22, 0.08);
+        }
+
+        .info-note.ads-alert .info-note-link:hover {
+            background: rgba(249, 115, 22, 0.15);
+            transform: translateY(-1px);
+        }
+
+        .info-note.sp-alert {
+            border-left-color: var(--active-accent);
+        }
+
+        .info-note.sp-alert .info-note-title {
+            color: var(--active-accent);
+        }
+
+        .info-note.sp-alert .info-note-link {
+            color: var(--active-accent);
+            background: rgba(59, 130, 246, 0.08);
+        }
+
+        .info-note.sp-alert .info-note-link:hover {
+            background: rgba(59, 130, 246, 0.15);
+            transform: translateY(-1px);
+        }
+
+        [data-theme="dark"] .info-note.ads-alert .info-note-title {
+            color: hsl(36, 100%, 65%);
+        }
+
+        [data-theme="dark"] .info-note.ads-alert .info-note-link {
+            color: hsl(36, 100%, 65%);
+            background: rgba(249, 115, 22, 0.15);
+        }
+
+        [data-theme="dark"] .info-note.sp-alert .info-note-title {
+            color: hsl(217, 91%, 65%);
+        }
+
+        [data-theme="dark"] .info-note.sp-alert .info-note-link {
+            color: hsl(217, 91%, 65%);
+            background: rgba(59, 130, 246, 0.15);
+        }
+
+        /* Terminal Window Style Viewports */
+        .terminal-window {
+            margin-top: 28px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+            width: 100%;
+        }
+
+        .terminal-header {
+            background: rgba(0, 0, 0, 0.02);
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        [data-theme="dark"] .terminal-header {
+            background: rgba(255, 255, 255, 0.015);
+        }
+
+        .terminal-buttons {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .terminal-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .terminal-dot.red { background: #ff5f56; }
+        .terminal-dot.yellow { background: #ffbd2e; }
+        .terminal-dot.green { background: #27c93f; }
+
+        .terminal-title {
+            font-family: "SFMono-Regular", Consolas, Menlo, monospace;
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            letter-spacing: 0.04em;
+        }
+
+        /* Override diagram border/margins for clean viewport inclusion */
+        .diagram-box {
+            margin-top: 0 !important;
+            border: none !important;
+            background: transparent !important;
+            box-shadow: none !important;
+            padding: 28px !important;
+        }
+
+        /* Customized Mermaid SVG Styling */
+        .mermaid svg, .mermaid svg text, .mermaid svg span {
+            font-family: Arial, sans-serif !important;
+            background: transparent !important;
+        }
+
+        .mermaid .node rect, 
+        .mermaid .node circle, 
+        .mermaid .node polygon, 
+        .mermaid .node path {
+            stroke-width: 1.5px !important;
+            rx: 10px !important; /* Elegant rounded corner rects */
+            ry: 10px !important;
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.02));
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        }
+
+        /* Subtle glow on hovering flowchart nodes */
+        .mermaid .node:hover rect,
+        .mermaid .node:hover path,
+        .mermaid .node:hover polygon {
+            filter: drop-shadow(0 4px 10px rgba(99, 102, 241, 0.18)) !important;
+            stroke-width: 2px !important;
+        }
+
+        .mermaid .edgePath .path {
+            stroke: var(--text-muted) !important;
+            stroke-width: 1.6px !important;
+            opacity: 0.65;
+            transition: all 0.25s ease;
+        }
+
+        .mermaid .edgePath:hover .path {
+            stroke: var(--active-accent) !important;
+            stroke-width: 2px !important;
+            opacity: 1;
+        }
+
+        .mermaid .edgePath .arrowheadPath {
+            fill: var(--text-muted) !important;
+        }
+
+        .mermaid .edgePath:hover .arrowheadPath {
+            fill: var(--active-accent) !important;
+        }
+
+        .mermaid .edgeLabel rect {
+            fill: var(--bg-color) !important;
+            opacity: 0.95;
+            rx: 4px;
+            ry: 4px;
+        }
+
+        .mermaid .edgeLabel span,
+        .mermaid .edgeLabel text,
+        .mermaid .edgeLabel {
+            font-size: 11px !important;
+            font-weight: 600 !important;
+            color: var(--text-main) !important;
+            fill: var(--text-main) !important;
+            font-family: var(--font-main) !important;
+        }
+
+        .mermaid .label {
+            font-family: var(--font-main) !important;
+            font-size: 11px !important;
+            font-weight: 600 !important;
+            color: var(--text-main) !important;
+        }
+
+        /* ----------------------------------------------------
+           PREMIUM DEVELOPER ONBOARDING UI
+           ---------------------------------------------------- */
+        .onboarding-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 18px;
+            padding: 26px;
+            box-sizing: border-box;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+            box-shadow: var(--shadow);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+        }
+
+        .onboarding-card::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: var(--card-accent);
+        }
+
+        .onboarding-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 36px rgba(0, 0, 0, 0.12);
+            border-color: var(--card-accent-border);
+        }
+
+        .onboarding-card-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 16px;
+            margin-bottom: 4px;
+        }
+
+        .onboarding-card-header h3 {
+            margin: 0;
+            font-size: 1.15rem;
+            font-weight: 800;
+            color: var(--text-main);
+            letter-spacing: -0.02em;
+        }
+
+        .onboarding-icon-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            background: var(--icon-bg);
+            color: var(--card-accent);
+            flex-shrink: 0;
+        }
+
+        .onboarding-card-list {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+
+        .onboarding-card-item {
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+        }
+
+        .onboarding-card-item-bullet {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--card-accent);
+            flex-shrink: 0;
+            margin-top: 6px;
+            box-shadow: 0 0 8px var(--card-accent);
+        }
+
+        .onboarding-card-item-content {
+            flex: 1;
+            font-size: 0.88rem;
+            line-height: 1.5;
+        }
+
+        .onboarding-card-item-title {
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 3px;
+        }
+
+        .onboarding-card-item-desc {
+            color: var(--text-muted);
+            font-size: 0.82rem;
+        }
+
+        /* Timeline and Tasks checklist */
+        .timeline-section-title {
+            font-size: 1.2rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            color: var(--text-main);
+            margin: 32px 0 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .timeline-container {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            margin: 20px 0 35px;
+            position: relative;
+            padding-left: 20px;
+        }
+
+        .timeline-container::before {
+            content: "";
+            position: absolute;
+            left: 7px;
+            top: 15px;
+            bottom: 15px;
+            width: 2px;
+            background: var(--border-color);
+        }
+
+        .timeline-item {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+            position: relative;
+            padding: 18px 24px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            transition: all 0.2s ease;
+        }
+
+        .timeline-item:hover {
+            border-color: var(--active-accent);
+            transform: translateX(4px);
+            background: rgba(59, 130, 246, 0.02);
+        }
+
+        .timeline-dot-wrapper {
+            position: absolute;
+            left: -20px;
+            top: 22px;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--bg-color);
+            border: 2px solid var(--active-accent);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+
+        .timeline-dot-inner {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--active-accent);
+        }
+
+        .timeline-badge {
+            font-size: 0.72rem;
+            font-weight: 800;
+            padding: 4px 10px;
+            border-radius: 20px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            flex-shrink: 0;
+            text-align: center;
+            min-width: 80px;
+        }
+
+        .timeline-content {
+            flex: 1;
+        }
+
+        .timeline-title {
+            font-weight: 800;
+            font-size: 0.95rem;
+            color: var(--text-main);
+            margin: 0 0 6px 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .timeline-desc {
+            font-size: 0.86rem;
+            line-height: 1.5;
+            color: var(--text-muted);
+            margin: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <aside class="sidebar" id="sidebar-nav">
+        <div class="sidebar-header">
+            <img class="amazon-logo" src="https://upload.wikimedia.org/wikipedia/commons/a/a9/Amazon_logo.svg" alt="Amazon">
+        </div>
+        <div class="sidebar-search-box">
+            <input type="text" placeholder="Search tabs..." oninput="filterSidebarTabs(this.value)">
+        </div>
+        <div class="sidebar-nav">
+            <div class="sidebar-item">
+                <button class="tab-btn active" onclick="showTab('tab_pricing', this)"><i data-lucide="dollar-sign" class="nav-icon"></i> Pricing</button>
+                <button class="tab-btn" onclick="showTab('tab_limits', this)"><i data-lucide="activity" class="nav-icon"></i> API Limits</button>
+                <button class="tab-btn" onclick="showTab('tab_report_catalog', this)"><i data-lucide="file-text" class="nav-icon"></i> Report Catalog</button>
+                <button class="tab-btn" onclick="showTab('tab_setup', this)"><i data-lucide="rocket" class="nav-icon"></i> Client Setup</button>
+            </div>
+
+            <div class="sidebar-divider"></div>
+
+            <div class="menu-group expanded" id="menu-ads">
+                <button class="menu-group-header" onclick="toggleMenu('menu-ads')">
+                    <span class="menu-label">
+                        <span class="menu-icon ads"><i data-lucide="megaphone" style="width: 14px; height: 14px;"></i></span>
+                        Amazon Ads
+                    </span>
+                    <span class="chevron"><i data-lucide="chevron-right" style="width: 12px; height: 12px;"></i></span>
+                </button>
+                <div class="menu-group-items">
+                    <button class="tab-btn" onclick="showTab('tab_ads_auth', this)"><i data-lucide="key" class="nav-icon"></i> Auth</button>
+                    <button class="tab-btn" onclick="showTab('tab_ads_flow', this)"><i data-lucide="trending-up" class="nav-icon"></i> Flow</button>
+                    <button class="tab-btn" onclick="showTab('tab_ads_arch', this)"><i data-lucide="layers" class="nav-icon"></i> Architecture</button>
+                    <button class="tab-btn" onclick="showTab('tab_ads_camp', this)"><i data-lucide="list" class="nav-icon"></i> Campaigns</button>
+                    <button class="tab-btn" onclick="showTab('tab_ads_adg', this)"><i data-lucide="folder" class="nav-icon"></i> AdGroups</button>
+                    <button class="tab-btn" onclick="showTab('tab_ads_target', this)"><i data-lucide="target" class="nav-icon"></i> Targeting</button>
+                    <button class="tab-btn" onclick="showTab('tab_ads_search_terms', this)"><i data-lucide="search" class="nav-icon"></i> SearchTerms</button>
+                    <button class="tab-btn" onclick="showTab('tab_ads_placement', this)"><i data-lucide="map-pin" class="nav-icon"></i> Placements</button>
+                    <button class="tab-btn" onclick="showTab('tab_ads_stream', this)"><i data-lucide="refresh-cw" class="nav-icon"></i> Marketing Stream</button>
+                    <button class="tab-btn" onclick="showTab('tab_ads_jobs', this)"><i data-lucide="clock" class="nav-icon"></i> System Jobs</button>
+                    <button class="tab-btn" onclick="showTab('tab_ads_rules', this)"><i data-lucide="sliders" class="nav-icon"></i> Rules</button>
+                    <button class="tab-btn" onclick="showTab('tab_ads_dayparting', this)"><i data-lucide="watch" class="nav-icon"></i> Dayparting Strategy</button>
+                    <button class="tab-btn" onclick="showTab('tab_ads_budget_rules', this)"><i data-lucide="credit-card" class="nav-icon"></i> Budget Rules</button>
+                    <button class="tab-btn" onclick="showTab('tab_ads_holiday_protection', this)"><i data-lucide="umbrella" class="nav-icon"></i> Holiday Adjustments</button>
+                </div>
+            </div>
+
+            <div class="sidebar-divider"></div>
+
+            <div class="menu-group expanded" id="menu-sp">
+                <button class="menu-group-header" onclick="toggleMenu('menu-sp')">
+                    <span class="menu-label">
+                        <span class="menu-icon sp"><i data-lucide="package" style="width: 14px; height: 14px;"></i></span>
+                        SP API
+                    </span>
+                    <span class="chevron"><i data-lucide="chevron-right" style="width: 12px; height: 12px;"></i></span>
+                </button>
+                <div class="menu-group-items">
+                    <button class="tab-btn" onclick="showTab('tab_sp_auth', this)"><i data-lucide="key" class="nav-icon"></i> Auth</button>
+                    <button class="tab-btn" onclick="showTab('tab_sp_flow', this)"><i data-lucide="trending-up" class="nav-icon"></i> Flow</button>
+                    <button class="tab-btn" onclick="showTab('tab_sp_arch', this)"><i data-lucide="layers" class="nav-icon"></i> Architecture</button>
+                    <button class="tab-btn" onclick="showTab('tab_sp_products', this)"><i data-lucide="tag" class="nav-icon"></i> Products</button>
+                    <button class="tab-btn" onclick="showTab('tab_sp_orders', this)"><i data-lucide="shopping-cart" class="nav-icon"></i> Orders</button>
+                    <button class="tab-btn" onclick="showTab('tab_sp_ratings', this)"><i data-lucide="star" class="nav-icon"></i> Ratings</button>
+                    <button class="tab-btn" onclick="showTab('tab_sp_feeds', this)"><i data-lucide="upload-cloud" class="nav-icon"></i> Feeds & Reports</button>
+                    <button class="tab-btn" onclick="showTab('tab_sp_jobs', this)"><i data-lucide="clock" class="nav-icon"></i> System Jobs</button>
+                    <button class="tab-btn" onclick="showTab('tab_sp_aplus', this)"><i data-lucide="file-plus" class="nav-icon"></i> A+ Content</button>
+                    <button class="tab-btn" onclick="showTab('tab_sp_brand_analytics', this)"><i data-lucide="bar-chart-2" class="nav-icon"></i> Brand Analytics</button>
+                    <button class="tab-btn" onclick="showTab('tab_sp_coupons_deals', this)"><i data-lucide="percent" class="nav-icon"></i> Coupons & Deals</button>
+                    <button class="tab-btn" onclick="showTab('tab_sp_reimbursements', this)"><i data-lucide="shield-alert" class="nav-icon"></i> Reconciliation</button>
+                    <button class="tab-btn" onclick="showTab('tab_sp_inventory_forecast', this)"><i data-lucide="eye" class="nav-icon"></i> Inventory Forecast</button>
+                    <button class="tab-btn" onclick="showTab('tab_sp_competitors', this)"><i data-lucide="users" class="nav-icon"></i> Competitor Analysis</button>
+                </div>
+            </div>
+
+            <div class="sidebar-divider"></div>
+
+            <div class="menu-group expanded" id="menu-integrations">
+                <button class="menu-group-header" onclick="toggleMenu('menu-integrations')">
+                    <span class="menu-label">
+                        <span class="menu-icon ads"><i data-lucide="globe" style="width: 14px; height: 14px;"></i></span>
+                        Integrations
+                    </span>
+                    <span class="chevron"><i data-lucide="chevron-right" style="width: 12px; height: 12px;"></i></span>
+                </button>
+                <div class="menu-group-items">
+                    <button class="tab-btn" onclick="showTab('tab_google_reports', this)"><i data-lucide="globe" class="nav-icon"></i> Google Ads / Reports</button>
+                </div>
+            </div>
+
+            <div class="sidebar-divider"></div>
+
+            <div class="menu-group expanded" id="menu-onboarding">
+                <button class="menu-group-header" onclick="toggleMenu('menu-onboarding')">
+                    <span class="menu-label">
+                        <span class="menu-icon sp"><i data-lucide="graduation-cap" style="width: 14px; height: 14px;"></i></span>
+                        Onboarding
+                    </span>
+                    <span class="chevron"><i data-lucide="chevron-right" style="width: 12px; height: 12px;"></i></span>
+                </button>
+                <div class="menu-group-items">
+                    <button class="tab-btn" onclick="showTab('tab_dev_onboarding', this)"><i data-lucide="book-open" class="nav-icon"></i> Dev Onboarding</button>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <div class="content-wrapper">
+        <header>
+            <button id="mobile-menu-btn" onclick="toggleMobileMenu()">
+                <i data-lucide="menu" style="width: 20px; height: 20px;"></i>
+            </button>
+            <h1>Amazon Ads & SP-API Flows</h1>
+            <div class="header-actions">
+                <button id="theme-toggle" onclick="toggleTheme()" aria-label="Toggle Theme">
+                    <i id="theme-icon" data-lucide="sun" style="width: 18px; height: 18px; transition: transform 0.5s ease;"></i>
+                </button>
+            </div>
+        </header>
+
+        <main>
+            <!-- 💰 Pricing -->
+            <div id="tab_pricing" class="tab-content active">
+                <h2>Fee & Pricing Structure</h2>
+                <p class="description">
+                    The following information is based on Amazon's official documentation and announcements for the Selling Partner API (SP-API) and Amazon Ads API.
+                </p>
+
+                <div class="pricing-section">
+                    <h3>1. Amazon Selling Partner API (SP-API)</h3>
+
+                    <div class="pricing-grid">
+                        <div class="pricing-card" style="border-top: 4px solid var(--db-stroke);">
+                            <h3>
+                                Private / First-Party Integration
+                                <span class="badge badge-private">Internal Business Use</span>
+                            </h3>
+                            <p>Private (first-party) applications built solely for a seller's own business are not currently subject to separate SP-API subscription or usage fees.</p>
+                            <ul>
+                                <li>You only pay your normal Amazon selling fees (commissions, FBA, referral fees, etc.).</li>
+                                <li><b>Rate Limits:</b> Although no API fees currently apply, all SP-API operations remain subject to Amazon's documented rate limits and usage plans.</li>
+                                <li><b>Private-to-Public App Migration:</b> Under the cancelled proposal, no conversion or upgrade fees exist for transferring a private app to public. However, the migration itself requires standard Amazon developer registration and public app authorization workflows.</li>
+                            </ul>
+                            <a href="https://developer.amazonservices.com/spp-announcement" target="_blank" class="doc-link">
+                                🔗 Official Amazon Fee Announcement
+                            </a>
+                        </div>
+
+                        <div class="pricing-card" style="border-top: 4px solid var(--manual-stroke);">
+                            <h3>
+                                Public / Third-Party SaaS Integration
+                                <span class="badge badge-public">SaaS / Appstore</span>
+                            </h3>
+                            <p>Amazon previously announced a proposed pricing model for third-party/public applications serving multiple sellers.</p>
+                            <ul>
+                                <li><strong>Subscription:</strong> Proposed 1,400 USD/year SP-API subscription fee.</li>
+                                <li><strong>Usage:</strong> Proposed usage-based charges for very high GET call volume (above the free tier).</li>
+                                <li><strong>Status:</strong> Amazon announced that the proposed SP-API pricing program was postponed and was later officially cancelled. As of the latest official Amazon announcement, the proposed SP-API annual and usage fees are not being implemented.</li>
+                            </ul>
+                            <div style="display: flex; flex-direction: column; gap: 8px;">
+                                <a href="https://developer.amazonservices.com/spp-announcement" target="_blank" class="doc-link">
+                                    🔗 Main SP-API Fee Announcement (1,400 USD + Usage)
+                                </a>
+                                <a href="https://developer.amazonservices.com/announcement-new-tier-advanced-solution-provider-portal" target="_blank" class="doc-link">
+                                    🔗 Follow-up: Delayed Implementation / Advanced Tier
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pricing-section">
+                    <h3>2. Amazon Ads API</h3>
+                    <div class="pricing-grid">
+                        <div class="pricing-card" style="border-top: 4px solid var(--cron-stroke);">
+                            <h3>
+                                Amazon Advertising API Fees
+                                <span class="badge badge-both">Standard</span>
+                            </h3>
+                            <p>Amazon does not charge any separate licensing or subscription fee for access to the Amazon Ads API. Developers pay only the normal advertising costs incurred by campaigns and any applicable Amazon selling account fees.</p>
+                            <ul>
+                                <li><strong>Ad Spend & Account Fees:</strong> Any normal Amazon seller account fees (if applicable) and advertising campaign spend still apply.</li>
+                            </ul>
+                            <div class="quote-box" style="margin: 12px 0; padding: 12px; background: rgba(0,0,0,0.02); border-radius: 8px; font-size: 0.9rem; border: 1px dashed var(--border-color);">
+                                “There are no additional fees from Amazon Ads to use the API. The only fees include standard account fees to sell on Amazon, as well as the campaign costs for using Amazon Ads advertising products.”
+                            </div>
+                            <a href="https://advertising.amazon.com/about-api" target="_blank" class="doc-link">
+                                🔗 Official Amazon Ads API Page
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. SP-API Pricing Tiers (Full Comparison) -->
+                <div class="flow-summary" style="margin-top: 35px;">
+                    <h4>Historical Proposed Pricing (Cancelled Before Implementation)</h4>
+                    <p style="font-size: 0.9rem; margin-top: 8px; margin-bottom: 12px; color: var(--text-main); font-weight: 500;">
+                        <b>Note:</b> The pricing model below was announced by Amazon in 2025, later postponed, and subsequently cancelled before implementation. These fees are not currently in effect and are included only for historical reference.
+                    </p>
+                    <p class="description">
+                        The proposed Selling Partner API (SP-API) pricing model was based on a tiered structure of annual subscription fees and monthly metered GET API call quotas.
+                    </p>
+
+                    <div style="overflow-x: auto; margin-top: 15px; border-radius: 12px; border: 1px solid var(--border-color);">
+                        <table class="data-table" style="margin-top: 0; min-width: 800px;">
+                            <thead>
+                                <tr>
+                                    <th>Feature</th>
+                                    <th>Basic</th>
+                                    <th>Pro</th>
+                                    <th>Advanced</th>
+                                    <th>Plus</th>
+                                    <th>Enterprise</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><b>Annual Fee</b></td>
+                                    <td>$1,400</td>
+                                    <td>$1,400</td>
+                                    <td>$1,400</td>
+                                    <td>$1,400</td>
+                                    <td>$1,400</td>
+                                </tr>
+                                <tr>
+                                    <td><b>Monthly Fee</b></td>
+                                    <td>$0</td>
+                                    <td>$1,000</td>
+                                    <td>$5,000</td>
+                                    <td>$10,000</td>
+                                    <td>Contact Us</td>
+                                </tr>
+                                <tr>
+                                    <td><b>Metered GET Calls (Month)</b></td>
+                                    <td>2.5 Million</td>
+                                    <td>25 Million</td>
+                                    <td>125 Million</td>
+                                    <td>250 Million</td>
+                                    <td>Contact Us</td>
+                                </tr>
+                                <tr>
+                                    <td><b>Metered GET Overage</b></td>
+                                    <td>$0.40 / 1k</td>
+                                    <td>$0.40 / 1k</td>
+                                    <td>$0.40 / 1k</td>
+                                    <td>$0.40 / 1k</td>
+                                    <td>Contact Us</td>
+                                </tr>
+                                <tr>
+                                    <td><b>Unmetered (PUT/POST/PATCH)</b></td>
+                                    <td>Unlimited*</td>
+                                    <td>Unlimited*</td>
+                                    <td>Unlimited*</td>
+                                    <td>Unlimited*</td>
+                                    <td>Unlimited*</td>
+                                </tr>
+                                <tr>
+                                    <td><b>API Docs / SDKs / Sandbox</b></td>
+                                    <td style="text-align:center;">✅</td>
+                                    <td style="text-align:center;">✅</td>
+                                    <td style="text-align:center;">✅</td>
+                                    <td style="text-align:center;">✅</td>
+                                    <td style="text-align:center;">✅</td>
+                                </tr>
+                                <tr>
+                                    <td><b>Account Mgmt Team</b></td>
+                                    <td style="text-align:center;">-</td>
+                                    <td style="text-align:center;">-</td>
+                                    <td style="text-align:center;">✅</td>
+                                    <td style="text-align:center;">✅</td>
+                                    <td style="text-align:center;">✅</td>
+                                </tr>
+                                <tr>
+                                    <td><b>Access to Beta APIs</b></td>
+                                    <td style="text-align:center;">-</td>
+                                    <td style="text-align:center;">-</td>
+                                    <td style="text-align:center;">-</td>
+                                    <td style="text-align:center;">✅</td>
+                                    <td style="text-align:center;">✅</td>
+                                </tr>
+                                <tr>
+                                    <td><b>Dedicated Solutions Architect</b></td>
+                                    <td style="text-align:center;">-</td>
+                                    <td style="text-align:center;">-</td>
+                                    <td style="text-align:center;">-</td>
+                                    <td style="text-align:center;">-</td>
+                                    <td style="text-align:center;">✅</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p style="font-size: 0.8rem; margin-top: 8px; font-style: italic; color: var(--text-muted); opacity: 0.8;">
+                        * SP-API rate limits (TPS) still apply as documented in technical sections.
+                    </p>
+                    <p style="font-size: 0.85rem; margin-top: 12px; color: var(--text-main); background: rgba(59, 130, 246, 0.05); padding: 10px; border-radius: 8px;">
+                        <b>Note:</b> Private developers building internal tools for their own business are currently exempt from these specific API fees. Additionally, Amazon has removed all charges/conversion fees for transferring or upgrading a private app to a public app.
+                    </p>
+                </div>
+
+                <!-- 4. Key Dates Roadmap -->
+                <div class="flow-summary" style="margin-top: 35px;">
+                    <h4>Historical Implementation Timeline (Cancelled)</h4>
+                    <p style="font-size: 0.9rem; margin-top: 8px; margin-bottom: 20px; color: var(--text-muted); line-height: 1.5;">
+                        Amazon originally announced the rollout schedule below for the proposed SP-API pricing program. Following customer feedback, Amazon postponed the proposed pricing program and later cancelled it before implementation. As a result, no SP-API developer subscription or usage fees are currently in effect.
+                    </p>
+                    <div style="background: rgba(59, 130, 246, 0.04); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px;">
+                        <div style="display: grid; gap: 15px;">
+                            <div style="display: flex; gap: 20px; align-items: flex-start;">
+                                <div style="min-width: 130px; font-weight: 700; color: var(--primary-blue);">Nov 3, 2025</div>
+                                <div style="color: var(--text-main);">Billing setup opens in Solution Provider Portal.</div>
+                            </div>
+                            <div style="display: flex; gap: 20px; align-items: flex-start;">
+                                <div style="min-width: 130px; font-weight: 700; color: var(--primary-blue);">Jan 31, 2026</div>
+                                <div style="color: var(--text-main);">Charge method information must be submitted. <b>Originally scheduled annual fee billing.</b></div>
+                            </div>
+                            <div style="display: flex; gap: 20px; align-items: flex-start;">
+                                <div style="min-width: 130px; font-weight: 700; color: #ef4444;">Feb 9, 2026</div>
+                                <div style="color: var(--text-main);">Applications without valid payment method removed from Selling Partner Appstore. New authorizations blocked.</div>
+                            </div>
+                            <div style="display: flex; gap: 20px; align-items: flex-start;">
+                                <div style="min-width: 130px; font-weight: 700; color: #ef4444;">Feb 16, 2026</div>
+                                <div style="color: var(--text-main);">Applications without valid payment/tax info <b>lose access to SP-API.</b></div>
+                            </div>
+                            <div style="display: flex; gap: 20px; align-items: flex-start;">
+                                <div style="min-width: 130px; font-weight: 700; color: var(--primary-blue);">Apr 30, 2026</div>
+                                <div style="color: var(--text-main);"><b>Originally scheduled monthly utilization billing</b> (Usage-based).</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pricing-note" style="margin-top: 30px;">
+                    <b>Disclaimer:</b> The information above is based on Amazon's official documentation and public announcements available as of <b>July 2026</b>. Amazon may modify its API pricing, policies, or eligibility requirements at any time. Always refer to the latest Amazon documentation for the most current information.
+                </div>
+
+                <div class="section-label logic" style="margin-top: 35px;">DEVELOPER MODEL ARCHITECTURE</div>
+                <div class="diagram-box" id="diagram16"></div>
+            </div>
+
+            <!-- 📊 API Limits -->
+            <div id="tab_limits" class="tab-content">
+                <h2>API Operating Rate Limits</h2>
+                <p class="description">
+                    Amazon monitors and throttles API usage through a token-bucket algorithm.
+                    <i>Note: Rate limits shown below are representative examples. Actual limits are determined by Amazon for each operation and may vary by application, selling partner, marketplace, usage plan, and service-specific policies. Always consult the current API documentation and response headers.</i>
+                </p>
+
+                <div class="flow-summary">
+                    <h4>AMAZON ADS API (SELECTED) EXAMPLES</h4>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Area</th>
+                                <th>Operation (example)</th>
+                                <th>Rate (approx)</th>
+                                <th>Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Reporting v3</td>
+                                <td>POST /reporting/reports</td>
+                                <td>~1 req/sec</td>
+                                <td>Throttled by type/profile</td>
+                            </tr>
+                            <tr>
+                                <td>Reporting v3</td>
+                                <td>GET /reporting/reports/{id}</td>
+                                <td>~2 req/sec</td>
+                                <td>Status polling</td>
+                            </tr>
+                            <tr>
+                                <td>Campaign SP</td>
+                                <td>GET /sp/campaigns</td>
+                                <td>~1 req/sec</td>
+                                <td>Per profile tokens</td>
+                            </tr>
+                            <tr>
+                                <td>Campaign SP</td>
+                                <td>PUT /sp/campaigns</td>
+                                <td>~1 req/sec</td>
+                                <td>Avoid high-freq bulk</td>
+                            </tr>
+                            <tr>
+                                <td>Marketing Stream</td>
+                                <td>POST /subscriptions</td>
+                                <td>Very Low</td>
+                                <td>Admin only ops</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div class="pricing-note" style="border: 1px solid var(--border-color); margin-top: 15px;">
+                        <strong>IMPORTANT:</strong> Because Ads limits are token-based and differ by resource, always read the current <b>rate-limit headers</b> and the specific reference page (Amazon Ads Docs) for each endpoint.
+                    </div>
+                </div>
+
+                <div class="flow-summary" style="margin-top: 35px;">
+                    <h4>SELLING PARTNER API (SP-API) EXAMPLES</h4>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>API</th>
+                                <th>Operation</th>
+                                <th>Rate (req/sec)</th>
+                                <th>Burst</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Orders API</td>
+                                <td>getOrder</td>
+                                <td>0.5</td>
+                                <td>30</td>
+                            </tr>
+                            <tr>
+                                <td>Orders API</td>
+                                <td>getOrderItems</td>
+                                <td>0.5</td>
+                                <td>30</td>
+                            </tr>
+                            <tr>
+                                <td>Orders API</td>
+                                <td>getOrders</td>
+                                <td>0.0167</td>
+                                <td>20</td>
+                            </tr>
+                            <tr>
+                                <td>Orders API</td>
+                                <td>confirmShipment</td>
+                                <td>2</td>
+                                <td>10</td>
+                            </tr>
+                            <tr>
+                                <td>Orders API</td>
+                                <td>updateShipmentStatus</td>
+                                <td>5</td>
+                                <td>15</td>
+                            </tr>
+                            <tr>
+                                <td>Listings Items API</td>
+                                <td>getListingsItem</td>
+                                <td>5</td>
+                                <td>10</td>
+                            </tr>
+                            <tr>
+                                <td>Listings Items API</td>
+                                <td>putListingsItem</td>
+                                <td>5</td>
+                                <td>10</td>
+                            </tr>
+                            <tr>
+                                <td>Reports API</td>
+                                <td>createReport</td>
+                                <td>0.0167</td>
+                                <td>15</td>
+                            </tr>
+                            <tr>
+                                <td>Reports API</td>
+                                <td>getReport</td>
+                                <td>2</td>
+                                <td>15</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="pricing-note" style="margin-top: 25px; border: 1px solid var(--border-color); background: rgba(59, 130, 246, 0.03);">
+                    For historical information about the cancelled SP-API pricing proposal, see the <a href="#" onclick="showTab('tab_pricing', document.querySelector('[onclick*=\'tab_pricing\']')); return false;">Fee & Pricing Structure</a> section.
+                </div>
+
+                <div class="flow-summary" style="margin-top: 35px;">
+                    <h4>Best Practices</h4>
+                    <ul style="line-height: 1.6; margin-top: 10px; padding-left: 20px; color: var(--text-main);">
+                        <li><strong>Headers:</strong> Respect the <code>x-amzn-RateLimit-Limit</code> response header when available.</li>
+                        <li><strong>Backoff:</strong> Implement exponential backoff after HTTP <code>429 Too Many Requests</code> responses.</li>
+                        <li><strong>Polling:</strong> Avoid continuously polling report or feed status endpoints.</li>
+                        <li><strong>Batching:</strong> Batch operations where supported to reduce API calls.</li>
+                        <li><strong>Monitoring:</strong> Monitor application metrics and retry behavior to prevent throttling.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- 🚀 Client Setup -->
+            <div id="tab_setup" class="tab-content">
+                <h2>🚀 Client Setup — Required Information</h2>
+                <p class="description">
+                    Complete checklist of credentials and details needed to connect a new client's Amazon Ads and Selling Partner API accounts.
+                </p>
+
+                <div class="setup-grid">
+                    <div class="setup-card">
+                        <div class="card-num">1</div>
+                        <div class="card-body">
+                            <p class="card-title">Client ID <span class="setup-badge badge-both">Both APIs</span></p>
+                            <p class="card-desc">LWA App Client ID from the Amazon Developer Console. Identifies your registered app.</p>
+                        </div>
+                    </div>
+
+                    <div class="setup-card">
+                        <div class="card-num">2</div>
+                        <div class="card-body">
+                            <p class="card-title">Client Secret <span class="setup-badge badge-both">Both APIs</span></p>
+                            <p class="card-desc">LWA App Client Secret paired with the Client ID. Kept securely on the server side.</p>
+                        </div>
+                    </div>
+
+                    <div class="setup-card">
+                        <div class="card-num">3</div>
+                        <div class="card-body">
+                            <p class="card-title">Refresh Token <span class="setup-badge badge-both">Both APIs</span></p>
+                            <p class="card-desc">Long-lived token generated after the client completes the OAuth / LWA consent flow. Used to request fresh access tokens.</p>
+                        </div>
+                    </div>
+
+                    <div class="setup-card">
+                        <div class="card-num">4</div>
+                        <div class="card-body">
+                            <p class="card-title">Authorization Code <span class="setup-badge badge-both">Both APIs</span></p>
+                            <p class="card-desc">One-time code returned from the OAuth redirect URL. Exchanged for access + refresh tokens.</p>
+                        </div>
+                    </div>
+
+                    <div class="setup-card">
+                        <div class="card-num">5</div>
+                        <div class="card-body">
+                            <p class="card-title">LWA Scope Grant <span class="setup-badge badge-both">Both APIs</span></p>
+                            <p class="card-desc">Required API scopes authorized via Login with Amazon (e.g. advertising::campaign_management, sellingpartnerapi::orders).</p>
+                        </div>
+                    </div>
+
+                    <div class="setup-card">
+                        <div class="card-num">6</div>
+                        <div class="card-body">
+                            <p class="card-title">Seller ID <span class="setup-badge badge-sp-only">SP-API</span></p>
+                            <p class="card-desc">Amazon Seller Central account ID (e.g. A1XXXXXXXXXXXX). Required to scope all SP-API calls.</p>
+                        </div>
+                    </div>
+
+                    <div class="setup-card">
+                        <div class="card-num">7</div>
+                        <div class="card-body">
+                            <p class="card-title">Profile ID(s) <span class="setup-badge badge-ads-only">Ads API</span></p>
+                            <p class="card-desc">Amazon Ads Profile ID per marketplace or ad account type. Scopes all Advertising API calls.</p>
+                        </div>
+                    </div>
+
+                    <div class="setup-card">
+                        <div class="card-num">8</div>
+                        <div class="card-body">
+                            <p class="card-title">Marketplace ID(s) <span class="setup-badge badge-both">Both APIs</span></p>
+                            <p class="card-desc">Amazon Marketplace ID for each operational country (e.g. ATVPDKIKX0DER = US, A1F83G8C2ARO7P = UK).</p>
+                        </div>
+                    </div>
+
+                    <div class="setup-card">
+                        <div class="card-num">9</div>
+                        <div class="card-body">
+                            <p class="card-title">Region / Endpoint <span class="setup-badge badge-both">Both APIs</span></p>
+                            <p class="card-desc">API region that determines the base URL: NA (North America), EU (Europe), or FE (Far East).</p>
+                        </div>
+                    </div>
+
+                    <div class="setup-card">
+                        <div class="card-num">10</div>
+                        <div class="card-body">
+                            <p class="card-title">Seller Central Email <span class="setup-badge badge-both">Both APIs</span></p>
+                            <p class="card-desc">Registered email address for the client's Amazon Seller Central account. Used for support.</p>
+                        </div>
+                    </div>
+
+                    <div class="setup-card">
+                        <div class="card-num">11</div>
+                        <div class="card-body">
+                            <p class="card-title">Seller Central Password <span class="setup-badge badge-both">Both APIs</span></p>
+                            <p class="card-desc">Password for the Amazon Seller Central account. Required for initial login and OAuth authorization flow setup.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 📋 Report Catalog -->
+            <div id="tab_report_catalog" class="tab-content">
+                <h2>📋 Report Catalog & API Fetch Metrics</h2>
+                <p class="description">
+                    Complete catalog of all performance reports, data sheets, and direct API queries executed by the background cron services in Node-AdvertiseIQ, bifurcated by source API.
+                </p>
+
+                <div class="flow-summary">
+                    <h4>AMAZON ADS API REPORTS</h4>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Report Name</th>
+                                <th>Technical ID / Endpoint</th>
+                                <th>Fetch Frequency</th>
+                                <th>Historical Fetch Range</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><b>Sponsored Products Advertised Product Report</b></td>
+                                <td><span class="code-badge">spAdvertisedProduct</span></td>
+                                <td>Daily (hourly cache refresh)</td>
+                                <td>Last 24 - 48 Hours</td>
+                            </tr>
+                            <tr>
+                                <td><b>Sponsored Products Campaign Performance Report</b></td>
+                                <td><span class="code-badge">spCampaigns</span></td>
+                                <td>Daily & Weekly aggregates</td>
+                                <td>Current Date (Weekly: 9 days)</td>
+                            </tr>
+                            <tr>
+                                <td><b>Sponsored Products AdGroup Performance Report</b></td>
+                                <td><span class="code-badge">spAdGroups</span></td>
+                                <td>Daily</td>
+                                <td>Current Date</td>
+                            </tr>
+                            <tr>
+                                <td><b>Sponsored Products Placement Performance Report</b></td>
+                                <td><span class="code-badge">sbCampaignPlacement</span></td>
+                                <td>Daily</td>
+                                <td>Current Date</td>
+                            </tr>
+                            <tr>
+                                <td><b>Sponsored Products Search Term Report</b></td>
+                                <td><span class="code-badge">spSearchTerm</span> / <span class="code-badge">sbSearchTerm</span></td>
+                                <td>Weekly (every Monday)</td>
+                                <td>Last 9 Days (attribution lag)</td>
+                            </tr>
+                            <tr>
+                                <td><b>Sponsored Products Targeting/Keyword Report</b></td>
+                                <td><span class="code-badge">spTargeting</span> / <span class="code-badge">sbTargeting</span></td>
+                                <td>Daily</td>
+                                <td>Current Date</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="flow-summary" style="margin-top: 25px;">
+                    <h4>SELLING PARTNER API (SP-API) REPORTS & QUERIES</h4>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Report / API Query Name</th>
+                                <th>Technical ID / API Endpoint</th>
+                                <th>Fetch Frequency</th>
+                                <th>Historical Fetch Range</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><b>All Orders Report</b></td>
+                                <td><span class="code-badge">GET_FLAT_FILE_ALL_ORDERS_DATA_BY_LAST_UPDATE_GENERAL</span></td>
+                                <td>Every 1 hour</td>
+                                <td>Last 2 Days</td>
+                            </tr>
+                            <tr>
+                                <td><b>Sales & Traffic Report</b></td>
+                                <td><span class="code-badge">GET_SALES_AND_TRAFFIC_REPORT</span></td>
+                                <td>Daily (runs 7:00 AM)</td>
+                                <td>Last 5 Days</td>
+                            </tr>
+                            <tr>
+                                <td><b>Merchant Returns Report</b></td>
+                                <td><span class="code-badge">GET_XML_RETURNS_DATA_BY_RETURN_DATE</span></td>
+                                <td>Daily</td>
+                                <td>Last 60 Days</td>
+                            </tr>
+                            <tr>
+                                <td><b>FBA Customer Returns Report</b></td>
+                                <td><span class="code-badge">GET_FBA_FULFILLMENT_CUSTOMER_RETURNS_DATA</span></td>
+                                <td>Daily</td>
+                                <td>Last 60 Days</td>
+                            </tr>
+                            <tr>
+                                <td><b>Coupon Performance Report</b></td>
+                                <td><span class="code-badge">GET_COUPON_PERFORMANCE_REPORT</span></td>
+                                <td>Every 1 hour</td>
+                                <td>Real-time aggregates</td>
+                            </tr>
+                            <tr>
+                                <td><b>Promotion & Deal Performance Report</b></td>
+                                <td><span class="code-badge">GET_PROMOTION_PERFORMANCE_REPORT</span></td>
+                                <td>Every 2 hours</td>
+                                <td>Real-time aggregates</td>
+                            </tr>
+                            <tr>
+                                <td><b>Brand Analytics Search Query Report</b></td>
+                                <td><span class="code-badge">GET_BRAND_ANALYTICS_SEARCH_QUERY_PERFORMANCE_REPORT</span></td>
+                                <td>Daily (7:00 AM)</td>
+                                <td>Last Month chunk files</td>
+                            </tr>
+                            <tr>
+                                <td><b>FBA Reimbursement Report</b></td>
+                                <td><span class="code-badge">GET_FBA_REIMBURSEMENTS_DATA</span></td>
+                                <td>Hourly / Daily</td>
+                                <td>Last 30 Days</td>
+                            </tr>
+                            <tr>
+                                <td><b>Financial Event Log (Transactions)</b></td>
+                                <td><span class="code-badge">/finances/v0/financialEvents</span> (Direct API)</td>
+                                <td>Daily (runs 2:00 AM)</td>
+                                <td>Last 60 Days</td>
+                            </tr>
+                            <tr>
+                                <td><b>FBA Inventory Summaries</b></td>
+                                <td><span class="code-badge">/fba/inventory/v1/summaries</span> (Direct API)</td>
+                                <td>Daily (runs 10:00 PM)</td>
+                                <td>Current stock levels metadata</td>
+                            </tr>
+                            <tr>
+                                <td><b>Catalog Items Query</b></td>
+                                <td><span class="code-badge">/catalog/2022-04-01/items</span> (Direct API)</td>
+                                <td>Daily (runs 8:00 AM)</td>
+                                <td>ASIN/SKU detail listings mapping</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="flow-summary" style="margin-top: 25px;">
+                    <h4>CROSS-CHANNEL & GOOGLE INTEGRATION REPORTS</h4>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Report / API Query Name</th>
+                                <th>Technical ID / API Endpoint</th>
+                                <th>Fetch Frequency</th>
+                                <th>Historical Fetch Range</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><b>Google Analytics/Ads Best Performer Report</b></td>
+                                <td><span class="code-badge">cronBestPerformerGoogleReportGenerate</span></td>
+                                <td>Daily (runs 3:20 AM)</td>
+                                <td>Last 24 hours traffic and conversions</td>
+                            </tr>
+                            <tr>
+                                <td><b>Google Analytics Keyword Analysis Report</b></td>
+                                <td><span class="code-badge">cronKeywordAnalysisReportGenerate</span></td>
+                                <td>Daily (runs 3:30 AM)</td>
+                                <td>Search traffic organic analysis</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Amazon Ads Tabs -->
+            <div id="tab_ads_auth" class="tab-content">
+                <h2>Authentication & Profile Setup</h2>
+                <p class="description">
+                    How advertisers connect their Amazon Ads account using Login with Amazon (LWA), and how we store tokens and profiles for future API calls.
+                </p>
+                <div class="info-note ads-alert" style="margin-bottom: 25px;">
+                    <p class="info-note-title">⚠️ Re-authentication Required (Post June 30, 2026)</p>
+                    <p class="info-note-desc">Effective <strong>June 30, 2026</strong>, refresh tokens issued for Amazon Ads API expire <strong>365 days</strong> from the date of advertiser consent. Tokens issued before this date are not affected and remain valid indefinitely. The 365-day expiration applies only to tokens issued on or after June 30, 2026.</p>
+                    <a href="https://advertising.amazon.com/API/docs/en-us/guides/account-management/authorization/refresh-tokens" target="_blank" class="info-note-link">🔗 Official Amazon Ads Refresh Token Docs</a>
+                </div>
+                <div class="section-label manual">AUTHORIZATION CODE FLOW</div>
+                <div class="diagram-box" id="diagram0a"></div>
+
+                <hr class="divider">
+
+                <div class="section-label cron">TOKEN REFRESH CRON</div>
+                <div class="diagram-box" id="diagram0b"></div>
+            </div>
+
+            <div id="tab_ads_camp" class="tab-content">
+                <h2>Campaign Lifecycle</h2>
+                <p class="description">
+                    User actions on campaigns from the dashboard and automatic background sync to keep campaign list and
+                    performance fresh in the database and reports.[web:8]
+                </p>
+
+                <div class="section-label manual">USER DRIVEN — Campaign Management</div>
+                <div class="diagram-box" id="diagram1a"></div>
+
+                <hr class="divider">
+
+                <div class="section-label cron">CRON DRIVEN — Listing & Reports</div>
+                <div class="diagram-box" id="diagram1b"></div>
+            </div>
+
+            <div id="tab_ads_adg" class="tab-content">
+                <h2>AdGroups Lifecycle</h2>
+                <p class="description">
+                    How ad groups are created, edited and paused from the UI, and how ad group metadata and performance
+                    are
+                    kept in sync by scheduled jobs.[web:8]
+                </p>
+
+                <div class="section-label manual">USER DRIVEN — AdGroup Management</div>
+                <div class="diagram-box" id="diagram2a"></div>
+
+                <hr class="divider">
+
+                <div class="section-label cron">CRON DRIVEN — AdGroup Sync</div>
+                <div class="diagram-box" id="diagram2b"></div>
+            </div>
+
+            <div id="tab_ads_target" class="tab-content">
+                <h2>Targeting & Automation Engines</h2>
+                <p class="description">
+                    Keyword and product targeting flows, plus our rule-based engines for bid optimization, lifecycle
+                    classification and negative keyword generation.[web:8]
+                </p>
+
+                <div class="section-label manual">USER DRIVEN — Targeting Rules</div>
+                <div class="diagram-box" id="diagram3a"></div>
+            </div>
+
+            <div id="tab_ads_search_terms" class="tab-content">
+                <h2>SearchTerms & Bid Engines</h2>
+                <p class="description">
+                    SearchTerm reporting and classification engines, showing how queries are analyzed, bid decisions calculated, and negative terms generated.
+                </p>
+
+                <div class="section-label cron">CRON DRIVEN — SearchTerm & Bid Engines</div>
+                <div class="diagram-box" id="diagram3b"></div>
+            </div>
+
+            <div id="tab_ads_placement" class="tab-content">
+                <h2>Placement Performance</h2>
+                <p class="description">
+                    How we pull placement-level performance (Top of Search, Product Pages, Rest of Search) via reports
+                    and
+                    expose it in dashboards.[web:8]
+                </p>
+
+                <div class="section-label cron">CRON DRIVEN — Placement Report Sync</div>
+                <div class="diagram-box" id="diagram4"></div>
+            </div>
+
+            <div id="tab_ads_stream" class="tab-content">
+                <h2>Amazon Marketing Stream</h2>
+                <p class="description">
+                    Near real-time data ingestion via AWS SQS/Firehose for sponsored ads and DSP performance metrics, enabling rapid optimization and intraday analytics.[web:8]
+                </p>
+
+                <div class="flow-summary" style="margin-top: 25px;">
+                    <h4>STREAM CONNECTIVITY & SUBSCRIPTION LIFECYCLE</h4>
+                    <ul>
+                        <li><b>1. AWS Infrastructure Connectivity Setup & Permissions:</b> Configure standard/FIFO SQS Queues in your AWS Account. You must attach an SQS Queue Policy granting message-delivery permissions (specifically <code>sqs:SendMessage</code>) to the Amazon Ads Service Principal.</li>
+                        <li><b>2. User Subscription Selection (UI):</b> Open the Manage Subscriptions Dialog (<a href="file:///e:/Vision/AdvertiseIQ/R-AdvertiseIQ/src/layout/views/sellerConfig/SubscriptionModal.js">SubscriptionModal.js</a>) to select dataset feeds (Sponsored Products/Brands/Display Traffic & Conversion data, Budget metrics).</li>
+                        <li><b>3. Backend API Authentication & Mapping (ARN_MAP):</b> Trigger backend routes (<code>/api/manageSubscribeAMS</code>) to fetch configuration settings and Ads auth tokens. The system dynamically maps the Amazon Ads profile URL to retrieve the pre-defined target SQS ARN (<code>sqsArn</code>), SQS Queue URL (<code>sqsQueueUrl</code>), and AWS region name via <code>amsArn.js</code>.</li>
+                        <li><b>4. Lifecycle Synchronization & Confirmation Email:</b> Compare selection with existing database configurations. New feeds trigger Amazon Stream API <code>POST /streams/subscriptions</code> and create local records with status <code>PENDING_CONFIRMATION</code>. Amazon then pushes a <code>SubscriptionConfirmation</code> message to the SQS queue, which the Consumer Service catches to email a confirmation URL to the administrator (using <code>buildSqsConfirmationEmail.js</code>). Once the URL is clicked to verify the SNS-to-SQS handle, the status updates to <code>ACTIVE</code>. Unselected feeds trigger <code>PUT /streams/subscriptions/{subscriptionId}</code> to archive, updating local databases to <code>ARCHIVED</code>.</li>
+                    </ul>
+                </div>
+
+                <div class="flow-summary" style="margin-top: 35px;">
+                    <h4>SERVICE REQUIREMENTS & BILLING</h4>
+
+                    <div style="background: rgba(59, 130, 246, 0.04); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; margin-bottom: 25px;">
+                        <h5 style="margin: 0 0 10px 0; color: var(--primary-blue); font-size: 1.1rem;">⚡ Quick Reference</h5>
+                        <p style="margin: 0; font-size: 0.95rem; line-height: 1.6; color: var(--text-main);">
+                            Marketing Stream is <b>free to use from Amazon Ads</b>, but requires an AWS destination (SQS or Firehose). Standard AWS rates apply for data ingestion and storage, billed directly through your <b>AWS account</b>, not Amazon Ads.
+                        </p>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 25px;">
+                        <!-- SQS Pricing -->
+                        <div class="pricing-card" style="margin: 0; padding: 18px; border-top: 4px solid var(--primary-blue);">
+                            <h5 style="margin:0 0 15px 0; color: var(--text-main); display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 1.2rem;">📩</span> Amazon SQS (Queue)
+                            </h5>
+                            <table class="data-table" style="margin: 0; font-size: 0.85rem;">
+                                <thead>
+                                    <tr>
+                                        <th>Monthly Requests</th>
+                                        <th>Standard</th>
+                                        <th>FIFO</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>First 1 Million</td>
+                                        <td><b>Free</b></td>
+                                        <td><b>Free</b></td>
+                                    </tr>
+                                    <tr>
+                                        <td>1M to 100 Billion</td>
+                                        <td>$0.40 / M</td>
+                                        <td>$0.50 / M</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <p style="font-size: 0.8rem; margin-top: 10px; color: var(--text-muted); font-style: italic;">
+                                Ideal for low-to-medium volume stream processing.
+                            </p>
+                            <a href="https://aws.amazon.com/sqs/pricing/" target="_blank" class="doc-link" style="margin-top: 10px; display: inline-block;">
+                                🔗 SQS Pricing Page
+                            </a>
+                        </div>
+
+                        <!-- Firehose Pricing -->
+                        <div class="pricing-card" style="margin: 0; padding: 18px; border-top: 4px solid #ff9900;">
+                            <h5 style="margin:0 0 15px 0; color: var(--text-main); display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 1.2rem;">🔥</span> Amazon Data Firehose
+                            </h5>
+                            <table class="data-table" style="margin: 0; font-size: 0.85rem;">
+                                <thead>
+                                    <tr>
+                                        <th>Ingestion Plan</th>
+                                        <th>Rate (per GB)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>First 500 TB / Month</td>
+                                        <td><b>$0.029 / GB</b></td>
+                                    </tr>
+                                    <tr>
+                                        <td>Next 750 TB / Month</td>
+                                        <td>$0.064 / GB</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <div style="margin-top: 12px; padding: 10px; background: rgba(255,153,0,0.05); border-radius: 8px; font-size: 0.8rem;">
+                                <b>Example:</b> 1,236 GB ingestion ≈ <b>$35.84 / Month</b>
+                            </div>
+                            <a href="https://aws.amazon.com/firehose/pricing/" target="_blank" class="doc-link" style="margin-top: 10px; display: inline-block;">
+                                🔗 Firehose Pricing Page
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section-label manual">STAGE 1: ONBOARDING WORKFLOW</div>
+                <div class="diagram-box" id="diagram17a"></div>
+
+                <hr class="divider">
+
+                <div class="section-label cron">STAGE 2: DATA INGESTION & PIPELINE</div>
+                <div class="diagram-box" id="diagram17b"></div>
+            </div>
+
+            <div id="tab_ads_jobs" class="tab-content">
+                <h2>Background System Jobs</h2>
+                <p class="description">
+                    Overview of all scheduled jobs handling token refresh, listings, reports and automation so that your
+                    data stays up to date without manual work.[web:8]
+                </p>
+                <div class="diagram-box" id="diagram5"></div>
+            </div>
+
+            <div id="tab_ads_arch" class="tab-content">
+                <h2>System Architecture</h2>
+                <p class="description">
+                    High-level relationship between frontend, backend, workers and Amazon Ads API, with database as the
+                    central source of truth.[web:8]
+                </p>
+                <div class="diagram-box" id="diagram6"></div>
+            </div>
+
+            <div id="tab_ads_flow" class="tab-content">
+                <h2>End-to-End Flow Summary</h2>
+                <p class="description">
+                    Combined view from authentication through campaign management, data sync, and optimization engines,
+                    showing how everything connects in one flow.[web:8]
+                </p>
+                <div class="diagram-box" id="diagram7"></div>
+            </div>
+
+            <div id="tab_ads_rules" class="tab-content">
+                <h2>Rules & Automation Engines</h2>
+                <p class="description">
+                    How our background rule engine reads campaign performance metrics and applies automated bid rules
+                    and
+                    budgets.[web:8]
+                </p>
+                <div class="diagram-box" id="diagram18"></div>
+            </div>
+
+            <!-- SP API Tabs -->
+            <div id="tab_sp_auth" class="tab-content">
+                <h2>SP-API Authentication</h2>
+                <p class="description">
+                    How sellers authorize our app via Login with Amazon for SP-API, and how we store seller, marketplace
+                    and
+                    token details securely.[web:6][web:18]
+                </p>
+                <div class="info-note sp-alert" style="margin-bottom: 25px;">
+                    <p class="info-note-title">🔑 Re-authentication Required (Every 180 Days)</p>
+                    <p class="info-note-desc">You must re-authenticate your account every <strong>180 days</strong> to maintain active Selling Partner API (SP-API) connection and access.</p>
+                </div>
+                <div class="section-label manual">LWA + SP-API AUTH FLOW</div>
+                <div class="diagram-box" id="diagram8"></div>
+            </div>
+
+            <div id="tab_sp_products" class="tab-content">
+                <h2>Products & Catalog Sync</h2>
+                <p class="description">
+                    Scheduled synchronization keeps catalog metadata, listings, inventory, and pricing aligned with Amazon, providing a consistent data source for dashboards and reporting.
+                </p>
+                <div class="diagram-box" id="diagram9"></div>
+            </div>
+
+            <div id="tab_sp_orders" class="tab-content">
+                <h2>Orders & Line Items</h2>
+                <p class="description">
+                    Order polling and notifications flows that bring in orders, items and shipment details for
+                    operations
+                    and revenue analytics.[web:6][web:18]
+                </p>
+                <div class="diagram-box" id="diagram10"></div>
+            </div>
+
+            <div id="tab_sp_ratings" class="tab-content">
+                <h2>Ratings & Reviews</h2>
+                <p class="description">
+                    How we aggregate product ratings and reviews (where available) and relate them to sales to identify
+                    issues and opportunities.[web:6]
+                </p>
+                <div class="diagram-box" id="diagram11"></div>
+            </div>
+
+            <div id="tab_sp_feeds" class="tab-content">
+                <h2>Feeds & Reports</h2>
+                <p class="description">
+                    Pricing, inventory, settlements, and other reports/feeds pipelines using asynchronous Selling Partner API jobs.[web:6]
+                </p>
+                <div class="diagram-box" id="diagram12"></div>
+            </div>
+
+            <div id="tab_sp_jobs" class="tab-content">
+                <h2>SP-API System Jobs</h2>
+                <p class="description">
+                    Scheduled jobs maintain authentication state and continuously synchronize catalog, inventory, orders, financial, and rating data into the Amazon business data warehouse.
+                </p>
+                <div class="diagram-box" id="diagram13"></div>
+                <div class="flow-summary" style="margin-top: 25px;">
+                    <h4>Operational Note</h4>
+                    <p style="font-size: 0.95rem; line-height: 1.6; color: var(--text-main); margin-bottom: 0;">
+                        <b>Schedule Multipliers:</b> Run Auth jobs more frequently than data-sync jobs because LWA access tokens expire hourly, while catalog, order, finance, and rating jobs typically run on schedules ranging from a few minutes to several hours depending on business requirements and API rate limits.
+                    </p>
+                </div>
+            </div>
+
+            <div id="tab_sp_arch" class="tab-content">
+                <h2>SP-API Architecture</h2>
+                <p class="description">
+                    Technical architecture showing how our backend, workers and dashboards connect to SP-API endpoints
+                    for
+                    orders, catalog, reports and feeds.[web:6][web:18]
+                </p>
+                <div class="diagram-box" id="diagram14"></div>
+            </div>
+
+            <div id="tab_sp_flow" class="tab-content">
+                <h2>End-to-End SP-API Flow</h2>
+                <p class="description">
+                    Combined SP-API journey from authorization, data ingestion and normalization to cross-joining ads
+                    and
+                    sales for full-funnel reporting.
+                </p>
+                <div class="diagram-box" id="diagram15"></div>
+                <div class="flow-summary" style="margin-top: 25px;">
+                    <h4>Scheduled Sync Scope</h4>
+                    <p style="font-size: 0.95rem; line-height: 1.6; color: var(--text-main); margin-bottom: 0;">
+                        <b>Scheduled Sync:</b> Catalog, Listings, Orders, Inventory, Reports, Finances, Ratings, and Advertising data.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Ads: Dayparting Strategy -->
+            <div id="tab_ads_dayparting" class="tab-content">
+                <h2>Dayparting Strategy</h2>
+                <p class="description">
+                    Hourly scheduler that automatically raises/lowers bids or pauses/enables campaigns to target high-conversion hours and limit waste during off-peak times.
+                </p>
+                <div class="flow-summary">
+                    <h4>TECHNICAL FLOW SUMMARY</h4>
+                    <ul>
+                        <li><b>15-Minute Polling:</b> Cron worker evaluates dayparting rules every 15 minutes.</li>
+                        <li><b>Multiplier Application:</b> Computes and applies bid multipliers for the current hour window.</li>
+                        <li><b>API Push:</b> Instantly sends modified campaign default bids or status values to the Ads API.</li>
+                    </ul>
+                </div>
+                <div class="diagram-box" id="diagram24"></div>
+            </div>
+
+            <!-- Ads: Budget Rules -->
+            <div id="tab_ads_budget_rules" class="tab-content">
+                <h2>Budget Rules</h2>
+                <p class="description">
+                    Dynamically increases campaign budgets during high-traffic events (e.g. Prime Day, Black Friday) or based on performance thresholds to prevent budget exhaustion.
+                </p>
+                <div class="flow-summary">
+                    <h4>TECHNICAL FLOW SUMMARY</h4>
+                    <ul>
+                        <li><b>Real-Time Monitoring:</b> Checks budgets and performance limits to raise flags on near-exhaustion.</li>
+                        <li><b>Schedule & Performance Rules:</b> Triggers automatic increases if ROAS remains above thresholds or during registered holiday dates.</li>
+                    </ul>
+                </div>
+                <div class="diagram-box" id="diagram25"></div>
+            </div>
+
+            <!-- Ads: Holiday Adjustments -->
+            <div id="tab_ads_holiday_protection" class="tab-content">
+                <h2>Holiday Adjustments & Reminders</h2>
+                <p class="description">
+                    Automatically applies budget adjustments and bid modifiers during major commercial holidays (e.g., Thanksgiving, Christmas) and fires slack/email reminders to account admins.
+                </p>
+                <div class="flow-summary">
+                    <h4>TECHNICAL FLOW SUMMARY</h4>
+                    <ul>
+                        <li><b>Holiday Adjustments Cron:</b> Automatically boosts or decreases budgets according to historical seasonal conversion rates.</li>
+                        <li><b>Alert Reminders:</b> Triggers Slack and email notifications warning admins of upcoming holiday budget increases.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- SP-API: A+ Content -->
+            <div id="tab_sp_aplus" class="tab-content">
+                <h2>A+ Content Integration</h2>
+                <p class="description">
+                    Synchronizes Amazon A+ Content metadata with catalog items to identify products using enhanced content and enable reporting on its relationship with sales, traffic, conversion rates, and advertising performance.
+                </p>
+                <div class="flow-summary">
+                    <h4>TECHNICAL FLOW SUMMARY</h4>
+                    <ul>
+                        <li><b>Metadata Synchronization:</b> Scheduled worker retrieves A+ Content documents, metadata, and associated ASIN relationships using the A+ Content API (where supported).</li>
+                        <li><b>Content Association:</b> Links A+ Content documents to catalog items (ASINs) and stores publication status and content metadata for reporting.</li>
+                        <li><b>Analytics Integration:</b> Correlates A+ Content availability with sales, traffic, conversion rates, and advertising performance to evaluate the effectiveness of enhanced product content.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- SP-API: Brand Analytics -->
+            <div id="tab_sp_brand_analytics" class="tab-content">
+                <h2>Brand Analytics</h2>
+                <p class="description">
+                    Ingests Amazon Brand Analytics reports (Search Query Performance, Repeat Purchase Behavior) to power search share dashboards.
+                </p>
+                <div class="flow-summary">
+                    <h4>TECHNICAL FLOW SUMMARY</h4>
+                    <ul>
+                        <li><b>Reports Sync:</b> Pulls daily Search Query Performance metrics per brand.</li>
+                        <li><b>Click Share Mapping:</b> Maps ASIN click share and conversion share to trace organic query growth.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- SP-API: Coupons & Deals -->
+            <div id="tab_sp_coupons_deals" class="tab-content">
+                <h2>Coupons & Deals</h2>
+                <p class="description">
+                    Syncs coupon claim metrics and deal performance indicators from Selling Partner API endpoints to display active promo impacts.
+                </p>
+                <div class="flow-summary">
+                    <h4>TECHNICAL FLOW SUMMARY</h4>
+                    <ul>
+                        <li><b>Coupons Ingestion:</b> Syncs active coupon metadata and aggregate redemption metrics.</li>
+                        <li><b>Deals Sync:</b> Runs every 2 hours to update deal pricing thresholds and track promotional margin hits.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- SP-API: Reconciliation & Reimbursements -->
+            <div id="tab_sp_reimbursements" class="tab-content">
+                <h2>FBA Reconciliation & Reimbursements</h2>
+                <p class="description">
+                    Tracks lost and damaged FBA inventory and generates automated reimbursement claims and reminders for submission.
+                </p>
+                <div class="flow-summary">
+                    <h4>TECHNICAL FLOW SUMMARY</h4>
+                    <ul>
+                        <li><b>Reimbursements Ingestion:</b> Daily cron downloads FBA reimbursement reports.</li>
+                        <li><b>Fulfillment Matching:</b> Highlights missing reimbursements for FBA shipment queue discrepancies.</li>
+                    </ul>
+                </div>
+                <div class="diagram-box" id="diagram27"></div>
+            </div>
+
+            <!-- SP-API: Inventory Forecast -->
+            <div id="tab_sp_inventory_forecast" class="tab-content">
+                <h2>Inventory Forecasting & Alerts</h2>
+                <p class="description">
+                    Monitors stock levels, calculates daily run-rates, detects dead inventory, and issues forecast alerts to prevent out-of-stock scenarios.
+                </p>
+                <div class="flow-summary">
+                    <h4>TECHNICAL FLOW SUMMARY</h4>
+                    <ul>
+                        <li><b>Inventory Monitor:</b> Checks FBA stock levels against sales velocity.</li>
+                        <li><b>Dead Inventory Detection:</b> Flags items with zero sales in the last 30/60/90 days to trigger liquidation strategies.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- SP-API: Competitor Analysis -->
+            <div id="tab_sp_competitors" class="tab-content">
+                <h2>Competitor Analysis</h2>
+                <p class="description">
+                    Ingests listings and ratings of targeted competitor products to compare price competitiveness and search shares.
+                </p>
+                <div class="flow-summary">
+                    <h4>TECHNICAL FLOW SUMMARY</h4>
+                    <ul>
+                        <li><b>Competitor Ingestion:</b> Cron queries catalog data for specified competitor ASINs.</li>
+                        <li><b>Pricing Compare:</b> Logs competitor price fluctuations daily.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Integrations: Google Ads -->
+            <div id="tab_google_reports" class="tab-content">
+                <h2>Google Ads & Analytics Reports</h2>
+                <p class="description">
+                    Ingests cross-channel Google Ads and Analytics performance reports to measure off-Amazon traffic conversions.
+                </p>
+                <div class="flow-summary">
+                    <h4>TECHNICAL FLOW SUMMARY</h4>
+                    <ul>
+                        <li><b>Google API Client:</b> Queries Google Ads API for daily search/display performance data.</li>
+                        <li><b>Attribution Link:</b> Integrates external traffic counts with Amazon sales to trace off-channel conversion improvements.</li>
+                    </ul>
+                </div>
+                <div class="diagram-box" id="diagram26"></div>
+            </div>
+
+            <!-- Onboarding: Developer Roadmap -->
+            <div id="tab_dev_onboarding" class="tab-content">
+                <h2>Developer Onboarding & Learning Roadmap</h2>
+                <p class="description">
+                    A comprehensive guide for incoming developers to understand the project structure, Amazon Ads and SP-API architecture, local environment configuration, and core tasks to get completely up to speed.
+                </p>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 25px; margin-bottom: 30px;">
+                    <!-- Project Core Architecture Card -->
+                    <div class="onboarding-card" style="--card-accent: #3b82f6; --card-accent-border: rgba(59, 130, 246, 0.4); --icon-bg: rgba(59, 130, 246, 0.15);">
+                        <div class="onboarding-card-header">
+                            <div class="onboarding-icon-wrapper">
+                                <i data-lucide="folder" style="width: 20px; height: 20px;"></i>
+                            </div>
+                            <h3>Core Codebase Structure</h3>
+                        </div>
+                        <ul class="onboarding-card-list">
+                            <li class="onboarding-card-item">
+                                <span class="onboarding-card-item-bullet"></span>
+                                <div class="onboarding-card-item-content">
+                                    <div class="onboarding-card-item-title">frontend (R-AdvertiseIQ)</div>
+                                    <div class="onboarding-card-item-desc">React client with styled custom UI components, Ag-Grid tables, routing, context stores, and dynamic custom column managers.</div>
+                                </div>
+                            </li>
+                            <li class="onboarding-card-item">
+                                <span class="onboarding-card-item-bullet"></span>
+                                <div class="onboarding-card-item-content">
+                                    <div class="onboarding-card-item-title">backend (Node-AdvertiseIQ)</div>
+                                    <div class="onboarding-card-item-desc">Express API-server handling endpoints, authentication, and core database queries.</div>
+                                </div>
+                            </li>
+                            <li class="onboarding-card-item">
+                                <span class="onboarding-card-item-bullet"></span>
+                                <div class="onboarding-card-item-content">
+                                    <div class="onboarding-card-item-title">background workers</div>
+                                    <div class="onboarding-card-item-desc">Independent processes handling cron jobs, data sync pipelines, and heavy report parser queues.</div>
+                                </div>
+                            </li>
+                            <li class="onboarding-card-item">
+                                <span class="onboarding-card-item-bullet"></span>
+                                <div class="onboarding-card-item-content">
+                                    <div class="onboarding-card-item-title">database</div>
+                                    <div class="onboarding-card-item-desc">MongoDB models (mongoose schemas) as the central persistent layer for synced metrics, logs, and rules.</div>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <!-- Core Concepts Card -->
+                    <div class="onboarding-card" style="--card-accent: #f59e0b; --card-accent-border: rgba(245, 158, 11, 0.4); --icon-bg: rgba(245, 158, 11, 0.15);">
+                        <div class="onboarding-card-header">
+                            <div class="onboarding-icon-wrapper">
+                                <i data-lucide="lightbulb" style="width: 20px; height: 20px;"></i>
+                            </div>
+                            <h3>Key Amazon Concepts</h3>
+                        </div>
+                        <ul class="onboarding-card-list">
+                            <li class="onboarding-card-item">
+                                <span class="onboarding-card-item-bullet"></span>
+                                <div class="onboarding-card-item-content">
+                                    <div class="onboarding-card-item-title">LWA (Login With Amazon)</div>
+                                    <div class="onboarding-card-item-desc">OAuth 2.0 flow to secure seller authorization, yielding short-lived access tokens and long-lived refresh tokens.</div>
+                                </div>
+                            </li>
+                            <li class="onboarding-card-item">
+                                <span class="onboarding-card-item-bullet"></span>
+                                <div class="onboarding-card-item-content">
+                                    <div class="onboarding-card-item-title">SP-API (Selling Partner API)</div>
+                                    <div class="onboarding-card-item-desc">Retrieves catalog, listings, inventory, orders, reports, and financial data through REST APIs. Event-driven updates can also be received through the SP-API Notifications API integrated with AWS messaging services.</div>
+                                </div>
+                            </li>
+                            <li class="onboarding-card-item">
+                                <span class="onboarding-card-item-bullet"></span>
+                                <div class="onboarding-card-item-content">
+                                    <div class="onboarding-card-item-title">Amazon Ads API</div>
+                                    <div class="onboarding-card-item-desc">Manages campaign lifecycle, budgets, placements, keywords, bids, and pulls bulk metrics.</div>
+                                </div>
+                            </li>
+                            <li class="onboarding-card-item">
+                                <span class="onboarding-card-item-bullet"></span>
+                                <div class="onboarding-card-item-content">
+                                    <div class="onboarding-card-item-title">Amazon Marketing Stream</div>
+                                    <div class="onboarding-card-item-desc">Hourly push-based near real-time performance streaming to AWS SQS queues.</div>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <!-- Advanced Project Tools Card -->
+                    <div class="onboarding-card" style="--card-accent: #10b981; --card-accent-border: rgba(16, 185, 129, 0.4); --icon-bg: rgba(16, 185, 129, 0.15);">
+                        <div class="onboarding-card-header">
+                            <div class="onboarding-icon-wrapper">
+                                <i data-lucide="wrench" style="width: 20px; height: 20px;"></i>
+                            </div>
+                            <h3>Core Tools & Utilities</h3>
+                        </div>
+                        <ul class="onboarding-card-list">
+                            <li class="onboarding-card-item">
+                                <span class="onboarding-card-item-bullet"></span>
+                                <div class="onboarding-card-item-content">
+                                    <div class="onboarding-card-item-title">AG-Grid Customizations</div>
+                                    <div class="onboarding-card-item-desc">Shared table grids use <code>AgTable</code>, managing column order, pinning, dynamic column updates, cell renders, and inline-edit popups.</div>
+                                </div>
+                            </li>
+                            <li class="onboarding-card-item">
+                                <span class="onboarding-card-item-bullet"></span>
+                                <div class="onboarding-card-item-content">
+                                    <div class="onboarding-card-item-title">Stream Processing</div>
+                                    <div class="onboarding-card-item-desc">To prevent RAM issues when parsing massive FBA/orders report datasets, the system streams file buffers via <code>stream-chain</code> and <code>stream-json</code>.</div>
+                                </div>
+                            </li>
+                            <li class="onboarding-card-item">
+                                <span class="onboarding-card-item-bullet"></span>
+                                <div class="onboarding-card-item-content">
+                                    <div class="onboarding-card-item-title">Dynamic Mongo Queries</div>
+                                    <div class="onboarding-card-item-desc">Frontend filter metrics are converted into MongoDB query filters using backend parser helper functions (like <code>buildMongoQuery</code>).</div>
+                                </div>
+                            </li>
+                            <li class="onboarding-card-item">
+                                <span class="onboarding-card-item-bullet"></span>
+                                <div class="onboarding-card-item-content">
+                                    <div class="onboarding-card-item-title">Caching & Session Store</div>
+                                    <div class="onboarding-card-item-desc">Uses Redis key-value caching (<code>redis.service.js</code>) to store active profile metadata, session information, permissions, and other frequently accessed application data.</div>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="timeline-section-title">
+                    <i data-lucide="check-square" style="width: 24px; height: 24px; color: var(--active-accent);"></i>
+                    Recommended Onboarding Steps & Hands-on Tasks
+                </div>
+
+                <div class="timeline-container">
+                    <!-- Step 1 -->
+                    <div class="timeline-item">
+                        <div class="timeline-dot-wrapper">
+                            <span class="timeline-dot-inner"></span>
+                        </div>
+                        <span class="timeline-badge" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6;">Step 1</span>
+                        <div class="timeline-content">
+                            <h4 class="timeline-title">Local Configuration</h4>
+                            <p class="timeline-desc">Clone the repo, configure your local <code>.env</code> file with valid MongoDB strings, Redis server details, and AWS/Amazon credentials.</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 2 -->
+                    <div class="timeline-item">
+                        <div class="timeline-dot-wrapper">
+                            <span class="timeline-dot-inner"></span>
+                        </div>
+                        <span class="timeline-badge" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6;">Step 2</span>
+                        <div class="timeline-content">
+                            <h4 class="timeline-title">Run Services</h4>
+                            <p class="timeline-desc">Run <code>npm run dev-api</code> in the backend directory and <code>npm run start</code> in the frontend to boot the environment.</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 3 -->
+                    <div class="timeline-item">
+                        <div class="timeline-dot-wrapper">
+                            <span class="timeline-dot-inner"></span>
+                        </div>
+                        <span class="timeline-badge" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6;">Step 3</span>
+                        <div class="timeline-content">
+                            <h4 class="timeline-title">Connect Sandbox Account</h4>
+                            <p class="timeline-desc">Connect a sandbox Amazon seller account to test the authentication and mapping behavior.</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 4 -->
+                    <div class="timeline-item">
+                        <div class="timeline-dot-wrapper">
+                            <span class="timeline-dot-inner"></span>
+                        </div>
+                        <span class="timeline-badge" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6;">Step 4</span>
+                        <div class="timeline-content">
+                            <h4 class="timeline-title">Observe OAuth Token Storage</h4>
+                            <p class="timeline-desc">Trace the LWA authentication process and check how refresh tokens are stored securely in <code>configSchema</code>.</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 5 -->
+                    <div class="timeline-item">
+                        <div class="timeline-dot-wrapper">
+                            <span class="timeline-dot-inner"></span>
+                        </div>
+                        <span class="timeline-badge" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6;">Step 5</span>
+                        <div class="timeline-content">
+                            <h4 class="timeline-title">Trigger Manual Sync</h4>
+                            <p class="timeline-desc">Initiate a manual catalog, listing, or order sync via the admin/developer dashboard to check endpoints.</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 6 -->
+                    <div class="timeline-item">
+                        <div class="timeline-dot-wrapper">
+                            <span class="timeline-dot-inner"></span>
+                        </div>
+                        <span class="timeline-badge" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6;">Step 6</span>
+                        <div class="timeline-content">
+                            <h4 class="timeline-title">Inspect MongoDB Collections</h4>
+                            <p class="timeline-desc">View raw and normalized synced collections in your local database using database management tools.</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 7 -->
+                    <div class="timeline-item">
+                        <div class="timeline-dot-wrapper">
+                            <span class="timeline-dot-inner"></span>
+                        </div>
+                        <span class="timeline-badge" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">Step 7</span>
+                        <div class="timeline-content">
+                            <h4 class="timeline-title">Trace Report Parser</h4>
+                            <p class="timeline-desc">Trace how <code>processReportFileStream</code> uses pipelines to parse large JSON arrays row-by-row in <code>inventory.controller.js</code>.</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 8 -->
+                    <div class="timeline-item">
+                        <div class="timeline-dot-wrapper">
+                            <span class="timeline-dot-inner"></span>
+                        </div>
+                        <span class="timeline-badge" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">Step 8</span>
+                        <div class="timeline-content">
+                            <h4 class="timeline-title">Trace Amazon Marketing Stream</h4>
+                            <p class="timeline-desc">Verify SQS queue mappings in <code>amsArn.js</code> and trace the SNS email verification receiver handler for real-time streams.</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 9 -->
+                    <div class="timeline-item">
+                        <div class="timeline-dot-wrapper">
+                            <span class="timeline-dot-inner"></span>
+                        </div>
+                        <span class="timeline-badge" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">Step 9</span>
+                        <div class="timeline-content">
+                            <h4 class="timeline-title">Create Automation Rule</h4>
+                            <p class="timeline-desc">Setup a dayparting multiplier or campaign targeting rules to check backend rule engine logic.</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 10 -->
+                    <div class="timeline-item">
+                        <div class="timeline-dot-wrapper">
+                            <span class="timeline-dot-inner"></span>
+                        </div>
+                        <span class="timeline-badge" style="background: rgba(245, 158, 11, 0.1); color: #f59e0b;">Step 10</span>
+                        <div class="timeline-content">
+                            <h4 class="timeline-title">Extend AG-Grid</h4>
+                            <p class="timeline-desc">Locate <code>CustomizeColumns.js</code> and add a mock display column, tracing save requests to <code>ApiListUpdateColumns</code>.</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 11 -->
+                    <div class="timeline-item">
+                        <div class="timeline-dot-wrapper">
+                            <span class="timeline-dot-inner"></span>
+                        </div>
+                        <span class="timeline-badge" style="background: rgba(245, 158, 11, 0.1); color: #f59e0b;">Step 11</span>
+                        <div class="timeline-content">
+                            <h4 class="timeline-title">Monitor Redis Caching</h4>
+                            <p class="timeline-desc">Set up a local Redis monitor and check cache updates on profile switching and organization selection.</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 12 -->
+                    <div class="timeline-item">
+                        <div class="timeline-dot-wrapper">
+                            <span class="timeline-dot-inner"></span>
+                        </div>
+                        <span class="timeline-badge" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6;">Step 12</span>
+                        <div class="timeline-content">
+                            <h4 class="timeline-title">Verify Token Encryption &amp; Decryption</h4>
+                            <p class="timeline-desc">Inspect and run unit tests for the cryptographic services (AES-256 helpers) that protect Selling Partner and Ads API OAuth credentials at rest in MongoDB.</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 13 -->
+                    <div class="timeline-item">
+                        <div class="timeline-dot-wrapper">
+                            <span class="timeline-dot-inner"></span>
+                        </div>
+                        <span class="timeline-badge" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">Step 13</span>
+                        <div class="timeline-content">
+                            <h4 class="timeline-title">Trace Async Report Status Polling</h4>
+                            <p class="timeline-desc">Log and monitor async report sync states (e.g. <code>GET_FLAT_FILE_ALL_ORDERS_DATA_BY_LAST_UPDATE_GENERAL</code>) as they transition from <code>SUBMITTED</code> &rarr; <code>IN_PROGRESS</code> &rarr; <code>DONE</code>.</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 14 -->
+                    <div class="timeline-item">
+                        <div class="timeline-dot-wrapper">
+                            <span class="timeline-dot-inner"></span>
+                        </div>
+                        <span class="timeline-badge" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">Step 14</span>
+                        <div class="timeline-content">
+                            <h4 class="timeline-title">Setup Mock Webhook Receiver</h4>
+                            <p class="timeline-desc">Configure a local webhook catcher (using tools like ngrok) to test event-driven notifications (e.g. <code>ORDER_CHANGE</code>) from Amazon Selling Partner API Notifications.</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 15 -->
+                    <div class="timeline-item">
+                        <div class="timeline-dot-wrapper">
+                            <span class="timeline-dot-inner"></span>
+                        </div>
+                        <span class="timeline-badge" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">Step 15</span>
+                        <div class="timeline-content">
+                            <h4 class="timeline-title">Run Dry-Run Rule Simulations</h4>
+                            <p class="timeline-desc">Execute rule evaluations in dry-run mode to check that dayparting bid adjustments and budget alerts compute correctly in logs without making live API mutation requests.</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 16 -->
+                    <div class="timeline-item">
+                        <div class="timeline-dot-wrapper">
+                            <span class="timeline-dot-inner"></span>
+                        </div>
+                        <span class="timeline-badge" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6;">Step 16</span>
+                        <div class="timeline-content">
+                            <h4 class="timeline-title">Boot Separate Background Workers</h4>
+                            <p class="timeline-desc">Run independent background processes like <code>ams-worker</code> or <code>worker-service</code> separate from the primary API-server, observing CPU/RAM resource bounds.</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 17 -->
+                    <div class="timeline-item">
+                        <div class="timeline-dot-wrapper">
+                            <span class="timeline-dot-inner"></span>
+                        </div>
+                        <span class="timeline-badge" style="background: rgba(245, 158, 11, 0.1); color: #f59e0b;">Step 17</span>
+                        <div class="timeline-content">
+                            <h4 class="timeline-title">Trace Token Request Interceptor</h4>
+                            <p class="timeline-desc">Step through <code>amazonAxios.js</code> request/response interceptors to see how OAuth access tokens are proactively refreshed before expiring or dynamically retried upon 401 errors.</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 18 -->
+                    <div class="timeline-item">
+                        <div class="timeline-dot-wrapper">
+                            <span class="timeline-dot-inner"></span>
+                        </div>
+                        <span class="timeline-badge" style="background: rgba(245, 158, 11, 0.1); color: #f59e0b;">Step 18</span>
+                        <div class="timeline-content">
+                            <h4 class="timeline-title">Audit Database Model Hook Triggers</h4>
+                            <p class="timeline-desc">Observe the console execution of mongoose hooks (<code>pre-save</code>, <code>post-init</code>, etc.) on `configSchema` to verify encryption/decryption at the database layer.</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 19 -->
+                    <div class="timeline-item">
+                        <div class="timeline-dot-wrapper">
+                            <span class="timeline-dot-inner"></span>
+                        </div>
+                        <span class="timeline-badge" style="background: rgba(245, 158, 11, 0.1); color: #f59e0b;">Step 19</span>
+                        <div class="timeline-content">
+                            <h4 class="timeline-title">Verify Rate-Limit Backoff Handlers</h4>
+                            <p class="timeline-desc">Trigger simulated API throttling (`429`) and check that <code>retryHelper.js</code> correctly reads the <code>retry-after</code> header and suspends execution accordingly.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 25px; margin-bottom: 30px;">
+                    <!-- Repository Architecture -->
+                    <div class="onboarding-card" style="--card-accent: #8b5cf6; --card-accent-border: rgba(139, 92, 246, 0.4); --icon-bg: rgba(139, 92, 246, 0.15);">
+                        <div class="onboarding-card-header">
+                            <div class="onboarding-icon-wrapper">
+                                <i data-lucide="git-branch" style="width: 20px; height: 20px;"></i>
+                            </div>
+                            <h3>Repository Architecture</h3>
+                        </div>
+                        <pre style="font-family: monospace; font-size: 0.85rem; line-height: 1.4; color: var(--text-main); background: rgba(0,0,0,0.03); padding: 16px; border-radius: 12px; border: 1px solid var(--border-color); margin: 0;">
+Frontend (React)
+       │
+       ▼
+Backend API (Express)
+       │
+       ├── MongoDB
+       ├── Redis
+       ├── Amazon Ads API
+       ├── Amazon SP-API
+       ├── Amazon Marketing Stream
+       └── Background Workers</pre>
+                    </div>
+
+                    <!-- Debugging Checklist -->
+                    <div class="onboarding-card" style="--card-accent: #ef4444; --card-accent-border: rgba(239, 68, 68, 0.4); --icon-bg: rgba(239, 68, 68, 0.15);">
+                        <div class="onboarding-card-header">
+                            <div class="onboarding-icon-wrapper">
+                                <i data-lucide="alert-circle" style="width: 20px; height: 20px;"></i>
+                            </div>
+                            <h3>Debugging Checklist</h3>
+                        </div>
+                        <ul class="onboarding-card-list">
+                            <li class="onboarding-card-item">
+                                <span class="onboarding-card-item-bullet"></span>
+                                <div class="onboarding-card-item-content">Verify <code>.env</code> configurations in both repositories.</div>
+                            </li>
+                            <li class="onboarding-card-item">
+                                <span class="onboarding-card-item-bullet"></span>
+                                <div class="onboarding-card-item-content">Confirm local MongoDB and Redis connectivity.</div>
+                            </li>
+                            <li class="onboarding-card-item">
+                                <span class="onboarding-card-item-bullet"></span>
+                                <div class="onboarding-card-item-content">Ensure OAuth credentials (LWA client ID/secret) are valid.</div>
+                            </li>
+                            <li class="onboarding-card-item">
+                                <span class="onboarding-card-item-bullet"></span>
+                                <div class="onboarding-card-item-content">Check backend background worker process logs.</div>
+                            </li>
+                            <li class="onboarding-card-item">
+                                <span class="onboarding-card-item-bullet"></span>
+                                <div class="onboarding-card-item-content">Verify scheduled cron jobs are registered and running.</div>
+                            </li>
+                            <li class="onboarding-card-item">
+                                <span class="onboarding-card-item-bullet"></span>
+                                <div class="onboarding-card-item-content">Confirm AWS SQS queue subscriptions (if Amazon Marketing Stream is active).</div>
+                            </li>
+                            <li class="onboarding-card-item">
+                                <span class="onboarding-card-item-bullet"></span>
+                                <div class="onboarding-card-item-content">Monitor API rate-limit headers and retry logs.</div>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="section-label logic">DEVELOPER LEARNING ROADMAP FLOWCHART</div>
+                <div class="diagram-box" id="diagram28"></div>
+            </div>
+
+        </main>
+    </div> <!-- .content-wrapper -->
+
+    <script>
+        // Initialize mermaid
+        const initMermaid = (theme) => {
+            const isDark = theme === 'dark';
+            mermaid.initialize({
+                startOnLoad: false,
+                theme: 'base',
+                securityLevel: 'loose',
+                themeVariables: {
+                    fontFamily: "Arial, sans-serif",
+                    fontSize: '14px',
+                    
+                    // Main node backgrounds (default if no custom class override)
+                    primaryColor: isDark ? 'rgba(39, 39, 42, 0.7)' : '#ffffff',
+                    primaryBorderColor: isDark ? 'rgba(63, 63, 70, 0.8)' : 'rgba(228, 228, 231, 0.8)',
+                    primaryTextColor: isDark ? '#f4f4f5' : '#09090b',
+                    
+                    // Arrow line color
+                    lineColor: isDark ? 'rgba(161, 161, 170, 0.4)' : 'rgba(113, 113, 122, 0.4)',
+                    
+                    // Node radius
+                    nodeRadius: '10px',
+                    nodeBorder: '1px',
+                    
+                    // Clusters/Subgraphs
+                    clusterBkg: isDark ? 'rgba(24, 24, 27, 0.4)' : 'rgba(244, 244, 245, 0.5)',
+                    clusterBorder: isDark ? 'rgba(63, 63, 70, 0.5)' : 'rgba(228, 228, 231, 0.8)',
+                },
+                flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' }
+            });
+        };
+
+        const diagrams = [
+            // ===================== AMAZON ADS API =====================
+
+            // 0 - 0a - Ads Auth: OAuth / LWA flow
+            `graph TD
+        classDef clsA fill:var(--logic-bg),stroke:var(--logic-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+
+        AAUTH1["Client clicks 'Connect Amazon Ads'"] -->|"Redirect to LWA"| AAUTH2["Amazon LWA Consent Screen"]
+        AAUTH2 -->|"User decides"| AAUTH3{"Seller grants access?"}
+        AAUTH3 -->|"No"| AAUTH4["Return to app with error"]
+        AAUTH3 -->|"Yes"| AAUTH5["Amazon sends Auth Code to Backend"]
+        AAUTH5 -->|"Exchange code"| AAUTH6["Backend calls LWA Token API"]
+        AAUTH6 -->|"Persist tokens"| AAUTH7[("Store sellerId, profileId, tokens in DB")]
+        AAUTH7 -->|"Complete"| AAUTH8["Mark Amazon Ads connection as ACTIVE"]
+        class AAUTH1,AAUTH2,AAUTH3,AAUTH5,AAUTH6,AAUTH8 clsA
+        class AAUTH7 clsDB`,
+
+            // 1 - 0b - Ads Token Refresh Cron
+            `graph TD
+        classDef clsC fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+
+        AREF1["Cron: every 45–60 minutes"] -->|"Lookup profiles"| AREF2[("Read all active Ads profiles from DB")]
+        AREF2 -->|"Validate expiry"| AREF3["Check token expiry time"]
+        AREF3 -->|"Expired / near expiry"| AREF4["Call LWA token endpoint using refresh_token"]
+        AREF4 -->|"Save new token"| AREF5[("Update accessToken + expiry in DB")]
+        AREF3 -->|"Still valid"| AREF6["Skip refresh"]
+        AREF5 -->|"Ready for calls"| AREF7["Subsequent API calls use new token"]
+        class AREF1,AREF2,AREF3,AREF4,AREF6,AREF7 clsC
+        class AREF5 clsDB`,
+
+            // 2 - 1a - Ads Campaigns: manual dashboard actions
+            `graph TD
+        classDef clsM fill:var(--manual-bg),stroke:var(--manual-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+
+        ACAM1["Client opens Campaigns page"] -->|"Choose profile"| ACAM2["Select marketplace + profile"]
+        ACAM2 -->|"Load from DB"| ACAM3["View campaigns (name, budget, ACOS)"]
+        ACAM3 -->|"Pick action"| ACAM4{"Action?"}
+        ACAM4 -->|"Create"| ACAM5["Fill campaign form (budget, dates, bidding)"]
+        ACAM4 -->|"Edit"| ACAM6["Change budget, name, or bidding"]
+        ACAM4 -->|"Pause/Enable"| ACAM7["Toggle campaign status"]
+        ACAM5 -->|"POST request"| ACAM8["Backend -> Ads 'Create Campaign' API"]
+        ACAM6 -->|"PUT request"| ACAM9["Backend -> Ads 'Update Campaign' API"]
+        ACAM7 -->|"PUT request"| ACAM10["Backend -> Ads 'Update Status' API"]
+        ACAM8 -->|"Sync to DB"| ACAM11[("Upsert campaign record in DB")]
+        ACAM9 -->|"Sync to DB"| ACAM11
+        ACAM10 -->|"Sync to DB"| ACAM11
+        ACAM11 -->|"Refresh UI"| ACAM12["UI refresh with latest data"]
+        class ACAM1,ACAM2,ACAM3,ACAM4,ACAM5,ACAM6,ACAM7,ACAM8,ACAM9,ACAM10,ACAM12 clsM
+        class ACAM11 clsDB`,
+
+            // 3 - 1b - Ads Campaigns: cron sync (listing + performance)
+            `graph TD
+        classDef clsC fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+
+        ACCR1["Cron: Campaign Listing (15–60 min)"] -->|"Loop profiles"| ACCR2["For each profile & region"]
+        ACCR2 -->|"Fetch pages"| ACCR3["Call 'List Campaigns' API with pagination"]
+        ACCR3 -->|"Save metadata"| ACCR4[("Bulk upsert campaign metadata in DB")]
+        ACCR4 -->|"Timestamp"| ACCR5["Mark listing sync timestamp"]
+        ACCR6["Cron: Campaign Report (daily)"] -->|"Request report"| ACCR7["Create async performance report"]
+        ACCR7 -->|"Wait for status"| ACCR8["Poll report status until COMPLETE"]
+        ACCR8 -->|"Download & parse"| ACCR9["Download GZIP report, unzip, parse rows"]
+        ACCR9 -->|"Store metrics"| ACCR10[("Bulk upsert daily metrics in DB")]
+        ACCR10 -->|"UI ready"| ACCR11["Dashboard shows updated KPIs"]
+        class ACCR1,ACCR2,ACCR3,ACCR5,ACCR6,ACCR7,ACCR8,ACCR9,ACCR11 clsC
+        class ACCR4,ACCR10 clsDB`,
+
+
+            // 4 - 2a - Ads AdGroups: manual management
+            `graph TD
+        classDef clsM fill:var(--manual-bg),stroke:var(--manual-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+
+        ADG1["Client opens AdGroups page"] -->|"Filter"| ADG2["Filter by campaign + profile"]
+        ADG2 -->|"Read from DB"| ADG3["Show adGroups (bid, status, metrics)"]
+        ADG3 -->|"Select action"| ADG4{"Action?"}
+        ADG4 -->|"Create AdGroup"| ADG5["Set name, default bid, product set"]
+        ADG4 -->|"Change bid"| ADG6["Update default bid"]
+        ADG4 -->|"Pause/Enable"| ADG7["Toggle adGroup status"]
+        ADG5 -->|"POST request"| ADG8["Backend -> Ads 'Create AdGroup' API"]
+        ADG6 -->|"PUT request"| ADG9["Backend -> Ads 'Update AdGroup' API"]
+        ADG7 -->|"PUT request"| ADG10["Backend -> Ads 'Update Status' API"]
+        ADG8 -->|"Sync to DB"| ADG11[("Upsert adGroup metadata in DB")]
+        ADG9 -->|"Sync to DB"| ADG11
+        ADG10 -->|"Sync to DB"| ADG11
+        ADG11 -->|"Refresh UI"| ADG12["UI refresh metrics from DB"]
+        class ADG1,ADG2,ADG3,ADG4,ADG5,ADG6,ADG7,ADG8,ADG9,ADG10,ADG12 clsM
+        class ADG11 clsDB`,
+
+
+            // 5 - 2b - Ads AdGroups: cron sync + report
+            `graph TD
+        classDef clsC fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+
+        ADGC1["Cron: AdGroup Listing"] -->|"Fetch pages"| ADGC2["List adGroups with pagination"]
+        ADGC2 -->|"Save to DB"| ADGC3[("Upsert adGroup metadata in DB")]
+        ADGC3 -->|"Timestamp"| ADGC4["Mark last listing sync"]
+        ADGC5["Cron: AdGroup Report"] -->|"Request report"| ADGC6["Request adGroup performance report"]
+        ADGC6 -->|"Download & parse"| ADGC7["Download GZIP, unzip, parse"]
+        ADGC7 -->|"Store metrics"| ADGC8[("Upsert daily metrics (clicks, spend, sales)")]
+        ADGC8 -->|"Chart ready"| ADGC9["Dashboard charts use this table"]
+        class ADGC1,ADGC2,ADGC4,ADGC5,ADGC6,ADGC7,ADGC9 clsC
+        class ADGC3,ADGC8 clsDB`,
+
+
+            // 6 - 3a - Ads Targeting: manual rules (keywords, product targets)
+            `graph TD
+        classDef clsM fill:var(--manual-bg),stroke:var(--manual-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+        classDef clsE fill:var(--eng-bg),stroke:var(--eng-stroke),stroke-width:2px
+
+        ATAR1["Client opens Targeting page"] -->|"Filter"| ATAR2["Select adGroup + profile"]
+        ATAR2 -->|"Query DB"| ATAR3["Show targets (matchType, bid, status)"]
+        ATAR3 -->|"Choose action"| ATAR4{"Action?"}
+        ATAR4 -->|"Add keyword"| ATAR5["Enter term + matchType + bid"]
+        ATAR4 -->|"Change bid"| ATAR6["Update CPC bid"]
+        ATAR4 -->|"Pause/Enable"| ATAR7["Toggle targeting status"]
+        ATAR5 -->|"POST"| ATAR8["Backend -> 'Create Targeting' API"]
+        ATAR6 -->|"PUT"| ATAR9["Backend -> 'Update Targeting' API"]
+        ATAR7 -->|"PUT"| ATAR10["Backend -> 'Update Target Status' API"]
+        ATAR8 -->|"Sync to DB"| ATAR11[("Upsert targeting rows in DB")]
+        ATAR9 -->|"Sync to DB"| ATAR11
+        ATAR10 -->|"Sync to DB"| ATAR11
+        ATAR11 -->|"Log changes"| ATAR12["UI + automation engines read from DB"]
+        ATAR13["Optional: Rule Engine"]:::clsE -->|"Watch metrics"| ATAR14["Read performance (ACOS, clicks) from DB"]
+        ATAR14 -->|"Evaluate rules"| ATAR15["Meets rule conditions?"]
+        ATAR15 -->|"Yes"| ATAR16["Push bid changes / pauses via API"]
+        ATAR16 -->|"Record action"| ATAR17[("Log rule actions in DB")]
+        class ATAR1,ATAR2,ATAR3,ATAR4,ATAR5,ATAR6,ATAR7,ATAR8,ATAR9,ATAR10,ATAR12 clsM
+        class ATAR11,ATAR17 clsDB
+        class ATAR14,ATAR15,ATAR16 clsE`,
+
+
+
+            // 7 - 3b - Ads SearchTerms: report + classification engines
+            `graph TD
+        classDef clsC fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+        classDef clsE fill:var(--eng-bg),stroke:var(--eng-stroke),stroke-width:2px
+        classDef clsL fill:var(--logic-bg),stroke:var(--logic-stroke),stroke-width:2px
+        classDef clsM fill:var(--manual-bg),stroke:var(--manual-stroke),stroke-width:2px
+
+        AST1["Cron: SearchTerm Report"] -->|"Request report"| AST2["Create + poll SearchTerm report"]
+        AST2 -->|"Download & parse"| AST3["Parse rows (query, campaign, adGroup)"]
+        AST3 -->|"Store metrics"| AST4[("Upsert searchTerm metrics in DB")]
+        AST5["Lifecycle Engine"]:::clsE -->|"Classify terms"| AST6["Label: Good / Bad / Research"]
+        AST6 -->|"Save status"| AST7[("Update classification flags in DB")]
+        AST8["Bid Engine"]:::clsE -->|"Analyze data"| AST9["Read rules + searchTerm metrics"]
+        AST9 -->|"Calculate"| AST10["Decide bid up/down or pause"]
+        AST10 -->|"Push changes"| AST11["Push updates via Targeting APIs"]
+        AST11 -->|"Log history"| AST12[("Log bid changes in DB")]
+        AST13["Negative Engine"]:::clsE -->|"Find waste"| AST14["Identify wasted terms (0 sales)"]
+        AST14 -->|"Create negatives"| AST15["Create negative keywords via API"]
+        AST15 -->|"Record"| AST16[("Store negatives in DB")]
+        class AST1,AST2,AST3 clsC
+        class AST4,AST7,AST9,AST12,AST16 clsDB
+        class AST5,AST8,AST13 clsE
+        class AST6,AST10,AST14 clsL
+        class AST11,AST15 clsM`,
+
+
+            // 8 - 4 - Ads Placements: cron-only view
+            `graph TD
+        classDef clsC fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+        classDef clsL fill:var(--logic-bg),stroke:var(--logic-stroke),stroke-width:2px
+
+        APL1["Cron: Placement Report"] -->|"Request report"| APL2["Create Placement report"]
+        APL2 -->|"Download & parse"| APL3["Parse by placement type"]
+        APL3 -->|"Identify type"| APL4{"Placement value"}
+        APL4 -->|"Top of search"| APL5["Map as 'Top of Search'"]
+        APL4 -->|"Detail page"| APL6["Map as 'Product Pages'"]
+        APL4 -->|"Other"| APL7["Map as 'Rest of Search'"]
+        APL5 -->|"Save to DB"| APL8[("Upsert placement metrics in DB")]
+        APL6 -->|"Save to DB"| APL8
+        APL7 -->|"Save to DB"| APL8
+        APL8 -->|"Chart ready"| APL9["Dashboard: placement-wise ACOS, ROAS"]
+        class APL1,APL2,APL3,APL4,APL5,APL6,APL7,APL9 clsL
+        class APL8 clsDB`,
+
+
+            // 9 - 5 - Ads System Jobs overview
+            `graph TD
+        classDef clsC fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+
+        ASYS1["Cron Scheduler"] -->|"Trigger job"| ASYS2{"Job Type"}
+        ASYS2 -->|"Token Refresh"| ASYS3["Refresh LWA access tokens"]
+        ASYS2 -->|"Listing Sync"| ASYS4["Campaigns, AdGroups, Targets"]
+        ASYS2 -->|"Reports"| ASYS5["Performance reports"]
+        ASYS2 -->|"Engines"| ASYS6["Bid, lifecycle, negative engines"]
+        ASYS3 -->|"Save"| ASYS7[("Update tokens in DB")]
+        ASYS4 -->|"Save"| ASYS8[("Upsert metadata in DB")]
+        ASYS5 -->|"Save"| ASYS9[("Upsert metrics in DB")]
+        ASYS6 -->|"Save"| ASYS10[("Write change logs in DB")]
+        class ASYS1,ASYS2,ASYS3,ASYS4,ASYS5,ASYS6 clsC
+        class ASYS7,ASYS8,ASYS9,ASYS10 clsDB`,
+
+
+            // 10 - 6 - Ads Architecture (high-level)
+            `graph LR
+        classDef csF fill:var(--logic-bg),stroke:var(--logic-stroke),stroke-width:2px
+        classDef csB fill:var(--manual-bg),stroke:var(--manual-stroke),stroke-width:2px
+        classDef csW fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef csD fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+
+        ADAMZ["Amazon Ads API"]:::csD <-->|"Auth + Campaign / Reports APIs"| ADBE["Backend (Node/Express)"]:::csB
+        ADBE <-->|"REST JSON APIs"| ADFE["Dashboard Frontend (React/Next)"]:::csF
+        ADBE <-->|"Queues / Schedulers"| ADWK["Workers & CRON jobs"]:::csW
+        ADWK -->|"Listing + Report sync"| ADDB[("MongoDB / SQL DB")]:::csD
+        ADBE -->|"Write | Read"| ADDB
+        ADFE -->|"Read metrics / configs"| ADDB`,
+
+
+            // 11 - 7 - Ads All Flow summary
+            `graph TD
+        classDef csA fill:var(--logic-bg),stroke:var(--logic-stroke),stroke-width:2px
+        classDef csM fill:var(--manual-bg),stroke:var(--manual-stroke),stroke-width:2px
+        classDef csC fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef csD fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+
+        AFLOW1["Client connects Amazon Ads"]:::csA -->|"Save tokens"| AFLOW2["Tokens + profiles stored in DB"]:::csD
+        AFLOW2 -->|"Manual management"| AFLOW3["Dashboard: campaigns / adGroups / targeting"]:::csM
+        AFLOW3 -->|"API calls"| AFLOW4["Backend writes changes to DB"]:::csA
+        AFLOW2 -->|"Background sync"| AFLOW5["CRON syncs listings + reports"]:::csC
+        AFLOW5 -->|"Run engines"| AFLOW6["Automation: bids, negatives, classification"]:::csC
+        AFLOW4 -->|"Single source"| AFLOW7["Dashboards, charts, alerts"]:::csD
+        AFLOW6 -->|"Update"| AFLOW7`,
+
+            // ===================== AMAZON SP-API =====================
+
+            // 12 - 8 - SP Auth: LWA + role / user auth
+            `graph TD
+        classDef clsA fill:var(--logic-bg),stroke:var(--logic-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+        classDef clsM fill:var(--manual-bg),stroke:var(--manual-stroke),stroke-width:2px
+
+        SPA1["Seller clicks 'Connect Seller Central'"] -->|"Redirect"| SPA2["Amazon OAuth (LWA) consent screen"]
+        SPA2 -->|"User decides"| SPA3{"Seller approves access?"}
+        SPA3 -->|"No"| SPA4["Return with error"]
+        SPA3 -->|"Yes"| SPA5["Amazon sends Auth Code to backend"]
+        SPA5 -->|"Exchange code"| SPA6["Backend gets LWA tokens"]
+        SPA6 -->|"Request RDT"| SPA7["Backend gets restricted data token"]
+        SPA7 -->|"Persist"| SPA8[("Store sellerId, tokens, credentials in DB")]
+        SPA8 -->|"Complete"| SPA9["Connection marked ACTIVE; SP-API enabled"]
+        class SPA1,SPA2,SPA3,SPA5,SPA6,SPA7,SPA9 clsA
+        class SPA4 clsM
+        class SPA8 clsDB`,
+
+
+            // 13 - 9 - SP Products / Catalog (listings lifecycle)
+            `graph TD
+        classDef clsM fill:var(--manual-bg),stroke:var(--manual-stroke),stroke-width:2px
+        classDef clsC fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+
+        SPCAT1["Cron: Catalog Sync"]:::clsC -->|"Call Catalog Items API"| SPCAT2["Retrieve Catalog Metadata"]
+        SPCAT2 -->|"Upsert Product Metadata"| SPCAT3[("Upsert catalog metadata (title, brand, images, dimensions, and attributes) into the database")]
+        SPCAT3 -->|"Display data"| SPCAT4["Used for product reference in dashboards"]
+        SPCAT5["Cron: Listings/Inventory/Pricing Sync"]:::clsC -->|"Call Listings, Inventory & Pricing APIs"| SPCAT6["Call Listings Items, Inventory, & Pricing APIs"]
+        SPCAT6 -->|"Upsert Listing & Inventory"| SPCAT7[("Upsert listing details (SKU, ASIN, status), inventory quantities, and pricing into the database")]
+        SPCAT7 -->|"Cross-link"| SPCAT8["Link ASINs, Seller SKUs, Marketplace IDs, and Amazon Ads entities to create a unified product dataset for reporting and analytics"]
+        SPCAT9["Manual: Product dashboard"]:::clsM -->|"Filter"| SPCAT10["Filters by Marketplace, ASIN, SKU, Brand"]
+        SPCAT10 -->|"Read merged data"| SPCAT11["Displays normalized catalog, listing, inventory, and pricing data from the unified database with filtering and search capabilities"]
+        class SPCAT1,SPCAT2,SPCAT4,SPCAT5,SPCAT6,SPCAT8,SPCAT9,SPCAT10,SPCAT11 clsM
+        class SPCAT3,SPCAT7 clsDB`,
+
+
+            // 14 - 10 - SP Orders flow
+            `graph TD
+        classDef clsM fill:var(--manual-bg),stroke:var(--manual-stroke),stroke-width:2px
+        classDef clsC fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+
+        SPORD1["Cron: Orders Polling"]:::clsC -->|"Fetch new orders"| SPORD2["Call getOrders (CreatedAfter = lastSync)"]
+        SPORD2 -->|"Get line items"| SPORD3["For each order: getOrderItems"]
+        SPORD3 -->|"Save header"| SPORD4[("Upsert order header & status in DB")]
+        SPORD4 -->|"Save items"| SPORD5[("Upsert order items (ASIN, SKU, price) in DB")]
+        SPORD5 -->|"Timestamp"| SPORD6["Mark lastSync timestamp"]
+        SPORD7["Optional: Notifications API"]:::clsC -->|"Subscribe"| SPORD8["Listen for ORDER_CHANGE events"]
+        SPORD8 -->|"Real-time update"| SPORD9["Update DB via webhook"]
+        SPORD10["Manual: Orders dashboard"]:::clsM -->|"Filter"| SPORD11["Filter by date / status"]
+        SPORD11 -->|"Display"| SPORD12["Shows revenue, units, shipment data"]
+        class SPORD1,SPORD2,SPORD3,SPORD6,SPORD7,SPORD8,SPORD9 clsC
+        class SPORD4,SPORD5,SPORD12 clsDB`,
+
+
+            // 15 - 11 - SP Ratings / Reviews
+            `graph TD
+        classDef clsC fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+        classDef clsM fill:var(--manual-bg),stroke:var(--manual-stroke),stroke-width:2px
+
+        SPRAT1["Cron: Ratings & Reviews"]:::clsC -->|"Retrieve Rating Metrics"| SPRAT2["Retrieve available rating metrics or reports (where supported)"]
+        SPRAT2 -->|"Store Rating Data"| SPRAT3[("Upsert ASIN rating metrics and review counts into the database")]
+        SPRAT3 -->|"Link with Sales & Ads"| SPRAT4["Join ratings with orders and advertising data for performance analysis"]
+        SPRAT5["Manual: Ratings dashboard"]:::clsM -->|"Filter by ASIN / Brand"| SPRAT6["Client selects ASIN, Brand, or Marketplace"]
+        SPRAT6 -->|"Display Rating Trends"| SPRAT7["Displays rating trends, review counts, and available review excerpts (where supported)"]
+        class SPRAT1,SPRAT2,SPRAT4,SPRAT5,SPRAT6,SPRAT7 clsM
+        class SPRAT3 clsDB`,
+
+
+            // 16 - 12 - SP Feeds & Reports
+            `graph TD
+        classDef clsC fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+
+        SPFEED1["Cron: Pricing / Inventory Feeds (optional)"] --> SPFEED2["Generate XML/JSON feed (price / quantity updates)"]
+        SPFEED2 --> SPFEED3["Submit feed via Feeds API"]
+        SPFEED3 --> SPFEED4["Poll feed processing status"]
+        SPFEED4 --> SPFEED5[("Log success/failure + messages in DB")]
+
+        SPFEED6["Cron: Financial / Business Reports"] --> SPFEED7["Create reports via Reports API (settlements, performance)"]
+        SPFEED7 --> SPFEED8["Poll until report COMPLETE, then download & parse"]
+        SPFEED8 --> SPFEED9[("Upsert payout, fees, traffic, conversions into DB")]
+        SPFEED9 --> SPFEED10["Used for profit/LTV dashboards and recon"]
+        class SPFEED1,SPFEED2,SPFEED3,SPFEED4,SPFEED6,SPFEED7,SPFEED8,SPFEED10 clsC
+        class SPFEED5,SPFEED9 clsDB`,
+
+
+            // 17 - 13 - SP System Jobs overview
+            `graph TD
+        classDef clsC fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+ 
+        SPSYS1["Scheduler"] -->|"Trigger job"| SPSYS2{"SP-API Job Type"}
+        SPSYS2 -->|"Auth"| SPSYS3["Refresh LWA access tokens & maintain RDT workflows"]
+        SPSYS2 -->|"Catalog"| SPSYS4["Sync Catalog + Inventory"]
+        SPSYS2 -->|"Orders"| SPSYS5["Poll Orders & Shipments"]
+        SPSYS2 -->|"Finance"| SPSYS6["Fetch Settlement Reports"]
+        SPSYS2 -->|"Ratings"| SPSYS7["Fetch available rating metrics / reports (where supported)"]
+        SPSYS3 -->|"Save"| SPSYS8[("Update tokens in DB")]
+        SPSYS4 -->|"Save"| SPSYS9[("Upsert catalog tables in DB")]
+        SPSYS5 -->|"Save"| SPSYS10[("Upsert order tables in DB")]
+        SPSYS6 -->|"Save"| SPSYS11[("Upsert payout tables in DB")]
+        SPSYS7 -->|"Save"| SPSYS12[("Upsert rating tables in DB")]
+        class SPSYS1,SPSYS2,SPSYS3,SPSYS4,SPSYS5,SPSYS6,SPSYS7 clsC
+        class SPSYS8,SPSYS9,SPSYS10,SPSYS11,SPSYS12 clsDB`,
+
+
+            // 18 - 14 - SP Architecture
+            `graph LR
+        classDef csF fill:var(--logic-bg),stroke:var(--logic-stroke),stroke-width:2px
+        classDef csB fill:var(--manual-bg),stroke:var(--manual-stroke),stroke-width:2px
+        classDef csW fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef csD fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+
+        SPSP["Amazon Selling Partner API"]:::csD <-->|"Orders / Catalog / Reports / Feeds"| SPBE["Backend (Node/Express)"]:::csB
+        SPBE <-->|"REST + Webhooks"| SPFE["Internal Dashboards / Admin Panel"]:::csF
+        SPBE <-->|"Schedulers, queues"| SPWK["Background Workers, CRON"]:::csW
+        SPWK -->|"Sync data, process reports"| SPDB[("DB: Products, Orders, Finance, Ratings")]:::csD
+        SPBE -->|"Read/Write domain data"| SPDB
+        SPFE -->|"Read data for UI"| SPDB`,
+
+
+            // 19 - 15 - SP All Flow
+            `graph TD
+        classDef csA fill:var(--logic-bg),stroke:var(--logic-stroke),stroke-width:2px
+        classDef csC fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef csD fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+        classDef csM fill:var(--manual-bg),stroke:var(--manual-stroke),stroke-width:2px
+
+        SPAFLOW1["Seller authorizes via LWA"]:::csA -->|"Securely Store Refresh Token & Seller Metadata"| SPAFLOW2[("Tokens + seller info in DB")]:::csD
+        SPAFLOW2 -->|"Scheduled API Sync"| SPAFLOW3["CRON syncs catalog, orders, ratings"]:::csC
+        SPAFLOW3 -->|"Normalize & Transform Data"| SPAFLOW4["All business data in DB"]:::csD
+        SPAFLOW4 -->|"Analytics & Dashboards"| SPAFLOW5["Dashboards: Products, Orders, Ratings"]:::csM
+        SPAFLOW4 -->|"Cross-Source Analytics"| SPAFLOW6["Join Ads + SP for TACOS / Profit"]:::csA`,
+
+            // 20 - 16 - Pricing diagram (conceptual)
+            `graph TD
+        classDef pub fill:var(--manual-bg),stroke:var(--manual-stroke),stroke-width:2px
+        classDef pri fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+        classDef clsA fill:var(--logic-bg),stroke:var(--logic-stroke),stroke-width:2px
+ 
+        P0["SP-API Developer Models"]:::clsA --> P1["Public (3rd-party) App"]:::pub
+        P0 --> P2["Private (1st-party) App"]:::pri
+ 
+        P1 --> P3["Listed in Amazon Appstore"]:::pub
+        P3 --> P4["<b>Proposed SP-API Pricing (Cancelled)</b><br/>No developer subscription or usage fees are currently active."]:::pub
+ 
+        P2 --> P7["Internal Use Only"]:::pri
+        P7 --> P8["<b>No API Subscription Fees</b><br/>Standard selling fees apply"]:::pri`,
+
+            // 21 - 21 - Marketing Stream: Stage 1 (Onboarding, Connectivity & Subscriptions)
+            `graph TD
+        classDef clsA fill:var(--logic-bg),stroke:var(--logic-stroke),stroke-width:2px
+        classDef clsAW fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+        classDef clsM fill:var(--manual-bg),stroke:var(--manual-stroke),stroke-width:2px
+        classDef clsE fill:var(--eng-bg),stroke:var(--eng-stroke),stroke-width:2px
+
+        subgraph AWS_Setup["1. AWS Destination Connectivity Setup & Permissions"]
+            OB1["Create SQS Queue in AWS Account<br/>(Standard/FIFO Queue)"]:::clsAW --> OB2["Attach SQS IAM Queue Policy<br/>(Grant sqs:SendMessage to Amazon Ads Principal)"]:::clsAW
+            OB2 --> OB3["Map regional queue parameters:<br/>Look up Profile's amazonUrl in ARN_MAP<br/>to retrieve sqsArn, sqsQueueUrl, & regionName"]:::clsAW
+        end
+
+        subgraph UI_Action["2. User Subscription Selection (UI)"]
+            UI1["Open Manage Subscriptions Modal<br/>(SubscriptionModal.js)"]:::clsM --> UI2["Select Datasets<br/>(SP Traffic/Conversion, SB, SD, Budget)"]:::clsM
+            UI2 --> UI3["Submit Selected Datasets<br/>(POST /api/manageSubscribeAMS)"]:::clsM
+        end
+
+        subgraph Backend_Auth["3. Backend Authentication & Mapping"]
+            API1["Fetch Config & Profile Data"]:::clsA --> API2["Retrieve Ads Access Token<br/>(getAccessToken)"]:::clsA
+            API2 --> API3["Map Existing Subscriptions in DB<br/>(amsSubscriptionSchema)"]:::clsDB
+        end
+
+        subgraph Lifecycle_Mgmt["4. Subscription Lifecycle Management"]
+            API3 --> DEC1{"Compare Selection<br/>with Active Subs"}:::clsE
+            
+            %% Subscribe Flow
+            DEC1 -->|"New Dataset"| SUB1["Generate unique clientRequestToken<br/>& lookup regional SQS ARN"]:::clsA
+            SUB1 --> SUB2["<b>Amazon Ads API</b><br/>POST /streams/subscriptions"]:::clsA
+            SUB2 --> SUB3["Save PENDING_CONFIRMATION<br/>subscription to local DB"]:::clsDB
+            SUB2 --> CONF1["Amazon sends SNS/SQS<br/>SubscriptionConfirmation msg"]:::clsAW
+            CONF1 --> CONF2["Consumer Service catches msg &<br/>emails link to RECEIVER_EMAIL"]:::clsA
+            CONF2 --> CONF3["Admin clicks confirmation URL<br/>(Activates AWS SNS-to-SQS handle)"]:::clsM
+            CONF3 --> SUB4["Update DB Subscription Status<br/>(status: 'ACTIVE')"]:::clsDB
+            
+            %% Archive Flow
+            DEC1 -->|"Unselected Dataset"| ARC1["<b>Amazon Ads API</b><br/>PUT /streams/subscriptions/{subId}"]:::clsA
+            ARC1 --> ARC2["Update DB Subscription Status<br/>(status: 'ARCHIVED')"]:::clsDB
+        end
+
+        OB3 -.->|"SQS ARN & Region"| SUB1
+        UI3 --> API1`,
+
+            // 22 - 22 - Marketing Stream: Stage 2 (Data Ingestion)
+            `graph TD
+        classDef clsA fill:var(--logic-bg),stroke:var(--logic-stroke),stroke-width:2px
+        classDef clsC fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+        classDef clsAW fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+
+        AMS1["<b>Amazon Marketing Stream</b>"]:::clsAW -->|"Hourly Near Real-time Push"| AMS2["<b>AWS SQS/Firehose</b>"]:::clsAW
+        AMS2 -->|"Streaming Data"| WK1["<b>Consumer Service</b><br/>(Lambda/Container/App)"]:::clsC
+        WK1 -->|"Parse JSON Records"| WK2["Performance Analytics Engine"]:::clsA
+        WK2 -->|"Bulk Upsert / ETL"| WK3[("Database / S3 Data Lake")]:::clsDB
+
+        class AMS1,AMS2 clsAW`,
+
+            // 23 - 23 - Rules: Rule Engine Lifecycle
+            `graph TD
+        classDef clsA fill:var(--logic-bg),stroke:var(--logic-stroke),stroke-width:2px,color:black
+        classDef clsC fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px,color:black
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px,color:black
+        classDef clsE fill:var(--eng-bg),stroke:var(--eng-stroke),stroke-width:2px,color:black
+
+        R1[("<b>Rule DB</b><br/>(Conditions + Actions)")]:::clsDB --> R2["<b>Cron Scheduler</b><br/>(15m/1h evaluation)"]:::clsC
+        R2 --> R3["<b>Data Fetcher</b><br/>(Reporting API & AMS Data)"]:::clsC
+        R3 --> R4["<b>Logic Engine</b><br/>(Evaluate Condition == True?)"]:::clsE
+        R4 -->|"Condition Met"| R5["<b>Payload Builder</b><br/>(Compute New Bids/State)"]:::clsA
+        R5 --> R6["<b>Ads API Client</b><br/>(/targets, /campaigns, /budgetRules)"]:::clsA
+        R6 --> R7[("<b>Audit Log DB</b><br/>(Results & History)")]:::clsDB
+        R7 --> R2
+
+        class R4,R5 clsE`,
+
+            // 24 - Dayparting Strategy
+            `graph TD
+        classDef clsA fill:var(--logic-bg),stroke:var(--logic-stroke),stroke-width:2px
+        classDef clsC fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+
+        D1["Cron: Dayparting strategy (15m)"]:::clsC --> D2["Read active Dayparting Rules from DB"]:::clsDB
+        D2 --> D3{"Current local time matches active window?"}:::clsA
+        D3 -->|"Yes"| D4["Apply Bid Multiplier or Enable Campaigns"]:::clsA
+        D3 -->|"No (Off-peak)"| D5["Pause Campaigns or Apply Off-peak Multiplier"]:::clsA
+        D4 --> D6["Push updates via Ads Campaigns API"]:::clsA
+        D5 --> D6
+        D6 --> D7[("Log update status in DB Audit Logs")]:::clsDB`,
+
+            // 25 - Budget Rules
+            `graph TD
+        classDef clsA fill:var(--logic-bg),stroke:var(--logic-stroke),stroke-width:2px
+        classDef clsC fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+
+        B1["Cron: Budget Rules Schedules (1m)"]:::clsC --> B2["Fetch campaign active budget rules from DB"]:::clsDB
+        B2 --> B3{"Rule type?"}:::clsA
+        B3 -->|"Schedule-based"| B4["Check special events / date range (e.g. Prime Day)"]:::clsA
+        B3 -->|"Performance-based"| B5["Evaluate ROAS/CTR thresholds from report metrics"]:::clsA
+        B4 --> B6{"Condition met?"}:::clsA
+        B5 --> B6
+        B6 -->|"Yes"| B7["Calculate dynamic budget increase (e.g. +20%)"]:::clsA
+        B7 --> B8["Push budget update to Ads Campaign Budget Rules API"]:::clsA
+        B6 -->|"No"| B9["Reset to base campaign budget if previously boosted"]:::clsA
+        B9 --> B8
+        B8 --> B10[("Update status and metrics in DB")]:::clsDB`,
+
+            // 26 - Google Integration
+            `graph TD
+        classDef clsA fill:var(--logic-bg),stroke:var(--logic-stroke),stroke-width:2px
+        classDef clsC fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+
+        G1["Cron: Google Analytics/Ads Reports (Daily)"]:::clsC --> G2["Call Google Ads/Analytics Reporting API"]:::clsA
+        G2 --> G3["Fetch Best Performer and Keyword Analysis metrics"]:::clsA
+        G3 --> G4["Transform and align Google metrics with Amazon ASINs"]:::clsA
+        G4 --> G5[("Upsert Google metrics in DB")]:::clsDB
+        G5 --> G6["Dashboard: Cross-Channel performance charts (Google Ads vs Amazon Ads)"]:::clsA`,
+
+            // 27 - Reconciliation & Reimbursement
+            `graph TD
+        classDef clsA fill:var(--logic-bg),stroke:var(--logic-stroke),stroke-width:2px
+        classDef clsC fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+
+        RCON1["Cron: Reimbursement Report (Daily)"]:::clsC --> RCON2["Request GET_FBA_REIMBURSEMENTS_DATA report from SP-API"]:::clsA
+        RCON2 --> RCON3["Poll report & download GZIP data"]:::clsA
+        RCON3 --> RCON4["Parse raw reimbursements and match against lost/damaged orders"]:::clsA
+        RCON4 --> RCON5[("Store matched claims in DB")]:::clsDB
+        RCON5 --> RCON6["Automated reminder email helper constructs claim notification"]:::clsA
+        RCON6 --> RCON7["Send notification to merchant central / seller admins"]:::clsC`,
+            
+            // 28 - Developer Onboarding & Roadmap
+            `graph LR
+        classDef clsA fill:var(--logic-bg),stroke:var(--logic-stroke),stroke-width:2px
+        classDef clsC fill:var(--cron-bg),stroke:var(--cron-stroke),stroke-width:2px
+        classDef clsDB fill:var(--db-bg),stroke:var(--db-stroke),stroke-width:2px
+        classDef clsM fill:var(--manual-bg),stroke:var(--manual-stroke),stroke-width:2px
+        classDef clsE fill:var(--eng-bg),stroke:var(--eng-stroke),stroke-width:2px
+
+        HUB["<b>🚀 ONBOARDING ROADMAP</b><br/>Start Here"]:::clsE
+
+        %% Track 1: Setup
+        HUB -->|"1. LOCAL SETUP"| DEV1["<b>1. Clone Repositories</b><br/>• Frontend (React)<br/>• Backend (Node/Express)"]:::clsM
+        DEV1 --> DEV2["<b>2. Configure local .env</b><br/>• MongoDB Connection<br/>• Redis Server details<br/>• AWS/Amazon Ads credentials"]:::clsM
+        DEV2 --> DEV3["<b>3. Boot App Servers</b><br/>• frontend: npm run start<br/>• backend: npm run dev-api"]:::clsM
+        DEV3 --> TASK1["<b>Task 1: Connect Store</b><br/>Authorize sandbox profile<br/>via Consent UI LWA flow"]:::clsE
+        DEV3 --> TASK2["<b>Task 2: Check DB Logs</b><br/>Check MongoDB collection<br/>logs for token updates"]:::clsDB
+        DEV3 --> TASK9["<b>Task 9: Verify Cryptography</b><br/>Verify token encryption<br/>helper functions"]:::clsDB
+        DEV3 --> TASK14["<b>Task 14: Model Hooks</b><br/>Observe pre-save/post-init<br/>hooks in config.model.js"]:::clsDB
+        DEV3 --> TASK16["<b>Task 16: Boot Workers</b><br/>Boot worker-service/ams-worker<br/>separate from api-server"]:::clsC
+        
+        %% Track 2: Core Integrations
+        HUB -->|"2. AMAZON CONCEPTS"| CONCEPT1["<b>Amazon LWA OAuth</b><br/>• Client ID/Secret Exchange<br/>• Access & Refresh tokens<br/>• Automatic token refreshing"]:::clsA
+        CONCEPT1 --> CONCEPT2["<b>Reports Sync Engine</b><br/>• Request Ads/SP-API Reports<br/>• Poll status & download GZIP<br/>• Parse and upsert to MongoDB"]:::clsA
+        CONCEPT2 --> CONCEPT3["<b>Amazon Marketing Stream</b><br/>• AWS SQS Queue target mapping<br/>• Confirmation email webhook<br/>• Hourly real-time pushed metrics"]:::clsA
+        CONCEPT3 --> CONCEPT4["<b>Bid & Budget Automation</b><br/>• Dayparting Rules schedules<br/>• Cron engine target modifications"]:::clsA
+        CONCEPT4 --> TASK3["<b>Task 3: Run Manual Sync</b><br/>Manually trigger performance<br/>sync in development console"]:::clsE
+        CONCEPT4 --> TASK4["<b>Task 4: Create Bid Rule</b><br/>Setup dayparting multiplier<br/>in Campaign Targeting UI"]:::clsM
+        CONCEPT4 --> TASK5["<b>Task 5: Trace SQS Loop</b><br/>Trace SQS confirmation<br/>receiver loop in terminal"]:::clsC
+        CONCEPT2 --> TASK10["<b>Task 10: Async Lifecycle</b><br/>Trace report status polling<br/>transitions (SUBMITTED->DONE)"]:::clsC
+        CONCEPT3 --> TASK11["<b>Task 11: Mock Webhooks</b><br/>Verify webhook endpoint<br/>using ngrok locally"]:::clsE
+        CONCEPT1 --> TASK13["<b>Task 13: Interceptor Trace</b><br/>Verify proactive refresh logic<br/>in amazonAxios.js"]:::clsE
+        
+        %% Track 3: Code Utilities
+        HUB -->|"3. ARCHITECTURE"| TOOL1["<b>AG-Grid Customizations</b><br/>• Dynamic Column Customizer<br/>• Custom cell edit popups<br/>• Pinning and layout settings"]:::clsA
+        TOOL1 --> TOOL2["<b>JSON Stream Parser</b><br/>• stream-chain & stream-json<br/>• Read big files row-by-row<br/>• Prevents server memory leaks"]:::clsA
+        TOOL2 --> TOOL3["<b>Dynamic Query Builder</b><br/>• buildMongoQuery function<br/>• Translates UI filter modals<br/>• Generates Mongo query filters"]:::clsA
+        TOOL3 --> TOOL4["<b>Redis Cache Manager</b><br/>• Profile and Token cache stores<br/>• Reduces Mongo query overhead"]:::clsDB
+        TOOL4 --> TASK6["<b>Task 6: Trace Stream Pipe</b><br/>Step-through processReportFileStream<br/>in inventory.controller.js"]:::clsE
+        TOOL4 --> TASK7["<b>Task 7: Extend Grid Customize</b><br/>Add custom mock column to<br/>AgTable customize panel"]:::clsM
+        TOOL4 --> TASK8["<b>Task 8: Redis Caching Check</b><br/>Monitor Redis keys in cli<br/>on profile switching"]:::clsC
+        TOOL3 --> TASK12["<b>Task 12: Rule Dry Run</b><br/>Debug dayparting multipliers<br/>in console dry-run mode"]:::clsM
+        TOOL2 --> TASK15["<b>Task 15: Retry Backoff</b><br/>Verify 429 backoff handling<br/>in retryHelper.js"]:::clsC`,
+        ];
+
+        const tabDiagrams = {
+            // General
+            tab_pricing: [{ container: 'diagram16', diagramIndex: 20 }],
+
+            // Amazon Ads
+            tab_ads_auth: [{ container: 'diagram0a', diagramIndex: 0 }, { container: 'diagram0b', diagramIndex: 1 }],
+            tab_ads_flow: [{ container: 'diagram7', diagramIndex: 11 }],
+            tab_ads_arch: [{ container: 'diagram6', diagramIndex: 10 }],
+            tab_ads_camp: [{ container: 'diagram1a', diagramIndex: 2 }, { container: 'diagram1b', diagramIndex: 3 }],
+            tab_ads_adg: [{ container: 'diagram2a', diagramIndex: 4 }, { container: 'diagram2b', diagramIndex: 5 }],
+            tab_ads_target: [{ container: 'diagram3a', diagramIndex: 6 }],
+            tab_ads_search_terms: [{ container: 'diagram3b', diagramIndex: 7 }],
+            tab_ads_placement: [{ container: 'diagram4', diagramIndex: 8 }],
+            tab_ads_stream: [{ container: 'diagram17a', diagramIndex: 21 }, { container: 'diagram17b', diagramIndex: 22 }],
+            tab_ads_jobs: [{ container: 'diagram5', diagramIndex: 9 }],
+            tab_ads_rules: [{ container: 'diagram18', diagramIndex: 23 }],
+
+            // SP-API
+            tab_sp_auth: [{ container: 'diagram8', diagramIndex: 12 }],
+            tab_sp_flow: [{ container: 'diagram15', diagramIndex: 19 }],
+            tab_sp_arch: [{ container: 'diagram14', diagramIndex: 18 }],
+            tab_sp_products: [{ container: 'diagram9', diagramIndex: 13 }],
+            tab_sp_orders: [{ container: 'diagram10', diagramIndex: 14 }],
+            tab_sp_ratings: [{ container: 'diagram11', diagramIndex: 15 }],
+            tab_sp_feeds: [{ container: 'diagram12', diagramIndex: 16 }],
+            tab_sp_jobs: [{ container: 'diagram13', diagramIndex: 17 }],
+
+            // Dayparting & Budget Rules
+            tab_ads_dayparting: [{ container: 'diagram24', diagramIndex: 24 }],
+            tab_ads_budget_rules: [{ container: 'diagram25', diagramIndex: 25 }],
+
+            // Google Integration
+            tab_google_reports: [{ container: 'diagram26', diagramIndex: 26 }],
+
+            // Reconciliation & Reimbursement
+            tab_sp_reimbursements: [{ container: 'diagram27', diagramIndex: 27 }],
+
+            // Developer Onboarding
+            tab_dev_onboarding: [{ container: 'diagram28', diagramIndex: 28 }],
+        };
+
+        const rendered = new Set();
+        const themeIcon = document.getElementById('theme-icon');
+
+        async function setTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+            
+            // Toggle Lucide icons
+            const iconEl = document.getElementById('theme-icon');
+            if (iconEl) {
+                iconEl.setAttribute('data-lucide', theme === 'dark' ? 'sun' : 'moon');
+                iconEl.style.transform = 'rotate(360deg)';
+                lucide.createIcons();
+                setTimeout(() => {
+                    iconEl.style.transform = 'rotate(0deg)';
+                }, 500);
+            }
+
+            initMermaid(theme);
+            rendered.clear();
+
+            // Re-render only the currently active tab's diagrams
+            const activeTab = document.querySelector('.tab-content.active');
+            if (activeTab) {
+                const tabId = activeTab.id;
+                const entries = tabDiagrams[tabId] || [];
+                for (const entry of entries) {
+                    await renderDiagram(entry.container, entry.diagramIndex);
+                }
+            }
+        }
+
+        function toggleTheme() {
+            const currentTheme = localStorage.getItem('theme') || 'dark';
+            setTheme(currentTheme === 'light' ? 'dark' : 'light');
+        }
+
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        const initialIcon = document.getElementById('theme-icon');
+        if (initialIcon) {
+            initialIcon.setAttribute('data-lucide', savedTheme === 'dark' ? 'sun' : 'moon');
+        }
+
+        async function renderDiagram(containerId, diagramIndex) {
+            const key = containerId;
+            if (rendered.has(key)) return;
+            const container = document.getElementById(containerId);
+            if (!container) return;
+
+            const theme = localStorage.getItem('theme') || 'dark';
+            const colors = {
+                light: {
+                    'manual-bg': '#e8f5e9', 'manual-stroke': '#1b5e20',
+                    'cron-bg': '#fff3e0', 'cron-stroke': '#e65100',
+                    'db-bg': '#f3e5f5', 'db-stroke': '#4a148c',
+                    'eng-bg': '#fce4ec', 'eng-stroke': '#880e4f',
+                    'logic-bg': '#e1f5fe', 'logic-stroke': '#01579b'
+                },
+                dark: {
+                    'manual-bg': '#064e3b', 'manual-stroke': '#34d399',
+                    'cron-bg': '#78350f', 'cron-stroke': '#fbbf24',
+                    'db-bg': '#4c1d95', 'db-stroke': '#a78bfa',
+                    'eng-bg': '#831843', 'eng-stroke': '#f472b6',
+                    'logic-bg': '#0c4a6e', 'logic-stroke': '#38bdf8'
+                }
+            }[theme];
+
+            let diagramStr = diagrams[diagramIndex];
+            Object.keys(colors).forEach(key2 => {
+                const regex = new RegExp(`var\\(--${key2}\\)`, 'g');
+                diagramStr = diagramStr.replace(regex, colors[key2]);
+            });
+
+            try {
+                const id = 'mermaid-svg-' + diagramIndex;
+                const { svg } = await mermaid.render(id, diagramStr);
+                container.innerHTML = svg;
+                rendered.add(key);
+            } catch (e) {
+                container.innerHTML = '<p style="color:red;">Render error: ' + e.message + '</p>';
+            }
+        }
+
+        async function showTab(tabId, btnElement) {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+            if (btnElement) {
+                btnElement.classList.add('active');
+            } else {
+                const btn = Array.from(document.querySelectorAll('.tab-btn')).find(b => {
+                    const onclickStr = b.getAttribute('onclick') || '';
+                    return onclickStr.includes(`'${tabId}'`);
+                });
+                if (btn) btn.classList.add('active');
+            }
+
+            const target = document.getElementById(tabId);
+            if (target) target.classList.add('active');
+
+            const entries = tabDiagrams[tabId] || [];
+            for (const entry of entries) {
+                await renderDiagram(entry.container, entry.diagramIndex);
+            }
+
+            // Close mobile menu on select
+            document.getElementById('sidebar-nav').classList.remove('active');
+        }
+
+        function toggleMenu(menuId) {
+            document.getElementById(menuId).classList.toggle('expanded');
+        }
+
+        function toggleMobileMenu() {
+            document.getElementById('sidebar-nav').classList.toggle('active');
+        }
+
+        function filterSidebarTabs(query) {
+            const q = query.toLowerCase().trim();
+            const tabButtons = document.querySelectorAll('.tab-btn');
+            const menuGroups = document.querySelectorAll('.menu-group');
+
+            tabButtons.forEach(btn => {
+                const text = btn.innerText.toLowerCase();
+                if (text.includes(q)) {
+                    btn.style.display = 'flex';
+                } else {
+                    btn.style.display = 'none';
+                }
+            });
+
+            menuGroups.forEach(group => {
+                const visibleButtons = group.querySelectorAll('.tab-btn[style="display: flex;"]');
+                if (q === '') {
+                    group.style.display = 'block';
+                    group.classList.add('expanded');
+                } else if (visibleButtons.length > 0) {
+                    group.style.display = 'block';
+                    group.classList.add('expanded');
+                } else {
+                    group.style.display = 'none';
+                }
+            });
+        }
+
+        // Wrap diagram boxes inside terminal mockup windows
+        document.querySelectorAll('.diagram-box').forEach(box => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'terminal-window';
+            
+            const header = document.createElement('div');
+            header.className = 'terminal-header';
+            header.innerHTML = `
+                <div class="terminal-buttons">
+                    <span class="terminal-dot red"></span>
+                    <span class="terminal-dot yellow"></span>
+                    <span class="terminal-dot green"></span>
+                </div>
+                <div class="terminal-title">interactive_flowchart.sh</div>
+            `;
+            
+            box.parentNode.insertBefore(wrapper, box);
+            wrapper.appendChild(header);
+            wrapper.appendChild(box);
+        });
+
+        // Initial load: initialize Mermaid with saved theme, then show pricing tab
+        initMermaid(savedTheme);
+        showTab('tab_pricing');
+        lucide.createIcons();
+    </script>
+</body>
+
+</html>

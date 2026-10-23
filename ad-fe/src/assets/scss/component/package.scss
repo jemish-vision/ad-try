@@ -1,0 +1,698 @@
+.add_package {
+  .modal-body {
+    ._53Ji7 {
+      padding: 0 !important;
+    }
+
+    ._2_g61 {
+      padding: 0 !important;
+      padding-top: 4rem !important;
+    }
+  }
+}
+
+// -----------------step 1-------------------//
+.step_1 {
+  .package_table {
+
+    td,
+    th {
+      border: 1px solid #dddddd;
+      text-align: left;
+      padding: 8px;
+    }
+
+    tr:nth-child(even) {
+      background-color: #dddddd;
+    }
+
+    .main_package {
+      .tooltip_show {
+        svg.tooltip_mark {
+          background: black;
+          border-radius: 50%;
+          margin-left: 5px;
+          color: white;
+          font-size: 13px;
+          padding: 1px;
+        }
+      }
+
+      .input_box {
+        input[type="text"] {
+          padding: 3px !important;
+          width: 79%;
+          margin-right: 10px;
+        }
+      }
+    }
+  }
+}
+
+.package_btn {
+  display: flex;
+  justify-content: space-between;
+
+  button.previous {
+    background: royalblue;
+    color: white;
+    padding: 8px;
+    margin-right: 15px;
+    width: 100px;
+  }
+
+  button.next {
+    background: royalblue;
+    color: white;
+    width: 100px;
+    padding: 8px;
+  }
+
+  button.save {
+    background: green;
+    color: white;
+    width: 100px;
+    padding: 8px;
+  }
+}
+
+.modal-content {
+  overflow: hidden;
+}
+
+.view_package_design {
+  overflow: hidden !important;
+
+  .view_package_design_header {
+    position: relative;
+    color: rgb(54, 54, 54);
+    padding: 10px !important;
+    border: 0 !important;
+    background: linear-gradient(134deg, #2374F2, #8060aa);
+    box-shadow: 0 9px 30px rgba(0, 0, 30, 0.1) !important;
+
+    /* Horizontal offset, vertical offset, blur radius, color */
+    .title {
+      color: white;
+
+      .package_name {
+        font-weight: 700;
+        font-size: 24px;
+      }
+
+      p {
+        margin: 0;
+      }
+    }
+
+    .profiles {
+      position: absolute;
+      transform: rotate(-45deg);
+      left: -18%;
+      top: 5px;
+      width: 50%;
+      text-align: center;
+      overflow: hidden;
+      padding: 3px 0 3px 0 !important;
+      background-color: white;
+      z-index: 9;
+
+      span {
+        font-size: 22px;
+        font-weight: 600;
+      }
+    }
+
+    .btn-close {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+    }
+  }
+
+  .modal-body {
+    padding: 0;
+    box-shadow: inset 0 10px 20px -10px rgb(129, 129, 129);
+
+    .price_div {
+      div {
+        .amount {
+          font-size: 26px;
+          font-weight: 600;
+          color: #0750aa;
+
+          span {
+            font-size: 18px;
+            font-weight: 500;
+          }
+        }
+      }
+    }
+  }
+
+
+  .sub_packages {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    margin-top: 22px;
+
+    .package_type {
+      position: relative;
+
+      .year_name {
+        border-radius: 8px;
+        background: #0750AA;
+        color: white;
+        text-align: center;
+        padding: 7px;
+        width: 103px;
+        position: absolute;
+        top: -17px;
+        left: 42px;
+      }
+
+      .sub_price_section {
+        border-radius: 12px;
+        background: #F2F1FF;
+        padding: 25px 50px;
+
+        p {
+          font-size: 18px;
+        }
+
+        span {
+          font-weight: 700;
+          color: #0750AA;
+        }
+      }
+    }
+
+
+  }
+
+  @media only screen and (max-width: 420px) {
+    .sub_packages .package_type {
+
+      margin-bottom: 23px;
+      width: 80%;
+      margin: 10px auto;
+    }
+
+    .sub_packages {
+      display: block;
+
+    }
+  }
+
+  .permission_div {
+    width: fit-content;
+    margin: 0 auto;
+
+    p {
+      margin: 0;
+      padding: 2px 0 2px 0;
+      font-weight: 500;
+      color: #0750aa;
+    }
+
+    p::before {
+      content: "\f00c";
+      font-family: FontAwesome;
+      margin-right: 10px;
+      color: white;
+      border-radius: 50%;
+      padding: 3px;
+      background: #2d7ad8;
+    }
+  }
+
+  .type_div {
+    text-align: center;
+    font-weight: 500;
+    background: linear-gradient(134deg, #2374F2, #8060aa);
+    color: white;
+    box-shadow: 0 10px 20px 10px rgb(199, 199, 199);
+
+    p {
+      margin: 0;
+    }
+  }
+}
+
+// Full-page card wrapper for purchase plans — overrides glass-grid-container defaults
+.purchase-plans-card-wrapper {
+  padding: 36px 40px !important;
+  overflow: visible !important;
+
+  @media (max-width: 768px) {
+    padding: 24px 20px !important;
+  }
+}
+
+/* ── Purchase Plans & Cards Styling ── */
+.purchase-plans-container {
+  // No internal padding — wrapper handles it
+  padding: 0;
+  max-width: 100%;
+  margin: 0;
+
+  .plans-header {
+    margin-bottom: 32px;
+
+    h2 {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, var(--accent-primary) 0%, #1087b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+
+    p {
+      color: var(--text-secondary);
+      font-size: 14.5px;
+      max-width: 560px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+  }
+
+}
+
+// Current Status Banner — subtle row, not a nested card (Global across /purchase-plans and /select-plan)
+.current-status-banner {
+  background: var(--accent-primary-bg);
+  border: 1px solid var(--accent-primary-border);
+  border-radius: 14px;
+  padding: 16px 22px;
+  margin-bottom: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+
+  .status-info {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+
+    .status-icon-wrapper {
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      background: var(--accent-primary-bg);
+      color: var(--accent-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      border: 1px solid var(--accent-primary-border);
+      flex-shrink: 0;
+    }
+
+    .status-texts {
+      .status-title {
+        font-size: 11px;
+        color: var(--text-secondary);
+        margin-bottom: 1px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-weight: 600;
+      }
+
+      .status-value {
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+    }
+  }
+
+  .status-meta {
+    text-align: right;
+
+    .meta-label {
+      font-size: 11px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+      margin-bottom: 1px;
+    }
+
+    .meta-date {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    @media (max-width: 768px) {
+      text-align: left;
+    }
+  }
+
+  &--expired {
+    background: rgba(239, 68, 68, 0.06);
+    border-color: rgba(239, 68, 68, 0.3);
+
+    .status-icon-wrapper--expired {
+      background: rgba(239, 68, 68, 0.12);
+      color: #ef4444;
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+  }
+}
+
+
+/* ── Pricing Grid ── */
+.plans-cards-wrapper {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin-top: 30px;
+  padding: 0 16px;
+}
+
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(250px, 310px));
+  gap: 24px;
+  justify-content: center;
+  width: 100%;
+  max-width: 1000px;
+
+  @media (max-width: 992px) {
+    grid-template-columns: repeat(auto-fit, minmax(250px, 310px));
+  }
+}
+
+/* ── Package Card — Theme-Cohesive Design ── */
+.package-card {
+  border-radius: 16px;
+  border: var(--glass-border);
+  background: var(--glass-bg);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(20px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease, border-color 0.3s ease;
+
+  &:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--glass-shadow-hover);
+    border-color: var(--accent-primary-border);
+  }
+
+  &.active-plan {
+    border: 1.5px solid var(--accent-primary);
+    box-shadow:
+      0 0 0 3px var(--accent-primary-bg),
+      0 12px 36px var(--accent-glow, rgba(26, 130, 244, 0.14)),
+      var(--glass-shadow);
+  }
+
+  &.expired-plan {
+    border: 1.5px solid rgba(239, 68, 68, 0.5);
+    box-shadow:
+      0 0 0 3px rgba(239, 68, 68, 0.08),
+      0 12px 36px rgba(239, 68, 68, 0.1),
+      var(--glass-shadow);
+  }
+
+
+  // ── Header band — accent-tinted, with large price ──
+  .plan-header-band {
+    position: relative;
+    background: var(--accent-primary-bg);
+    border-bottom: 1px solid var(--accent-primary-border);
+    padding: 18px 20px 16px;
+    overflow: hidden;
+  }
+
+  // Decorative angled shape in the corner
+  .plan-band-deco {
+    position: absolute;
+    top: -20px;
+    right: -20px;
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    background: var(--accent-primary-border);
+    opacity: 0.5;
+  }
+
+  .plan-header-band-inner {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  // Plan name row: name + badge
+  .plan-name-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 2px;
+  }
+
+  .plan-tier-name {
+    font-size: 17px;
+    font-weight: 800;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+  }
+
+  .badge-active {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: var(--accent-primary);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .badge-popular {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: #2563eb;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .badge-upcoming {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: #059669;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .badge-trial {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: var(--accent-positive-bg, rgba(16, 185, 129, 0.08));
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    color: #10B981;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .badge-expired {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+
+  // Price — large, accent-colored, aligned right in band
+  .plan-price-block {
+    display: flex;
+    align-items: baseline;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+
+  .price-sym {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent-primary);
+    align-self: flex-start;
+    margin-top: 4px;
+  }
+
+  .price-num {
+    font-size: 40px;
+    font-weight: 900;
+    color: var(--accent-primary);
+    line-height: 1;
+    letter-spacing: -0.04em;
+    text-shadow: 0 0 20px var(--accent-glow, rgba(26, 130, 244, 0.15));
+  }
+
+  .price-cycle {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    align-self: flex-end;
+    margin-bottom: 3px;
+    margin-left: 4px;
+  }
+
+  // ── Card body ──
+  .plan-body {
+    padding: 16px 20px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    flex: 1;
+  }
+
+  // CTA button
+  .plan-cta {
+    width: 100%;
+    height: 38px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.22s ease;
+    letter-spacing: 0.01em;
+
+    i {
+      font-size: 11px;
+    }
+
+    &--upgrade {
+      background: var(--accent-primary);
+      color: #fff;
+      box-shadow: 0 3px 12px var(--accent-glow, rgba(26, 130, 244, 0.25));
+
+      &:hover {
+        filter: brightness(1.08);
+        transform: translateY(-1.5px);
+        box-shadow: 0 6px 20px var(--accent-glow, rgba(26, 130, 244, 0.35));
+      }
+
+      &:active {
+        transform: translateY(0);
+        filter: none;
+      }
+    }
+
+    &--renew {
+      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+
+      &:hover {
+        filter: brightness(1.1);
+        transform: translateY(-1.5px);
+        box-shadow: 0 6px 22px rgba(37, 99, 235, 0.45);
+      }
+
+      &:active {
+        transform: translateY(0);
+        filter: none;
+      }
+    }
+
+    &--cancel {
+      background: transparent;
+      border: 1.5px solid var(--accent-negative, #ef4444);
+      color: var(--accent-negative, #ef4444);
+
+      &:hover {
+        background: var(--accent-negative-bg, rgba(239, 68, 68, 0.06));
+        transform: translateY(-1.5px);
+      }
+
+      &:active {
+        transform: translateY(0);
+      }
+    }
+  }
+
+  // Feature section / Single-column list
+  .plan-feature-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .plan-feature-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    .feat-check {
+      color: var(--accent-primary);
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+  }
+
+  // Fine print
+  .plan-fine-print {
+    font-size: 10.5px;
+    color: var(--text-secondary);
+    text-align: center;
+    opacity: 0.5;
+    margin: 0;
+    font-weight: 500;
+    margin-top: auto;
+  }
+}

@@ -1,0 +1,60 @@
+.sidebar_flex {
+    ul.submenu {
+        list-style: none !important;
+        list-style-type: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+
+        li {
+            padding-left: 24px;
+            list-style: none !important;
+            list-style-type: none !important;
+        }
+
+        li.subActive,
+        li.active {
+            background: transparent !important;
+            margin: 4px 16px 4px 24px !important;
+            padding: 0 !important;
+        }
+    }
+
+    ul.submenu {
+        padding: 0;
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s ease;
+    }
+
+    ul.submenu.show {
+        max-height: 400px;
+        display: block;
+        transition: max-height 0.5s linear;
+        background-color: transparent !important;
+        padding-top: 4px;
+        padding-bottom: 4px;
+
+        li.active {
+            background: transparent !important;
+            padding: 0 !important;
+        }
+    }
+
+    .profile_name_sec {
+        position: relative;
+
+        .noti_icon {
+            position: absolute;
+            right: 27px;
+
+            @media (max-width: 520px) {
+                right: 35px;
+            }
+        }
+    }
+}
+
+.sidebar_flex ul.submenu.show li.active {
+    margin-bottom: 4px;
+    background: transparent !important;
+}

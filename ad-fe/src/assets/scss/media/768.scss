@@ -1,0 +1,29 @@
+@media only screen and (max-width: 768px) {
+
+
+    .setting-box {
+        width: 80% !important;
+    }
+
+    .router_container .link_setting_container {
+        width: 90%;
+
+    }
+
+    // budget rule //
+    .new_rule .main_row {
+        grid-template-columns: 1fr 1fr;
+
+        div {
+            margin-bottom: 5px;
+        }
+    }
+
+    .new_rule .time_row {
+        grid-template-columns: 8fr 1fr;
+    }
+
+    .assign_campaign_detail .campaign_list .select_campaign {
+        display: block;
+    }
+}

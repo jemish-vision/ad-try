@@ -1,0 +1,123 @@
+/* ══════════════════════════════════════════════════════════
+   DUAL-PANE DOCK SIDEBAR — Responsive Layout Rules
+   Expanded  = 340px (70px dock + 270px sub-panel)
+   Collapsed = 70px  (dock only)
+   ══════════════════════════════════════════════════════════ */
+
+/* ── Desktop (≥992px) — floating sidebar with border-radius ── */
+@media (min-width: 992px) {
+
+  /* Expanded: 340px sidebar + 15px floating gap */
+  #wrapper {
+    padding-left: 355px;
+  }
+
+  /* Collapsed: 70px dock + 15px left margin + 15px gap */
+  #wrapper.toggled {
+    padding-left: 100px;
+  }
+
+  #sidebar-wrapper {
+    width: 340px;
+  }
+
+  #wrapper.toggled #sidebar-wrapper {
+    width: 70px;
+  }
+
+  #navbar-wrapper,
+  #content-wrapper {
+    position: relative;
+  }
+}
+
+/* ── Tablet (768px – 991px) — dock always shows, sub-panel default closed ── */
+@media (min-width: 768px) and (max-width: 991px) {
+  #wrapper {
+    padding-left: 85px;
+  }
+
+  #sidebar-wrapper {
+    top: 0;
+    left: 0;
+    bottom: 0;
+    height: 100%;
+    border-radius: 0;
+    width: 70px;
+  }
+
+  #wrapper.toggled {
+    padding-left: 85px;
+  }
+
+  #wrapper.toggled #sidebar-wrapper {
+    width: 340px;
+    z-index: 1050;
+    box-shadow: 4px 0 32px rgba(0, 0, 0, 0.25) !important;
+  }
+
+  #navbar-wrapper,
+  #content-wrapper {
+    position: relative;
+  }
+}
+
+/* ── Mobile (<768px) — Off-screen sidebar drawer overlay, content 100% width ── */
+@media (max-width: 767px) {
+
+  #wrapper,
+  #wrapper.toggled,
+  #wrapper.owner-layout,
+  #wrapper.owner-layout.toggled {
+    padding-left: 0 !important;
+  }
+
+  /* Default closed state: slide sidebar completely off screen to the left */
+  #sidebar-wrapper,
+  #owner-sidebar,
+  .owner-sidebar-wrapper {
+    position: fixed !important;
+    top: 0 !important;
+    left: -360px !important;
+    bottom: 0 !important;
+    height: 100vh !important;
+    width: 310px !important;
+    max-width: 85vw !important;
+    z-index: 1050 !important;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    transform: none !important;
+    background: var(--sidebar-bg) !important;
+  }
+
+  /* Open state: slide sidebar into view over the page content */
+  #wrapper.toggled #sidebar-wrapper,
+  #wrapper.toggled #owner-sidebar,
+  #wrapper.toggled .owner-sidebar-wrapper {
+    left: 0 !important;
+    width: 330px !important;
+    max-width: 85vw !important;
+    z-index: 1050 !important;
+    box-shadow: 4px 0 32px rgba(0, 0, 0, 0.45) !important;
+  }
+
+  #navbar-wrapper,
+  #content-wrapper {
+    position: relative;
+  }
+
+  /* Decrease width of Profile Menu and Type Selection Menu on mobile */
+  .adType-dropdown button,
+  #profile-selection button {
+    max-width: 120px !important;
+    padding: 2px 8px !important;
+    font-size: 11px !important;
+    height: 32px !important;
+  }
+
+  .adType-dropdown button span,
+  #profile-selection button span {
+    font-size: 11px !important;
+  }
+}

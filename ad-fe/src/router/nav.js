@@ -1,0 +1,346 @@
+import {
+  House,
+  Megaphone,
+  Target,
+  CurrencyCircleDollar,
+  Star,
+  ChartBar,
+  ListMagnifyingGlass,
+  ShoppingCart,
+  Receipt,
+  Package,
+  Tag,
+  Warehouse,
+  Buildings,
+  Truck,
+  ArrowUUpLeft,
+  ChartLineUp,
+  ChartPie,
+  ClockCountdown,
+  CalendarCheck,
+  Users,
+
+  Gear,
+  BookOpen,
+  Headset,
+  ShieldCheck,
+  Prohibit,
+  FileText,
+  Infinity as PhosphorInfinity,
+} from "@phosphor-icons/react";
+
+const nav = [
+  {
+    name: "Dashboard",
+    id: "nav-dashboard",
+    icon: <House size={18} weight="regular" />,
+    path: "/",
+  },
+  {
+    name: "Campaigns",
+    id: "nav-campaigns",
+    icon: <Megaphone size={18} weight="regular" />,
+    path: "/campaigns",
+  },
+  {
+    name: "Placement",
+    id: "nav-placement",
+    icon: <Target size={18} weight="regular" />,
+    children: [
+      {
+        name: "Placement",
+        icon: <Target size={18} weight="regular" />,
+        path: "/placement",
+      },
+      {
+        name: "Placement Rule",
+        icon: <PhosphorInfinity size={18} weight="regular" />,
+        path: "/placement-rule",
+      },
+    ],
+  },
+  {
+    name: "Budget Rules",
+    id: "nav-budget-rules",
+    icon: <CurrencyCircleDollar size={18} weight="regular" />,
+    path: "/budget-rule",
+  },
+  {
+    name: "Targeting",
+    id: "nav-targeting",
+    icon: <ChartBar size={18} weight="regular" />,
+    children: [
+      {
+        name: "Targeting",
+        icon: <ChartBar size={18} weight="regular" />,
+        path: "/targeting",
+      },
+      {
+        name: "Targeting Rule",
+        icon: <PhosphorInfinity size={18} weight="regular" />,
+        path: "/targeting-rule",
+      },
+      {
+        name: "Keyword Tracker",
+        icon: <ChartBar size={18} weight="regular" />,
+        path: "/keyword-tracker",
+      },
+    ],
+  },
+  {
+    name: "Search Term",
+    id: "nav-search-term",
+    icon: <ListMagnifyingGlass size={18} weight="regular" />,
+    children: [
+      {
+        name: "Search Term",
+        icon: <ListMagnifyingGlass size={18} weight="regular" />,
+        path: "/search-term",
+      },
+      {
+        name: "Search Term Rule",
+        icon: <PhosphorInfinity size={18} weight="regular" />,
+        path: "/search-term-rule",
+      },
+      {
+        name: "Keyword Analysis",
+        id: "keyword-analysis",
+        icon: <ChartPie size={18} weight="regular" />,
+        path: "/keyword-analysis",
+      },
+    ],
+  },
+  {
+    name: "Profit Analysis",
+    id: "nav-profit-analysis",
+    icon: <CurrencyCircleDollar size={18} weight="regular" />,
+    path: "/profit-analysis",
+  },
+  {
+    name: "Orders",
+    id: "nav-orders",
+    icon: <ShoppingCart size={18} weight="regular" />,
+    children: [
+      {
+        name: "Orders",
+        icon: <ShoppingCart size={18} weight="regular" />,
+        path: "/orders",
+      },
+      {
+        name: "Order Report",
+        icon: <Receipt size={18} weight="regular" />,
+        path: "/order-report",
+      },
+    ],
+  },
+  {
+    name: "Product List",
+    id: "nav-product-list",
+    icon: <Package size={18} weight="regular" />,
+    children: [
+      {
+        name: "Product List",
+        id: "product-list",
+        icon: <Package size={18} weight="regular" />,
+        path: "/product-list",
+      },
+      {
+        name: "Product Ads",
+        id: "products-ads",
+        icon: <Tag size={18} weight="regular" />,
+        path: "/products",
+      },
+      {
+        name: "Product Performance",
+        id: "product-performance",
+        icon: <ChartLineUp size={18} weight="regular" />,
+        path: "/product-performance",
+      },
+    ],
+  },
+  {
+    name: "Promotions",
+    id: "nav-promotions",
+    icon: <Megaphone size={18} weight="regular" />,
+    children: [
+      {
+        name: "Coupons",
+        id: "coupons",
+        icon: <Tag size={18} weight="regular" />,
+        path: "/coupons",
+      },
+      {
+        name: "Deals",
+        id: "deals-dashboard",
+        icon: <Package size={18} weight="regular" />,
+        path: "/deals",
+      },
+    ],
+  },
+  {
+    name: "Inventory",
+    id: "nav-inventory",
+    icon: <Warehouse size={18} weight="regular" />,
+    children: [
+      {
+        name: "Inventory",
+        id: "products-ads",
+        icon: <Warehouse size={18} weight="regular" />,
+        path: "/inventory-management",
+      },
+      {
+        name: "FBA Planning",
+        id: "fba-planning",
+        icon: <Truck size={18} weight="regular" />,
+        path: "/fba-planning",
+      },
+      {
+        name: "Reconciliation & Reimbursement",
+        id: "reconciliation-reimbursement",
+        icon: <Receipt size={18} weight="regular" />,
+        path: "/reconciliation-reimbursement",
+      },
+      {
+        name: "Returns & Refunds",
+        id: "returns",
+        icon: <ArrowUUpLeft size={18} weight="regular" />,
+        path: "/returns",
+      },
+      {
+        name: "Warehouse Inventory",
+        id: "warehouse-inventory",
+        icon: <Buildings size={18} weight="regular" />,
+        path: "/warehouse-inventory",
+      },
+      {
+        name: "MFN to FBA",
+        id: "mfn-to-fba",
+        icon: <Truck size={18} weight="regular" />,
+        path: "/mfn-to-fba",
+      },
+    ],
+  },
+  {
+    name: "Analytics",
+    id: "nav-analytics",
+    icon: <ChartLineUp size={18} weight="regular" />,
+    children: [
+      {
+        name: "Brand Analytics",
+        id: "brand-analytics",
+        icon: <ChartPie size={18} weight="regular" />,
+        path: "/brand-analytics",
+      },
+    ],
+  },
+  {
+    name: "History",
+    id: "nav-history",
+    icon: <ClockCountdown size={18} weight="regular" />,
+    path: "/history",
+  },
+  {
+    name: "Audit Log",
+    id: "nav-audit-log",
+    icon: <ShieldCheck size={18} weight="regular" />,
+    path: "/audit-log",
+  },
+  {
+    name: "Cron Job Scheduler",
+    id: "nav-cron-job-scheduler",
+    icon: <PhosphorInfinity size={18} weight="regular" />,
+    path: "/cron-schedular",
+  },
+  {
+    name: "Hourly Performance Tracking",
+    id: "nav-hourly-performance-tracking",
+    icon: <CalendarCheck size={18} weight="regular" />,
+    path: "/hourly-performance-tracking",
+  },
+  {
+    name: "P/L Calculater",
+    id: "nav-pl-calculater",
+    icon: <CurrencyCircleDollar size={18} weight="regular" />,
+    path: "/pl-calculater",
+  },
+  {
+    name: "Users",
+    id: "nav-users",
+    icon: <Users size={18} weight="regular" />,
+    path: "/users",
+  },
+  {
+    name: "Pages",
+    id: "nav-pages",
+    icon: <FileText size={18} weight="regular" />,
+    path: "/pages",
+  },
+  {
+    name: "Role",
+    id: "nav-role",
+    icon: <Users size={18} weight="regular" />,
+    path: "/role",
+  },
+  {
+    name: "Settings",
+    id: "nav-settings",
+    icon: <Gear size={18} weight="regular" />,
+    path: "/settings",
+  },
+  {
+    name: "Plans",
+    id: "nav-packages",
+    icon: <Package size={18} weight="regular" />,
+    path: "/packages",
+  },
+  {
+    name: "Retention",
+    id: "nav-retention",
+    icon: <ClockCountdown size={18} weight="regular" />,
+    path: "/retention",
+  },
+  {
+    name: "Holiday/Special Days",
+    id: "nav-holiday-special-days",
+    icon: <CalendarCheck size={18} weight="regular" />,
+    path: "/holiday",
+  },
+  {
+    name: "Cron Job",
+    id: "nav-cron-job",
+    icon: <PhosphorInfinity size={18} weight="regular" />,
+    path: "/cron-job",
+  },
+  {
+    name: "ASANA Users",
+    id: "nav-asana-users",
+    icon: <Users size={18} weight="regular" />,
+    path: "/asana-users",
+  },
+  {
+    name: "Rule Blocked Time",
+    id: "nav-rule-blocked-time",
+    icon: <Prohibit size={18} weight="regular" />,
+    path: "/rule-blocked-time",
+  },
+  /* {
+    name: "User Guide",
+    id: "nav-user-guide",
+    icon: <BookOpen size={18} weight="regular" />,
+    path: "/user-guide",
+  } */,
+  {
+    name: "Support Ticket",
+    id: "nav-support-ticket",
+    icon: <Headset size={18} weight="regular" />,
+    path: "/support-ticket",
+  },
+  {
+    name: "Recommendation",
+    id: "nav-recommandation",
+    icon: <Star size={18} weight="regular" />,
+    path: "/recommandation",
+  },
+];
+
+export default nav;

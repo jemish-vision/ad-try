@@ -1,0 +1,265 @@
+﻿.router_container {
+
+  .link_setting_container {
+    width: 70%;
+    margin: auto;
+
+    h5 {
+      margin-bottom: 0.5rem !important;
+      border-bottom: 1px solid slategray;
+      padding-bottom: 5px;
+    }
+
+    .setting_container {
+      border-radius: 8px;
+      border: 1px solid #E4E4E7;
+      background: var(--table-bg-color);
+      box-shadow: 0px 1px 3px 0px rgba(0, 0, 0, 0.25);
+      padding: 17px;
+
+
+      .user_box {
+        display: grid;
+        margin-bottom: 20px;
+
+        input.user-box-input {
+          border-bottom: 1px solid #CECECE !important;
+          border: none;
+          outline: none;
+          font-weight: 500;
+          line-height: 21px;
+          color: #71717A;
+          font-size: 14px;
+        }
+
+        label.user-box-label {
+          color: #18181B;
+          font-size: 13px;
+          font-style: normal;
+          font-weight: 500;
+          line-height: 24px;
+        }
+      }
+
+      .linked_account {
+        display: flex;
+        align-items: center;
+
+        // justify-content: center;
+        button {
+          font-size: 13px;
+          font-weight: 200;
+          line-height: 24px;
+          padding: 7px 15px;
+          margin-right: 10px;
+        }
+
+        p {
+          text-decoration: underline;
+          color: blue;
+          font-size: 13px;
+          cursor: pointer;
+        }
+      }
+    }
+
+
+    .setting_profile_list {
+      .inner_list {
+        height: 199px;
+        overflow: overlay;
+      }
+
+      h5 {
+        font-size: 17px;
+        padding-bottom: 15px;
+        font-weight: 500;
+      }
+
+      .list_data {
+        padding-bottom: 10px;
+
+
+        label {
+          color: gray;
+          font-size: 15px;
+
+        }
+      }
+
+    }
+
+    .account_part {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      align-items: center;
+    }
+
+    .other_link {
+
+      span {
+        margin-right: 14px;
+        font-weight: 700;
+        padding-bottom: 5px;
+        border-bottom: 1px solid;
+      }
+    }
+
+    .tab-content {
+      margin-top: 25px;
+    }
+
+    .nav-tabs .nav-link.active {
+      color: white;
+      background-color: #1A9FD4;
+      border-color: #1A9FD4;
+    }
+
+    .nav-link {
+
+      color: #1A9FD4;
+
+    }
+  }
+
+  .nav-tabs {
+    margin-top: 24px;
+  }
+}
+
+.setting-div {
+
+  .borders {
+    border: 1px solid #e4e4e7;
+  }
+
+  .setting_inner {
+    border: 1px solid #e4e4e7;
+    border-radius: 3px;
+    padding: 5px;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem 0.7rem;
+
+
+    .input {
+      width: 60%;
+      border: 1px solid #d3d3d3;
+      border-radius: 4px;
+      color: #333;
+      outline: none;
+      padding: 7px;
+      margin-left: 5px;
+    }
+
+    .buttons {
+      border-radius: 5px;
+      font-size: 14px;
+      font-weight: 500;
+      padding: 7px 20px;
+      gap: 10px;
+      color: white;
+      background-color: #2374F2;
+    }
+
+    .bVhUbT {
+      font-size: 16px;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .coDjSU {
+      justify-content: center;
+    }
+
+    .xizbp {
+      justify-content: center;
+    }
+
+    .hFpEJh {
+      font-size: 16px;
+      font-weight: 600;
+      text-align: center;
+    }
+  }
+
+  .kAgPKn {
+    font-size: 16px;
+    font-weight: 600;
+  }
+}
+
+
+//acos filter  //
+.acos_filter {
+  table {
+    border-collapse: collapse;
+    width: 90%;
+    margin: auto;
+  }
+
+  td,
+  th {
+    border: 1px solid #dddddd;
+    text-align: center;
+    padding: 8px;
+  }
+
+  tr:nth-child(even) {
+    background-color: #F5F7FB;
+  }
+
+  input[type="number"] {
+    padding: 6px;
+    border: 1px solid lightgray;
+    width: 63%;
+    border-radius: 4px;
+
+
+
+  }
+
+  .acos_btn {
+    margin-top: 20px;
+    text-align: center;
+
+    button {
+      background-color: #244d72;
+      color: white;
+      padding: 10px;
+      width: 99px;
+    }
+  }
+
+  .save_btn {
+    button {
+      background-color: #244d72;
+      color: white;
+      padding: 5px 0;
+      width: 76px;
+
+    }
+  }
+}
+
+.accordian_css {
+  h2.accordion-header {
+    line-height: 19px;
+  }
+
+  .accordion-button {
+    font-size: 14px;
+    line-height: 1.42857143;
+    padding: 12px;
+  }
+
+  .accordion-button:focus {
+    background-color: white;
+    border-color: #ddd;
+    box-shadow: none;
+  }
+
+  .accordion-button:not(.collapsed) {
+    background-color: white;
+  }
+}

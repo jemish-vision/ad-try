@@ -1,0 +1,90 @@
+@media only screen and (max-width: 1199px) {
+    .camapgin {
+        .camapgin_filter {
+            display: block !important;
+        }
+
+    .camapgin_btn {
+        // display: block !important;
+    }
+
+        .rs-picker-toggle-wrapper {
+            width: 100% !important;
+        }
+
+        .search_option {
+            margin-right: 0 !important;
+        }
+    }
+}
+
+@media only screen and (max-width: 991px) {
+
+    //dashbord price //
+    .price_section {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .box.box_second {
+        margin-right: 0;
+    }
+
+    .box.box_first,
+    .box.box_second {
+        margin-bottom: 13px;
+    }
+
+    .price_section .box .inner_box .content span {
+        font-size: 14px;
+    }
+
+    .price_section .box .inner_box i {
+        font-size: 16px;
+    }
+
+    // filter //
+    .filter_section {
+        // Handled by master flexbox rule in filter.scss
+    }
+
+    .filter_section .inner_filter {
+        margin: 0 !important;
+    }
+
+    .link_setting_container {
+        grid-template-columns: 1fr;
+
+    }
+
+    .theme .theme_section {
+
+        grid-template-columns: 1fr;
+
+    }
+
+    .camapgin_btn {
+        // display: block !important;
+    }
+
+    .filTypeBox {
+        // display: block !important;
+    }
+
+    .campaign_first {
+        padding-right: 0;
+    }
+
+    .rs-picker-toggle-wrapper {
+
+        // width: 100% !important;
+
+    }
+
+    .setting-box {
+        width: 70%;
+    }
+
+    .search_option {
+        margin-right: 0 !important;
+    }
+}

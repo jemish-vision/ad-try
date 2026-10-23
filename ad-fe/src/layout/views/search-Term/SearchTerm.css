@@ -1,0 +1,205 @@
+/* Custom Styles for Search Term view */
+
+/* Scrollbar styling for the product sidebar */
+/* Scrollbar styling for the product sidebar list */
+.product-sidebar-list {
+  flex-grow: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.product-sidebar-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.product-sidebar-list::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 10px;
+}
+
+.product-sidebar-list::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 10px;
+}
+
+.product-sidebar-list::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.product-sidebar-container {
+  width: 354px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding-right: 16px;
+  margin-right: 4px;
+  border-right: 2px solid #cbd5e1 !important;
+}
+
+@media (min-width: 1025px) {
+  .product-sidebar-container {
+    height: calc(100vh - 340px);
+  }
+}
+
+.product-sidebar-pagination {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+/* Product Card design */
+.product-sidebar-card {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 8px !important;
+  padding: 10px 12px !important;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02) !important;
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 8px;
+  border-left: 1px solid #e2e8f0 !important;
+}
+
+/* Hover state styling */
+.product-sidebar-card:hover {
+  border-color: #94a3b8 !important;
+  background-color: #f8fafc;
+  transform: translateX(4px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03) !important;
+}
+
+/* Selected state styling matching theme */
+.product-sidebar-card.selected {
+  border-color: #1A9FD4 !important;
+  background-color: #f0f7ff;
+  border-left: 4px solid #1A9FD4 !important;
+  box-shadow: 0 4px 12px rgba(2, 70, 139, 0.08) !important;
+}
+
+/* Product image container */
+.product-sidebar-img-wrapper {
+  width: 46px;
+  height: 46px;
+  min-width: 46px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.product-sidebar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.product-sidebar-img-placeholder {
+  width: 100%;
+  height: 100%;
+  background-color: #f1f5f9;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+
+/* Typography and text container */
+.product-sidebar-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex-grow: 1;
+}
+
+/* Strict single-line text truncation to solve the user's issue */
+.product-sidebar-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+  margin-bottom: 2px;
+}
+
+.product-sidebar-card:hover .product-sidebar-title {
+  color: #1A9FD4;
+}
+
+.product-sidebar-meta {
+  font-size: 10.5px;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+
+.product-sidebar-meta strong {
+  color: #334155;
+  font-weight: 500;
+}
+
+/* Bottom statistics grid in card */
+.product-sidebar-stats {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #f1f5f9;
+  font-size: 10px;
+}
+
+.product-sidebar-stat-item {
+  color: #64748b;
+}
+
+.product-sidebar-stat-item strong {
+  font-weight: 600;
+}
+
+.product-sidebar-stat-item.terms strong {
+  color: #1A9FD4;
+}
+
+.product-sidebar-stat-item.sales strong {
+  color: #166534;
+}
+
+/* Copy button styling in product sidebar */
+.product-sidebar-copy-btn {
+  font-size: 11px;
+  color: #64748b;
+  cursor: pointer;
+  padding: 2px;
+  flex-shrink: 0;
+  transition: all 0.15s ease-in-out;
+  opacity: 0.6;
+}
+
+.product-sidebar-copy-btn:hover {
+  color: #1A9FD4 !important;
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+/* Remove bottom border of tab view / top border of filter bar on search-term page */
+.search-term-view-container .filter-bar {
+  border-top: none !important;
+}
+
+.search-term-view-container .data_content,
+.search-term-view-container .data_content_btn {
+  border: none !important;
+  box-shadow: none !important;
+}

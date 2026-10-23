@@ -1,0 +1,758 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   Add Product Page — Dark Theme
+   ══════════════════════════════════════════════════════════════════════════ */
+
+[data-theme="dark"] #add-product,
+[data-theme="dark"] #product-schema,
+[data-theme="dark"] #product-form-field {
+
+  /* ── Page title ── */
+  h4 {
+    color: rgba(255, 255, 255, 0.92) !important;
+  }
+
+  /* ── Content card wrapper ── */
+  .data_content {
+    background: #111827 !important;
+    border-color: rgba(255, 255, 255, 0.08) !important;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35) !important;
+  }
+
+  /* ── MUI Tabs ── */
+  .MuiTabs-root {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+    background: transparent !important;
+  }
+
+  .MuiTabs-scroller {
+    background: transparent !important;
+  }
+
+  .MuiTab-root {
+    color: rgba(255, 255, 255, 0.50) !important;
+    font-weight: 500 !important;
+
+    &.Mui-selected {
+      color: #5B9CF6 !important;
+    }
+
+    &.Mui-disabled {
+      color: rgba(255, 255, 255, 0.22) !important;
+    }
+
+    &:hover:not(.Mui-disabled) {
+      color: rgba(255, 255, 255, 0.75) !important;
+      background: rgba(255, 255, 255, 0.04) !important;
+    }
+  }
+
+  .MuiTabs-indicator {
+    background-color: #5B9CF6 !important;
+  }
+
+  /* ── Headings & text ── */
+  h5,
+  h6 {
+    color: rgba(255, 255, 255, 0.90) !important;
+  }
+
+  p,
+  li {
+    color: rgba(255, 255, 255, 0.80) !important;
+  }
+
+  label {
+    color: rgba(255, 255, 255, 0.75) !important;
+  }
+
+  .fw-bold {
+    color: rgba(255, 255, 255, 0.92) !important;
+  }
+
+  .text-muted,
+  .fst-italic {
+    color: rgba(255, 255, 255, 0.40) !important;
+  }
+
+  /* ── Bootstrap form controls ── */
+  .form-control,
+  .form-select {
+    background: rgba(255, 255, 255, 0.06) !important;
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    color: rgba(255, 255, 255, 0.90) !important;
+    transition: border-color 0.15s, box-shadow 0.15s !important;
+
+    &::placeholder {
+      color: rgba(255, 255, 255, 0.30) !important;
+    }
+
+    &:focus {
+      background: rgba(255, 255, 255, 0.09) !important;
+      border-color: #5B9CF6 !important;
+      box-shadow: 0 0 0 3px rgba(60, 187, 242, 0.12) !important;
+      color: rgba(255, 255, 255, 0.95) !important;
+    }
+
+    &:disabled {
+      background: rgba(255, 255, 255, 0.03) !important;
+      color: rgba(255, 255, 255, 0.28) !important;
+      border-color: rgba(255, 255, 255, 0.06) !important;
+      cursor: not-allowed !important;
+    }
+
+    option {
+      background: #161a2a !important;
+      color: rgba(255, 255, 255, 0.85) !important;
+    }
+  }
+
+  /* ── Checkbox & radio ── */
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: #5B9CF6 !important;
+  }
+
+  /* ── pf-* (ProductForm design system) dark overrides ── */
+  .pf-field-row {
+    border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+  }
+
+  .pf-label {
+    color: rgba(255, 255, 255, 0.70) !important;
+  }
+
+  .pf-input,
+  .pf-select {
+    background: rgba(255, 255, 255, 0.06) !important;
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    color: rgba(255, 255, 255, 0.90) !important;
+
+    &::placeholder {
+      color: rgba(255, 255, 255, 0.30) !important;
+    }
+
+    &:hover:not(:disabled) {
+      border-color: rgba(255, 255, 255, 0.22) !important;
+    }
+
+    &:focus {
+      background: rgba(255, 255, 255, 0.09) !important;
+      border-color: #5B9CF6 !important;
+      box-shadow: 0 0 0 3px rgba(60, 187, 242, 0.12) !important;
+      color: rgba(255, 255, 255, 0.95) !important;
+    }
+
+    &:disabled {
+      background: rgba(255, 255, 255, 0.03) !important;
+      color: rgba(255, 255, 255, 0.25) !important;
+      border-color: rgba(255, 255, 255, 0.06) !important;
+    }
+  }
+
+  .pf-array-item {
+    background: rgba(255, 255, 255, 0.04) !important;
+    border-color: rgba(255, 255, 255, 0.10) !important;
+
+    &:hover {
+      border-color: rgba(255, 255, 255, 0.18) !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
+    }
+  }
+
+  .pf-array-badge {
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: rgba(255, 255, 255, 0.50) !important;
+  }
+
+  .pf-remove-btn {
+    color: rgba(255, 255, 255, 0.45) !important;
+
+    &:hover {
+      background: rgba(239, 68, 68, 0.12) !important;
+      color: #f87171 !important;
+      border-color: rgba(239, 68, 68, 0.25) !important;
+    }
+  }
+
+  .pf-add-btn {
+    color: #5B9CF6 !important;
+    background: rgba(60, 187, 242, 0.08) !important;
+    border-color: rgba(60, 187, 242, 0.30) !important;
+
+    &:hover {
+      background: rgba(60, 187, 242, 0.14) !important;
+      border-color: rgba(60, 187, 242, 0.55) !important;
+      box-shadow: 0 2px 8px rgba(60, 187, 242, 0.15) !important;
+    }
+  }
+
+  .pf-radio-label {
+    background: rgba(255, 255, 255, 0.04) !important;
+    border-color: rgba(255, 255, 255, 0.10) !important;
+    color: rgba(255, 255, 255, 0.55) !important;
+
+    &:hover {
+      border-color: rgba(60, 187, 242, 0.45) !important;
+      color: #5B9CF6 !important;
+      background: rgba(60, 187, 242, 0.08) !important;
+    }
+  }
+
+  .pf-radio-label.pf-radio-checked {
+    border-color: #5B9CF6 !important;
+    background: rgba(60, 187, 242, 0.10) !important;
+    color: #5B9CF6 !important;
+    box-shadow: 0 0 0 2px rgba(60, 187, 242, 0.12) !important;
+  }
+
+  /* Custom enum dropdown (pf-enum-*) */
+  .pf-enum-trigger {
+    background: rgba(255, 255, 255, 0.06) !important;
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    color: rgba(255, 255, 255, 0.90) !important;
+
+    &:hover {
+      border-color: rgba(255, 255, 255, 0.22) !important;
+    }
+  }
+
+  .pf-enum-open {
+    border-color: #5B9CF6 !important;
+    box-shadow: 0 0 0 3px rgba(60, 187, 242, 0.12) !important;
+  }
+
+  .pf-enum-value {
+    color: rgba(255, 255, 255, 0.88) !important;
+  }
+
+  .pf-enum-placeholder {
+    color: rgba(255, 255, 255, 0.30) !important;
+  }
+
+  .pf-enum-chevron,
+  .pf-enum-clear {
+    color: rgba(255, 255, 255, 0.40) !important;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.08) !important;
+      color: rgba(255, 255, 255, 0.70) !important;
+    }
+  }
+
+  .pf-enum-dropdown {
+    background: #1e2a3a !important;
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.30) !important;
+  }
+
+  .pf-enum-search-wrap {
+    background: rgba(255, 255, 255, 0.04) !important;
+    border-bottom-color: rgba(255, 255, 255, 0.07) !important;
+  }
+
+  .pf-enum-search {
+    color: rgba(255, 255, 255, 0.88) !important;
+    background: transparent !important;
+
+    &::placeholder {
+      color: rgba(255, 255, 255, 0.30) !important;
+    }
+  }
+
+  .pf-enum-search-icon {
+    color: rgba(255, 255, 255, 0.35) !important;
+  }
+
+  .pf-enum-option {
+    color: rgba(255, 255, 255, 0.75) !important;
+  }
+
+  .pf-enum-highlighted {
+    background: rgba(255, 255, 255, 0.06) !important;
+  }
+
+  .pf-enum-selected {
+    background: rgba(60, 187, 242, 0.12) !important;
+    color: #5B9CF6 !important;
+  }
+
+  .pf-enum-selected.pf-enum-highlighted {
+    background: rgba(60, 187, 242, 0.18) !important;
+  }
+
+  .pf-enum-check {
+    color: #5B9CF6 !important;
+  }
+
+  .pf-enum-empty-msg {
+    color: rgba(255, 255, 255, 0.35) !important;
+  }
+
+  .pf-enum-footer {
+    background: rgba(255, 255, 255, 0.03) !important;
+    border-top-color: rgba(255, 255, 255, 0.07) !important;
+    color: rgba(255, 255, 255, 0.30) !important;
+  }
+
+  .pf-enum-list {
+    scrollbar-color: rgba(255, 255, 255, 0.15) transparent !important;
+  }
+
+  /* Error state */
+  .pf-array-item-error {
+    border-color: rgba(239, 68, 68, 0.45) !important;
+    background: rgba(239, 68, 68, 0.05) !important;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.08) !important;
+  }
+
+  .pf-array-badge-error {
+    background: rgba(220, 38, 38, 0.15) !important;
+    color: #f87171 !important;
+    border-color: rgba(220, 38, 38, 0.30) !important;
+  }
+
+  /* ── Bootstrap outline-dark button (Add / + buttons) ── */
+  .btn-outline-dark,
+  .outline-blue.btn-outline-dark {
+    border-color: rgba(60, 187, 242, 0.35) !important;
+    color: #5B9CF6 !important;
+    background: rgba(60, 187, 242, 0.07) !important;
+
+    &:hover {
+      background: rgba(60, 187, 242, 0.14) !important;
+      border-color: #5B9CF6 !important;
+      color: #5B9CF6 !important;
+    }
+  }
+
+  /* ── Bootstrap .border helper ── */
+  .border {
+    border-color: rgba(255, 255, 255, 0.10) !important;
+  }
+
+  .border-danger {
+    border-color: rgba(220, 38, 38, 0.45) !important;
+  }
+
+  /* ── .bg-light ── */
+  .bg-light {
+    background: rgba(255, 255, 255, 0.04) !important;
+  }
+
+  /* ── Nutritional info card ── */
+  .rounded.p-3 {
+    background: rgba(255, 255, 255, 0.04) !important;
+    border-color: rgba(255, 255, 255, 0.10) !important;
+  }
+
+  /* ── Generated product data card ── */
+  .card {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border-color: rgba(255, 255, 255, 0.09) !important;
+
+    h5,
+    h6,
+    p,
+    li {
+      color: rgba(255, 255, 255, 0.85) !important;
+    }
+  }
+
+  /* ── Error section ── */
+  .error-section {
+    background: rgba(220, 38, 38, 0.07) !important;
+    border-color: rgba(220, 38, 38, 0.35) !important;
+
+    h5 {
+      color: #f87171 !important;
+    }
+  }
+
+  /* ── MUI Buttons (contained & outlined) ── */
+  .MuiButton-contained {
+    background: linear-gradient(135deg, #5B9CF6 0%, #1A9FD4 100%) !important;
+    color: #fff !important;
+    box-shadow: 0 2px 8px rgba(60, 187, 242, 0.25) !important;
+
+    &:hover {
+      background: linear-gradient(135deg, #1A9FD4 0%, #5B9CF6 100%) !important;
+      box-shadow: 0 4px 14px rgba(60, 187, 242, 0.40) !important;
+    }
+
+    &.Mui-disabled {
+      background: rgba(255, 255, 255, 0.10) !important;
+      color: rgba(255, 255, 255, 0.30) !important;
+      box-shadow: none !important;
+    }
+  }
+
+  .MuiButton-outlined {
+    border-color: rgba(255, 255, 255, 0.18) !important;
+    color: rgba(255, 255, 255, 0.75) !important;
+    background: transparent !important;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.06) !important;
+      border-color: rgba(255, 255, 255, 0.30) !important;
+    }
+
+    &.Mui-disabled {
+      border-color: rgba(255, 255, 255, 0.07) !important;
+      color: rgba(255, 255, 255, 0.22) !important;
+    }
+  }
+
+  /* ── MUI InfoIcon (step error indicator) ── */
+  .MuiIconButton-root {
+
+    &[style*="color: red"],
+    &[style*='color:"red"'] {
+      color: #f87171 !important;
+    }
+  }
+
+  /* ── Tooltip (question-circle icon) ── */
+  .fa-question-circle {
+    color: rgba(255, 255, 255, 0.40) !important;
+  }
+
+  /* ── Trash icon ── */
+  .fa-trash {
+    color: rgba(248, 113, 113, 0.80) !important;
+    background: rgba(220, 38, 38, 0.08) !important;
+
+    &:hover {
+      color: #f87171 !important;
+      background: rgba(220, 38, 38, 0.14) !important;
+    }
+  }
+
+  /* ── Ant Design Upload (Images step) ── */
+  .ant-upload-wrapper {
+
+    .ant-upload-select,
+    .ant-upload.ant-upload-select {
+      background: rgba(255, 255, 255, 0.04) !important;
+      border-color: rgba(255, 255, 255, 0.14) !important;
+
+      &:hover {
+        border-color: #5B9CF6 !important;
+      }
+
+      .anticon,
+      span,
+      div {
+        color: rgba(255, 255, 255, 0.55) !important;
+      }
+    }
+
+    .ant-upload-list-picture-card {
+      .ant-upload-list-item {
+        background: rgba(255, 255, 255, 0.05) !important;
+        border-color: rgba(255, 255, 255, 0.12) !important;
+      }
+
+      .ant-upload-list-item-name {
+        color: rgba(255, 255, 255, 0.75) !important;
+      }
+    }
+
+    .ant-upload-list-item-error {
+      border-color: rgba(220, 38, 38, 0.45) !important;
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Product Type Schema & Field Selector Page — Dark Theme Overrides
+   ══════════════════════════════════════════════════════════════════════════ */
+[data-theme="dark"] {
+
+  #product-schema,
+  #product-form-field {
+    background-color: #0f172a !important;
+    color: rgba(255, 255, 255, 0.90) !important;
+    padding: 24px;
+    min-height: calc(100vh - 110px);
+
+    .data_content {
+      background-color: rgba(30, 41, 59, 0.4) !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3) !important;
+      padding: 30px;
+      margin: 0 !important;
+    }
+
+    .card {
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+    }
+
+    /* MuiCard-root for list components */
+    .MuiCard-root {
+      background-color: rgba(30, 41, 59, 0.4) !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3) !important;
+      color: rgba(255, 255, 255, 0.90) !important;
+    }
+
+    /* Paper items (FieldItem, Selected Field list) */
+    .MuiPaper-root {
+      background-color: rgba(255, 255, 255, 0.03) !important;
+      border: 2px solid rgba(255, 255, 255, 0.10) !important;
+      color: rgba(255, 255, 255, 0.88) !important;
+
+      &:hover:not([style*="cursor: not-allowed"]):not([style*="cursor:not-allowed"]) {
+        background-color: rgba(255, 255, 255, 0.08) !important;
+        border-color: #5B9CF6 !important;
+      }
+    }
+
+    /* Typography / Text colors */
+    .MuiTypography-root {
+      color: rgba(255, 255, 255, 0.90) !important;
+
+      small,
+      p {
+        color: rgba(255, 255, 255, 0.50) !important;
+      }
+    }
+
+    .MuiTypography-colorTextSecondary,
+    .MuiTypography-body2 {
+      color: rgba(255, 255, 255, 0.70) !important;
+    }
+
+    /* Chip / Badge component */
+    .MuiChip-root {
+      background-color: rgba(255, 255, 255, 0.10) !important;
+      color: rgba(255, 255, 255, 0.85) !important;
+    }
+
+    /* Search TextField root */
+    .MuiTextField-root {
+      .MuiOutlinedInput-root {
+        background-color: rgba(255, 255, 255, 0.04) !important;
+        color: rgba(255, 255, 255, 0.90) !important;
+
+        fieldset {
+          border-color: rgba(255, 255, 255, 0.12) !important;
+        }
+
+        &:hover fieldset {
+          border-color: rgba(255, 255, 255, 0.25) !important;
+        }
+
+        &.Mui-focused fieldset {
+          border-color: #5B9CF6 !important;
+        }
+      }
+
+      .MuiInputAdornment-root,
+      .MuiSvgIcon-root {
+        color: rgba(255, 255, 255, 0.50) !important;
+      }
+    }
+
+    /* Divider */
+    .MuiDivider-root {
+      border-color: rgba(255, 255, 255, 0.08) !important;
+    }
+
+    /* Description icon background */
+    .border.p-1.rounded {
+      border-color: rgba(255, 255, 255, 0.10) !important;
+      background-color: rgba(255, 255, 255, 0.08) !important;
+
+      .MuiSvgIcon-root {
+        color: rgba(255, 255, 255, 0.80) !important;
+      }
+    }
+
+    /* Mandatory fields styling override */
+    .MuiPaper-root[style*="cursor: not-allowed"],
+    .MuiPaper-root[style*="cursor:not-allowed"] {
+      background-color: rgba(255, 255, 255, 0.01) !important;
+      border-color: rgba(255, 255, 255, 0.05) !important;
+      opacity: 0.5 !important;
+
+      .border.p-1.rounded {
+        background-color: rgba(255, 255, 255, 0.03) !important;
+      }
+    }
+
+    /* Selected fields styling override */
+    .MuiPaper-root[style*="border: 2px solid rgb(25)"],
+    .MuiPaper-root[style*="border: 2px solid #1976d2"] {
+      border-color: #5B9CF6 !important;
+      background-color: rgba(60, 187, 242, 0.08) !important;
+
+      .border.p-1.rounded {
+        background-color: #1A9FD4 !important;
+      }
+    }
+
+    /* Bottom Button Bar / Sticky bar */
+    .MuiBox-root[style*="position: sticky"],
+    .MuiBox-root[style*="position:sticky"],
+    div[style*="background: var(--bs-body-bg, #fff)"],
+    div[style*="background:var(--bs-body-bg,#fff)"] {
+      background-color: #0f172a !important;
+      background: #0f172a !important;
+      border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+      box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.25) !important;
+    }
+
+    /* Buttons inside the sticky bar */
+    .MuiButton-containedPrimary {
+      background: linear-gradient(135deg, #5B9CF6 0%, #1A9FD4 100%) !important;
+      color: #fff !important;
+      box-shadow: 0 4px 12px rgba(60, 187, 242, 0.25) !important;
+
+      &:hover {
+        background: linear-gradient(135deg, #1A9FD4 0%, #5B9CF6 100%) !important;
+        box-shadow: 0 6px 16px rgba(60, 187, 242, 0.35) !important;
+      }
+    }
+
+    .MuiButton-outlinedInherit {
+      border-color: rgba(255, 255, 255, 0.15) !important;
+      color: rgba(255, 255, 255, 0.80) !important;
+
+      &:hover {
+        background-color: rgba(255, 255, 255, 0.04) !important;
+        border-color: rgba(255, 255, 255, 0.30) !important;
+      }
+    }
+  }
+
+  /* Main background wrapper for the entire layout Box */
+  .middle_container:has(#product-schema),
+  .middle_container:has(#product-form-field),
+  .middle_container #product-schema,
+  .middle_container #product-form-field,
+  .middle_container .MuiBox-root[style*="min-height: 100vh"] {
+    background-color: #0f172a !important;
+  }
+}
+
+#product-schema,
+#product-form-field {
+  background-color: #f3f6fa !important;
+  padding: 24px !important;
+  min-height: calc(100vh - 110px);
+
+  .data_content {
+    background-color: #ffffff !important;
+    border: none !important;
+    border-radius: 16px !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04) !important;
+    padding: 30px;
+    margin: 0 !important;
+  }
+
+  .card {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+}
+
+/* ── Generated Product Modal Dark Theme Overrides ── */
+[data-theme="dark"] .generated-product-dialog-paper {
+  background-color: #111827 !important;
+  color: rgba(255, 255, 255, 0.90) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+
+  .MuiDialogTitle-root {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+    color: rgba(255, 255, 255, 0.95) !important;
+
+    .MuiTypography-colorTextSecondary,
+    .MuiTypography-caption {
+      color: rgba(255, 255, 255, 0.50) !important;
+    }
+
+    .MuiIconButton-root {
+      color: rgba(255, 255, 255, 0.60) !important;
+
+      &:hover {
+        background-color: rgba(255, 255, 255, 0.08) !important;
+      }
+    }
+  }
+
+  .MuiDialogContent-root {
+    color: rgba(255, 255, 255, 0.90) !important;
+
+    /* bg-hover boxes, e.g. for copied content blocks */
+    .MuiBox-root,
+    .MuiList-root {
+      background-color: rgba(255, 255, 255, 0.03) !important;
+      color: rgba(255, 255, 255, 0.90) !important;
+    }
+
+    .MuiTypography-root {
+      color: rgba(255, 255, 255, 0.90) !important;
+    }
+
+    .MuiTypography-colorTextSecondary,
+    .MuiTypography-body2 {
+      color: rgba(255, 255, 255, 0.70) !important;
+    }
+
+    .MuiIconButton-root {
+      color: rgba(255, 255, 255, 0.60) !important;
+
+      &:hover {
+        background-color: rgba(255, 255, 255, 0.08) !important;
+      }
+    }
+
+    .MuiDivider-root {
+      border-color: rgba(255, 255, 255, 0.08) !important;
+    }
+
+    .MuiListItemText-primary {
+      color: rgba(255, 255, 255, 0.85) !important;
+    }
+
+    /* Errors box override */
+    .MuiBox-root[style*="border-color: error.light"],
+    .MuiBox-root[style*="border: 1px solid"] {
+      border-color: rgba(239, 68, 68, 0.3) !important;
+      background-color: rgba(239, 68, 68, 0.08) !important;
+
+      .MuiTypography-root,
+      .MuiSvgIcon-root {
+        color: #f87171 !important;
+      }
+    }
+  }
+
+  .MuiDialogActions-root {
+    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+
+    .MuiButton-outlinedInherit {
+      border-color: rgba(255, 255, 255, 0.15) !important;
+      color: rgba(255, 255, 255, 0.80) !important;
+
+      &:hover {
+        background-color: rgba(255, 255, 255, 0.04) !important;
+        border-color: rgba(255, 255, 255, 0.30) !important;
+      }
+    }
+
+    .MuiButton-containedPrimary {
+      background: linear-gradient(135deg, #5B9CF6 0%, #1A9FD4 100%) !important;
+      color: #fff !important;
+      box-shadow: 0 4px 12px rgba(60, 187, 242, 0.25) !important;
+
+      &:hover {
+        background: linear-gradient(135deg, #1A9FD4 0%, #5B9CF6 100%) !important;
+        box-shadow: 0 6px 16px rgba(60, 187, 242, 0.35) !important;
+      }
+    }
+  }
+}

@@ -1,0 +1,1825 @@
+.action_container {
+  display: flex;
+  align-items: center;
+
+  .view {
+    margin-left: 20px;
+  }
+}
+
+.data_content {
+  .titleBox {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 0px 15px 0px 0px;
+    border-bottom: 1px solid #E4E4E7;
+
+    p {
+      padding: 19px 5px 18px 5px;
+      color: var(--table-title-color);
+      font-size: 18px;
+      font-weight: 600;
+      line-height: 27px;
+    }
+
+    .blue {
+      color: #2374F2;
+      cursor: pointer;
+    }
+
+    button {
+      color: var(--button-text-color);
+      border-radius: 8px;
+      background-color: var(--button-bg-color);
+      border-color: var(--button-bg-color);
+      padding: 5px 10px 5px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+
+      .btnIcon {
+        margin: 0px 10px 0px 0px;
+      }
+    }
+  }
+
+  .fil {
+    select {
+      width: 100%;
+      border-radius: 8px;
+      box-shadow: -8px 12px 18px 0px rgba(25, 42, 70, 0.00);
+      border: none;
+      padding: 8px;
+      outline: none;
+      color: #71717A;
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 21px;
+      border: 1px solid #CECECE;
+    }
+  }
+
+  .countContainer {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    padding: 10px;
+  }
+
+  .countBox {
+    padding: 10px;
+    background: linear-gradient(134deg, #2374F2 0%, #8060aa 100%);
+    color: #FFF;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+    margin-top: 5px;
+  }
+
+  .accordion-button {
+    padding: 10px !important;
+  }
+}
+
+.cancel {
+  border: 1px solid var(--cancel-btn-border-color);
+  background-color: var(--cancel-btn-bg-color);
+  color: var(--cancel-btn-text-color);
+  font-size: 14px;
+  border-radius: 8px;
+  width: 150px;
+  padding: 10px;
+}
+
+.submit {
+  border: 1px solid var(--button-bg-color);
+  background-color: var(--button-bg-color);
+  color: var(--button-text-color);
+  font-size: 14px;
+  border-radius: 8px;
+  width: 150px;
+  padding: 10px;
+}
+
+.package_step2 {
+  overflow: auto;
+}
+
+.campaign_form {
+
+  // Reset react-select dummy inputs to prevent outline/border boxes
+  .form_dropdown__input-container,
+  .form_dropdown__input-container input,
+  .form_dropdown__control input,
+  .form_dropdown__control input:focus,
+  .form_dropdown__value-container input,
+  .form_dropdown__value-container input:focus,
+  [class*="form_dropdown"] input,
+  [class*="form_dropdown"] input:focus {
+    border: none !important;
+    border-width: 0 !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    height: auto !important;
+  }
+
+  // Override react-chips inline background color
+  .react-chips,
+  .react-chips>div,
+  .react-chips-container,
+  .react-chips-container>div,
+  .react-chips-theme,
+  .react-chips-theme>div,
+  div[class*="react-chips"],
+  div[class*="react-chips"]>div {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    border: 1px solid #CECECE !important;
+    border-radius: 8px !important;
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 2px 8px;
+    box-shadow: none !important;
+
+    ul {
+      background-color: transparent !important;
+      background: transparent !important;
+      border: none !important;
+      margin: 0;
+      padding: 0;
+    }
+
+    input {
+      background-color: transparent !important;
+      background: transparent !important;
+      border: none !important;
+      outline: none !important;
+      box-shadow: none !important;
+    }
+  }
+
+
+  .rs-picker-toggle.rs-btn {
+    padding-bottom: 10px !important;
+    padding-top: 10px !important;
+  }
+
+  .field_box {
+    margin: 0px 0px 20px 0px;
+  }
+
+  .bidding_box {
+    border-top: 1px solid #E4E4E7;
+    padding-top: 20px;
+  }
+
+  label {
+    color: var(--title-text-color);
+    font-size: 14px;
+    font-weight: 600;
+    font-family: 'Plus Jakarta Sans', 'Outfit', 'Inter', sans-serif !important;
+    margin-bottom: 6px;
+  }
+
+  // Custom Radio Button Styling
+  input[type="radio"] {
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #cbd5e1;
+    border-radius: 50%;
+    outline: none;
+    background-color: #ffffff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 6px;
+    vertical-align: middle;
+    transition: all 0.2s ease;
+
+    &:checked {
+      border-color: #1A9FD4;
+      background-color: #ffffff;
+
+      &::before {
+        content: "";
+        display: block;
+        width: 8px;
+        height: 8px;
+        background-color: #1A9FD4;
+        border-radius: 50%;
+      }
+    }
+  }
+
+  .css-13cymwt-control {
+    padding: 2px;
+  }
+
+  .radio_box {
+    display: flex;
+    padding: 12px 16px;
+    align-items: start;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    input[type="radio"] {
+      margin-top: 3px;
+    }
+
+    .radio_text {
+      padding: 0px 0px 0px 12px;
+
+      h6 {
+        font-family: 'Plus Jakarta Sans', 'Outfit', 'Inter', sans-serif !important;
+        font-size: 14px;
+        font-weight: 500;
+        color: #71717A;
+        margin: 0px;
+      }
+
+      h5 {
+        font-family: 'Plus Jakarta Sans', 'Outfit', 'Inter', sans-serif !important;
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--title-text-color);
+        margin: 0px 0px 4px 0px;
+      }
+
+      p {
+        font-family: 'Plus Jakarta Sans', 'Outfit', 'Inter', sans-serif !important;
+        font-size: 13px;
+        color: #64748b;
+        margin: 0px;
+      }
+    }
+  }
+
+  .form_field {
+    padding: 8px 0px 0px 0px;
+
+    select {
+      width: 100%;
+      border-radius: 8px !important;
+      border: 1px solid #CECECE !important;
+      padding: 10px 14px !important;
+      outline: none;
+      color: #1f2937;
+      font-family: 'Plus Jakarta Sans', 'Outfit', 'Inter', sans-serif !important;
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 21px;
+      background-color: #ffffff;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      height: 42px;
+
+      &:focus {
+        border-color: #1A9FD4 !important;
+        box-shadow: 0 0 0 2px rgba(60, 187, 242, 0.20) !important;
+      }
+    }
+
+    .rmdp-container {
+      width: 100% !important;
+
+      input.rmdp-input {
+        width: 100%;
+        border-radius: 8px !important;
+        border: 1px solid #CECECE !important;
+        padding: 10px 14px !important;
+        outline: none;
+        color: #1f2937;
+        font-family: 'Plus Jakarta Sans', 'Outfit', 'Inter', sans-serif !important;
+        font-size: 14px;
+        font-weight: 500;
+        line-height: 21px;
+        background-color: #ffffff;
+        height: 42px;
+        transition: border-color 0.2s, box-shadow 0.2s;
+
+        &:focus {
+          border-color: #1A9FD4 !important;
+          box-shadow: 0 0 0 2px rgba(60, 187, 242, 0.20) !important;
+        }
+      }
+    }
+
+    input.user-box-input,
+    textarea {
+      width: 100%;
+      border-radius: 8px !important;
+      border: 1px solid #CECECE !important;
+      padding: 10px 14px !important;
+      outline: none;
+      color: #1f2937;
+      font-family: 'Plus Jakarta Sans', 'Outfit', 'Inter', sans-serif !important;
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 21px;
+      background-color: #ffffff;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      height: 42px;
+
+      &:focus {
+        border-color: #1A9FD4 !important;
+        box-shadow: 0 0 0 2px rgba(60, 187, 242, 0.20) !important;
+      }
+    }
+
+    textarea {
+      height: auto;
+    }
+
+    // react-select custom styling overrides for light theme
+    .form_dropdown__control {
+      background-color: #ffffff !important;
+      border: 1px solid #CECECE !important;
+      border-radius: 8px !important;
+      min-height: 42px !important;
+      height: 42px !important;
+      box-shadow: none !important;
+      transition: border-color 0.2s, box-shadow 0.2s;
+
+      &:hover {
+        border-color: #a1a1aa !important;
+      }
+
+      &.form_dropdown__control--is-focused {
+        border-color: #1A9FD4 !important;
+        box-shadow: 0 0 0 2px rgba(60, 187, 242, 0.20) !important;
+      }
+    }
+
+    .form_dropdown__value-container {
+      padding: 2px 14px !important;
+    }
+
+    .form_dropdown__single-value {
+      color: #1f2937 !important;
+      font-family: 'Plus Jakarta Sans', 'Outfit', 'Inter', sans-serif !important;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .form_dropdown__placeholder {
+      color: #9ca3af !important;
+      font-family: 'Plus Jakarta Sans', 'Outfit', 'Inter', sans-serif !important;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .form_dropdown__menu {
+      border-radius: 8px !important;
+      border: 1px solid #e4e4e7 !important;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
+      background-color: #ffffff !important;
+      z-index: 9999 !important;
+    }
+
+    .form_dropdown__option {
+      font-family: 'Plus Jakarta Sans', 'Outfit', 'Inter', sans-serif !important;
+      font-size: 14px;
+      font-weight: 500;
+      color: #1f2937 !important;
+      padding: 10px 14px !important;
+      cursor: pointer;
+
+      &.form_dropdown__option--is-focused {
+        background-color: #f3f4f6 !important;
+      }
+
+      &.form_dropdown__option--is-selected {
+        background-color: #1A9FD4 !important;
+        color: #ffffff !important;
+      }
+    }
+
+    .react-chips,
+    .react-chips-container,
+    .react-chips-container ul,
+    .react-chips-theme,
+    .react-chips-theme ul,
+    div[class*="react-chips"] {
+      background-color: #ffffff !important;
+      border: 1px solid #CECECE !important;
+      color: #1f2937 !important;
+      border-radius: 8px !important;
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      width: 100%;
+      padding: 0 14px !important;
+
+      ul {
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        border: none !important;
+        background-color: transparent !important;
+      }
+
+      input {
+        background-color: transparent !important;
+        color: #1f2937 !important;
+        border: none !important;
+        outline: none !important;
+        box-shadow: none !important;
+        height: 32px !important;
+        width: auto !important;
+        padding: 4px !important;
+      }
+
+      .chip {
+        background-color: #E0F4FD !important;
+        color: #1A9FD4 !important;
+        border: 1px solid #b3def7 !important;
+        border-radius: 6px !important;
+        padding: 2px 8px !important;
+        margin: 2px !important;
+        display: inline-flex !important;
+        align-items: center;
+
+        span {
+          background-color: transparent !important;
+        }
+      }
+    }
+
+    input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      margin-top: 2px;
+      margin-left: 5px;
+      margin-right: 5px;
+      padding: 0px;
+    }
+  }
+}
+
+.campaign_modal_head {
+  .modal_title_box {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    p {
+      color: var(--title-text-color);
+      font-size: 18px;
+      font-weight: 500;
+    }
+  }
+
+  .modal_close_box {
+    display: flex;
+    justify-content: end;
+    padding-right: 10px;
+    align-items: center;
+    cursor: pointer;
+    font-size: 20px;
+  }
+
+}
+
+.modal_footer {
+  border-top: 1px solid #E4E4E7;
+  padding-top: 20px;
+  margin-top: 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+
+  button {
+    height: 36px !important;
+    padding: 6px 16px !important;
+    margin: 0 !important;
+    font-family: inherit !important;
+    font-size: 13.5px;
+    font-weight: 600;
+    border-radius: 8px !important;
+    transition: all 0.2s ease-in-out;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 110px;
+  }
+
+  .save_btn {
+    background: linear-gradient(135deg, #2374F2 0%, #1A5CC7 55%, #0D1B3E 100%) !important;
+    color: #ffffff !important;
+    border: none !important;
+    box-shadow: 0 3px 12px rgba(35, 116, 242, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+
+    &:hover:not(:disabled) {
+      transform: translateY(-2px) scale(1.015);
+      box-shadow: 0 8px 24px rgba(35, 116, 242, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
+    }
+
+    &:active:not(:disabled) {
+      transform: translateY(0px) scale(0.97) !important;
+      box-shadow: 0 2px 8px rgba(35, 116, 242, 0.22), inset 0 2px 4px rgba(0, 0, 0, 0.15) !important;
+    }
+
+    &:disabled {
+      background: #e2e8f0 !important;
+      color: #94a3b8 !important;
+      cursor: not-allowed;
+      box-shadow: none !important;
+    }
+  }
+
+  .cancel_btn {
+    background: transparent !important;
+    border: none !important;
+    color: var(--text-secondary, #64748b) !important;
+    box-shadow: none !important;
+    text-decoration: none !important;
+    min-width: auto !important;
+
+    &:hover {
+      background: transparent !important;
+      color: var(--text-primary, #0f172a) !important;
+    }
+  }
+}
+
+.add-campaign-modal {
+  .modal-content {
+    border-radius: 16px !important;
+    border: 1px solid #e4e4e7 !important;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.06) !important;
+    overflow: hidden;
+  }
+
+  .modal-header {
+    border-bottom: 1px solid #e4e4e7 !important;
+    background-color: #f8fafc !important;
+    padding: 16px 24px !important;
+
+    .modal_title_box p {
+      font-size: 18px;
+      font-weight: 700;
+      color: #0f172a;
+      margin: 0;
+    }
+  }
+
+  .modal-body {
+    padding: 24px !important;
+  }
+}
+
+.camapgin_btn {
+  display: flex;
+}
+
+.campaign_first {
+  padding-right: 10px;
+}
+
+.job_btns {
+  position: relative;
+
+  .inner_loader {
+    position: inherit;
+    right: -13px;
+    top: -15px;
+  }
+
+  .check_img {
+    position: absolute;
+    right: -24px;
+    top: 0;
+
+    svg {
+      color: green;
+    }
+  }
+}
+
+.data_table {
+  .weekly_table {
+    margin: auto;
+    border-radius: 0;
+    box-shadow: none;
+    overflow: auto;
+
+    td,
+    th {
+      text-align: center;
+      min-width: max-content;
+    }
+
+    th {
+      background-color: #F6F7FB;
+    }
+
+    .date_show {
+      text-align: center;
+      align-items: center;
+      display: flex;
+      font-weight: 900;
+    }
+
+    tr:nth-child(odd) {
+      td {
+        background-color: #FFFFFF;
+      }
+    }
+
+    tr:nth-child(even) {
+      td {
+        background-color: #FAFAFA;
+      }
+    }
+
+    .date_show_title {
+      background-color: #F6F7FB;
+    }
+  }
+}
+
+.week_filter {
+  padding: 8px 12px;
+  background: transparent;
+  display: flex;
+  gap: 8px;
+
+  button {
+    background: #f1f5f9;
+    color: #334155;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 6px 18px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+
+    &:hover {
+      background: #e2e8f0;
+      color: #0f172a;
+    }
+  }
+
+  button.active {
+    background: linear-gradient(135deg, #1A9FD4 0%, #2374F2 100%) !important;
+    color: #ffffff !important;
+    border: 1px solid transparent !important;
+    box-shadow: 0 4px 12px rgba(60, 187, 242, 0.25) !important;
+  }
+}
+
+[data-theme="dark"] {
+  .data_table {
+    .weekly_table {
+      background-color: transparent !important;
+      border-color: rgba(255, 255, 255, 0.08) !important;
+
+      table {
+        color: rgba(255, 255, 255, 0.85) !important;
+      }
+
+      th {
+        background-color: #1e293b !important;
+        color: rgba(255, 255, 255, 0.85) !important;
+        border-color: rgba(255, 255, 255, 0.08) !important;
+      }
+
+      td {
+        color: rgba(255, 255, 255, 0.8) !important;
+        border-color: rgba(255, 255, 255, 0.08) !important;
+      }
+
+      tr:nth-child(odd) td {
+        background-color: #0f172a !important;
+      }
+
+      tr:nth-child(even) td {
+        background-color: #131d31 !important;
+      }
+
+      tr:hover td {
+        background-color: rgba(255, 255, 255, 0.05) !important;
+      }
+
+      .date_show_title {
+        background-color: #1e293b !important;
+      }
+    }
+  }
+
+  .week_filter {
+    button {
+      background: rgba(255, 255, 255, 0.06);
+      color: rgba(255, 255, 255, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.10);
+        color: #ffffff;
+      }
+    }
+
+    button.active {
+      background: linear-gradient(135deg, #1A9FD4 0%, #5B9CF6 100%) !important;
+      color: #ffffff !important;
+      border: 1px solid transparent !important;
+      box-shadow: 0 4px 12px rgba(60, 187, 242, 0.35) !important;
+    }
+  }
+
+  .data_content_btn {
+    .data_model_btn {
+      .fil.campaign_first {
+        select {
+          background-color: #1e293b !important;
+          color: #f8fafc !important;
+          border: 1px solid rgba(255, 255, 255, 0.12) !important;
+
+          option {
+            background-color: #1e293b !important;
+            color: #f8fafc !important;
+          }
+        }
+      }
+
+      button[role="combobox"],
+      [data-radix-select-trigger] {
+        border: 1px solid rgba(255, 255, 255, 0.18) !important;
+        background-color: #1e293b !important;
+        color: #f8fafc !important;
+      }
+    }
+  }
+
+  // Campaign Modal & Form Styles
+  .add-campaign-modal {
+    .modal-content {
+      background: rgba(15, 23, 42, 0.95) !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5) !important;
+      backdrop-filter: blur(20px) saturate(180%) !important;
+      -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+    }
+
+    .modal-header {
+      background-color: rgba(255, 255, 255, 0.03) !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+
+      .modal_title_box p {
+        color: rgba(255, 255, 255, 0.95) !important;
+      }
+    }
+
+    .modal-body {
+      background: transparent !important;
+    }
+  }
+
+  .campaign_modal_head {
+    border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+
+    .modal_title_box p {
+      color: rgba(255, 255, 255, 0.95) !important;
+    }
+
+    .modal_close_box {
+      color: rgba(255, 255, 255, 0.6) !important;
+
+      &:hover {
+        color: #ffffff !important;
+      }
+    }
+  }
+
+  .modal_footer {
+    border-top-color: rgba(255, 255, 255, 0.08) !important;
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+
+    button {
+      height: 36px !important;
+      padding: 6px 16px !important;
+      margin: 0 !important;
+      font-family: inherit !important;
+      font-size: 13.5px;
+      font-weight: 600;
+      border-radius: 8px !important;
+      transition: all 0.2s ease-in-out;
+      cursor: pointer;
+      min-width: 110px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .save_btn {
+      background: linear-gradient(135deg, #2374F2 0%, #1A5CC7 55%, #0D1B3E 100%) !important;
+      color: #ffffff !important;
+      border: none !important;
+      box-shadow: 0 3px 12px rgba(35, 116, 242, 0.40) !important;
+
+      &:hover:not(:disabled) {
+        transform: translateY(-2px) scale(1.015);
+        box-shadow: 0 8px 24px rgba(35, 116, 242, 0.50) !important;
+        opacity: 0.92;
+      }
+
+      &:active:not(:disabled) {
+        transform: translateY(0) scale(0.97) !important;
+        box-shadow: 0 2px 8px rgba(35, 116, 242, 0.25) !important;
+      }
+
+      &:disabled {
+        background: rgba(255, 255, 255, 0.08) !important;
+        color: rgba(255, 255, 255, 0.3) !important;
+        cursor: not-allowed;
+        box-shadow: none !important;
+      }
+    }
+
+    .cancel_btn {
+      background: transparent !important;
+      border: none !important;
+      color: rgba(255, 255, 255, 0.7) !important;
+      box-shadow: none !important;
+      text-decoration: none !important;
+      min-width: auto !important;
+
+      &:hover {
+        background: transparent !important;
+        color: #ffffff !important;
+      }
+    }
+  }
+
+  .campaign_form {
+    border-top-color: rgba(255, 255, 255, 0.08) !important;
+
+    label {
+      color: rgba(255, 255, 255, 0.85) !important;
+    }
+
+    span {
+      background-color: transparent !important;
+    }
+
+    // Custom Radio Button Styling in Dark Theme (anywhere in campaign_form)
+    input[type="radio"] {
+      border-color: rgba(255, 255, 255, 0.3) !important;
+      background-color: rgba(255, 255, 255, 0.05) !important;
+
+      &:checked {
+        border-color: #3b82f6 !important;
+        background-color: transparent !important;
+
+        &::before {
+          background-color: #3b82f6 !important;
+        }
+      }
+    }
+
+    .form_field {
+
+      select,
+      input.user-box-input,
+      textarea,
+      .rmdp-container input.rmdp-input {
+        background-color: rgba(255, 255, 255, 0.04) !important;
+        border: 1px solid rgba(255, 255, 255, 0.12) !important;
+        color: rgba(255, 255, 255, 0.9) !important;
+
+        &:focus {
+          border-color: #3b82f6 !important;
+          box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25) !important;
+        }
+      }
+
+      // Adjust options inside native select element
+      select option {
+        background-color: #1e1e24 !important;
+        color: rgba(255, 255, 255, 0.9) !important;
+      }
+
+      // react-select custom styling overrides for dark theme
+      .form_dropdown__control {
+        background-color: rgba(255, 255, 255, 0.04) !important;
+        border: 1px solid rgba(255, 255, 255, 0.12) !important;
+        border-radius: 8px !important;
+        min-height: 42px !important;
+        height: 42px !important;
+        box-shadow: none !important;
+
+        &:hover {
+          border-color: rgba(255, 255, 255, 0.2) !important;
+        }
+
+        &.form_dropdown__control--is-focused {
+          border-color: #3b82f6 !important;
+          box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25) !important;
+        }
+
+        .form_dropdown__single-value {
+          color: rgba(255, 255, 255, 0.9) !important;
+          font-family: 'Plus Jakarta Sans', 'Outfit', 'Inter', sans-serif !important;
+          font-size: 14px;
+        }
+
+        .form_dropdown__placeholder {
+          color: rgba(255, 255, 255, 0.4) !important;
+          font-family: 'Plus Jakarta Sans', 'Outfit', 'Inter', sans-serif !important;
+          font-size: 14px;
+        }
+
+        .form_dropdown__input-container {
+          color: rgba(255, 255, 255, 0.9) !important;
+        }
+      }
+
+      .form_dropdown__menu {
+        background-color: #1e1e24 !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5) !important;
+      }
+
+      .form_dropdown__option {
+        color: rgba(255, 255, 255, 0.8) !important;
+        background-color: transparent !important;
+
+        &:hover,
+        &.form_dropdown__option--is-focused {
+          background-color: rgba(255, 255, 255, 0.08) !important;
+          color: #ffffff !important;
+        }
+
+        &.form_dropdown__option--is-selected {
+          background-color: #1A9FD4 !important;
+          color: #ffffff !important;
+        }
+      }
+
+      // react-chips custom styling overrides for dark theme
+      .react-chips,
+      .react-chips>div,
+      .react-chips-container,
+      .react-chips-container>div,
+      .react-chips-theme,
+      .react-chips-theme>div,
+      div[class*="react-chips"],
+      div[class*="react-chips"]>div {
+        background-color: rgba(255, 255, 255, 0.04) !important;
+        background: rgba(255, 255, 255, 0.04) !important;
+        border: 1px solid rgba(255, 255, 255, 0.12) !important;
+        color: rgba(255, 255, 255, 0.9) !important;
+        border-radius: 8px !important;
+        min-height: 42px;
+        padding: 0 14px !important;
+
+        ul {
+          background-color: transparent !important;
+        }
+
+        input {
+          background-color: transparent !important;
+          color: rgba(255, 255, 255, 0.9) !important;
+        }
+
+        .chip {
+          background-color: rgba(255, 255, 255, 0.1) !important;
+          color: rgba(255, 255, 255, 0.9) !important;
+          border: 1px solid rgba(255, 255, 255, 0.15) !important;
+
+          span {
+            background-color: transparent !important;
+          }
+        }
+      }
+    }
+
+    .radio_box {
+      border-color: rgba(255, 255, 255, 0.08) !important;
+      background-color: rgba(255, 255, 255, 0.02) !important;
+      border-radius: 8px;
+      margin-bottom: 12px;
+
+      &:hover {
+        background-color: rgba(255, 255, 255, 0.04) !important;
+      }
+
+      .radio_text {
+        h5 {
+          color: rgba(255, 255, 255, 0.9) !important;
+        }
+
+        p {
+          color: rgba(255, 255, 255, 0.5) !important;
+        }
+      }
+    }
+  }
+}
+
+// Absolute dark theme styling overrides for react-chips globally
+[data-theme="dark"] {
+
+  .react-chips,
+  .react-chips>div,
+  .react-chips-container,
+  .react-chips-container>div,
+  .react-chips-theme,
+  .react-chips-theme>div,
+  div[class*="react-chips"],
+  div[class*="react-chips"]>div {
+    background-color: rgba(255, 255, 255, 0.04) !important;
+    background: rgba(255, 255, 255, 0.04) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    color: rgba(255, 255, 255, 0.9) !important;
+  }
+
+  .react-chips-container ul,
+  .react-chips-theme ul,
+  .react-chips-theme ul *,
+  .react-chips-container ul *,
+  div[class*="react-chips"] ul,
+  div[class*="react-chips"] ul * {
+    background-color: transparent !important;
+    background: transparent !important;
+  }
+
+  .react-chips input,
+  .react-chips-container input,
+  .react-chips-theme input,
+  div[class*="react-chips"] input {
+    background-color: transparent !important;
+    background: transparent !important;
+    color: rgba(255, 255, 255, 0.9) !important;
+  }
+
+  // Native select options dark theme visibility
+  select option {
+    background-color: #1e1e24 !important;
+    color: rgba(255, 255, 255, 0.9) !important;
+  }
+
+  // react-multi-date-picker calendar overrides
+  .rmdp-wrapper,
+  .rmdp-calendar {
+    background-color: #1e1e24 !important;
+    background: #1e1e24 !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    color: rgba(255, 255, 255, 0.9) !important;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5) !important;
+  }
+
+  .rmdp-header-values {
+    color: rgba(255, 255, 255, 0.9) !important;
+  }
+
+  .rmdp-week-day {
+    color: rgba(255, 255, 255, 0.5) !important;
+  }
+
+  .rmdp-day span {
+    color: rgba(255, 255, 255, 0.8) !important;
+  }
+
+  .rmdp-day.rmdp-deactive span {
+    color: rgba(255, 255, 255, 0.25) !important;
+  }
+
+  .rmdp-day.rmdp-disabled span {
+    color: rgba(255, 255, 255, 0.15) !important;
+  }
+
+  .rmdp-day:not(.rmdp-disabled):not(.rmdp-day-hidden) span:hover {
+    background-color: rgba(255, 255, 255, 0.08) !important;
+    color: #ffffff !important;
+  }
+
+  .rmdp-day.rmdp-selected span {
+    background-color: #1A9FD4 !important;
+    color: #ffffff !important;
+    box-shadow: none !important;
+  }
+
+  .rmdp-day.rmdp-today span {
+    border: 1px solid #3b82f6 !important;
+    color: #ffffff !important;
+  }
+
+  .rmdp-arrow-container:hover {
+    background-color: rgba(255, 255, 255, 0.08) !important;
+  }
+
+  .rmdp-arrow {
+    border-color: rgba(255, 255, 255, 0.8) !important;
+  }
+
+  /* Product List Page Advanced Filters Row in Dark Theme */
+  .advanced-filters-row {
+    background-color: rgba(15, 23, 42, 0.4) !important;
+    border-color: rgba(255, 255, 255, 0.08) !important;
+    color: rgba(255, 255, 255, 0.85) !important;
+
+    .bg-white {
+      background-color: rgba(15, 23, 42, 0.6) !important;
+      border-color: rgba(255, 255, 255, 0.12) !important;
+    }
+
+    .bg-light {
+      background-color: rgba(255, 255, 255, 0.05) !important;
+      color: rgba(255, 255, 255, 0.6) !important;
+      border-color: rgba(255, 255, 255, 0.12) !important;
+    }
+
+    input {
+      background-color: transparent !important;
+      color: rgba(255, 255, 255, 0.9) !important;
+
+      &::placeholder {
+        color: rgba(255, 255, 255, 0.4) !important;
+      }
+    }
+
+    .text-muted {
+      color: rgba(255, 255, 255, 0.5) !important;
+    }
+
+    .vr {
+      background-color: rgba(255, 255, 255, 0.15) !important;
+    }
+
+    button {
+      background-color: rgba(15, 23, 42, 0.6) !important;
+      border-color: rgba(255, 255, 255, 0.12) !important;
+      color: rgba(255, 255, 255, 0.85) !important;
+
+      &:hover {
+        border-color: #5B9CF6 !important;
+        color: #5B9CF6 !important;
+        background-color: rgba(255, 255, 255, 0.08) !important;
+      }
+    }
+  }
+}
+
+/* ─── Add Campaign Page/Modal Uniformity overrides ─── */
+.add-campaign-modal,
+.campaign_form {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+
+  *,
+  .modal-title,
+  .modal-header,
+  .modal-body,
+  .modal_footer,
+  .campaign_form,
+  .form_dropdown__control,
+  .form_dropdown__option,
+  .react-chips,
+  .rs-picker-toggle,
+  .MuiTab-root,
+  .MuiTabs-root,
+  label,
+  button,
+  input,
+  select,
+  textarea,
+  .mantine-Input-input,
+  .mantine-TagsInput-input,
+  .mantine-TagsInput-placeholder,
+  [class*="mantine-"] {
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+  }
+
+  // Restore FontAwesome icons from the * override
+  .fa,
+  .fas,
+  .far,
+  .fab,
+  .fa-solid,
+  .fa-regular,
+  .fa-light,
+  .fa-thin,
+  .fa-duotone,
+  .fa-brands,
+  [class^="fa-"],
+  [class*=" fa-"] {
+    font-family: "Font Awesome 6 Free", "Font Awesome 5 Free", "FontAwesome" !important;
+  }
+}
+
+// Mantine TagsInput styling overrides for campaign form
+.campaign_form {
+
+  .mantine-Input-input,
+  .mantine-TagsInput-input {
+    height: 38px !important;
+    display: flex !important;
+    align-items: center !important;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    border-radius: 8px !important;
+    border: 1.5px solid #CECECE !important;
+    background-color: #ffffff !important;
+    color: #1f2937 !important;
+    padding: 0 12px !important;
+    transition: border-color 0.2s, box-shadow 0.2s;
+
+    &:focus-within {
+      border-color: #1A9FD4 !important;
+      box-shadow: 0 0 0 2px rgba(60, 187, 242, 0.20) !important;
+    }
+  }
+
+  .mantine-TagsInput-root input {
+    height: 100% !important;
+    border: none !important;
+    background-color: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    color: #1f2937 !important;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+
+    &::placeholder {
+      color: #9ca3af !important;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+      font-weight: 500 !important;
+      font-size: 14px !important;
+    }
+
+    &:focus {
+      outline: none !important;
+      border: none !important;
+      box-shadow: none !important;
+    }
+  }
+
+  // Pill (Tag) styling overrides for light theme
+  .mantine-Pill-root {
+    background-color: #f3f4f6 !important;
+    color: #1f2937 !important;
+    border: 1px solid #e5e7eb !important;
+  }
+
+  .mantine-Pill-label {
+    color: #1f2937 !important;
+  }
+
+  .mantine-Pill-closeButton {
+    color: #4b5563 !important;
+
+    &:hover {
+      background-color: #e5e7eb !important;
+      color: #111827 !important;
+    }
+  }
+
+  // Input clear button styling overrides for light theme
+  .mantine-CloseButton-root {
+    color: #4b5563 !important;
+
+    &:hover {
+      background-color: #f3f4f6 !important;
+      color: #111827 !important;
+    }
+  }
+}
+
+[data-theme="dark"] .campaign_form {
+
+  .mantine-Input-input,
+  .mantine-TagsInput-input {
+    background-color: rgba(255, 255, 255, 0.04) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    color: rgba(255, 255, 255, 0.9) !important;
+
+    &:focus-within {
+      border-color: #3b82f6 !important;
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25) !important;
+    }
+  }
+
+  .mantine-TagsInput-root input {
+    height: 100% !important;
+    border: none !important;
+    background-color: transparent !important;
+    color: rgba(255, 255, 255, 0.9) !important;
+    box-shadow: none !important;
+
+    &::placeholder {
+      color: rgba(255, 255, 255, 0.40) !important;
+    }
+
+    &:focus {
+      outline: none !important;
+      border: none !important;
+      box-shadow: none !important;
+    }
+  }
+
+  // Pill (Tag) styling overrides for dark theme
+  .mantine-Pill-root {
+    background-color: rgba(255, 255, 255, 0.08) !important;
+    color: rgba(255, 255, 255, 0.9) !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  }
+
+  .mantine-Pill-label {
+    color: rgba(255, 255, 255, 0.9) !important;
+  }
+
+  .mantine-Pill-closeButton {
+    color: rgba(255, 255, 255, 0.6) !important;
+
+    &:hover {
+      background-color: rgba(255, 255, 255, 0.12) !important;
+      color: rgba(255, 255, 255, 0.9) !important;
+    }
+  }
+
+  // Input clear button styling overrides for dark theme
+  .mantine-CloseButton-root {
+    color: rgba(255, 255, 255, 0.6) !important;
+
+    &:hover {
+      background-color: rgba(255, 255, 255, 0.08) !important;
+      color: rgba(255, 255, 255, 0.9) !important;
+    }
+  }
+}
+
+.campaign_form {
+
+  input.form-control,
+  select.form-control,
+  textarea.form-control,
+  .rs-picker-toggle.rs-btn {
+    width: 100%;
+    border-radius: 8px !important;
+    border: 1px solid #CECECE !important;
+    padding: 10px 14px !important;
+    outline: none;
+    color: #1f2937;
+    background-color: #ffffff;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    height: 42px;
+
+    &:focus {
+      border-color: #1A9FD4 !important;
+      box-shadow: 0 0 0 2px rgba(60, 187, 242, 0.20) !important;
+    }
+  }
+
+  .pf-input {
+    width: 100%;
+    height: 38px;
+    padding: 0 12px;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    color: #1f2937 !important;
+    background-color: #ffffff;
+    border: 1.5px solid #CECECE !important;
+    border-radius: 8px !important;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+
+    &::placeholder {
+      color: #9ca3af !important;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+      font-size: 13px !important;
+      font-weight: 500 !important;
+    }
+
+    &:focus {
+      border-color: #1A9FD4 !important;
+      box-shadow: 0 0 0 2px rgba(60, 187, 242, 0.20) !important;
+    }
+  }
+
+  textarea.pf-input {
+    height: auto !important;
+    padding: 10px 12px !important;
+  }
+
+  .pf-datepicker.rs-picker-date {
+    width: 100% !important;
+
+    .rs-picker-toggle {
+      height: 38px !important;
+      border: 1.5px solid #CECECE !important;
+      border-radius: 8px !important;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+      font-size: 13px !important;
+      color: #1f2937 !important;
+      background: #ffffff !important;
+      box-shadow: none !important;
+      transition: border-color 0.2s, box-shadow 0.2s !important;
+      padding: 0 12px !important;
+      display: flex !important;
+      align-items: center !important;
+
+      &:hover {
+        border-color: #a1a1aa !important;
+      }
+    }
+
+    &.rs-picker-focused .rs-picker-toggle {
+      border-color: #1A9FD4 !important;
+      box-shadow: 0 0 0 2px rgba(60, 187, 242, 0.20) !important;
+    }
+
+    .rs-picker-toggle-value {
+      color: #1f2937 !important;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+      font-size: 13px !important;
+      font-weight: 500 !important;
+    }
+
+    .rs-picker-toggle-placeholder {
+      color: #9ca3af !important;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+      font-size: 13px !important;
+      font-weight: 500 !important;
+    }
+  }
+
+  textarea.form-control {
+    height: auto !important;
+  }
+
+  // Placeholder styling for all standard inputs in campaign form
+  input::placeholder,
+  textarea::placeholder,
+  .user-box-input::placeholder,
+  .form-control::placeholder {
+    color: #9ca3af !important;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+  }
+
+  .MuiTabs-root {
+    border-bottom: 1px solid #e2e8f0;
+
+    .MuiTab-root {
+      color: #64748b !important;
+      font-weight: 600 !important;
+      text-transform: none !important;
+      font-size: 13px !important;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+
+      &.Mui-selected {
+        color: #2374F2 !important;
+      }
+    }
+
+    .MuiTabs-indicator {
+      background-color: #2374F2 !important;
+    }
+  }
+
+  .card {
+    background-color: #ffffff !important;
+    border: 1.5px solid #e2e8f0 !important;
+    border-radius: 12px !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02) !important;
+    color: #1f2937 !important;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+
+    &:hover {
+      border-color: #2374F2 !important;
+      box-shadow: 0 6px 20px rgba(60, 187, 242, 0.08) !important;
+    }
+  }
+
+  // Deletion circular red button with animations
+  .delete-btn-premium {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background-color: rgba(239, 68, 68, 0.08) !important;
+    color: #ef4444 !important;
+    border: 1px solid rgba(239, 68, 68, 0.15) !important;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out !important;
+
+    &:hover {
+      background-color: #ef4444 !important;
+      color: #ffffff !important;
+      transform: scale(1.1) !important;
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25) !important;
+    }
+
+    &:active {
+      transform: scale(0.95) !important;
+    }
+  }
+
+  // Add circular blue button with animations
+  .add-btn-premium {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background-color: rgba(26, 159, 212, 0.08) !important;
+    color: #1A9FD4 !important;
+    border: 1px solid rgba(26, 159, 212, 0.15) !important;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out !important;
+
+    &:hover {
+      background-color: #1A9FD4 !important;
+      color: #ffffff !important;
+      transform: scale(1.1) !important;
+      box-shadow: 0 4px 12px rgba(26, 159, 212, 0.25) !important;
+    }
+
+    &:active {
+      transform: scale(0.95) !important;
+    }
+  }
+
+  // Green custom added checkmark badge
+  .added-badge-premium {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    background-color: rgba(16, 185, 129, 0.1) !important;
+    color: #10b981 !important;
+    border: 1px solid rgba(16, 185, 129, 0.2) !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+  }
+
+  table {
+    color: inherit !important;
+
+    th {
+      font-weight: 600;
+      color: #4b5563;
+      background-color: #f8fafc !important;
+      border-bottom: 2px solid #e2e8f0 !important;
+    }
+
+    td {
+      color: #1f2937;
+      border-bottom: 1px solid #e2e8f0 !important;
+      vertical-align: middle;
+    }
+  }
+
+  table.premium-table {
+    border-collapse: separate !important;
+    border-spacing: 0 8px !important;
+    width: 100%;
+
+    thead th {
+      background-color: transparent !important;
+      border-bottom: 2px solid #e2e8f0 !important;
+      padding: 12px 16px !important;
+      font-weight: 700 !important;
+      font-size: 13px !important;
+      color: #4b5563 !important;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    tbody tr {
+      background-color: #ffffff !important;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02) !important;
+      border-radius: 8px !important;
+      transition: all 0.2s ease;
+
+      td {
+        border: none !important;
+        padding: 14px 16px !important;
+        font-size: 14px !important;
+        vertical-align: middle !important;
+
+        &:first-child {
+          border-top-left-radius: 8px !important;
+          border-bottom-left-radius: 8px !important;
+        }
+
+        &:last-child {
+          border-top-right-radius: 8px !important;
+          border-bottom-right-radius: 8px !important;
+        }
+      }
+
+      &:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(60, 187, 242, 0.08) !important;
+        background-color: rgba(60, 187, 242, 0.02) !important;
+      }
+    }
+  }
+}
+
+[data-theme="dark"] {
+  .campaign_form {
+
+    input.form-control,
+    select.form-control,
+    textarea.form-control,
+    .rs-picker-toggle.rs-btn {
+      background-color: rgba(255, 255, 255, 0.04) !important;
+      border: 1px solid rgba(255, 255, 255, 0.12) !important;
+      color: rgba(255, 255, 255, 0.9) !important;
+
+      &:focus {
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25) !important;
+      }
+    }
+
+    .pf-input {
+      background-color: rgba(255, 255, 255, 0.04) !important;
+      border: 1px solid rgba(255, 255, 255, 0.12) !important;
+      color: rgba(255, 255, 255, 0.9) !important;
+
+      &:focus {
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25) !important;
+      }
+
+      &::placeholder {
+        color: rgba(255, 255, 255, 0.40) !important;
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+        font-size: 13px !important;
+        font-weight: 500 !important;
+      }
+    }
+
+    .text-muted {
+      color: rgba(255, 255, 255, 0.5) !important;
+    }
+
+    .pf-datepicker.rs-picker-date {
+      .rs-picker-toggle {
+        background-color: rgba(255, 255, 255, 0.04) !important;
+        border: 1px solid rgba(255, 255, 255, 0.12) !important;
+        color: rgba(255, 255, 255, 0.9) !important;
+
+        &:hover {
+          border-color: rgba(255, 255, 255, 0.2) !important;
+        }
+      }
+
+      &.rs-picker-focused .rs-picker-toggle {
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25) !important;
+      }
+
+      .rs-picker-toggle-value {
+        color: rgba(255, 255, 255, 0.9) !important;
+      }
+
+      .rs-picker-toggle-placeholder {
+        color: rgba(255, 255, 255, 0.40) !important;
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+        font-size: 13px !important;
+        font-weight: 500 !important;
+      }
+    }
+
+    // Placeholder styling for all standard inputs in dark theme campaign form
+    input::placeholder,
+    textarea::placeholder,
+    .user-box-input::placeholder,
+    .form-control::placeholder {
+      color: rgba(255, 255, 255, 0.40) !important;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+      font-size: 14px !important;
+      font-weight: 500 !important;
+    }
+
+    .MuiTabs-root {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+
+      .MuiTab-root {
+        color: rgba(255, 255, 255, 0.5) !important;
+        font-size: 13px !important;
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+        text-transform: none !important;
+
+        &.Mui-selected {
+          color: #5B9CF6 !important;
+        }
+      }
+
+      .MuiTabs-indicator {
+        background-color: #5B9CF6 !important;
+      }
+    }
+
+    .card {
+      background-color: rgba(30, 41, 59, 0.45) !important;
+      border: 1.5px solid rgba(255, 255, 255, 0.08) !important;
+      color: rgba(255, 255, 255, 0.9) !important;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+
+      &:hover {
+        border-color: #5B9CF6 !important;
+        box-shadow: 0 6px 20px rgba(60, 187, 242, 0.15) !important;
+      }
+    }
+
+    table {
+      th {
+        color: rgba(255, 255, 255, 0.7) !important;
+        background-color: rgba(255, 255, 255, 0.02) !important;
+        border-bottom: 2px solid rgba(255, 255, 255, 0.08) !important;
+      }
+
+      td {
+        color: rgba(255, 255, 255, 0.85) !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+      }
+    }
+
+    table.premium-table {
+      thead th {
+        border-bottom: 2px solid rgba(255, 255, 255, 0.08) !important;
+        color: rgba(255, 255, 255, 0.7) !important;
+      }
+
+      tbody tr {
+        background-color: rgba(30, 41, 59, 0.3) !important;
+        border: 1.5px solid rgba(255, 255, 255, 0.06) !important;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2) !important;
+
+        td {
+          color: rgba(255, 255, 255, 0.85) !important;
+        }
+
+        &:hover {
+          background-color: rgba(255, 255, 255, 0.03) !important;
+          box-shadow: 0 4px 15px rgba(0, 0, 0, 0.35) !important;
+        }
+      }
+    }
+  }
+}
+
+/* ─── Add Campaign Page Card Layout ─── */
+#add-campaign-page {
+  background-color: #f3f6fa !important;
+  // padding: 24px !important;
+  height: calc(100vh - 110px);
+  overflow: auto;
+
+  .data_content {
+    background-color: #ffffff !important;
+    border: none !important;
+    border-radius: 16px !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04) !important;
+    padding: 30px !important;
+    margin: 0 !important;
+  }
+}
+
+[data-theme="dark"] #add-campaign-page {
+  background-color: transparent !important;
+
+  .data_content {
+    background-color: rgba(30, 41, 59, 0.4) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3) !important;
+  }
+}

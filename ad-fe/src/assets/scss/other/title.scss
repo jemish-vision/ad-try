@@ -1,0 +1,11 @@
+.title_section {
+    padding: 10px 30px; 
+    background: var(--title-bg-color);
+    .title_content {
+        color: var(--title-text-color);
+        font-size: 17px;
+        font-weight: 600;
+        line-height: 36px;
+        text-transform: capitalize;
+    }
+}

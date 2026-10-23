@@ -1,0 +1,362 @@
+.mp-wrapper {
+    min-height: 100vh;
+    background: #f0f4f9;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 20px 48px;
+    font-family: 'Inter', 'Roboto', sans-serif;
+    text-align: center;
+}
+
+.mp-card {
+    background: #ffffff;
+    border-radius: 20px;
+    border: 0.5px solid #d0dae8;
+    max-width: 560px;
+    width: 100%;
+    padding: 48px 40px 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.mp-logo-row {
+    margin-bottom: 36px;
+}
+
+.mp-logo {
+    height: 38px;
+    object-fit: contain;
+}
+
+.mp-icon-ring {
+    position: relative;
+    width: 96px;
+    height: 96px;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.mp-icon-bg {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    background: #e8f0fb;
+    border: 2px solid #bdd0ef;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    z-index: 1;
+}
+
+.mp-pulse {
+    position: absolute;
+    top: -6px;
+    left: -6px;
+    width: 108px;
+    height: 108px;
+    border-radius: 50%;
+    border: 2px solid #1A9FD4;
+    opacity: 0;
+    animation: ring-pulse 2.4s ease-out infinite;
+}
+
+.mp-pulse--2 {
+    animation-delay: 1.2s;
+}
+
+@keyframes ring-pulse {
+    0% {
+        transform: scale(1);
+        opacity: 0.45;
+    }
+
+    100% {
+        transform: scale(1.55);
+        opacity: 0;
+    }
+}
+
+.mp-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #fff8e6;
+    border: 1px solid #f5d97a;
+    color: #7a5500;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 14px;
+    border-radius: 999px;
+    margin-bottom: 20px;
+}
+
+.mp-badge-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #e09d00;
+    animation: dot-blink 1.5s ease-in-out infinite;
+}
+
+@keyframes dot-blink {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.25;
+    }
+}
+
+.mp-h1 {
+    font-size: 30px;
+    font-weight: 700;
+    color: #0a1f3d;
+    margin: 0 0 10px;
+    letter-spacing: -0.5px;
+    line-height: 1.2;
+}
+
+.mp-h1 span {
+    color: #1A9FD4;
+}
+
+.mp-sub {
+    font-size: 15px;
+    color: #5a7299;
+    line-height: 1.6;
+    margin: 0 0 32px;
+    max-width: 420px;
+}
+
+.mp-divider {
+    width: 100%;
+    height: 0.5px;
+    background: #d8e4f0;
+    margin-bottom: 28px;
+}
+
+.mp-progress-wrap {
+    width: 100%;
+    margin-bottom: 28px;
+}
+
+.mp-progress-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #5a7299;
+    margin-bottom: 8px;
+}
+
+.mp-progress-track {
+    width: 100%;
+    height: 6px;
+    background: #dce8f5;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.mp-progress-bar {
+    height: 100%;
+    background: #1A9FD4;
+    border-radius: 999px;
+    transition: width 0.4s ease;
+}
+
+.mp-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    margin-bottom: 32px;
+    text-align: left;
+}
+
+.mp-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 14px 16px;
+    background: #f5f8fd;
+    border-radius: 12px;
+    border: 0.5px solid #dce8f5;
+    transition: background 0.15s, border-color 0.15s;
+    cursor: default;
+}
+
+.mp-step:hover {
+    background: #eaf1fb;
+    border-color: #b0ccee;
+}
+
+.mp-step-num {
+    min-width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #1A9FD4;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1px;
+    flex-shrink: 0;
+}
+
+.mp-step-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1a3258;
+    margin-bottom: 2px;
+}
+
+.mp-step-desc {
+    font-size: 12px;
+    color: #6b85a8;
+    line-height: 1.5;
+}
+
+.mp-cta {
+    width: 100%;
+    background: #1A9FD4;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 13px 28px;
+    border-radius: 10px;
+    border: none;
+    cursor: pointer;
+    margin-bottom: 16px;
+    transition: background 0.15s, transform 0.1s;
+}
+
+.mp-cta:hover:not(:disabled) {
+    background: #023a74;
+    transform: translateY(-1px);
+}
+
+.mp-cta:disabled {
+    background: #4a7fbf;
+    cursor: default;
+}
+
+.mp-links {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: center;
+}
+
+.mp-link {
+    font-size: 13px;
+    color: #1A9FD4;
+    text-decoration: none;
+    opacity: 0.8;
+}
+
+.mp-link:hover {
+    opacity: 1;
+    text-decoration: underline;
+}
+
+.mp-link-dot {
+    color: #8fa8c4;
+    font-size: 14px;
+}
+
+.mp-footer {
+    font-size: 12px;
+    color: #8fa8c4;
+}
+
+@media (max-width: 576px) {
+    .mp-card {
+        padding: 32px 20px;
+    }
+
+    .mp-h1 {
+        font-size: 24px;
+    }
+
+    .mp-sub {
+        font-size: 14px;
+    }
+}
+
+/* Dark Mode overrides */
+[data-theme="dark"] .mp-wrapper {
+    background: #0f172a;
+}
+
+[data-theme="dark"] .mp-card {
+    background: #1e293b;
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .mp-icon-bg {
+    background: rgba(26, 159, 212, 0.15);
+    border-color: rgba(26, 159, 212, 0.3);
+}
+
+[data-theme="dark"] .mp-badge {
+    background: rgba(245, 217, 122, 0.1);
+    border-color: rgba(245, 217, 122, 0.2);
+    color: #f5d97a;
+}
+
+[data-theme="dark"] .mp-badge-dot {
+    background: #f5d97a;
+}
+
+[data-theme="dark"] .mp-h1 {
+    color: #f8fafc;
+}
+
+[data-theme="dark"] .mp-sub {
+    color: #94a3b8;
+}
+
+[data-theme="dark"] .mp-divider {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .mp-step {
+    background: #151f32;
+    border-color: rgba(255, 255, 255, 0.05);
+}
+
+[data-theme="dark"] .mp-step:hover {
+    background: #1a263d;
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .mp-step-title {
+    color: #cbd5e1;
+}
+
+[data-theme="dark"] .mp-step-desc {
+    color: #94a3b8;
+}
+
+[data-theme="dark"] .mp-checked-time {
+    color: #64748b;
+}
+
+[data-theme="dark"] .mp-link-dot {
+    color: #475569;
+}
+
+[data-theme="dark"] .mp-footer {
+    color: #475569;
+}

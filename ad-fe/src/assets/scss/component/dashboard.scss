@@ -1,0 +1,240 @@
+.superadmin_Dashboard {
+  .multiline_chart {
+    box-shadow: 0 1px 5px 0 rgba(149, 157, 165, 0.7);
+    padding: 10px 5px;
+    width: 100%;
+    height: 100%;
+  }
+
+  .superAdminTotal {
+    .grid_box {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+
+
+    .div_box,
+    .div_box_first {
+      box-shadow: 0 1px 5px 0 rgba(149, 157, 165, 0.7);
+      padding: 10px;
+      display: grid;
+      grid-gap: 10px;
+
+      .inner_box {
+
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-radius: 2px;
+        padding: 25px;
+        text-align: center;
+        box-shadow: 0 1px 5px 0 rgba(149, 157, 165, 0.7);
+        color: white;
+        cursor: pointer;
+
+        h6 {
+          padding-bottom: 11px;
+          font-size: 26px;
+          color: black;
+          padding-top: 11px;
+        }
+
+        p {
+          font-size: 17px;
+          padding-bottom: 10px;
+          color: black;
+        }
+      }
+
+      .purple_box {
+        // background: #dfd9fa;
+
+        img {
+          border-radius: 5px;
+          background: #6146d5;
+          color: white;
+          padding: 15px;
+        }
+
+        h6 {
+          color: black;
+        }
+
+        p {
+          color: black;
+        }
+      }
+
+      .orange_box {
+        //background: #ffc0cbad;
+
+        img {
+          border-radius: 5px;
+          padding: 15px;
+          color: white;
+          background: rgba(254, 70, 70, 0.4117647059);
+        }
+      }
+
+      .pink_box {
+        //background: #ffa50059;
+
+        img {
+          border-radius: 5px;
+          padding: 15px;
+          background: orange;
+          color: white;
+        }
+      }
+
+      .green_box {
+        // background: #00800059;
+
+        img {
+          border-radius: 5px;
+          padding: 15px;
+          background: green;
+          color: white;
+        }
+      }
+
+      .blue_box {
+        background: #dee8f5;
+
+        img {
+          border-radius: 5px;
+          padding: 15px;
+          background: #167bff;
+          color: white;
+        }
+      }
+
+      .purple_border {
+        border: 1px solid #6146d5;
+        color: #6146d5;
+      }
+
+      .orange_border {
+        border: 1px solid #fe7446;
+        color: #fe7446;
+      }
+
+      .green_border {
+        border: 1px solid#0cdca0;
+        color: #0cdca0;
+      }
+    }
+  }
+
+  .dashboard_date {
+    text-align: end;
+    border-bottom: 1px solid lightgray;
+    margin-bottom: 13px;
+    padding-top: 7px;
+
+    .custom-date-range-picker .rs-picker-toggle {
+      border: none !important;
+    }
+  }
+
+  .superadminChart {
+    padding: 24px 0;
+  }
+
+  .charts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+
+    grid-gap: 17px;
+    margin-top: 16px;
+  }
+
+  .piechart,
+  .superadminChart {
+    width: 100%;
+    height: 400px;
+    box-shadow: 0 1px 5px 0 rgba(149, 157, 165, 0.7);
+  }
+
+  .piechart {
+    min-height: 400px;
+    /* Adjust this value as needed */
+  }
+}
+
+.superAdminTotal {
+  .total_box {
+    cursor: pointer;
+
+    svg {
+      font-size: 55px;
+      padding: 10px;
+      //   margin-bottom: 24px;
+      border-radius: 5px;
+      //   margin-top: 10px;
+      color: white;
+    }
+  }
+}
+
+.div_box_first {
+  box-shadow: none !important;
+  padding: 0 !important;
+
+  .first_div {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    margin-bottom: 20px;
+    grid-gap: 30px;
+
+    .inner_box {
+
+
+      padding: 51px 30px !important;
+    }
+
+  }
+
+  :last-child {
+    margin-bottom: 0;
+  }
+}
+
+.dashboard_first {
+  padding-top: 20px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-gap: 30px;
+}
+
+
+@media only screen and (max-width: 1100px) {
+  .superadmin_Dashboard .charts {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard_first {
+
+    grid-template-columns: 1fr;
+
+  }
+}
+
+@media only screen and (max-width: 540px) {
+  .superadmin_Dashboard .superAdminTotal .div_box {
+    grid-template-columns: 1fr;
+  }
+
+  .div_box_first .first_div .inner_box {
+    padding: 30px 26px !important;
+  }
+
+  .div_box_first .first_div {
+
+    grid-template-columns: 1fr;
+
+  }
+
+  .superadmin_Dashboard .multiline_chart {
+    height: 400px;
+  }
+}

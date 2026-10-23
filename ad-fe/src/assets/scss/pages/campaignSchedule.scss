@@ -1,0 +1,15 @@
+.campaign_section {
+    padding: 15px;
+
+    h5 {
+        border-bottom: 1px solid lightgray !important;
+        padding-bottom: 10px !important;
+        margin-bottom: 10px !important;
+    }
+
+
+}
+
+.scheduler_row {
+    grid-template-columns: 2fr 2fr 2fr 0.5fr !important;
+}

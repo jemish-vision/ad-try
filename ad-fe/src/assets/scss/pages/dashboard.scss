@@ -1,0 +1,162 @@
+﻿//price //
+.price_section {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  width: 100%;
+
+  .main_box {
+    display: flex;
+  }
+
+  .box {
+    border-radius: 8px;
+    margin-right: 24px;
+    box-shadow: 0px 1px 3px 0px rgba(0, 0, 0, 0.25);
+
+    .inner_box {
+      border-radius: 8px 8px 0 0;
+      box-shadow: 0px 1px 3px 0px rgba(0, 0, 0, 0.25);
+
+      padding: 16px 11px;
+      display: flex;
+
+      align-items: center;
+
+      img {
+        background: white;
+        border-radius: 50%;
+        padding: 13px;
+        height: 65px;
+      }
+
+      .content {
+        padding-left: 16px;
+
+        p {
+          color: #fff;
+          font-size: 12px;
+          font-weight: 500;
+          line-height: 18px;
+          text-transform: uppercase;
+        }
+
+        span {
+          color: #fff;
+
+          font-size: 14px;
+          font-style: normal;
+          font-weight: 600;
+          line-height: 21px;
+        }
+      }
+    }
+
+    .content_display {
+      padding: 4px 11px;
+
+      .progress {
+        height: 4px;
+      }
+
+      .show_content {
+        padding-top: 6px;
+
+        i.fa.fa-arrow-up {
+          color: #22c55e;
+          padding-right: 8px;
+        }
+
+        i.fa.fa-arrow-down {
+          color: #ff0000;
+          padding-right: 8px;
+        }
+
+        span {
+          color: #18181b;
+          font-size: 12px;
+          font-weight: 500;
+          line-height: 18px;
+        }
+      }
+    }
+  }
+
+  .box_first .inner_box {
+    background: linear-gradient(134deg, #2374F2 0%, #8060aa 100%);
+  }
+
+  .box_second .inner_box {
+    background: linear-gradient(134deg, #f1bc62 0%, #d24c3b 100%),
+      linear-gradient(134deg, #26bcb6 0%, #6faa60 100%);
+  }
+
+  .box_third .inner_box {
+    background: linear-gradient(134deg, #26bcb6 0%, #6faa60 100%),
+      linear-gradient(134deg, #f1bc62 0%, #d24c3b 100%);
+  }
+
+  .box_fourth {
+    margin-right: 0;
+  }
+
+  .inner_box {
+    background: linear-gradient(134deg, #ce62f1 0%, #3b4fd2 100%);
+  }
+}
+
+// Chart box
+.trend_graph {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+
+  .data_content {
+    margin-top: 16px;
+
+    canvas {
+      height: 100% !important;
+      width: 100% !important;
+      margin: auto;
+    }
+  }
+
+  .data_content.perfromance_chart {
+    width: 97%;
+  }
+}
+
+.chart_select_option {
+  margin: 0 16px;
+  border-bottom: 1px solid rgb(184, 181, 181);
+  margin: 5px 16px;
+  text-align: end;
+}
+
+.chartPerformanceContainer {
+  height: 426px;
+  background-color: var(--chart-bg-color);
+
+  canvas {
+    border: 1px solid rgb(223, 223, 223);
+  }
+}
+
+.product_chart {
+  background-color: var(--chart-bg-color);
+}
+
+.chartContainer {
+  height: 350px;
+  padding: 0 16px 16px;
+}
+
+.sc-fLBbxL {
+  z-index: 0;
+}
+
+.sc-dmBjiZ {
+  z-index: 0;
+}
+
+.table_content {
+  z-index: 0;
+}

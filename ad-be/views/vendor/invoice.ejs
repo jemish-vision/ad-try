@@ -1,0 +1,285 @@
+<html>
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+</head>
+
+<body>
+  <table width="100%" border="0" align="center" cellpadding="7" cellspacing="0" bgcolor="#e5e5e5" style="
+        font-family: Arial;
+        font-size: 12px;
+        margin: 0px auto;
+        color: black;
+      ">
+    <tbody>
+      <tr>
+        <td style="padding: 20px">
+          <table align="center" border="0" cellpadding="15" cellspacing="0" width="600px">
+            <tbody>
+              <tr style="background: #483d8b">
+                <td valign="top" width="30%" style="
+                      border-bottom: 1px solid #eee;
+                      font-size: 20px;
+                      color: #fff;
+                      font-weight: bold;
+                      text-align: center;
+                    ">
+                  <img width="50%" src="<%=invoiceData.image %>" alt="Welcome to the Advertise IQ
+                    " />
+                </td>
+              </tr>
+              <tr bgcolor="#ffffff">
+                <td style="
+                      font-family: arial;
+                      font-size: 15px;
+                      border: 1px solid #ffffff;
+                      color: #333;
+                    ">
+                  <div class="container">
+                    <div class="row">
+                      <div class="col-xs-12">
+                        <div style="text-align: center">
+                          <h3>Subscription Invoice</h3>
+                        </div>
+                        <div>
+                          <div style="float: left; width: 50%">
+                            <h4 style="margin: 0px; padding: 10px">
+                              Date:
+                              <span style="margin: 0px; font-weight: 500">
+                                <%= invoiceData.orderDate %>
+                              </span>
+                            </h4>
+                          </div>
+                          <div style="float: left; width: 50%; text-align: right">
+                            <h4 style="margin: 0px; padding: 10px">
+                              Invoice #
+                              <span style="margin: 0px; font-weight: 500">
+                                <%= invoiceData.orderId %>
+                              </span>
+                            </h4>
+                          </div>
+                        </div>
+                        <hr />
+                        <div>
+                          <div style="
+                                float: left;
+                                width: 45%;
+                                padding: 10px;
+                                color: black;
+                              ">
+                            <h4 style="padding: 3px; margin: 0px">From:</h4>
+                            <p style="padding: 3px; margin: 0px">
+                              <b>Company :</b>
+                              <%= invoiceData.billingCompany %>
+                            </p>
+                            <p style="padding: 3px; margin: 0px">
+                              <b>Address :</b>
+                              <%= invoiceData.billingAddress %>
+                            </p>
+                            <p style="padding: 3px; margin: 0px">
+                              <b>Country :</b>
+                              <%= invoiceData.billingCountry %>
+                            </p>
+                            <p style="padding: 3px; margin: 0px">
+                              <b>Phone :</b>
+                              <%= invoiceData.billingPhoneNumber %>
+                            </p>
+                          </div>
+                          <div style="
+                                float: left;
+                                width: 45%;
+                                padding: 10px;
+                                color: black;
+                              ">
+                            <h4 style="padding: 3px; margin: 0px">
+                              Bill To:
+                            </h4>
+                            <p style="padding: 3px; margin: 0px">
+                              <b>Customer :</b>
+                              <%= invoiceData.fullName %>
+                            </p>
+                            <% if(invoiceData.shippingCompany){ %>
+                              <p style="padding: 3px; margin: 0px">
+                                <b>Company :</b>
+                                <%= invoiceData.shippingCompany %>
+                              </p>
+                              <% } %>
+                                <% if(invoiceData.shippingAddress){ %>
+                                  <p style="padding: 3px; margin: 0px">
+                                    <b>Address :</b>
+                                    <%= invoiceData.shippingAddress %>
+                                  </p>
+                                  <% } %>
+                                    <p style="padding: 3px; margin: 0px">
+                                      <b>Country :</b>
+                                      <%= invoiceData.shippingCountry %>
+                                    </p>
+                                    <p style="padding: 3px; margin: 0px">
+                                      <b>Phone :</b>
+                                      <%= invoiceData.customerPhoneNumber %>
+                                    </p>
+                          </div>
+                        </div>
+                        <br />
+                      </div>
+                    </div>
+                    <div class="row">
+                      <div class="col-md-12">
+                        <div class="panel panel-default">
+                          <div class="table-responsive">
+                            <table class="table table-condensed" border="1" width="600px">
+                              <thead>
+                                <tr>
+                                  <td style="text-align: center">
+                                    <strong>Description</strong>
+                                  </td>
+                                  <td style="text-align: center;width: 100px">
+                                    <strong>Type</strong>
+                                  </td>
+                                  <td style="text-align: center;width: 100px">
+                                    <strong>Amount</strong>
+                                  </td>
+                                  <td style="text-align: center;width: 100px">
+                                    <strong>Extra Amount</strong>
+                                  </td>
+                                  <td style="text-align: center;width: 100px">
+                                    <strong>Total Amount</strong>
+                                  </td>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <% for(var i=0; i < invoiceData.items.length; i++) { %>
+                                  <tr>
+                                    <td style="text-align: center">
+                                      Package: <%= invoiceData.items[i].packageName %> (<%=
+                                          invoiceData.items[i].packageStartDate %> TO <%=
+                                            invoiceData.items[i].packageEndDate %>)
+                                    </td>
+                                    <td style="text-align: center">
+                                      <%= invoiceData.items[i].packageType %>
+                                    </td>
+                                    <% if(invoiceData.priceType=="INR" ){ %>
+                                      <td style="text-align: center">
+                                        ₹<%= invoiceData.items[i].packageAmount %>
+                                      </td>
+                                      <% } else{ %>
+                                        <td style="text-align: center">
+                                          $<%= invoiceData.items[i].packageAmount %>
+                                        </td>
+                                        <% } %>
+
+                                          <% if(invoiceData.priceType=="INR" ){ %>
+                                            <td style="text-align: center">
+                                              ₹<%= invoiceData.items[i].totalExtraAmount %>
+                                            </td>
+                                            <% } else{ %>
+                                              <td style="text-align: center">
+                                                $<%= invoiceData.items[i].totalExtraAmount %>
+                                              </td>
+                                              <% } %>
+
+                                                <% if(invoiceData.priceType=="INR" ){ %>
+                                                  <td style="text-align: center">
+                                                    ₹<%= invoiceData.items[i].subTotalAmount %>
+                                                  </td>
+                                                  <% } else{ %>
+                                                    <td style="text-align: center">
+                                                      $<%= invoiceData.items[i].subTotalAmount %>
+                                                    </td>
+                                                    <% } %>
+                                  </tr>
+                                  <% } %>
+                              </tbody>
+                            </table>
+                            <table class="table table-condensed" border="1" style="float: right; text-align: center">
+                              <tbody>
+                                <tr>
+                                  <td style="text-align: center; width: 100px">
+                                    Sub Total
+                                  </td>
+                                  <% if(invoiceData.priceType=="INR" ){ %>
+                                    <td style="text-align: center; width: 100px">
+                                      ₹<%= invoiceData.subTotal %>
+                                    </td>
+                                <tr>
+                                  <td style="text-align: center; width: 100px">
+                                    CGST
+                                  </td>
+                                  <td style="text-align: center; width: 100px">
+                                    ₹<%= invoiceData.cgstAmt %>
+                                  </td>
+                                </tr>
+                                <tr>
+                                  <td style="text-align: center; width: 100px">
+                                    SGST
+                                  </td>
+                                  <td style="text-align: center; width: 100px">
+                                    ₹<%= invoiceData.sgstAmt %>
+                                  </td>
+                                </tr>
+                                <% } else{ %>
+                                  <td style="text-align: center;width: 100px">
+                                    $<%= invoiceData.subTotal %>
+                                  </td>
+                                  <tr>
+                                    <td style="text-align: center; width: 100px">
+                                      VAT
+                                    </td>
+                                    <td style="text-align: center; width: 100px">
+                                      $<%= invoiceData.vatAmt %>
+                                    </td>
+                                  </tr>
+              </tr>
+              <% } %>
+      </tr>
+      <tr>
+        <td style="text-align: center">Total</td>
+        <% if(invoiceData.priceType=="INR" ){ %>
+          <td style="text-align: center">
+            ₹<%= invoiceData.total %>
+          </td>
+          <% } else{ %>
+            <td style="text-align: center">
+              $<%= invoiceData.total %>
+            </td>
+            <% } %>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  </div>
+  </div>
+  </div>
+  </div>
+  <br />
+  </td>
+  </tr>
+  <tr>
+    <td style="padding: 16px" valign="top" align="center" bgcolor="#483d8b">
+      <table cellspacing="0" cellpadding="0" border="0" align="center">
+        <tbody>
+          <tr>
+            <td style="
+                              font-family: 'Arial', sans-serif;
+                              font-size: 13px;
+                              line-height: 20px;
+                              font-weight: normal;
+                              color: #ffffff;
+                            " valign="top" align="left">
+              © <%= new Date().getFullYear()%> Powered by
+                Advertise IQ
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </td>
+  </tr>
+  </tbody>
+  </table>
+  </td>
+  </tr>
+  </tbody>
+  </table>
+</body>
+
+</html>

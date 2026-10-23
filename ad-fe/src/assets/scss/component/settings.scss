@@ -1,0 +1,29 @@
+.settings_superadmin{
+    .action_container{
+        width: max-content;
+    }
+    .set-div{
+        width: 75%;
+        input{
+            border: 1px solid lightgray;
+            padding: 8px;
+            outline: none;
+        }
+        button{
+            background: var(--add-bg-color);
+            color: var(--add-text-color);
+        }
+    }
+    .rs-picker-toggle.rs-btn{
+        border: 1px solid #CECECE;
+        border-radius: 0;
+    }
+}
+
+@media (min-width: 1200px){ 
+    .settings_superadmin{
+        .set-div{
+           width: 50%;
+        }
+    }
+ }

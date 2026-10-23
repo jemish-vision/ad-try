@@ -1,0 +1,61 @@
+.router_container{
+    
+    .save-btn{
+        background: var(--save-bg-color);
+        color: var(--save-text-color);
+        border: none;
+        border-radius: 5px;
+        font-size: 16px;
+        text-transform: capitalize;
+        padding: 10px 20px;
+    }
+}
+
+.theme_setting_container{
+  
+    button.color_picker {
+        width: 38px;
+        height: 33px;
+        border: 1px solid #E4E4E7;
+        position: absolute;
+        top: 7px;
+        left: 5px;
+    }
+    .input_color {
+        display: flex;
+        position: relative;
+    }
+    .sub_section {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 23px;
+    }
+    input[type="text"] {
+        width: 100%;
+        outline: none;
+        border: 1px solid #E4E4E7;
+        padding: 12px;
+    padding-left: 50px;
+    }
+    .theme_section{
+        margin-top: 15px;
+        border-radius: 8px;
+        border: 1px solid #E4E4E7;
+        background: var(--table-bg-color);
+        box-shadow: 0px 1px 3px 0px rgba(0, 0, 0, 0.25);
+        padding: 17px;
+        h6 {
+            text-transform: uppercase;
+            color: black;
+            border-bottom: 1px solid #E4E4E7;
+            padding-bottom: 7px;
+            margin-bottom: 25px;
+            font-size: 13px;
+        }
+        label {
+            color: gray;
+            padding-bottom: 3px;
+        }
+    }
+
+}

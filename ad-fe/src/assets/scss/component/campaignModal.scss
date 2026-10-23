@@ -1,0 +1,449 @@
+input[type=checkbox],
+input[type=radio] {
+  accent-color: #1A9FD4;
+}
+
+.assign_campaign_detail {
+  font-family: "Inter", sans-serif;
+
+  // Filter campaign type (segment control style)
+  .filter_type {
+    border: 1px solid rgba(37, 99, 235, 0.12);
+    display: flex;
+    margin-top: 6px;
+    background: rgba(241, 245, 249, 0.5);
+    border-radius: 8px;
+    padding: 3px;
+    gap: 3px;
+
+    button {
+      flex: 1;
+      background: none;
+      border: none;
+      outline: none;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #64748b;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+      &:hover {
+        background: rgba(37, 99, 235, 0.04);
+        color: #2563eb;
+      }
+    }
+
+    .filter_name {
+      text-align: center;
+    }
+
+    .active {
+      background: #2563eb !important;
+      color: #ffffff !important;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.15);
+    }
+  }
+
+  // Search section
+  .search_section {
+    margin-top: 10px;
+
+    h6 {
+      font-size: 12px;
+      font-weight: 700;
+      color: #334155;
+      margin-bottom: 4px;
+    }
+
+    input.serach_text {
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 7px 12px;
+      font-size: 13px;
+      background: #fff;
+      color: #0f172a;
+      outline: none;
+      transition: all 0.2s ease;
+
+      &:focus {
+        border-color: #1A9FD4;
+        box-shadow: 0 0 0 2.5px rgba(60, 187, 242, 0.1);
+      }
+
+      &::placeholder {
+        color: #94a3b8;
+      }
+    }
+  }
+
+  // Campaign list and control headers
+  .campaign_list {
+    margin-top: 12px;
+
+    .select_campaign {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(248, 250, 252, 0.8);
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 8px 12px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+      gap: 8px;
+
+      label {
+        font-size: 12.5px;
+        font-weight: 600;
+        color: #475569;
+        margin: 0;
+        cursor: pointer;
+      }
+    }
+
+    // List container
+    .list {
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      background: #ffffff;
+      max-height: 300px;
+      height: 100%;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 6px;
+      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.01);
+
+      scrollbar-width: thin;
+      scrollbar-color: #cbd5e1 #f1f5f9;
+
+      &::-webkit-scrollbar {
+        width: 5px;
+      }
+
+      &::-webkit-scrollbar-track {
+        background: #f1f5f9;
+        border-radius: 3px;
+      }
+
+      &::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 3px;
+      }
+
+      &::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+      }
+    }
+
+    // Campaign list items
+    .inner_list {
+      display: flex;
+      align-items: center;
+      padding: 7px 10px;
+      border-radius: 6px;
+      margin-bottom: 3px;
+      transition: all 0.15s ease;
+      cursor: pointer;
+      border: 1px solid transparent;
+
+      input[type=checkbox] {
+        cursor: pointer;
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+      }
+
+      p {
+        font-size: 13px;
+        font-weight: 500;
+        color: #1e293b;
+        margin: 0;
+        padding-left: 10px;
+        line-height: 1.35;
+        word-break: break-all;
+      }
+
+      &:hover {
+        background: rgba(60, 187, 242, 0.04) !important;
+        border-color: rgba(60, 187, 242, 0.06);
+      }
+
+      &.conflicted_item {
+        background: rgba(244, 63, 94, 0.04) !important;
+        border-color: rgba(244, 63, 94, 0.2) !important;
+
+        p {
+          color: #1e293b !important;
+          font-weight: 500;
+        }
+
+        &:hover {
+          background: rgba(244, 63, 94, 0.08) !important;
+          border-color: rgba(244, 63, 94, 0.35) !important;
+        }
+      }
+    }
+  }
+
+  .inner_list:nth-child(odd) {
+    background: rgba(248, 250, 252, 0.6);
+  }
+
+  .inner_list:nth-child(even) {
+    background: #ffffff;
+  }
+}
+
+// Associated campaigns list-only view
+.list_campaign {
+  font-family: "Inter", sans-serif;
+
+  select,
+  input.serach_text {
+    width: 100%;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 7px 12px;
+    font-size: 13px;
+    outline: none;
+    transition: all 0.2s ease;
+
+    &:focus {
+      border-color: #1A9FD4;
+      box-shadow: 0 0 0 2.5px rgba(60, 187, 242, 0.1);
+    }
+  }
+
+  .selected_id {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #ffffff;
+    max-height: 300px;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    margin-top: 12px;
+    padding: 6px;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.01);
+
+    ul {
+      padding: 0;
+      margin: 0;
+      list-style-type: none;
+    }
+
+    .inner_list:nth-child(odd) {
+      background: rgba(248, 250, 252, 0.6);
+    }
+
+    .inner_list:nth-child(even) {
+      background: #ffffff;
+    }
+  }
+
+  li.inner_list {
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #1e293b;
+    margin-bottom: 3px;
+    border: 1px solid transparent;
+    word-break: break-all;
+
+    &:hover {
+      background: rgba(60, 187, 242, 0.04) !important;
+      border-color: rgba(60, 187, 242, 0.06);
+    }
+  }
+}
+
+// Dropdown status selector
+.inner_filter {
+  display: flex;
+  align-items: center;
+
+  select {
+    min-width: 200px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #475569;
+    background-color: #ffffff;
+    outline: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &:focus {
+      border-color: #1A9FD4;
+      box-shadow: 0 0 0 2px rgba(60, 187, 242, 0.08);
+    }
+  }
+}
+
+@media screen and (max-height: 800px) {
+  .assign_campaign_detail {
+    .campaign_list .list {
+      max-height: 35vh;
+    }
+  }
+
+  .list_campaign {
+    .selected_id {
+      max-height: 35vh;
+    }
+  }
+}
+
+/* ── Dark Theme Overrides for Campaign Search/Assignment List ── */
+[data-theme="dark"] {
+
+  .assign_campaign_detail,
+  .list_campaign {
+    color: #f8fafc !important;
+
+    h6,
+    label {
+      color: #cbd5e1 !important;
+    }
+
+    .filter_type {
+      background: rgba(255, 255, 255, 0.04) !important;
+      border-color: rgba(255, 255, 255, 0.1) !important;
+
+      button {
+        color: #94a3b8 !important;
+
+        &:hover {
+          color: #60a5fa !important;
+          background: rgba(37, 99, 235, 0.08) !important;
+        }
+
+        &.active {
+          background: #2563eb !important;
+          color: white !important;
+        }
+      }
+    }
+
+    .search_section {
+      h6 {
+        color: #cbd5e1 !important;
+      }
+
+      input.serach_text {
+        background: #1e293b !important;
+        border-color: rgba(255, 255, 255, 0.15) !important;
+        color: #f8fafc !important;
+
+        &:focus {
+          border-color: #5B9CF6 !important;
+        }
+      }
+    }
+
+    .campaign_list {
+      .select_campaign {
+        background: rgba(255, 255, 255, 0.02) !important;
+        border-color: rgba(255, 255, 255, 0.08) !important;
+
+        label {
+          color: #cbd5e1 !important;
+        }
+      }
+
+      .list {
+        background: #0f172a !important;
+        border-color: rgba(255, 255, 255, 0.08) !important;
+        scrollbar-color: rgba(255, 255, 255, 0.1) rgba(255, 255, 255, 0.02) !important;
+
+        &::-webkit-scrollbar-track {
+          background: rgba(255, 255, 255, 0.02) !important;
+        }
+
+        &::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.1) !important;
+        }
+      }
+
+      .inner_list {
+        p {
+          color: #f8fafc !important;
+        }
+
+        &:hover {
+          background: rgba(60, 187, 242, 0.08) !important;
+        }
+
+        &.conflicted_item {
+          background: rgba(244, 63, 94, 0.07) !important;
+          border-color: rgba(244, 63, 94, 0.25) !important;
+
+          p {
+            color: #f8fafc !important;
+            font-weight: 500;
+          }
+
+          &:hover {
+            background: rgba(244, 63, 94, 0.12) !important;
+            border-color: rgba(244, 63, 94, 0.4) !important;
+          }
+        }
+      }
+    }
+
+    .inner_list:nth-child(odd) {
+      background: rgba(255, 255, 255, 0.02) !important;
+    }
+
+    .inner_list:nth-child(even) {
+      background: rgba(255, 255, 255, 0.04) !important;
+    }
+
+    .inner_filter {
+      label {
+        color: #cbd5e1 !important;
+      }
+
+      select {
+        background: #1e293b !important;
+        border-color: rgba(255, 255, 255, 0.15) !important;
+        color: #f8fafc !important;
+
+        &:focus {
+          border-color: #5B9CF6 !important;
+        }
+      }
+    }
+
+    /* List campaign specific */
+    select,
+    input.serach_text {
+      background: #1e293b !important;
+      border-color: rgba(255, 255, 255, 0.15) !important;
+      color: #f8fafc !important;
+
+      &:focus {
+        border-color: #5B9CF6 !important;
+      }
+    }
+
+    .selected_id {
+      background: #0f172a !important;
+      border-color: rgba(255, 255, 255, 0.08) !important;
+    }
+
+    li.inner_list {
+      color: #f8fafc !important;
+
+      &:hover {
+        background: rgba(60, 187, 242, 0.08) !important;
+      }
+    }
+  }
+}

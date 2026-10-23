@@ -1,0 +1,54 @@
+:root {
+    // sidebar //
+    --sidebar-bg-color: linear-gradient(180deg, #1A82F4 4.83%, #0052FF 71.46%),
+        linear-gradient(0deg, #D4D4D4, #D4D4D4);
+    ;
+    --sidebar-text-color: white;
+
+    // title //
+    --title-bg-color: white;
+    --title-text-color: #18181B;
+
+    --body-bg-color: #fff;
+
+    // table //
+    --table-pagination-bg-color: white;
+    --table-title-color: #18181B;
+    // --table-bg-color:#FFF;
+    --table-header-bg: #F6F7FB;
+    --table-header-text: #71717A;
+    --table-text-color: #18181B;
+
+
+    // button — brand electric blue palette //
+    --save-bg-color: #1A82F4;
+    --save-text-color: white;
+    --cancel-bg-color: #FFFFFF;
+    --cancel-btn-text-color: #71717A;
+    --cancel-btn-border-color: #C3DFF0;
+    --button-text-color: #FFF;
+    --button-bg-color: #1A82F4;
+    --add-bg-color: #1A82F4;
+    --add-text-color: white;
+
+
+    // chart //
+    --chart-bg-color: white;
+
+    //switch//
+    --switch-bg-on-color: #1A82F4;
+    --switch-bg-off-color: #71717A;
+
+    // body //
+    --body-bg-color: white;
+}
+
+[data-theme="dark"] {
+    --table-text-color: rgba(203, 213, 225, 0.88);
+    --table-header-text: rgba(148, 163, 184, 0.82);
+    --table-title-color: rgba(203, 213, 225, 0.88);
+    --table-pagination-bg-color: #0f172a;
+    --body-bg-color: #0A0E1A;
+    --title-text-color: rgba(203, 213, 225, 0.88);
+    --cancel-btn-text-color: rgba(148, 163, 184, 0.82);
+}

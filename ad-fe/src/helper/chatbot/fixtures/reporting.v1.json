@@ -1,0 +1,1090 @@
+{
+  "metadata": {
+    "synthetic": true,
+    "dataOrigin": "synthetic",
+    "description": "Hand-authored arithmetic/calendar development examples. No live account data, API calls or measured portal results."
+  },
+  "scenarios": [
+    {
+      "name": "all_visual_types",
+      "request": {
+        "schemaVersion": "1.0",
+        "category": "summary",
+        "profileIds": [
+          "1001"
+        ],
+        "adTypes": [
+          "SP"
+        ],
+        "period": {
+          "preset": "last_7_days"
+        },
+        "comparison": {
+          "mode": "previous_period"
+        },
+        "metrics": [
+          "spend",
+          "sales",
+          "acos",
+          "roas",
+          "orders",
+          "cpc",
+          "cvr"
+        ],
+        "groupBy": [],
+        "filters": [],
+        "limit": 25,
+        "offset": 0,
+        "presentation": "auto"
+      },
+      "response": {
+        "schemaVersion": "1.0",
+        "reportId": "synthetic_summary_001",
+        "category": "summary",
+        "dataOrigin": "synthetic",
+        "fixtureLabel": "SYNTHETIC DEVELOPMENT FIXTURE — no live account data",
+        "status": "ok",
+        "scope": {
+          "configId": "000000000000000000000001",
+          "profiles": [
+            {
+              "profileId": "1001",
+              "timezone": "Asia/Kolkata",
+              "currencyCode": "INR",
+              "accountType": "seller",
+              "adTypes": [
+                "SP"
+              ],
+              "attributionWindows": {
+                "SP": 7
+              },
+              "supportedDimensions": {
+                "SP": [
+                  "profile",
+                  "campaign",
+                  "date",
+                  "placement",
+                  "hour",
+                  "weekday"
+                ]
+              }
+            }
+          ],
+          "currencyGroups": [
+            {
+              "currencyCode": "INR",
+              "profileIds": [
+                "1001"
+              ]
+            }
+          ]
+        },
+        "periods": [
+          {
+            "profileId": "1001",
+            "timezone": "Asia/Kolkata",
+            "current": {
+              "fromDate": "2026-10-13",
+              "toDate": "2026-10-19",
+              "startAt": "2026-10-12T18:30:00.000Z",
+              "endBefore": "2026-10-19T18:30:00.000Z",
+              "isPartial": false
+            },
+            "comparison": {
+              "fromDate": "2026-10-06",
+              "toDate": "2026-10-12",
+              "startAt": "2026-10-05T18:30:00.000Z",
+              "endBefore": "2026-10-12T18:30:00.000Z",
+              "isPartial": false
+            }
+          }
+        ],
+        "freshness": {
+          "status": "complete",
+          "dataAsOf": "2026-10-20T12:00:00.000Z",
+          "sourceRefs": [
+            {
+              "name": "Hand-authored synthetic reference",
+              "completedAt": "2026-10-20T12:00:00.000Z"
+            }
+          ],
+          "missingInputs": []
+        },
+        "text": "SYNTHETIC DEMO: spend INR 120, sales INR 1,000, ACOS 12%. Spend rose 20%; ACOS rose 2 percentage points versus the prior period.",
+        "cards": [
+          {
+            "id": "spend",
+            "metric": "spend",
+            "title": "Synthetic SPEND",
+            "value": 120,
+            "unit": "currency",
+            "currencyCode": "INR",
+            "status": "available",
+            "comparison": {
+              "previousValue": 100,
+              "absoluteChange": 20,
+              "relativeChangePercent": 20,
+              "percentagePointChange": null,
+              "status": "comparable"
+            }
+          },
+          {
+            "id": "sales",
+            "metric": "sales",
+            "title": "Synthetic SALES",
+            "value": 1000,
+            "unit": "currency",
+            "currencyCode": "INR",
+            "status": "available",
+            "comparison": {
+              "previousValue": 1000,
+              "absoluteChange": 0,
+              "relativeChangePercent": 0,
+              "percentagePointChange": null,
+              "status": "comparable"
+            }
+          },
+          {
+            "id": "acos",
+            "metric": "acos",
+            "title": "Synthetic ACOS",
+            "value": 12,
+            "unit": "percent",
+            "status": "available",
+            "comparison": {
+              "previousValue": 10,
+              "absoluteChange": 2,
+              "relativeChangePercent": 20,
+              "percentagePointChange": 2,
+              "status": "comparable"
+            }
+          },
+          {
+            "id": "roas",
+            "metric": "roas",
+            "title": "Synthetic ROAS",
+            "value": 8.333333333333334,
+            "unit": "multiple",
+            "status": "available",
+            "comparison": {
+              "previousValue": 10,
+              "absoluteChange": -1.666666666666666,
+              "relativeChangePercent": -16.66666666666666,
+              "percentagePointChange": null,
+              "status": "comparable"
+            }
+          },
+          {
+            "id": "orders",
+            "metric": "orders",
+            "title": "Synthetic ORDERS",
+            "value": 20,
+            "unit": "count",
+            "status": "available",
+            "comparison": {
+              "previousValue": 25,
+              "absoluteChange": -5,
+              "relativeChangePercent": -20,
+              "percentagePointChange": null,
+              "status": "comparable"
+            }
+          },
+          {
+            "id": "cpc",
+            "metric": "cpc",
+            "title": "Synthetic CPC",
+            "value": 1.2,
+            "unit": "currency",
+            "currencyCode": "INR",
+            "status": "available",
+            "comparison": {
+              "previousValue": 1,
+              "absoluteChange": 0.2,
+              "relativeChangePercent": 20,
+              "percentagePointChange": null,
+              "status": "comparable"
+            }
+          },
+          {
+            "id": "cvr",
+            "metric": "cvr",
+            "title": "Synthetic CVR",
+            "value": 20,
+            "unit": "percent",
+            "status": "available",
+            "comparison": {
+              "previousValue": 25,
+              "absoluteChange": -5,
+              "relativeChangePercent": -20,
+              "percentagePointChange": -5,
+              "status": "comparable"
+            }
+          }
+        ],
+        "datasets": [
+          {
+            "id": "trend",
+            "currencyCode": "INR",
+            "columns": [
+              {
+                "key": "date",
+                "label": "date",
+                "type": "date",
+                "nullable": false
+              },
+              {
+                "key": "spend",
+                "label": "spend",
+                "type": "number",
+                "unit": "currency",
+                "nullable": false
+              },
+              {
+                "key": "sales",
+                "label": "sales",
+                "type": "number",
+                "unit": "currency",
+                "nullable": false
+              }
+            ],
+            "rows": [
+              {
+                "date": "2026-10-13",
+                "spend": 0,
+                "sales": 0
+              },
+              {
+                "date": "2026-10-14",
+                "spend": 0,
+                "sales": 0
+              },
+              {
+                "date": "2026-10-15",
+                "spend": 0,
+                "sales": 0
+              },
+              {
+                "date": "2026-10-16",
+                "spend": 0,
+                "sales": 0
+              },
+              {
+                "date": "2026-10-17",
+                "spend": 0,
+                "sales": 0
+              },
+              {
+                "date": "2026-10-18",
+                "spend": 30,
+                "sales": 100
+              },
+              {
+                "date": "2026-10-19",
+                "spend": 90,
+                "sales": 900
+              }
+            ]
+          },
+          {
+            "id": "campaigns",
+            "currencyCode": "INR",
+            "columns": [
+              {
+                "key": "name",
+                "label": "name",
+                "type": "string",
+                "nullable": false
+              },
+              {
+                "key": "spend",
+                "label": "spend",
+                "type": "number",
+                "unit": "currency",
+                "nullable": false
+              },
+              {
+                "key": "sales",
+                "label": "sales",
+                "type": "number",
+                "unit": "currency",
+                "nullable": false
+              },
+              {
+                "key": "orders",
+                "label": "orders",
+                "type": "number",
+                "unit": "count",
+                "nullable": false
+              },
+              {
+                "key": "clicks",
+                "label": "clicks",
+                "type": "number",
+                "unit": "count",
+                "nullable": false
+              },
+              {
+                "key": "impressions",
+                "label": "impressions",
+                "type": "number",
+                "unit": "count",
+                "nullable": false
+              }
+            ],
+            "rows": [
+              {
+                "name": "Synthetic Campaign A",
+                "spend": 30,
+                "sales": 100,
+                "orders": 2,
+                "clicks": 10,
+                "impressions": 1000
+              },
+              {
+                "name": "Synthetic Campaign B",
+                "spend": 90,
+                "sales": 900,
+                "orders": 18,
+                "clicks": 90,
+                "impressions": 9000
+              }
+            ],
+            "page": {
+              "offset": 0,
+              "limit": 25,
+              "total": 2,
+              "hasMore": false
+            }
+          },
+          {
+            "id": "comparison",
+            "currencyCode": "INR",
+            "columns": [
+              {
+                "key": "name",
+                "label": "name",
+                "type": "string",
+                "nullable": false
+              },
+              {
+                "key": "currentSpend",
+                "label": "currentSpend",
+                "type": "number",
+                "unit": "currency",
+                "nullable": false
+              },
+              {
+                "key": "previousSpend",
+                "label": "previousSpend",
+                "type": "number",
+                "unit": "currency",
+                "nullable": false
+              }
+            ],
+            "rows": [
+              {
+                "name": "Synthetic Campaign A",
+                "currentSpend": 30,
+                "previousSpend": 25
+              },
+              {
+                "name": "Synthetic Campaign B",
+                "currentSpend": 90,
+                "previousSpend": 75
+              }
+            ]
+          },
+          {
+            "id": "hours",
+            "currencyCode": "INR",
+            "columns": [
+              {
+                "key": "weekday",
+                "label": "weekday",
+                "type": "string",
+                "nullable": false
+              },
+              {
+                "key": "hour",
+                "label": "hour",
+                "type": "number",
+                "unit": "count",
+                "nullable": false
+              },
+              {
+                "key": "spend",
+                "label": "spend",
+                "type": "number",
+                "unit": "currency",
+                "nullable": false
+              }
+            ],
+            "rows": [
+              {
+                "weekday": "Sunday",
+                "hour": 10,
+                "spend": 30
+              },
+              {
+                "weekday": "Monday",
+                "hour": 10,
+                "spend": 90
+              }
+            ]
+          },
+          {
+            "id": "placements",
+            "currencyCode": "INR",
+            "columns": [
+              {
+                "key": "placement",
+                "label": "placement",
+                "type": "string",
+                "nullable": false
+              },
+              {
+                "key": "spend",
+                "label": "spend",
+                "type": "number",
+                "unit": "currency",
+                "nullable": false
+              }
+            ],
+            "rows": [
+              {
+                "placement": "Synthetic top of search",
+                "spend": 90
+              },
+              {
+                "placement": "Synthetic rest of search",
+                "spend": 30
+              }
+            ]
+          }
+        ],
+        "blocks": [
+          {
+            "type": "text",
+            "text": "SYNTHETIC DEMO: hand-authored values for frontend development; not live account results."
+          },
+          {
+            "type": "number_card",
+            "metricId": "spend"
+          },
+          {
+            "type": "number_card",
+            "metricId": "sales"
+          },
+          {
+            "type": "number_card",
+            "metricId": "acos"
+          },
+          {
+            "type": "number_card",
+            "metricId": "roas"
+          },
+          {
+            "type": "number_card",
+            "metricId": "orders"
+          },
+          {
+            "type": "number_card",
+            "metricId": "cpc"
+          },
+          {
+            "type": "number_card",
+            "metricId": "cvr"
+          },
+          {
+            "type": "line",
+            "title": "Synthetic daily trend",
+            "datasetId": "trend",
+            "xKey": "date",
+            "yKeys": [
+              "spend",
+              "sales"
+            ]
+          },
+          {
+            "type": "bar",
+            "title": "Synthetic campaign spend (horizontal)",
+            "datasetId": "campaigns",
+            "xKey": "name",
+            "yKeys": [
+              "spend"
+            ]
+          },
+          {
+            "type": "grouped_bar",
+            "title": "Synthetic period comparison",
+            "datasetId": "comparison",
+            "xKey": "name",
+            "yKeys": [
+              "currentSpend",
+              "previousSpend"
+            ]
+          },
+          {
+            "type": "heatmap",
+            "title": "Synthetic hourly spend, not order conversion",
+            "datasetId": "hours",
+            "xKey": "weekday",
+            "yKeys": [
+              "hour"
+            ],
+            "valueKey": "spend"
+          },
+          {
+            "type": "donut",
+            "title": "Synthetic placement spend",
+            "datasetId": "placements",
+            "xKey": "placement",
+            "yKeys": [
+              "spend"
+            ]
+          },
+          {
+            "type": "table",
+            "title": "Synthetic campaigns",
+            "datasetId": "campaigns",
+            "sortable": true
+          }
+        ],
+        "warnings": [
+          "Synthetic examples establish the display contract only. Hourly order/CVR validity is not established."
+        ],
+        "followUps": [
+          {
+            "label": "Synthetic show campaigns",
+            "request": {
+              "schemaVersion": "1.0",
+              "category": "comparison",
+              "profileIds": [
+                "1001"
+              ],
+              "adTypes": [
+                "SP"
+              ],
+              "period": {
+                "preset": "last_7_days"
+              },
+              "comparison": {
+                "mode": "previous_period"
+              },
+              "metrics": [
+                "spend",
+                "sales",
+                "acos",
+                "roas",
+                "orders",
+                "cpc",
+                "cvr"
+              ],
+              "groupBy": [
+                "campaign"
+              ],
+              "filters": [],
+              "limit": 25,
+              "offset": 0,
+              "presentation": "bar"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "verified_empty",
+      "request": {
+        "schemaVersion": "1.0",
+        "category": "waste",
+        "profileIds": [
+          "1001"
+        ],
+        "adTypes": [
+          "SP"
+        ],
+        "period": {
+          "preset": "last_7_days"
+        },
+        "comparison": {
+          "mode": "none"
+        },
+        "metrics": [
+          "spend",
+          "sales",
+          "acos",
+          "roas",
+          "orders",
+          "cpc",
+          "cvr"
+        ],
+        "groupBy": [],
+        "filters": [
+          {
+            "field": "spend",
+            "operator": "gt",
+            "value": 30,
+            "currencyCode": "INR"
+          }
+        ],
+        "limit": 25,
+        "offset": 0,
+        "presentation": "table"
+      },
+      "response": {
+        "schemaVersion": "1.0",
+        "reportId": "synthetic_empty_001",
+        "category": "waste",
+        "dataOrigin": "synthetic",
+        "fixtureLabel": "SYNTHETIC DEVELOPMENT FIXTURE — no live account data",
+        "status": "empty",
+        "scope": {
+          "configId": "000000000000000000000001",
+          "profiles": [
+            {
+              "profileId": "1001",
+              "timezone": "Asia/Kolkata",
+              "currencyCode": "INR",
+              "accountType": "seller",
+              "adTypes": [
+                "SP"
+              ],
+              "attributionWindows": {
+                "SP": 7
+              },
+              "supportedDimensions": {
+                "SP": [
+                  "profile",
+                  "campaign",
+                  "date",
+                  "placement",
+                  "hour",
+                  "weekday"
+                ]
+              }
+            }
+          ],
+          "currencyGroups": [
+            {
+              "currencyCode": "INR",
+              "profileIds": [
+                "1001"
+              ]
+            }
+          ]
+        },
+        "periods": [
+          {
+            "profileId": "1001",
+            "timezone": "Asia/Kolkata",
+            "current": {
+              "fromDate": "2026-10-13",
+              "toDate": "2026-10-19",
+              "startAt": "2026-10-12T18:30:00.000Z",
+              "endBefore": "2026-10-19T18:30:00.000Z",
+              "isPartial": false
+            },
+            "comparison": null
+          }
+        ],
+        "freshness": {
+          "status": "complete",
+          "dataAsOf": "2026-10-20T12:00:00.000Z",
+          "sourceRefs": [
+            {
+              "name": "Hand-authored synthetic reference",
+              "completedAt": "2026-10-20T12:00:00.000Z"
+            }
+          ],
+          "missingInputs": []
+        },
+        "text": "SYNTHETIC DEMO: verified coverage contains no matching records. This is an empty result, not missing ingestion.",
+        "cards": [],
+        "datasets": [
+          {
+            "id": "campaigns",
+            "currencyCode": "INR",
+            "columns": [
+              {
+                "key": "name",
+                "label": "name",
+                "type": "string",
+                "nullable": false
+              },
+              {
+                "key": "spend",
+                "label": "spend",
+                "type": "number",
+                "unit": "currency",
+                "nullable": false
+              },
+              {
+                "key": "sales",
+                "label": "sales",
+                "type": "number",
+                "unit": "currency",
+                "nullable": false
+              },
+              {
+                "key": "orders",
+                "label": "orders",
+                "type": "number",
+                "unit": "count",
+                "nullable": false
+              },
+              {
+                "key": "clicks",
+                "label": "clicks",
+                "type": "number",
+                "unit": "count",
+                "nullable": false
+              },
+              {
+                "key": "impressions",
+                "label": "impressions",
+                "type": "number",
+                "unit": "count",
+                "nullable": false
+              }
+            ],
+            "rows": [],
+            "page": {
+              "offset": 0,
+              "limit": 25,
+              "total": 0,
+              "hasMore": false
+            }
+          }
+        ],
+        "blocks": [
+          {
+            "type": "text",
+            "text": "SYNTHETIC DEMO: verified coverage contains no matching records. This is an empty result, not missing ingestion."
+          },
+          {
+            "type": "table",
+            "title": "Synthetic empty waste list",
+            "datasetId": "campaigns",
+            "sortable": true
+          }
+        ],
+        "warnings": [
+          "Synthetic examples establish the display contract only. Hourly order/CVR validity is not established."
+        ],
+        "followUps": []
+      }
+    },
+    {
+      "name": "missing_sales",
+      "request": {
+        "schemaVersion": "1.0",
+        "category": "summary",
+        "profileIds": [
+          "1001"
+        ],
+        "adTypes": [
+          "SP"
+        ],
+        "period": {
+          "preset": "last_7_days"
+        },
+        "comparison": {
+          "mode": "previous_period"
+        },
+        "metrics": [
+          "spend",
+          "sales",
+          "acos",
+          "roas",
+          "orders",
+          "cpc",
+          "cvr"
+        ],
+        "groupBy": [],
+        "filters": [],
+        "limit": 25,
+        "offset": 0,
+        "presentation": "auto"
+      },
+      "response": {
+        "schemaVersion": "1.0",
+        "reportId": "synthetic_missing_sales_001",
+        "category": "summary",
+        "dataOrigin": "synthetic",
+        "fixtureLabel": "SYNTHETIC DEVELOPMENT FIXTURE — no live account data",
+        "status": "partial",
+        "scope": {
+          "configId": "000000000000000000000001",
+          "profiles": [
+            {
+              "profileId": "1001",
+              "timezone": "Asia/Kolkata",
+              "currencyCode": "INR",
+              "accountType": "seller",
+              "adTypes": [
+                "SP"
+              ],
+              "attributionWindows": {
+                "SP": 7
+              },
+              "supportedDimensions": {
+                "SP": [
+                  "profile",
+                  "campaign",
+                  "date",
+                  "placement",
+                  "hour",
+                  "weekday"
+                ]
+              }
+            }
+          ],
+          "currencyGroups": [
+            {
+              "currencyCode": "INR",
+              "profileIds": [
+                "1001"
+              ]
+            }
+          ]
+        },
+        "periods": [
+          {
+            "profileId": "1001",
+            "timezone": "Asia/Kolkata",
+            "current": {
+              "fromDate": "2026-10-13",
+              "toDate": "2026-10-19",
+              "startAt": "2026-10-12T18:30:00.000Z",
+              "endBefore": "2026-10-19T18:30:00.000Z",
+              "isPartial": false
+            },
+            "comparison": {
+              "fromDate": "2026-10-06",
+              "toDate": "2026-10-12",
+              "startAt": "2026-10-05T18:30:00.000Z",
+              "endBefore": "2026-10-12T18:30:00.000Z",
+              "isPartial": false
+            }
+          }
+        ],
+        "freshness": {
+          "status": "partial",
+          "dataAsOf": "2026-10-20T12:00:00.000Z",
+          "sourceRefs": [
+            {
+              "name": "Hand-authored synthetic reference",
+              "completedAt": "2026-10-20T12:00:00.000Z"
+            }
+          ],
+          "missingInputs": [
+            "sales"
+          ]
+        },
+        "text": "SYNTHETIC DEMO: sales are missing; ACOS and ROAS cannot be calculated.",
+        "cards": [
+          {
+            "id": "spend",
+            "metric": "spend",
+            "title": "Synthetic SPEND",
+            "value": 120,
+            "unit": "currency",
+            "currencyCode": "INR",
+            "status": "available",
+            "comparison": {
+              "previousValue": 100,
+              "absoluteChange": 20,
+              "relativeChangePercent": 20,
+              "percentagePointChange": null,
+              "status": "comparable"
+            }
+          },
+          {
+            "id": "sales",
+            "metric": "sales",
+            "title": "Synthetic SALES",
+            "value": null,
+            "unit": "currency",
+            "currencyCode": "INR",
+            "status": "missing_data",
+            "comparison": {
+              "previousValue": 1000,
+              "absoluteChange": null,
+              "relativeChangePercent": null,
+              "percentagePointChange": null,
+              "status": "unavailable"
+            }
+          },
+          {
+            "id": "acos",
+            "metric": "acos",
+            "title": "Synthetic ACOS",
+            "value": null,
+            "unit": "percent",
+            "status": "missing_data",
+            "comparison": {
+              "previousValue": 10,
+              "absoluteChange": null,
+              "relativeChangePercent": null,
+              "percentagePointChange": null,
+              "status": "unavailable"
+            }
+          },
+          {
+            "id": "roas",
+            "metric": "roas",
+            "title": "Synthetic ROAS",
+            "value": null,
+            "unit": "multiple",
+            "status": "missing_data",
+            "comparison": {
+              "previousValue": 10,
+              "absoluteChange": null,
+              "relativeChangePercent": null,
+              "percentagePointChange": null,
+              "status": "unavailable"
+            }
+          }
+        ],
+        "datasets": [],
+        "blocks": [
+          {
+            "type": "text",
+            "text": "SYNTHETIC DEMO: sales are missing; ACOS and ROAS cannot be calculated."
+          },
+          {
+            "type": "number_card",
+            "metricId": "spend"
+          },
+          {
+            "type": "number_card",
+            "metricId": "sales"
+          },
+          {
+            "type": "number_card",
+            "metricId": "acos"
+          },
+          {
+            "type": "number_card",
+            "metricId": "roas"
+          }
+        ],
+        "warnings": [
+          "Synthetic examples establish the display contract only. Hourly order/CVR validity is not established."
+        ],
+        "followUps": []
+      }
+    },
+    {
+      "name": "today_unavailable",
+      "request": {
+        "schemaVersion": "1.0",
+        "category": "unusual",
+        "profileIds": [
+          "1001"
+        ],
+        "adTypes": [
+          "SP"
+        ],
+        "period": {
+          "preset": "today"
+        },
+        "comparison": {
+          "mode": "none"
+        },
+        "metrics": [
+          "spend",
+          "sales",
+          "acos",
+          "roas",
+          "orders",
+          "cpc",
+          "cvr"
+        ],
+        "groupBy": [],
+        "filters": [],
+        "limit": 25,
+        "offset": 0,
+        "presentation": "auto"
+      },
+      "response": {
+        "schemaVersion": "1.0",
+        "reportId": "synthetic_today_unavailable_001",
+        "category": "unusual",
+        "dataOrigin": "synthetic",
+        "fixtureLabel": "SYNTHETIC DEVELOPMENT FIXTURE — no live account data",
+        "status": "unavailable",
+        "scope": {
+          "configId": "000000000000000000000001",
+          "profiles": [
+            {
+              "profileId": "1001",
+              "timezone": "Asia/Kolkata",
+              "currencyCode": "INR",
+              "accountType": "seller",
+              "adTypes": [
+                "SP"
+              ],
+              "attributionWindows": {
+                "SP": 7
+              },
+              "supportedDimensions": {
+                "SP": [
+                  "profile",
+                  "campaign",
+                  "date",
+                  "placement",
+                  "hour",
+                  "weekday"
+                ]
+              }
+            }
+          ],
+          "currencyGroups": [
+            {
+              "currencyCode": "INR",
+              "profileIds": [
+                "1001"
+              ]
+            }
+          ]
+        },
+        "periods": [
+          {
+            "profileId": "1001",
+            "timezone": "Asia/Kolkata",
+            "current": {
+              "fromDate": "2026-10-20",
+              "toDate": "2026-10-20",
+              "startAt": "2026-10-19T18:30:00.000Z",
+              "endBefore": "2026-10-20T12:00:00.000Z",
+              "isPartial": true
+            },
+            "comparison": null
+          }
+        ],
+        "freshness": {
+          "status": "unavailable",
+          "dataAsOf": null,
+          "sourceRefs": [],
+          "missingInputs": [
+            "Current-day reporting coverage"
+          ]
+        },
+        "text": "SYNTHETIC DEMO: no current-day data is available. Unusual changes cannot be assessed.",
+        "cards": [],
+        "datasets": [],
+        "blocks": [
+          {
+            "type": "text",
+            "text": "SYNTHETIC DEMO: no current-day data is available. Unusual changes cannot be assessed."
+          }
+        ],
+        "warnings": [
+          "Synthetic examples establish the display contract only. Hourly order/CVR validity is not established."
+        ],
+        "followUps": []
+      }
+    }
+  ]
+}

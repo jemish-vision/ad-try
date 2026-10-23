@@ -1,0 +1,187 @@
+﻿.slider_data {
+    .slider-item {
+
+        height: 226px !important;
+        // display: flex !important;
+        width: 95% !important;
+        margin: auto;
+        padding: 12px;
+        margin-top: 20px;
+        margin-bottom: 20px;
+        cursor: pointer;
+        background: linear-gradient(134deg, #2374F2, #8060aa);
+        color: white;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.25);
+        justify-content: center;
+        align-items: center;
+       
+
+        .inner_content {
+            .form-check-input:checked {
+                background-color: mediumblue;
+                border-color: mediumblue;
+            }
+        }
+    }
+}
+
+.slick-dots {
+    bottom: 0px !important;
+}
+
+.vendor {
+    .label_name {
+        b {
+            font-size: 17px;
+        }
+    }
+    .save_button button {
+        padding: 10px 28px !important;
+        font-size: 16px;
+    }
+
+
+
+    .show_action {
+        display: flex;
+        padding: 20px 0 0 25px;
+
+        .green_action {
+            display: flex;
+            padding-right: 10px;
+
+            div {
+                background-color: green;
+                width: 20px;
+                height: 20px;
+                margin-right: 10px;
+            }
+        }
+
+        .red_action {
+            display: flex;
+
+            div {
+                background-color: red;
+                width: 20px;
+                height: 20px;
+                margin-right: 10px;
+            }
+
+        }
+    }
+
+    div#cell-2-undefined {
+        display: block !important;
+
+        .inner_action {
+
+            text-align: center;
+            padding: 8px;
+            margin-bottom: 3px;
+            margin-top: 2px;
+            width: 170px;
+            margin: auto;
+            cursor: pointer;
+        }
+
+        .false {
+            border: 1px solid red;
+            color: red;
+        }
+
+        .true {
+            border: 1px solid green;
+            color: green;
+        }
+    }
+
+    .remove_authorizedbtn {
+        color: red;
+        padding: 10px;
+        text-transform: capitalize;
+    }
+
+    .rdt_TableCol_Sortable {
+        justify-content: center;
+    }
+
+    .table_content .rdt_TableCell {
+        justify-content: center !important;
+    }
+
+
+}
+
+.utility_date {
+    .rs-picker-toggle.rs-btn.rs-btn-default {
+        border: 1px solid lightgray !important;
+    }
+}
+
+.showActive {
+    background: #F8F8F8 !important;
+    color: black !important;
+}
+
+.slider-container {
+    .action {
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        border-bottom: 1px solid;
+        padding-bottom: 9px;
+        align-items: center;
+    }
+
+    .other_detail {
+        text-align: center;
+        padding-top: 7px;
+    }
+
+    .delete_customer {
+        background: red !important;
+        color: white !important;
+        opacity: 0.4;
+    }
+
+    .deleted_vendor {
+        border-bottom: 1px solid;
+        padding-bottom: 9px;
+        text-align: center;
+    }
+}
+
+.active_border {
+    border: 5px solid #3498ff !important;
+}
+.grey_border{
+border: 5px solid rgb(207, 207, 207);
+border-radius: 5px;
+}
+.step2_data{
+    h5{
+        border-bottom: 1px solid rgb(207, 207, 207) ;
+        background-color: rgb(245, 245, 245);
+    }
+.table_view_rows{
+    display: flex;
+    align-items: center;
+    border: 1px solid rgb(207, 207, 207);
+    label{
+        color: #71717A;
+        padding: 10px;
+        border-right: 2px solid  rgb(207, 207, 207);
+    }
+    .form_field{
+               input{
+            border: 0;
+        }
+    }
+}
+}
+
+.form_dropdown__menu{
+    overflow: visible;
+}

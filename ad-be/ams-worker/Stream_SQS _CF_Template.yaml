@@ -1,0 +1,248 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  AWS CloudFormation Template to create a new SQS queue used as a Stream
+  destination.
+Parameters:
+  StreamDestinationQueueName:
+    Type: String
+    Description: The name of the SQS queue to be created and used as a Stream destination
+    Default: StreamDestinationQueue
+  StreamDatasetId:
+    Type: CommaDelimitedList 
+    Description: The ID of the dataset to stream
+    AllowedValues:
+      - sp-traffic
+      - sp-conversion
+      - budget-usage
+      - sd-traffic      
+      - sd-conversion
+      - sponsored-ads-campaign-diagnostics-recommendations
+      - campaigns
+      - adgroups
+      - ads
+      - targets
+      - sb-traffic
+      - sb-conversion
+      - sb-clickstream
+      - sb-rich-media
+      - adsp-campaigns
+      - adsp-campaign-flights
+      - adsp-adgroups
+      - adsp-adgroup-targets
+      - sp-budget-recommendations
+      - ads-campaign-management-campaigns
+      - ads-campaign-management-adgroups
+      - ads-campaign-management-targets
+  StreamRealm:
+    Type: String
+    Description: The realm to stream
+    AllowedValues:
+      - NA
+      - EU
+      - FE
+Mappings:
+  Region:
+    NA:
+      Region: us-east-1
+    EU:
+      Region: eu-west-1
+    FE:
+      Region: us-west-2
+  NA:
+    sp-traffic:
+      Account: 906013806264
+    sp-conversion:
+      Account: 802324068763
+    budget-usage:
+      Account: 055588217351
+    sd-traffic:
+      Account: 370941301809
+    sd-conversion:
+      Account: 877712924581
+    sponsored-ads-campaign-diagnostics-recommendations:
+      Account: 084590724871
+    campaigns:
+      Account: 570159413969
+    ads-campaign-management-campaigns:
+      Account: 191497920774
+    adgroups:
+      Account: 118846437111
+    ads-campaign-management-adgroups:
+      Account: 604456545381
+    ads:
+      Account: 305370293182
+    targets:
+      Account: 644124924521
+    ads-campaign-management-targets:
+      Account: 849386333852
+    sb-traffic:
+      Account: 709476672186
+    sb-conversion: 
+      Account: 154357381721
+    sb-clickstream:
+      Account: 091028706140
+    sb-rich-media:
+      Account: 010312603579
+    adsp-campaigns:
+      Account: 153247821255
+    adsp-campaign-flights:
+      Account: 700228448367
+    adsp-adgroups:
+      Account: 222778752755
+    adsp-adgroup-targets:
+      Account: 419834811630
+    sp-budget-recommendations:
+      Account: 678715897637
+  EU:
+    sp-traffic:
+      Account: 668473351658
+    sp-conversion:
+      Account: 562877083794
+    budget-usage:
+      Account: 675750596317
+    sd-traffic:
+      Account: 947153514089
+    sd-conversion:
+      Account: 664093967423 
+    sponsored-ads-campaign-diagnostics-recommendations:
+      Account: 059061853903
+    campaigns:
+      Account: 834862128520
+    ads-campaign-management-campaigns:
+      Account: 604773740961
+    adgroups:
+      Account: 130948361130
+    ads-campaign-management-adgroups:
+      Account: 980416030702
+    ads:
+      Account: 648558082147
+    targets:
+      Account: 503759481754
+    ads-campaign-management-targets:
+      Account: 274177428908
+    sb-traffic:
+      Account: 623198756881
+    sb-conversion: 
+      Account: 195770945541
+    sb-clickstream:
+      Account: 219513501272
+    sb-rich-media:
+      Account: 662188760626
+    adsp-campaigns:
+      Account: 599052634802
+    adsp-campaign-flights:
+      Account: 633559263003
+    adsp-adgroups:
+      Account: 682324742468
+    adsp-adgroup-targets:
+      Account: 764057072099
+    sp-budget-recommendations:
+      Account: 158915609581
+  FE:
+    sp-traffic:
+      Account: 074266271188
+    sp-conversion:
+      Account: 622939981599
+    budget-usage:
+      Account: 100899330244
+    sd-traffic:
+      Account: 310605068565
+    sd-conversion:
+      Account: 818973306977
+    sponsored-ads-campaign-diagnostics-recommendations:
+      Account: 489995134625
+    campaigns:
+      Account: 527383333093
+    ads-campaign-management-campaigns:
+      Account: 133497933767
+    adgroups:
+      Account: 668585072850
+    ads-campaign-management-adgroups:
+      Account: 196046082881
+    ads:
+      Account: 802070757281
+    targets:
+      Account: 248074939493
+    ads-campaign-management-targets:
+      Account: 104203587014
+    sb-traffic:
+      Account: 485899199471
+    sb-conversion: 
+      Account: 112347756703
+    sb-clickstream:
+      Account: 632322331982
+    sb-rich-media:
+      Account: 618223300352
+    adsp-campaigns:
+      Account: 216875695489
+    adsp-campaign-flights:
+      Account: 451213518288
+    adsp-adgroups:
+      Account: 360850786875
+    adsp-adgroup-targets:
+      Account: 178122609971
+    sp-budget-recommendations:
+      Account: 007292432803
+Rules:
+  NA:
+    RuleCondition:
+      Fn::Equals: [ !Ref StreamRealm, NA ]
+    Assertions:
+      - Assert:
+          Fn::Equals: [ !Ref AWS::Region, us-east-1 ]
+  EU:
+    RuleCondition:
+      Fn::Equals: [ !Ref StreamRealm, EU ]
+    Assertions:
+      - Assert:
+          Fn::Equals: [ !Ref AWS::Region, eu-west-1 ]
+  FE:
+    RuleCondition:
+      Fn::Equals: [ !Ref StreamRealm, FE ]
+    Assertions:
+      - Assert:
+          Fn::Equals: [ !Ref AWS::Region, us-west-2 ]
+Resources:
+  StreamDestinationQueue:
+    Type: "AWS::SQS::Queue"
+    Properties:
+      QueueName: !Ref StreamDestinationQueueName
+  StreamDestinationQueuePolicy:
+    Type: "AWS::SQS::QueuePolicy"
+    Properties:
+      Queues:
+        - !Ref StreamDestinationQueue
+
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: AllowStreamSendMessage
+            Effect: Allow
+            Principal:
+              Service: sns.amazonaws.com
+            Action:
+              - "sqs:SendMessage"
+            Resource: !GetAtt
+              - StreamDestinationQueue
+              - Arn
+            Condition:
+              ArnLike:
+                "aws:SourceArn": !Sub
+                  - "arn:aws:sns:${region}:${account}:*"
+                  - region: !FindInMap
+                      - Region
+                      - !Ref StreamRealm
+                      - Region
+                    account: !FindInMap
+                      - !Ref StreamRealm
+                      - !Ref StreamDatasetId
+                      - Account
+          - Sid: AllowStreamReviewerGetQueueAttributes
+            Effect: Allow
+            Principal:
+              AWS: "arn:aws:iam::926844853897:role/ReviewerRole"
+            Action:
+              - "sqs:GetQueueAttributes"
+            Resource: !GetAtt
+              - StreamDestinationQueue
+              - Arn

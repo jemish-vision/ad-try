@@ -1,0 +1,47 @@
+.order_container {
+    .ring_img {
+        width: 78px;
+    }
+
+    .print_all {
+        height: 36px
+    }
+
+    .payment-method {
+        width: max-content;
+    }
+
+    .cusror-pointer {
+        cursor: pointer;
+    }
+
+    .red-text {
+        color: #ff0000;
+    }
+
+    @media only screen and (max-width: 768px) {
+        .cust-col-6-view-order {
+            width: 100%;
+            padding: 0;
+            margin-top: 10px;
+        }
+    }
+
+    @media only screen and (max-width: 481px) {
+        .cust-col-8-order-summary {
+            width: 100%
+        }
+
+        .cust-col-4-order-summary {
+            width: 100%
+        }
+
+        .cust-col-5-view-order {
+            width: 100%;
+        }
+
+        .cust-col-7-view-order {
+            width: 100%;
+        }
+    }
+}

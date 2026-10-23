@@ -1,0 +1,70 @@
+{
+  "metadata": {
+    "synthetic": true,
+    "dataOrigin": "synthetic",
+    "description": "Hand-calculated arithmetic and calendar reference cases. No live account data or measured portal results. Percentage values use percent units: 12 means 12%, not 0.12."
+  },
+  "weightedSummary": {
+    "rows": [
+      { "spend": 30, "sales": 100, "orders": 2, "clicks": 10, "impressions": 1000 },
+      { "spend": 90, "sales": 900, "orders": 18, "clicks": 90, "impressions": 9000 }
+    ],
+    "expectedTotals": { "spend": 120, "sales": 1000, "orders": 20, "clicks": 100, "impressions": 10000 },
+    "expectedValues": { "spend": 120, "sales": 1000, "orders": 20, "clicks": 100, "impressions": 10000, "acos": 12, "roas": 8.333333333333334, "cpc": 1.2, "cvr": 20, "ctr": 1, "aov": 50 },
+    "previousTotals": { "spend": 100, "sales": 1000, "orders": 25, "clicks": 100, "impressions": 10000 },
+    "expectedChanges": {
+      "acos": { "previousValue": 10, "absoluteChange": 2, "relativeChangePercent": 20, "percentagePointChange": 2 },
+      "cvr": { "previousValue": 25, "absoluteChange": -5, "relativeChangePercent": -20, "percentagePointChange": -5 },
+      "cpc": { "previousValue": 1, "absoluteChange": 0.2, "relativeChangePercent": 20, "percentagePointChange": null }
+    }
+  },
+  "zeroSales": {
+    "totals": { "spend": 30, "sales": 0, "orders": 0, "clicks": 10, "impressions": 1000 },
+    "expectedValues": { "acos": null, "roas": 0, "cpc": 3, "cvr": 0, "ctr": 1, "aov": null }
+  },
+  "zeroClicks": {
+    "totals": { "spend": 0, "sales": 0, "orders": 0, "clicks": 0, "impressions": 1000 },
+    "expectedValues": { "acos": null, "roas": null, "cpc": null, "cvr": null, "ctr": 0, "aov": null }
+  },
+  "missingSales": {
+    "rows": [
+      { "spend": 30, "sales": 100, "orders": 2, "clicks": 10, "impressions": 1000 },
+      { "spend": 90, "orders": 18, "clicks": 90, "impressions": 9000 }
+    ],
+    "expectedTotals": { "spend": 120, "sales": null, "orders": 20, "clicks": 100, "impressions": 10000 },
+    "expectedValues": { "spend": 120, "sales": null, "acos": null, "roas": null, "cpc": 1.2, "cvr": 20, "aov": null }
+  },
+  "newActivity": {
+    "currentTotals": { "spend": 30, "sales": 100, "orders": 2, "clicks": 10, "impressions": 1000 },
+    "previousTotals": { "spend": 0, "sales": 0, "orders": 0, "clicks": 0, "impressions": 0 },
+    "expectedSpendChange": { "previousValue": 0, "absoluteChange": 30, "relativeChangePercent": null, "percentagePointChange": null }
+  },
+  "dates": {
+    "now": "2026-10-20T12:00:00.000Z",
+    "timezone": "Asia/Kolkata",
+    "yesterday": {
+      "startDate": "2026-10-19",
+      "endDateInclusive": "2026-10-19",
+      "startUtc": "2026-10-18T18:30:00.000Z",
+      "endUtcExclusive": "2026-10-19T18:30:00.000Z",
+      "previousStartUtc": "2026-10-17T18:30:00.000Z",
+      "previousEndUtcExclusive": "2026-10-18T18:30:00.000Z"
+    },
+    "last7Days": {
+      "startDate": "2026-10-13",
+      "endDateInclusive": "2026-10-19",
+      "startUtc": "2026-10-12T18:30:00.000Z",
+      "endUtcExclusive": "2026-10-19T18:30:00.000Z",
+      "previousStartUtc": "2026-10-05T18:30:00.000Z",
+      "previousEndUtcExclusive": "2026-10-12T18:30:00.000Z"
+    },
+    "weekToDate": {
+      "startDate": "2026-10-19",
+      "endDateInclusive": "2026-10-20",
+      "startUtc": "2026-10-18T18:30:00.000Z",
+      "endUtcExclusive": "2026-10-20T12:00:00.000Z",
+      "previousStartUtc": "2026-10-11T18:30:00.000Z",
+      "previousEndUtcExclusive": "2026-10-13T12:00:00.000Z"
+    }
+  }
+}

@@ -1,0 +1,15 @@
+node_modules
+logs
+.env*
+.env.*
+nodemon.json
+uploads/*
+api-server/public/productImages
+public/productImages
+public/excelImportFiles
+public/supportTicket
+public/campaignSupportedFiles
+public/profilePhotos
+package-lock.json
+*firebase-service-account*.json
+api-server/firebase-service-account.json

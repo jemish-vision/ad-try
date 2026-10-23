@@ -1,0 +1,208 @@
+/* ── Skeleton Scanning Animation ────────────────────────────── */
+.lom-skeleton-wrap {
+    padding: 60px 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 400px;
+    justify-content: center;
+    background: #ffffff;
+}
+
+.lom-skeleton-container {
+    width: 100%;
+    max-width: 500px;
+    position: relative;
+    padding: 30px;
+    background: #f8fafc;
+    border: 1px solid rgba(2, 70, 139, 0.08);
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(2, 70, 139, 0.04);
+}
+
+/* The actual scanning light effect */
+.lom-skeleton-scanner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+        to bottom,
+        transparent 0%,
+        rgba(35, 116, 242, 0.02) 40%,
+        rgba(35, 116, 242, 0.12) 50%,
+        rgba(35, 116, 242, 0.02) 60%,
+        transparent 100%
+    );
+    z-index: 5;
+    animation: skeletonScan 2.5s infinite linear;
+    border-top: 2px solid var(--accent-primary);
+    box-shadow: 0 -8px 16px var(--accent-glow);
+}
+
+@keyframes skeletonScan {
+    0% { transform: translateY(-100%); }
+    100% { transform: translateY(100%); }
+}
+
+/* Skeleton Elements with Shimmer Animation */
+.lom-sk-header {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-bottom: 40px;
+    position: relative;
+    z-index: 2;
+}
+
+.lom-sk-img-wrap {
+    width: 80px;
+    height: 80px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+}
+
+.lom-sk-real-img {
+    max-width: 90%;
+    max-height: 90%;
+    object-fit: contain;
+    filter: grayscale(0.2) opacity(0.8);
+    transition: filter 0.3s;
+}
+
+.lom-sk-img {
+    width: 100%;
+    height: 100%;
+    background: #e2e8f0;
+    animation: lomShimmer 1.8s infinite linear;
+    background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+    background-size: 200% 100%;
+}
+
+.lom-sk-title {
+    flex: 1;
+    min-width: 0;
+}
+
+.lom-sk-real-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent-primary);
+    margin-bottom: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.lom-sk-line-sm {
+    height: 10px;
+    width: 45%;
+    background: #e2e8f0;
+    border-radius: 4px;
+    animation: lomShimmer 1.8s infinite linear;
+    background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+    background-size: 200% 100%;
+}
+
+.lom-sk-body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.lom-sk-row {
+    height: 12px;
+    border-radius: 6px;
+    animation: lomShimmer 1.8s infinite linear;
+    background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+    background-size: 200% 100%;
+}
+
+.lom-sk-row.w-100 { width: 100%; }
+.lom-sk-row.w-90  { width: 90%; }
+.lom-sk-row.w-80  { width: 80%; }
+.lom-sk-row.w-70  { width: 70%; }
+
+@keyframes lomShimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+.lom-ai-text {
+    margin-top: 30px;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent-primary);
+    text-align: center;
+    letter-spacing: -0.3px;
+}
+
+.lom-ai-status {
+    margin-top: 10px;
+    font-size: 13px;
+    color: #64748b;
+    font-style: normal;
+    font-weight: 500;
+    animation: pulseText 2s infinite;
+}
+
+@keyframes pulseText {
+    0%, 100% { opacity: 0.7; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.02); }
+}
+
+/* ── Dark Theme ─────────────────────────────────────────────── */
+[data-theme="dark"] .lom-skeleton-wrap {
+    background: #111827 !important;
+}
+
+[data-theme="dark"] .lom-skeleton-container {
+    background: #1e293b !important;
+    border-color: rgba(255, 255, 255, 0.08) !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.30) !important;
+}
+
+[data-theme="dark"] .lom-skeleton-scanner {
+    background: linear-gradient(
+        to bottom,
+        transparent 0%,
+        rgba(91, 156, 246, 0.04) 40%,
+        rgba(91, 156, 246, 0.18) 50%,
+        rgba(91, 156, 246, 0.04) 60%,
+        transparent 100%
+    ) !important;
+    border-top-color: var(--accent-primary) !important;
+    box-shadow: 0 -8px 20px var(--accent-glow) !important;
+}
+
+[data-theme="dark"] .lom-sk-img-wrap {
+    background: #0f172a !important;
+    border-color: rgba(255, 255, 255, 0.10) !important;
+}
+
+[data-theme="dark"] .lom-sk-img {
+    background-image: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%) !important;
+    background-size: 200% 100% !important;
+}
+
+[data-theme="dark"] .lom-sk-line-sm {
+    background-image: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%) !important;
+    background-size: 200% 100% !important;
+}
+
+[data-theme="dark"] .lom-sk-row {
+    background-image: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%) !important;
+    background-size: 200% 100% !important;
+}
+
+[data-theme="dark"] .lom-ai-status {
+    color: rgba(255, 255, 255, 0.45) !important;
+}

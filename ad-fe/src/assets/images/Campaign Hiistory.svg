@@ -1,0 +1,18 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Campaign Hiistory" clip-path="url(#clip0_936_2654)">
+<g id="event_available">
+<mask id="mask0_936_2654" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
+<rect id="Bounding box" width="24" height="24" fill="#D9D9D9"/>
+</mask>
+<g mask="url(#mask0_936_2654)">
+<path id="Vector" d="M12 12C13.6568 12 15 13.3431 15 15C15 16.6568 13.6568 18 12 18C10.3431 18 9 16.6568 9 15H9.6C9.6 16.3255 10.6745 17.4 12 17.4C13.3255 17.4 14.4 16.3255 14.4 15C14.4 13.6745 13.3255 12.6 12 12.6C11.1751 12.6 10.4473 13.0162 10.0154 13.6501L10.8 13.65V14.25H9V12.45H9.6L9.59997 13.1998C10.1473 12.4712 11.0186 12 12 12ZM12.3 13.5L12.2999 14.8755L13.2728 15.8485L12.8485 16.2728L11.6999 15.1239L11.7 13.5H12.3Z" fill="white"/>
+<path id="event_available_2" d="M5 22C4.45 22 3.97917 21.8042 3.5875 21.4125C3.19583 21.0208 3 20.55 3 20V6C3 5.45 3.19583 4.97917 3.5875 4.5875C3.97917 4.19583 4.45 4 5 4H6V2H8V4H16V2H18V4H19C19.55 4 20.0208 4.19583 20.4125 4.5875C20.8042 4.97917 21 5.45 21 6V20C21 20.55 20.8042 21.0208 20.4125 21.4125C20.0208 21.8042 19.55 22 19 22H5ZM5 20H19V10H5V20Z" fill="white"/>
+</g>
+</g>
+</g>
+<defs>
+<clipPath id="clip0_936_2654">
+<rect width="24" height="24" fill="white"/>
+</clipPath>
+</defs>
+</svg>

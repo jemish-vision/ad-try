@@ -1,0 +1,76 @@
+export const SYSTEM_PAGES = {
+  // Admin Routes
+  DASHBOARD: 'Dashboard',
+  CAMPAIGNS: 'Campaigns',
+  CAMPAIGN_SETTING: 'Campaign Setting',
+  PLACEMENT: 'Placement',
+  PLACEMENT_RULE: 'Placement Rule',
+  PLACEMENT_RULE_HISTORY: 'Placement Rule History',
+  BUDGET_RULES: 'Budget Rules',
+  BUDGET_RULE_HISTORY: 'Budget Rule History',
+  RECOMMENDATION: 'Recommendation',
+  TARGETING: 'Targeting',
+  TARGETING_RULE: 'Targeting Rule',
+  TARGETING_RULE_HISTORY: 'Targeting Rule History',
+  KEYWORD_TRACKER: 'Keyword Tracker',
+  SEARCH_TERM: 'Search Term',
+  SEARCH_TERM_RULE: 'Search Term Rule',
+  SEARCH_TERM_RULE_HISTORY: 'Search Term Rule History',
+  KEYWORD_ANALYSIS: 'Keyword Analysis',
+  HOURLY_PERFORMANCE_TRACKING: 'Hourly Performance Tracking',
+  HOURLY_PERFORMANCE_TRACKING_HISTORY: 'Hourly Performance Tracking History',
+  ORDERS: 'Orders',
+  ORDER_REPORT: 'Order Report',
+  PRODUCT_LIST: 'Product List',
+  PRODUCT_ADS: 'Product Ads',
+  PRODUCT_PERFORMANCE: 'Product Performance',
+  PROMOTIONS: 'Promotions',
+  COUPONS: 'Coupons',
+  DEALS: 'Deals',
+  INVENTORY: 'Inventory',
+  WAREHOUSE_INVENTORY: 'Warehouse Inventory',
+  FBA_PLANNING: 'FBA Planning',
+  MFN_TO_FBA: 'MFN to FBA',
+  RECONCILIATION_AND_REIMBURSEMENT: 'Reconciliation & Reimbursement',
+  RETURNS_AND_REFUNDS: 'Returns & Refunds',
+  ANALYTICS: 'Analytics',
+  BRAND_ANALYTICS: 'Brand Analytics',
+  HISTORY: 'History',
+  AUDIT_LOG: 'Audit Log',
+  CRON_JOB_SCHEDULER: 'Cron Job Scheduler',
+  CRON_JOB_HISTORY: 'Cron Job History',
+  PL_CALCULATOR: 'P/L Calculater',
+  USERS: 'Users',
+  ROLE: 'Role',
+  PLANS: 'Plans',
+  HOLIDAY_SPECIAL_DAYS: 'Holiday/Special Days',
+  SETTINGS: 'Settings',
+  PROFIT_ANALYSIS: 'Profit Analysis',
+  AI_ASSISTANT: 'AI Assistant',
+
+  // Super Admin Routes
+  ORGANIZATIONS: 'Organizations',
+  CRON_JOB: 'Cron Job',
+  RULE_BLOCKED_TIME: 'Rule Blocked Time',
+  SUPPORT_TICKET: 'Support Ticket',
+  PAGES: 'Pages',
+};
+
+export const PAGE_ACTIONS = {
+  VIEW_ONLY: 'View Only',
+  CREATE: 'Create',
+  UPDATE: 'Update',
+  REMOVE: 'Remove',
+};
+
+export const SYSTEM_PAGES_LIST = Object.values(SYSTEM_PAGES);
+export const PAGE_ACTIONS_LIST = Object.values(PAGE_ACTIONS);
+
+export const SUPER_ADMIN_BLOCKED_ROUTES = [
+  SYSTEM_PAGES.PLANS,
+  SYSTEM_PAGES.ORGANIZATIONS,
+  SYSTEM_PAGES.CRON_JOB,
+  SYSTEM_PAGES.RULE_BLOCKED_TIME,
+  SYSTEM_PAGES.SUPPORT_TICKET,
+  SYSTEM_PAGES.PAGES,
+];

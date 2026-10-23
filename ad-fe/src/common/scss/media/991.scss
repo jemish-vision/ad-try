@@ -1,0 +1,53 @@
+@media only screen and (max-width: 991px) {
+    .login_section .section_1 .section_1_content h3 {
+
+        font-size: 26px;
+        width: 80%;
+        margin: auto;
+    }
+
+    .login_section .section_1 .section_1_content p {
+        font-size: 22px;
+    }
+
+    .login_section .section_2 .user-box input.user-box-input {
+        width: 91%;
+
+    }
+
+    .rs-steps-item-title {
+        font-size: 11px !important;
+        line-height: normal !important;
+        padding-right: 0 !important;
+        word-break: break-all !important;
+    }
+
+    .rs-steps-item-icon-wrapper {
+
+        font-size: 10px !important;
+        height: 21px !important;
+
+        width: 20px !important;
+    }
+
+    .rs-steps-item {
+
+        padding-left: 35px !important;
+
+    }
+
+    .superadmin .send_btn button.close_ticket {
+        margin-left: 5px;
+    }
+
+    .chat .chat_section .send_btn button {
+        padding: 7px 6px;
+        font-size: 12px;
+    }
+
+    .chat .chat_section .send_btn textarea {
+
+        width: 70%;
+
+    }
+}

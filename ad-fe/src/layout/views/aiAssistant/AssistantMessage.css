@@ -1,0 +1,125 @@
+/* The answer is a reading surface; charts and tables get the full report width. */
+.ai-assistant-page .assistant-history-toggle { display: none; }
+.ai-assistant-page .assistant-history-backdrop { position: absolute; inset: 0; z-index: 40; background: rgba(2, 6, 23, 0.6); border: 0; }
+
+@media (max-width: 767px) {
+  .ai-assistant-page .assistant-history-toggle { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .ai-assistant-page .ai-assistant-sidebar { display: none; }
+  .ai-assistant-page .ai-assistant-sidebar.is-open { display: flex; position: absolute; inset: 0 auto 0 0; width: min(320px, calc(100% - 32px)); z-index: 50; box-shadow: 12px 0 32px rgba(2, 6, 23, 0.25); }
+}
+
+.ai-assistant-page .assistant-conversation {
+  width: 100%;
+  max-width: 1120px;
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.ai-assistant-page .assistant-question {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.ai-assistant-page .assistant-question__content {
+  max-width: min(80%, 720px);
+  min-width: 0;
+}
+
+.ai-assistant-page .assistant-question__bubble {
+  background: #2563eb;
+  color: #fff;
+  border-radius: 18px 18px 4px 18px;
+  padding: 12px 18px;
+  font-size: 14px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.ai-assistant-page .assistant-question__time {
+  display: block;
+  margin: 6px 3px 0;
+  font-size: 11px;
+  color: #64748b;
+  text-align: right;
+}
+
+.ai-assistant-page .assistant-message {
+  --answer-ink: #1e293b;
+  --answer-muted: #64748b;
+  --answer-rule: #bfdbfe;
+  width: 100%;
+  min-width: 0;
+  color: var(--answer-ink);
+  padding-bottom: 12px;
+}
+
+[data-theme="dark"] .ai-assistant-page .assistant-message {
+  --answer-ink: #e2e8f0;
+  --answer-muted: #94a3b8;
+  --answer-rule: #334e7b;
+}
+
+.ai-assistant-page .assistant-message__header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 18px;
+}
+
+.ai-assistant-page .assistant-message__avatar {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.12);
+  flex-shrink: 0;
+}
+
+.ai-assistant-page .assistant-message__author { font-size: 13px; font-weight: 650; }
+.ai-assistant-page .assistant-message__time { font-size: 11px; color: var(--answer-muted); margin-left: 3px; }
+
+.ai-assistant-page .assistant-message__answer {
+  font-size: 15px;
+  line-height: 1.8;
+  max-width: 78ch;
+  overflow-wrap: anywhere;
+}
+
+.ai-assistant-page .assistant-message__answer p { margin-bottom: 12px; line-height: 1.8; }
+.ai-assistant-page .assistant-message__answer p:last-child { margin-bottom: 0; }
+.ai-assistant-page .assistant-message__answer strong { color: var(--answer-ink); font-weight: 650; }
+.ai-assistant-page .assistant-message__answer--report { padding-left: 18px; border-left: 3px solid var(--answer-rule); }
+
+.ai-assistant-page .assistant-message__summary-label {
+  margin: 0 0 10px;
+  color: var(--answer-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.ai-assistant-page .assistant-message__report { margin-top: 22px; min-width: 0; width: 100%; }
+.ai-assistant-page .assistant-message__status { display: flex; gap: 8px; align-items: center; color: #3b82f6; font-size: 13px; margin-bottom: 14px; }
+.ai-assistant-page .assistant-message__typing { width: 60px; padding: 8px 0; }
+.ai-assistant-page .assistant-message__spinner { animation: assistant-message-spin 1s linear infinite; flex-shrink: 0; }
+@keyframes assistant-message-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 640px) {
+  .ai-assistant-page .assistant-conversation { gap: 26px; }
+  .ai-assistant-page .assistant-message__answer { font-size: 14px; }
+  .ai-assistant-page .assistant-message__answer--report { padding-left: 12px; }
+  .ai-assistant-page .assistant-question__content { max-width: 90%; }
+  .ai-assistant-page .assistant-question__bubble { padding: 10px 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-assistant-page .assistant-message__spinner { animation: none; }
+}
