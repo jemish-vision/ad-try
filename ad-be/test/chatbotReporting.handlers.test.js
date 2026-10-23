@@ -137,14 +137,17 @@ function setup(options = {}) {
   };
 }
 
-test('budget exhaustion does not substitute campaign totals for unavailable budget history', async () => {
+test('budget questions route to the budget-use report, not the ad-metric pipeline', async () => {
   const { service, seen } = setup();
   const result = await service(request({ category: 'growth', groupBy: ['campaign'] }), auth);
 
+  // Handled by the dedicated budget builder (reads the campaign budget fields
+  // directly), never the daily ad-metric source.
   assert.equal(seen.daily.length, 0);
+  // No campaign budget records are reachable in this isolated setup.
   assert.equal(result.status, 'unavailable');
   assert.ok(result.datasets.every(dataset => dataset.rows.length === 0));
-  assert.match(result.freshness.missingInputs.join(' '), /budget exhaustion/);
+  assert.match(result.freshness.missingInputs.join(' '), /campaign budget/);
 });
 
 test('all ten approved categories dispatch to their declared source families', async () => {

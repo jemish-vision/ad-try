@@ -94,6 +94,7 @@ const {
   buildSellerNotConnectedReport,
   buildProductInsightReport,
 } = require('./chatbotReporting/productInsights');
+const { isBudgetRequest, buildBudgetReport } = require('./chatbotReporting/budgetInsights');
 
 function requireAuthenticatedIdentity(authContext) {
   const identity = value => typeof value === 'string' ? value : value?.toHexString?.();
@@ -405,6 +406,12 @@ function createReportService({
       if (insight) {
         return insight;
       }
+    }
+
+    // Budget utilisation ("which campaigns run out of budget") is assembled from
+    // the daily campaign documents' budget / spend fields, not the ad-metric pipeline.
+    if (isBudgetRequest(request)) {
+      return buildBudgetReport({ db: database, request, scope, periods, reportId: makeReportId() });
     }
 
     const state = createReportState();

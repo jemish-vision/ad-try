@@ -114,7 +114,7 @@ test('category instructions preserve explicit question intent instead of forcing
   assert.match(SYSTEM_PROMPT, /Never ask users for technical profile IDs/);
   assert.match(SYSTEM_PROMPT, /do not name a main driver, leading cause or reason for the change/);
   assert.match(SYSTEM_PROMPT, /best conversion questions, request metrics=\["cvr", "orders", "clicks"\]/);
-  assert.match(SYSTEM_PROMPT, /Budget exhaustion questions use groupBy=\["campaign"\]/);
+  assert.match(SYSTEM_PROMPT, /Budget questions[^\n]*use groupBy=\["campaign"\]/);
   assert.match(SYSTEM_PROMPT, /placements use \["placement"\]/);
   assert.match(SYSTEM_PROMPT, /currencyCode="USD"/);
   assert.match(SYSTEM_PROMPT, /Put the metric being explained FIRST/);
