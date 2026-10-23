@@ -256,6 +256,7 @@ export default function AiAssistantPage() {
 
   // Streaming refs
   const chatScrollRef = useRef(null);
+  const chatInputRef = useRef(null);
   const userScrolledUpRef = useRef(false);
   const streamTimerRef = useRef(null);
   const streamCheckpointsRef = useRef([]);
@@ -1272,6 +1273,14 @@ export default function AiAssistantPage() {
               }
               handleSendMessage();
             }}
+            onMouseDown={e => {
+              // The whole bar should focus the input — not just the thin text
+              // line. Clicking the padding (or the stretched input) focuses it;
+              // clicks on the send/stop button keep their own behavior.
+              if (e.target === chatInputRef.current || e.target.closest("button")) return;
+              e.preventDefault();
+              chatInputRef.current?.focus();
+            }}
             className={`ai-input-form max-w-4xl mx-auto relative flex items-center gap-2 border rounded-2xl p-1.5 pl-3.5 shadow-md dark:shadow-xl transition-all ${
               !canSendInCurrentState ? "opacity-75" : ""
             } ${
@@ -1281,6 +1290,7 @@ export default function AiAssistantPage() {
             }`}
           >
             <input
+              ref={chatInputRef}
               type="text"
               value={inputText}
               onChange={e => setInputText(e.target.value)}
@@ -1301,7 +1311,7 @@ export default function AiAssistantPage() {
                 background: "transparent",
                 backgroundColor: "transparent"
               }}
-              className="flex-1 bg-transparent border-none border-0 outline-none ring-0 shadow-none focus:outline-none focus:ring-0 focus:border-none text-xs sm:text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 self-stretch min-w-0 px-1 bg-transparent border-none border-0 outline-none ring-0 shadow-none focus:outline-none focus:ring-0 focus:border-none text-xs sm:text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 disabled:opacity-50 disabled:cursor-not-allowed"
             />
 
             {isTyping ? (
