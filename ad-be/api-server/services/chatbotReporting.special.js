@@ -177,18 +177,20 @@ async function readTimeReport(input, filter) {
     throw requestError('SD has targets rather than keywords.');
   }
 
-  // Hourly imports retain units, not validated order counts. Reading thousands
-  // of traffic rows cannot answer a question whose main metric needs orders.
-  if (['orders', 'cvr', 'aov'].includes(input.metrics?.[0])) {
-    result.warnings.push('HOURLY_ORDERS_ARE_UNITS');
-    result.missingInputs.push('Hourly conversion is not available because hourly order counts have not been verified. Ask for hourly spend, clicks or cost per click instead.');
-    return result;
-  }
   const scopedFilter = {
     ...filter,
     type: adType
   };
+  // Hourly orders/sales are Amazon's 7-day attributed figures (the importer stores
+  // attributed_units_ordered_7d in `orders`). They are usable as a PROVISIONAL
+  // conversion proxy only when the profile's attribution window is 7 days; otherwise
+  // the windows do not line up and conversion cannot be formed from them.
   const correctSalesWindow = profile.attributionWindows?.[adType] === 7;
+  if (['orders', 'cvr', 'aov'].includes(input.metrics?.[0]) && !correctSalesWindow) {
+    result.warnings.push('HOURLY_ATTRIBUTION_WINDOW_MISMATCH');
+    result.missingInputs.push('Hourly conversion needs the profile attribution window to match the hourly 7-day attributed data.');
+    return result;
+  }
 
   // When database aggregation is available and no entity drilldown is requested,
   // collapse high-volume hourly traffic into (reportDate, startTime) cells directly in MongoDB.
@@ -208,7 +210,7 @@ async function readTimeReport(input, filter) {
 
     setFreshness(result, aggregatedRows);
     result.warnings.push('HOURLY_ORDERS_ARE_UNITS');
-    result.missingInputs.push('Validated hourly orders are required for orders, conversion rate and order value.');
+    result.warnings.push('Hourly orders and conversion use Amazon 7-day attributed units, not settled order counts; treat them as provisional.');
     if (!correctSalesWindow) {
       result.warnings.push('HOURLY_ATTRIBUTION_WINDOW_MISMATCH');
       result.missingInputs.push('Hourly sales in the selected profile attribution window.');
@@ -252,7 +254,7 @@ async function readTimeReport(input, filter) {
         placement: 'all',
         spend: readMetric(bucketMetric(row, 'spends')),
         sales: correctSalesWindow ? readMetric(bucketMetric(row, 'sales')) : null,
-        orders: null,
+        orders: correctSalesWindow ? readMetric(bucketMetric(row, 'orders'), true) : null,
         clicks: readMetric(bucketMetric(row, 'clicks'), true),
         impressions: readMetric(bucketMetric(row, 'impressions'), true)
       });
@@ -273,6 +275,7 @@ async function readTimeReport(input, filter) {
       isHourlyAggregated: 1,
       spends: 1,
       sales: 1,
+      orders: 1,
       clicks: 1,
       impressions: 1,
       currency: 1,
@@ -288,7 +291,7 @@ async function readTimeReport(input, filter) {
 
   setFreshness(result, rows);
   result.warnings.push('HOURLY_ORDERS_ARE_UNITS');
-  result.missingInputs.push('Validated hourly orders are required for orders, conversion rate and order value.');
+  result.warnings.push('Hourly orders and conversion use Amazon 7-day attributed units, not settled order counts; treat them as provisional.');
 
   if (!correctSalesWindow) {
     result.warnings.push('HOURLY_ATTRIBUTION_WINDOW_MISMATCH');
@@ -342,7 +345,7 @@ async function readTimeReport(input, filter) {
       placement: safeText(row.placement),
       spend: readMetric(row.spends),
       sales: correctSalesWindow ? readMetric(row.sales) : null,
-      orders: null,
+      orders: correctSalesWindow ? readMetric(row.orders, true) : null,
       clicks: readMetric(row.clicks, true),
       impressions: readMetric(row.impressions, true)
     });

@@ -1,7 +1,11 @@
 'use strict';
 
-const METRICS = ['spends', 'sales', 'clicks', 'impressions'];
-const COUNT_METRICS = ['clicks', 'impressions'];
+// 'orders' here is Amazon's 7-day attributed units (the hourly importer stores
+// attributed_units_ordered_7d), not a settled order count. It is summed only when
+// the profile's attribution window is 7 days (includeSales), and every consumer
+// labels it provisional.
+const METRICS = ['spends', 'sales', 'clicks', 'impressions', 'orders'];
+const COUNT_METRICS = ['clicks', 'impressions', 'orders'];
 const IDENTITY_FIELDS = [
   'reportDate',
   'startTime',

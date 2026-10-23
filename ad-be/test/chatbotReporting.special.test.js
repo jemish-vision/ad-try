@@ -97,15 +97,24 @@ function setup(rows = []) {
   };
 }
 
-test('hourly conversion questions return their known data gap without an expensive traffic read', async () => {
+test('hourly conversion uses 7-day attributed units as a provisional proxy (not blocked)', async () => {
   for (const primary of ['cvr', 'orders', 'aov']) {
     const { run, calls } = setup([hourly()]);
     const report = await run({ metrics: [primary, 'clicks'] });
-    assert.equal(calls.length, 0);
-    assert.deepEqual(report.rows, []);
-    assert.ok(report.missingInputs.some(message => message.includes('order counts have not been verified')));
-    assert.ok(report.missingInputs.some(message => message.includes('hourly spend, clicks or cost per click')));
+    assert.equal(calls.length, 1, 'reads the hourly source');
+    assert.equal(report.rows[0].orders, 999, 'attributed units carried through as provisional orders');
+    assert.ok(report.warnings.includes('HOURLY_ORDERS_ARE_UNITS'));
+    assert.ok(report.warnings.some(message => /provisional/i.test(message)));
+    assert.ok(!report.missingInputs.some(message => /order counts have not been verified/i.test(message)));
   }
+});
+
+test('hourly conversion is still blocked when the attribution window does not match', async () => {
+  const { run, calls } = setup([hourly()]);
+  const report = await run({ metrics: ['cvr', 'clicks'], profile: { ...profile, attributionWindows: { SP: 14 } } });
+  assert.equal(calls.length, 0, 'fails preflight before any read');
+  assert.deepEqual(report.rows, []);
+  assert.ok(report.missingInputs.some(message => /attribution window/i.test(message)));
 });
 
 test('hourly source is profile/config/type/date scoped and bounded without mixing daily grains', async () => {
@@ -133,11 +142,11 @@ test('hourly source is profile/config/type/date scoped and bounded without mixin
   });
   assert.equal(calls[0].options.maxTimeMS, 5000);
   assert.equal(calls[0].limit, 50001);
-  assert.equal(calls[0].options.projection.orders, undefined);
+  assert.equal(calls[0].options.projection.orders, 1);
   assert.equal(report.rows[0].spend, 4);
   assert.equal(report.rows[0].hour, 8);
   assert.equal(report.rows[0].weekday, 4);
-  assert.equal(report.rows[0].orders, null);
+  assert.equal(report.rows[0].orders, 999);
   assert.ok(report.warnings.includes('HOURLY_ORDERS_ARE_UNITS'));
   assert.equal(report.verification, 'unverified');
 });

@@ -139,11 +139,11 @@ function analyzeTime(input, result) {
   result.warnings.push(`Time rankings require at least ${minClicks} observed clicks per group. Ratios use summed inputs, not averages of row ratios.`);
   result.warnings.push('Hourly coverage is observed only; absent hours remain unknown. Compare equal calendar windows and account for attribution lag before creating dayparting rules.');
 
-  // The hourly importer currently stores units in its orders field. Never use
-  // those units to calculate order conversion, even if a caller supplies them.
+  // Hourly orders/sales are Amazon's 7-day attributed figures (a provisional
+  // conversion proxy). The source already nulls them when the profile attribution
+  // window does not match the hourly 7-day data, so keep the values here.
   const rows = current.rows.map(row => ({
     ...row,
-    orders: current.warnings?.includes('HOURLY_ORDERS_ARE_UNITS') ? null : row.orders,
     sales: current.warnings?.includes('HOURLY_ATTRIBUTION_WINDOW_MISMATCH') ? null : row.sales
   }));
   const groups = groupTimeRows(rows, dimensions);
@@ -198,8 +198,8 @@ function analyzeTime(input, result) {
     valueKey: 'value'
   });
 
-  if (rows.some(row => row.orders === null) && request.metrics.some(value => ['orders', 'cvr', 'aov'].includes(value))) {
-    result.missingInputs.push('Validated hourly orders are required; units cannot supply order conversion rate.');
+  if (request.metrics.some(value => ['orders', 'cvr', 'aov'].includes(value))) {
+    result.warnings.push('Hourly conversion uses Amazon 7-day attributed units per click, not settled orders; treat the best-converting times as provisional.');
   }
 
   result.text.push('Time cells distinguish observed, partial coverage, filtered, insufficient sample, missing and weekdays outside the requested period. Low ACOS or CPC alone does not establish the best conversion time.');

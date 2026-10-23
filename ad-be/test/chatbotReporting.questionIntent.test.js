@@ -171,18 +171,20 @@ test('weekday waste keeps outcome metrics and never substitutes spend-only ranki
   assert.equal(request.presentation, 'heatmap');
 });
 
-test('weekday waste reports unavailable without reading hourly rows whose orders are units', async () => {
+test('weekday waste stays unavailable without a matching attribution window, before any data read', async () => {
   const { readSpecialReport } = require('../api-server/services/chatbotReporting.special');
   const request = sanitizeReportRequest(normalizeQuestionReportArguments({ category: 'time' },
     'Which days of the week waste the most money?'), { profileIds: ['123'] });
+  // No attributionWindows -> hourly 7-day attributed figures can't be aligned, so the
+  // request fails preflight (no expensive read) rather than inventing conversion.
   const source = await readSpecialReport({
-    db: { collection: () => assert.fail('Known unusable order counts must fail preflight before data reads') },
+    db: { collection: () => assert.fail('A mismatched attribution window must fail preflight before data reads') },
     category: 'time', dimension: 'weekday', metrics: request.metrics,
     configId: '507f1f77bcf86cd799439011', profile: { profileId: '123', adTypes: ['SP'], currencyCode: 'INR', timezone: 'Asia/Kolkata' },
     adType: 'SP', period: { fromDate: '2026-10-01', toDate: '2026-10-07', isPartial: false },
   });
   assert.deepEqual(source.rows, []);
-  assert.ok(source.missingInputs.some(message => /order counts have not been verified/i.test(message)));
+  assert.ok(source.missingInputs.some(message => /attribution window/i.test(message)));
 });
 
 test('efficient low-impression keyword question asks for a target before AI can invent one', async () => {

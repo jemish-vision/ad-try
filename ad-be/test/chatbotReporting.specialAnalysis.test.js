@@ -70,7 +70,7 @@ test('time analysis builds 24x7 heatmap grid and ranks qualifying hours', () => 
   assert.ok(rankTable.rows.length >= 1);
 });
 
-test('time analysis flags unit conversion risk when hourly orders are units', () => {
+test('time analysis labels hourly conversion as provisional (attributed units)', () => {
   const rows = [
     { date: '2026-10-13', weekday: '2', hour: '14', clicks: 25, orders: 5, spend: 50, sales: 250 },
   ];
@@ -84,7 +84,10 @@ test('time analysis flags unit conversion risk when hourly orders are units', ()
   });
 
   const result = analyzeSpecial(input);
-  assert.ok(result.missingInputs.some(m => m.includes('units cannot supply order conversion')));
+  // Conversion is now provided from attributed units, flagged provisional rather
+  // than withheld as a missing input.
+  assert.ok(result.warnings.some(message => /provisional/i.test(message)));
+  assert.ok(!result.missingInputs.some(message => /units cannot supply order conversion/i.test(message)));
 });
 
 test('product analysis identifies required inputs and warns about profit definitions', () => {
