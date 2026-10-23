@@ -176,7 +176,7 @@ test('end-to-end: a "low stock" chat turn returns a rendered report', async () =
     },
   };
   const chat = createChatService({ aiProvider: mockAi, reportService: service({ inventories: INVENTORY }) });
-  const res = await chat({ message: 'Which advertised products are low on stock?', profileIds: ['1001'] }, AUTH);
+  const res = await chat({ message: 'Which advertised products are low on stock?', profileIds: ['1001'], reportContext: { period: { preset: 'last_7_days' } } }, AUTH);
   assert.equal(res.isReport, true);
   assert.equal(res.report.status, 'partial');
   assert.ok(res.report.datasets.some(d => d.columns.some(c => c.key === 'stock')), 'stock data rendered');

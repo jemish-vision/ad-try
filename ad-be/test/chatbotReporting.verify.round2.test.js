@@ -179,6 +179,7 @@ test('Round 2: exercises all 9 approved categories through the chat service', as
     const response = await chatService({
       message: scenario.question,
       profileIds: ['1001'],
+      reportContext: { period: { preset: 'last_7_days' } },
     }, {
       userId: 'user_123',
       profileIds: ['1001'],

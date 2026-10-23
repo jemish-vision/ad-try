@@ -14,10 +14,29 @@ const {
   extractExplicitSingleMetric,
   hasExplicitComparisonIntent,
   explicitQuestionPeriod,
+  messageMentionsTimePeriod,
   normalizeQuestionReportArguments,
   requestedTargetAcos,
   isEfficientKeywordQuestion,
 } = require('./chatbotReporting/questionIntent');
+
+// Categories that are meaningful only for a concrete reporting window. A
+// metric "definition" is the one report that needs no date.
+function reportNeedsPeriod(category) {
+  return category !== 'definition';
+}
+
+// When the user's question names no time period and none carries over from the
+// previous report, we ask which range to use rather than silently assuming one.
+// reportContext.period is the carried-over window from an earlier turn.
+function missingPeriodClarification(category, message, reportContext) {
+  if (!reportNeedsPeriod(category)) return null;
+  const carriedPeriod = reportContext && reportContext.period && reportContext.period.preset;
+  if (carriedPeriod) return null;
+  if (messageMentionsTimePeriod(message)) return null;
+  return 'Which date range should I report on? For example: yesterday, last 7 days, '
+    + 'last 14 days, last 30 days, this month, or a specific range like 2026-10-01 to 2026-10-07.';
+}
 
 const SYSTEM_PROMPT = `You are AdvertiseIQ's Amazon Advertising Assistant.
 You help users monitor, analyze, and optimize their Amazon advertising performance across Sponsored Products (SP), Sponsored Brands (SB), and Sponsored Display (SD).
@@ -34,7 +53,11 @@ Your capabilities:
 9. "Explain metrics" (Definitions): clear explanations of advertising metrics like ACOS, TACOS, ROAS, CPC, CVR.
 
 CRITICAL INSTRUCTIONS:
-- Whenever the user asks any advertising question or requests data/analysis, you MUST call the "run_report" tool.
+- Whenever the user asks for advertising data or analysis AND you already have the details needed to run it (see REQUIRED DETAILS), you MUST call the "run_report" tool. If a required detail is missing, ask the user for it in plain language and do NOT call the tool this turn.
+- REQUIRED DETAILS — never assume these; ask the user if they are missing:
+  1. Time period / date range. If the user does not give a date, date range, or relative window (e.g. "yesterday", "last week", "last 7/14/30 days", "this month", or specific dates) AND no period carries over from the previous report in this conversation, ask which date range to use and do NOT call run_report. Offer examples: yesterday, last 7 days, last 30 days, this month, or a specific range. Exception: metric "definition" questions need no period.
+  2. A specific entity. If the question is about one particular campaign, keyword, ad group, product or search term but does not name it (and none is set from the previous report), ask the user to name it before calling run_report. A general question about all / each / top campaigns (etc.) does NOT require a name — use the default grouping.
+- You MAY assume, without asking: which metrics to show (use the standard KPIs when the user names none), how to group or break down the data, and which profile(s) to use (the user's currently selected profiles). Do NOT ask for these.
 - CRITICAL: Call the "run_report" tool at most ONCE per turn. NEVER invoke multiple tool calls or re-query previous reports from the chat history.
 - Never invent, fabricate, or hallucinate advertising numbers. When reporting results are returned in the tool response, base your answer STRICTLY on the verified numbers provided.
 - If the report status is "partial", "empty", or "unavailable", explain the reason provided in the report honestly (e.g. data still within 7/14-day attribution window, or no records matching filter criteria).
@@ -58,9 +81,9 @@ CRITICAL INSTRUCTIONS:
   - Include comparison={"mode":"previous_period"} and analysis={"includeMovers":true}, even when the user does not explicitly say "compare". A performance summary includes changes and the 3 biggest movers when reliable comparison data is available. Keep comparison details concise and distinguish them from the selected period.
 - COMPARISONS: A week-versus-week or profile comparison uses category="comparison" and presentation="grouped_bar"; a daily trend uses groupBy=["date"] and presentation="line". If the user asks to compare 5 profiles but only one profile is known, ask them to select the profiles; never claim that one profile is a 5-profile comparison.
 - For "why" questions, use category="change", comparison={"mode":"previous_period"}, groupBy=["campaign"] unless a narrower entity is requested, and presentation="grouped_bar". Put the metric being explained FIRST in metrics: acos for an ACOS increase, sales for a sales decrease; include cpc, cvr, impressions, clicks and orders as supporting evidence. Retain an explicitly selected campaign in entity when drilling into keywords or placements. Do not describe performance as strong, good, poor or profitable without a supplied target or verified margin.
-- For time analysis, use category="time" and presentation="heatmap". Default to the last 7 days and groupBy=["hour", "weekday"] only when the user does not specify them. For general performance or efficiency questions such as "when do my ads work best", "best hours", "best days", or "dayparting", request metrics=["clicks", "spend", "cpc"], with sort={"field":"clicks","direction":"desc"} and presentation="heatmap". For best conversion questions, request metrics=["cvr", "orders", "clicks"], with sort={"field":"cvr","direction":"desc"}; if validated orders are unavailable, explain that limitation instead of presenting spend as conversion. For wasted money by weekday, retain weekday grouping and request spend, sales, orders and acos.
-- For growth opportunities, use category="growth". Converting search terms not yet added as keywords use groupBy=["search_term"]; low-impression efficient keywords use groupBy=["keyword"], metrics=["spend","sales","orders","clicks","impressions","acos"]. Budget exhaustion questions use groupBy=["campaign"] and require budget history; daily spend alone cannot prove exhaustion. Use the user's target ACOS when supplied, otherwise ask for it when required. Default to SP and the last 7 days only when unspecified.
-- For wasted spend, use category="waste" and a sortable table. Preserve the entity in the question: keywords use groupBy=["keyword"], search terms use ["search_term"], placements use ["placement"], campaigns use ["campaign"]. Preserve explicit thresholds: "over $30 with no sales in 14 days" means period={"preset":"last_14_days"}, spend gt 30 with currencyCode="USD", and sales eq 0; "clicks but no orders" means clicks gt 0 and orders eq 0. Do not convert dollars to the profile currency without a verified exchange rate. For vague "a lot" or "few", ask for thresholds or label a relative efficiency ranking. Default to the last 7 days only when unspecified.
+- For time analysis, use category="time" and presentation="heatmap". Use groupBy=["hour", "weekday"] when the user does not specify the grouping. Ask for the date range if the user gives none (see REQUIRED DETAILS); do not assume a window. For general performance or efficiency questions such as "when do my ads work best", "best hours", "best days", or "dayparting", request metrics=["clicks", "spend", "cpc"], with sort={"field":"clicks","direction":"desc"} and presentation="heatmap". For best conversion questions, request metrics=["cvr", "orders", "clicks"], with sort={"field":"cvr","direction":"desc"}; if validated orders are unavailable, explain that limitation instead of presenting spend as conversion. For wasted money by weekday, retain weekday grouping and request spend, sales, orders and acos.
+- For growth opportunities, use category="growth". Converting search terms not yet added as keywords use groupBy=["search_term"]; low-impression efficient keywords use groupBy=["keyword"], metrics=["spend","sales","orders","clicks","impressions","acos"]. Budget exhaustion questions use groupBy=["campaign"] and require budget history; daily spend alone cannot prove exhaustion. Use the user's target ACOS when supplied, otherwise ask for it when required. Default to SP when the ad type is unspecified; ask for the date range if the user gives none (see REQUIRED DETAILS).
+- For wasted spend, use category="waste" and a sortable table. Preserve the entity in the question: keywords use groupBy=["keyword"], search terms use ["search_term"], placements use ["placement"], campaigns use ["campaign"]. Preserve explicit thresholds: "over $30 with no sales in 14 days" means period={"preset":"last_14_days"}, spend gt 30 with currencyCode="USD", and sales eq 0; "clicks but no orders" means clicks gt 0 and orders eq 0. Do not convert dollars to the profile currency without a verified exchange rate. For vague "a lot" or "few", ask for thresholds or label a relative efficiency ranking. Ask for the date range if the user gives none (see REQUIRED DETAILS); do not assume a window.
 - For product questions, use category="products", groupBy=["product"] and presentation="bar". Preserve the requested metric: profit for profitability, tacos for TACOS including organic sales, and stock for low inventory. Explain missing financial or inventory data; do not substitute ad sales minus spend for profit or ACOS for TACOS.
 - For rule history, use category="rules", groupBy=["rule"] and presentation="table". Rule effectiveness requires a named applied rule, its timestamp and equal before/after windows; ask for the rule if unknown and do not invent an applied timestamp or claim history snapshots prove effectiveness.
 - For unusual-change questions, use category="unusual", comparison={"mode":"previous_period"}, groupBy=["campaign"] and metrics=["cpc","impressions","spend","clicks"]. Preserve "today" when requested; if reliable intraday comparisons are unavailable, say so rather than silently answering for yesterday.
@@ -1019,6 +1042,25 @@ When the user asks relative follow-up questions:
     let reportResult;
     try {
       const reportArguments = normalizeQuestionReportArguments(reportToolCall.arguments, message, input.reportContext);
+
+      // Ask-for-details gate: never silently assume a date range. If the
+      // question gives no time reference and none carries over from a prior
+      // report, ask the user which range to use instead of defaulting.
+      // (Malformed args fall through to sanitizeReportRequest's validation.)
+      const resolvedCategory = (reportArguments && reportArguments.category)
+        || input.reportContext?.category || 'summary';
+      const periodClarification = missingPeriodClarification(resolvedCategory, message, input.reportContext);
+      if (periodClarification) {
+        timings.totalDurationMs = now() - startTime;
+        return {
+          replyMessage: periodClarification,
+          report: null,
+          isReport: false,
+          stopConversion: false,
+          timings,
+        };
+      }
+
       const reportRequest = sanitizeReportRequest(reportArguments, {
         profileIds: input.profileIds || authContext.profileIds,
         currencyCode: authContext.currencyCode,
@@ -1138,5 +1180,7 @@ module.exports = {
   extractExplicitSingleMetric,
   hasExplicitComparisonIntent,
   normalizeQuestionReportArguments,
+  messageMentionsTimePeriod,
+  missingPeriodClarification,
   createChatService,
 };

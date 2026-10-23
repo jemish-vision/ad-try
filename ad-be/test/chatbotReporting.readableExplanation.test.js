@@ -64,7 +64,7 @@ test('partial reports bypass AI explanation even if another row contains the hal
     } },
     reportService: async () => report(),
   });
-  const result = await service({ message: 'Keywords with great ACOS but low impressions, target ACOS 20%', profileIds: ['12345678901234'] });
+  const result = await service({ message: 'Keywords with great ACOS but low impressions, target ACOS 20%', profileIds: ['12345678901234'], reportContext: { period: { preset: 'last_7_days' } } });
   assert.equal(turns, 1);
   assert.match(result.replyMessage, /shirt for man[^\n]*ACOS: 0\.46%/);
 });

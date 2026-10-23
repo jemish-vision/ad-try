@@ -177,6 +177,50 @@ function normalizeQuestionReportArguments(args, message, reportContext) {
   return normalizeKeywordGrowthQuestion(products, message, reportContext);
 }
 
+// Broad "does the user name any time period at all?" detector. Unlike
+// explicitQuestionPeriod (which maps to a fixed set of presets and ignores
+// custom dates), this answers a yes/no question: did the user give the
+// assistant a date, range, or relative window to report on? It is used to
+// decide whether to ask the user for a date instead of assuming one.
+function messageMentionsTimePeriod(message = '') {
+  const text = typeof message === 'string' ? message : '';
+  if (!text.trim()) return false;
+
+  // A rule's start date is event metadata, not a reporting range.
+  if (/\brule\b.*\b(?:started|began|enabled|activated)\b/i.test(text)) return false;
+
+  const patterns = [
+    // relative day/range words
+    /\b(?:today|yesterday|tonight)\b/i,
+    /\bthis\s+(?:week|month|year|quarter|morning|afternoon|evening)\b/i,
+    /\blast\s+(?:week|month|year|quarter|night)\b/i,
+    /\b(?:last|past|previous|prior|trailing|in|over)\s+(?:the\s+)?\d+\s*(?:day|week|month|year|quarter)s?\b/i,
+    /\b\d+\s*(?:day|week|month|year)s?\s+(?:ago|back)\b/i,
+    // to-date / open ranges
+    /\b(?:ytd|mtd|wtd)\b/i,
+    /\b(?:year|month|week)\s*[- ]?to[- ]?date\b/i,
+    /\bso\s+far\b/i,
+    /\bto\s+date\b/i,
+    /\bsince\s+\S+/i,
+    /\bbetween\s+.+\s+and\s+.+/i,
+    /\bfrom\s+.+\s+to\s+.+/i,
+    // explicit calendar dates (YYYY-MM-DD, DD-MM-YYYY, D/M/YY, etc.)
+    /\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b/,
+    /\b\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\b/,
+    // quarters and bare years
+    /\bq[1-4]\b/i,
+    /\b20\d{2}\b/,
+    // weekday names (full)
+    /\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
+    // month names (full), abbreviations with a day/year, and "may" only near a number
+    /\b(?:january|february|march|april|june|july|august|september|october|november|december)\b/i,
+    /\b(?:jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\.?\s*\d/i,
+    /\b\d{1,2}\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\b/i,
+    /\bmay\s+\d/i,
+  ];
+  return patterns.some(pattern => pattern.test(text));
+}
+
 function explicitQuestionPeriod(message) {
   // Only recognize clear reporting ranges. Dates describing a rule's start
   // are event metadata, not a request to change the report period.
@@ -206,6 +250,7 @@ module.exports = {
   extractExplicitSingleMetric,
   hasExplicitComparisonIntent,
   explicitQuestionPeriod,
+  messageMentionsTimePeriod,
   normalizeQuestionReportArguments,
   requestedTargetAcos,
   isEfficientKeywordQuestion,

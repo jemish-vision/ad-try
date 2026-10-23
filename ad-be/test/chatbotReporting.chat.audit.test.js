@@ -197,7 +197,7 @@ test('malformed report tool calls return controlled validation errors', async ()
     aiProvider: { requestTurn: async () => ({ toolCalls: [{ name: 'run_report', id: 'id', arguments: null }] }) },
     reportService: async () => assert.fail('Malformed tool arguments must be rejected before reading'),
   });
-  const result = await service({ message: 'Show spend', profileIds: ['123'] });
+  const result = await service({ message: 'Show spend yesterday', profileIds: ['123'] });
   assert.equal(result.error.statusCode, 400);
   assert.equal(result.error.code, 'INVALID_REPORT_REQUEST');
 });

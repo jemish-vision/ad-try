@@ -47,12 +47,12 @@ import useConversationHistory from "./useConversationHistory";
 import { createChatSessionId, mergeChatSessions } from "./chatSessionHistory";
 
 const PROMPT_SUGGESTIONS = [
-  { label: "Give me yesterday ACOS", desc: "Single KPI card & yesterday totals" },
+  { label: "Give me yesterday's ACOS", desc: "Single KPI card & yesterday totals" },
   { label: "How did yesterday go?", desc: "Full performance summary across all KPIs" },
   { label: "Why did ACOS increase yesterday?", desc: "Root-cause mover analysis by campaign" },
-  { label: "When do my ads work best?", desc: "24x7 dayparting performance heatmap" },
-  { label: "Where am I wasting ad spend?", desc: "Identify non-converting search terms & keywords" },
-  { label: "Find growth search terms", desc: "Harvest converting customer search queries" }
+  { label: "When do my ads work best in the last 7 days?", desc: "24x7 dayparting heatmap · last 7 days" },
+  { label: "Where am I wasting ad spend in the last 14 days?", desc: "Non-converting search terms & keywords · last 14 days" },
+  { label: "Find growth search terms from the last 30 days", desc: "Converting customer search queries · last 30 days" }
 ];
 
 export default function AiAssistantPage() {

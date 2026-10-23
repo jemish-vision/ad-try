@@ -280,6 +280,7 @@ test('executeChatTurn supports OpenAI provider switching via options', async () 
     message: 'Why did my ACOS go up?',
     profileIds: ['1001'],
     options: { provider: 'openai' },
+    reportContext: { period: { preset: 'last_7_days' } },
   }, {
     userId: 'user_123',
     configId: 'config_456',
@@ -333,6 +334,7 @@ test('executeChatTurn supports Gemini provider switching via options', async () 
     message: 'Where am I wasting money on keywords?',
     profileIds: ['1001'],
     options: { provider: 'gemini' },
+    reportContext: { period: { preset: 'last_7_days' } },
   }, {
     userId: 'user_123',
     configId: 'config_456',

@@ -153,7 +153,8 @@ test('exact campaign waste request reaches reports even when AI supplies malform
     } }] }) },
     reportService: async request => { received = request; return { category: 'waste', status: 'unavailable' }; },
   });
-  const result = await service({ message: 'Campaigns spending a lot but getting few sales', profileIds: ['123'] });
+  const result = await service({ message: 'Campaigns spending a lot but getting few sales', profileIds: ['123'],
+    reportContext: { period: { preset: 'last_14_days' } } });
   assert.equal(result.isReport, true);
   assert.deepEqual(received.groupBy, ['campaign']);
   assert.deepEqual(received.filters, []);
