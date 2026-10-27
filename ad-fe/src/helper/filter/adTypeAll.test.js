@@ -33,6 +33,12 @@ describe("adTypeAll guard", () => {
     expect(getEffectiveAdType("/campaigns", "All")).toBe("All");
     expect(getEffectiveAdType("/targeting", "All")).toBe("All");
     expect(getEffectiveAdType("/recommandation", "All")).toBe("All");
+    expect(getEffectiveAdType("/", "All")).toBe("All");
+    expect(getEffectiveAdType("/dashboard", "All")).toBe("All");
+    expect(getEffectiveAdType("/dayparting-stretegy", "All")).toBe("All");
+    expect(getEffectiveAdType("/hourly-performance-tracking", "All")).toBe("All");
+    // rule-history sub-routes are not list routes
+    expect(getEffectiveAdType("/dayparting-stretegy/rule-history", "All")).toBe("SP");
     // the targeting-history drilldown and campaign-scoped targeting are not All-ready
     expect(getEffectiveAdType("/targeting/history/abc", "All")).toBe("SP");
     expect(getEffectiveAdType("/targeting/123", "All")).toBe("SP");

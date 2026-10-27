@@ -3,6 +3,8 @@ import React, { useContext, useState, useEffect, useRef, useCallback } from "rea
 import ReactDOM from "react-dom";
 import Filter from "../../../helper/filter/Filter";
 import { ProfileContext } from "../../../helper/usecontext/useContext";
+import { AdTypeScopeNote } from "../../../helper/filter/AdTypeScopeNote";
+import { isShowingAllAdTypes } from "../../../helper/filter/adTypeAll";
 import moment from "moment-timezone";
 import { PermissionCheck } from "../../../helper/permission/PermissionCheck";
 import { useTranslation } from "react-i18next";
@@ -703,7 +705,11 @@ const DaypartingInsights = ({ hourlyData, isDark = false }) => {
 
 // ─── Inline Hourly Tracking Section ──────────────────────────────────────────
 const HourlyTrackingSection = ({ profileId }) => {
-  const { currencyCode, selectedDate, setSelectedDate } = useContext(ProfileContext);
+  const { currencyCode, selectedDate, setSelectedDate, selectedAdType } = useContext(ProfileContext);
+  const showAllTypes = isShowingAllAdTypes(
+    typeof window !== "undefined" ? window.location.pathname : "",
+    selectedAdType
+  );
 
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 1440);
   const [isDark, setIsDark] = useState(document.documentElement.getAttribute("data-theme") === "dark");
@@ -872,6 +878,11 @@ const HourlyTrackingSection = ({ profileId }) => {
 
   return (
     <div style={{ marginTop: 20 }}>
+      {showAllTypes && (
+        <div style={{ marginBottom: 12 }}>
+          <AdTypeScopeNote selectedAdType={selectedAdType} />
+        </div>
+      )}
       {/* ── Section Header ─────────────────────────────────────────────────── */}
       <div style={{
         display: "flex",
