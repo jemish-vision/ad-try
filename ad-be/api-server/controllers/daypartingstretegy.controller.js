@@ -123,41 +123,71 @@ exports.getAllDayparting = async (req, res) => {
       matchStage.name = { $regex: new RegExp(RegExp.escape(`${searchName}`?.trim()), "i") };
     }
 
+    // Dayparting rules are stored in ONE shared collection, with campaigns keyed
+    // by ad type (campaignIds.{SP,SB,SD}). The campaign-name join is the only
+    // ad-type-specific part. Under "All" (AD_TYPE_COLLECTIONS has no "All" key)
+    // resolve names across all three campaign collections and combine, instead
+    // of the single per-type lookup.
+    const isAll = adType === "All";
+    const unionTypes = ["SP", "SB", "SD"];
+
+    const campaignLookup = (type, as) => ({
+      $lookup: {
+        from: AD_TYPE_COLLECTIONS?.[type]?.["campaign"],
+        let: { campaignIds: { $ifNull: [`$campaignIds.${type}`, []] }, profileId: "$profileId" },
+        pipeline: [
+          { $match: { $expr: { $and: [{ $in: ["$campaignId", "$$campaignIds"] }, { $eq: ["$profileId", "$$profileId"] }] } } },
+          { $sort: { updatedAt: -1 } },
+          {
+            $group: {
+              _id: "$campaignId",
+              campaignId: { $first: "$campaignId" },
+              name: { $first: "$name" },
+              status: { $first: "$status" },
+            },
+          },
+          { $project: { _id: 0, campaignId: 1, name: 1, status: 1, ...(isAll && { adType: { $literal: type } }) } },
+        ],
+        as,
+      },
+    });
+
+    let lookupStages;
+    let usedIdsField;
+    if (isAll) {
+      lookupStages = [
+        ...unionTypes.map((type) => campaignLookup(type, `campaignDetails_${type}`)),
+        {
+          $addFields: {
+            campaignDetails: { $concatArrays: unionTypes.map((t) => ({ $ifNull: [`$campaignDetails_${t}`, []] })) },
+            allCampaignIds: { $concatArrays: unionTypes.map((t) => ({ $ifNull: [`$campaignIds.${t}`, []] })) },
+          },
+        },
+        { $project: unionTypes.reduce((acc, t) => ({ ...acc, [`campaignDetails_${t}`]: 0 }), {}) },
+      ];
+      usedIdsField = "$allCampaignIds";
+    } else {
+      lookupStages = [campaignLookup(adType, "campaignDetails")];
+      usedIdsField = `$campaignIds.${adType}`;
+    }
+
     const pipeline = [
       { $match: matchStage },
       { $sort: { createdAt: -1 } },
-      {
-        $lookup: {
-          from: AD_TYPE_COLLECTIONS?.[adType]?.["campaign"],
-          let: { campaignIds: `$campaignIds.${adType}`, profileId: "$profileId" },
-          pipeline: [
-            { $match: { $expr: { $and: [{ $in: ["$campaignId", "$$campaignIds"] }, { $eq: ["$profileId", "$$profileId"] }] } } },
-            { $sort: { updatedAt: -1 } },
-            {
-              $group: {
-                _id: "$campaignId",
-                campaignId: { $first: "$campaignId" },
-                name: { $first: "$name" },
-                status: { $first: "$status" },
-              },
-            },
-            { $project: { _id: 0, campaignId: 1, name: 1, status: 1 } },
-          ],
-          as: "campaignDetails",
-        },
-      },
+      ...lookupStages,
       {
         $facet: {
           data: [
             { $skip: skip },
             { $limit: limit },
+            ...(isAll ? [{ $project: { allCampaignIds: 0 } }] : []),
           ],
           totalCount: [
             { $count: "count" },
           ],
           usedCampaignIds: [
-            { $unwind: `$campaignIds.${adType}` },
-            { $group: { _id: null, campaignIds: { $addToSet: `$campaignIds.${adType}` } } },
+            { $unwind: usedIdsField },
+            { $group: { _id: null, campaignIds: { $addToSet: usedIdsField } } },
           ],
         },
       },
