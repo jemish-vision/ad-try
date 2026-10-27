@@ -7499,6 +7499,16 @@ exports.hourlyCampaignTracking = async (req, res) => {
       });
     }
 
+    // Indexed (profileId + purchaseDate) range for the orders lookup below. The
+    // lookup already filters precisely by timezone-local date/time via $expr
+    // (which can't use an index); adding this direct range lets Mongo narrow to
+    // the window with an index first instead of scanning every order. Buffered
+    // by a day each side so timezone conversion can never exclude a valid order
+    // — the precise $expr still does the exact per-slot matching.
+    const ordersTz = profile?.timezone || "UTC";
+    const ordersRangeStart = moment.tz(startDate, "YYYY-MM-DD", ordersTz).subtract(1, "day").startOf("day").toDate();
+    const ordersRangeEnd = moment.tz(endDate, "YYYY-MM-DD", ordersTz).add(1, "day").endOf("day").toDate();
+
     const pipeline = [
       {
         $match: {
@@ -7638,9 +7648,12 @@ exports.hourlyCampaignTracking = async (req, res) => {
           pipeline: [
             {
               $match: {
+                // Indexed pre-filter (served by { profileId, purchaseDate }); the
+                // $expr below still does the exact timezone-aware slot matching.
+                profileId: Number(profileId),
+                purchaseDate: { $gte: ordersRangeStart, $lte: ordersRangeEnd },
                 $expr: {
                   $and: [
-                    { $eq: ["$profileId", "$$profileId"] },
                     { $ne: ["$orderStatus", "Cancelled"] },
                     {
                       $eq: [
@@ -7844,7 +7857,7 @@ exports.hourlyCampaignTracking = async (req, res) => {
     ];
 
     const hourlyData =
-      await keywordsHourlyPerformanceSchema.aggregate(pipeline);
+      await keywordsHourlyPerformanceSchema.aggregate(pipeline).allowDiskUse(true);
 
     return res.status(200).json({
       isSuccess: true,

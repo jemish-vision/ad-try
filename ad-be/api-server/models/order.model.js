@@ -73,4 +73,8 @@ orderSchema.index({configId:1,profileId:1,marketplaceId:1,amazonOrderId:1});
 // Optimized Index for getSPProduct Aggregation Pipeline Lookups
 orderSchema.index({ sellerSKU: 1, orderStatus: 1 });
 
+// Supports date-ranged order lookups (e.g. hourly performance tracking), so the
+// purchaseDate range can be served by an index instead of a collection scan.
+orderSchema.index({ profileId: 1, purchaseDate: 1 });
+
 module.exports = new mongoose.model("order", orderSchema);
