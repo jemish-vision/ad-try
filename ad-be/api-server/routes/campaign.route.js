@@ -43,8 +43,24 @@ const {
 } = require("../controllers/adGroups.controller");
 const { verifyToken } = require("../middleware/user.auth");
 const { AdTypeModels } = require("../middleware/adTypeModel.middleware");
+const { withAllAdTypes } = require("../helper/allAdTypeHandler");
 const { campaignAssetsUpload } = require("../helper/campaignAssetsUpload");
 const { verifyCronAuth } = require("../middleware/cron.auth");
+
+// Change history spans all three ad types (legacy untyped records count as SP),
+// so "All" merges SP + SB + SD. Each type runs its own query so the per-type
+// campaign/adGroup/targeting lookups resolve against the right collections.
+const allHistory = withAllAdTypes(getHistory, {
+  dataKey: "data",
+  totalKey: "totalRecords",
+  totalRowKey: null,
+  excludeSD: false,
+  sortField: (body) => (body && body.fieldName) || "createdAt",
+  sortDir: (body) => (body && (body.sortType === "ASC" || body.sortType === 1)) ? "asc" : "desc",
+  pageNoKey: "currentPageNo",
+  perPageKey: null,
+  totalPagesKey: "totalPages",
+});
 
 router.post("/getAdGroupsByCampaign/:id", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, getAdGroupsByCampaign);
 router.post("/getProductAdsByAdGroup/:id", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, getProductAdsByAdGroup);
@@ -73,7 +89,7 @@ router.post("/addCampaigns", verifyToken, validateRoutePermission(SYSTEM_PAGES.C
 
 router.post("/getPlacement", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY, [{ pageName: SYSTEM_PAGES.PLACEMENT, actionType: PAGE_ACTIONS.VIEW_ONLY }]), getPlacement);
 
-router.post("/getHistory", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY, [{ pageName: SYSTEM_PAGES.HISTORY, actionType: PAGE_ACTIONS.VIEW_ONLY }]), AdTypeModels, getHistory);
+router.post("/getHistory", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY, [{ pageName: SYSTEM_PAGES.HISTORY, actionType: PAGE_ACTIONS.VIEW_ONLY }]), AdTypeModels, allHistory);
 router.post("/getLatestCampaignHistory", verifyToken, getLatestCampaignHistory);
 router.post("/getCampaignChartData", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, getCampaignChartData);
 

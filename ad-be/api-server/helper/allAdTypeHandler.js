@@ -85,14 +85,21 @@ function buildSubRequest(req, adType, fetchLimit) {
   return subReq;
 }
 
+// Resolve a possibly dotted field path (e.g. "campaignDetails.name") on a row.
+function getPath(obj, path) {
+  if (obj == null) return undefined;
+  if (path.indexOf(".") === -1) return obj[path];
+  return path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), obj);
+}
+
 function compareRows(field, dir) {
   const factor = dir === "asc" ? 1 : -1;
   // Dates are captured as Date objects (the handler's res.send runs before JSON
   // serialization), so normalise them to timestamps for a correct order.
   const norm = (v) => (v instanceof Date ? v.getTime() : v);
   return (a, b) => {
-    const av = a == null ? null : norm(a[field]);
-    const bv = b == null ? null : norm(b[field]);
+    const av = a == null ? null : norm(getPath(a, field));
+    const bv = b == null ? null : norm(getPath(b, field));
     // nulls always sort last, regardless of direction
     if (av == null && bv == null) return 0;
     if (av == null) return 1;

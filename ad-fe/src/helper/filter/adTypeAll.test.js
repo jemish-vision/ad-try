@@ -30,6 +30,9 @@ describe("adTypeAll guard", () => {
     expect(getEffectiveAdType("/search-term/", "All")).toBe("All");
     expect(getEffectiveAdType("/placement", "All")).toBe("All");
     expect(getEffectiveAdType("/products", "All")).toBe("All");
+    expect(getEffectiveAdType("/history", "All")).toBe("All");
+    // the targeting-history drilldown is not All-ready
+    expect(getEffectiveAdType("/targeting/history/abc", "All")).toBe("SP");
   });
 
   test("isAllSupportedRoute honors the allowlist (and trailing slashes)", () => {

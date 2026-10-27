@@ -9,6 +9,8 @@ import { handleLoader, Toast, useDispatch } from "../../../helper/links/Link";
 import { ShadcnDateRangePicker as DateRangePicker } from "../../../components/ui/date-range-picker";
 import { predefinedRanges } from "../../../common/helper/calendarValues/calendarValues";
 import { ApiHistory } from "../../../api-wrapper/campaign/ApiCampaign";
+import { AdTypeScopeNote, AdTypeBadge } from "../../../helper/filter/AdTypeScopeNote";
+import { isShowingAllAdTypes } from "../../../helper/filter/adTypeAll";
 import { PermissionCheck } from "../../../helper/permission/PermissionCheck";
 import { useTranslation } from "react-i18next";
 import { useParams, useNavigate } from "react-router-dom";
@@ -385,6 +387,12 @@ function History(props) {
   const navigate = useNavigate();
 
   const { profileId, selectedAdType, selectedDate, setSelectedDate } = useContext(ProfileContext);
+  // Combined view active on the /history screen? (Change history spans all
+  // three ad types; the targeting-history drilldown route is not All-ready.)
+  const showAllTypes = isShowingAllAdTypes(
+    typeof window !== "undefined" ? window.location.pathname : "",
+    selectedAdType
+  );
 
   const [perPage, setPerPage] = useState(firstPageRows);
   const [arg, setArg] = useState({ pageNo: 1, perPage: firstPageRows });
@@ -466,6 +474,23 @@ function History(props) {
   }, [types, sources, debouncedTargetingSearch]);
 
   const columns = useMemo(() => [
+    ...(showAllTypes ? [{
+      headerName: t("Type"),
+      field: "adType",
+      colId: "adType",
+      title: "Type",
+      maxWidth: 90,
+      sortable: true,
+      resizable: true,
+      exportFormatter: (val) => String(val || "SP").toUpperCase(),
+      cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      cellRenderer: (params) => {
+        const row = params.data;
+        if (!row) return null;
+        // Legacy untyped records are Sponsored Products by convention.
+        return <AdTypeBadge type={params.value || row?.type || "SP"} />;
+      },
+    }] : []),
     {
       headerName: t("Change level", "Change level"),
       field: "campaignDetails.name",
@@ -790,7 +815,7 @@ function History(props) {
         );
       },
     },
-  ], [isDark, t]);
+  ], [isDark, t, showAllTypes]);
 
   useEffect(() => {
     HistoryList(arg);
@@ -926,6 +951,12 @@ function History(props) {
                 ]}
                 onBack={() => navigate("/targeting")}
               />
+            </div>
+          )}
+
+          {showAllTypes && (
+            <div style={{ padding: "0 0 10px 0" }}>
+              <AdTypeScopeNote selectedAdType={selectedAdType} excludedAdTypes={historyData?.excludedAdTypes} />
             </div>
           )}
 
