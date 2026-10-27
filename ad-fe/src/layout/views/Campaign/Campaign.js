@@ -2331,7 +2331,17 @@ function Campaign() {
                       id="campaign-add"
                       className="customize-button clicked m-0 gap-0 btn-campaign-primary"
                       style={{ flexGrow: isMobile ? 1 : 0, whiteSpace: "nowrap" }}
-                      onClick={() => navigate("/add-campagin")}
+                      title={showAllTypes ? t("Select a single ad type (SP, SB or SD) to create a campaign") : undefined}
+                      onClick={() => {
+                        // Campaign creation is ad-type-specific. Under the combined
+                        // "All" view there is no single target type, so require the
+                        // user to pick one first instead of defaulting silently.
+                        if (showAllTypes) {
+                          Toast.error(t("Select a single ad type (SP, SB or SD) to create a campaign"));
+                          return;
+                        }
+                        navigate("/add-campagin");
+                      }}
                     >
                       <AddIcon style={{ fontSize: 16, marginRight: 4 }} />
                       {t("addCampaign")}
