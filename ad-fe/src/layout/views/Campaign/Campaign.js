@@ -433,6 +433,7 @@ function Campaign() {
 
   const gridRef = useRef(null);
   const lastFetchParamsRef = useRef("");
+  const fetchIdRef = useRef(0);
   const placementPromiseRef = useRef(null);
   const lastPlacementProfileRef = useRef(null);
   const lastFilterProfileRef = useRef(null);
@@ -1504,6 +1505,7 @@ function Campaign() {
       }
 
       lastFetchParamsRef.current = requestSignature;
+      const currentFetchId = ++fetchIdRef.current;
       setLoading(true);
       setChartLoading(true);
       const apiOptions = isReload ? { skipLoader: true } : {};
@@ -1573,6 +1575,8 @@ function Campaign() {
 
       Promise.all([campaignPromise, placementPromise])
         .then(([e, currentPlacementData]) => {
+          // Discard a stale response if a newer request (ad-type / filter change) started.
+          if (currentFetchId !== fetchIdRef.current) return;
           if (e?.isSuccess) {
             const processedData = placementFieldCalculation({ data: e?.getCampaign, placementData: currentPlacementData, bestArr });
 
@@ -1608,15 +1612,17 @@ function Campaign() {
           }
         })
         .catch((e) => {
+          if (currentFetchId !== fetchIdRef.current) return;
           lastFetchParamsRef.current = "";
           Toast.error(t("Something went wrong"));
         })
         .finally(() => {
-          setLoading(false);
+          if (currentFetchId === fetchIdRef.current) setLoading(false);
         });
 
       chartPromise
         .then((e) => {
+          if (currentFetchId !== fetchIdRef.current) return;
           if (e?.isSuccess) {
             setChartData(e?.data);
           } else {
@@ -1624,10 +1630,11 @@ function Campaign() {
           }
         })
         .catch((e) => {
+          if (currentFetchId !== fetchIdRef.current) return;
           Toast.error(t("Something went wrong"));
         })
         .finally(() => {
-          setChartLoading(false);
+          if (currentFetchId === fetchIdRef.current) setChartLoading(false);
         });
     }
   };

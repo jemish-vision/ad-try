@@ -133,6 +133,7 @@ function Targeting() {
   const lastAutoSearchProfileRef = useRef(null);
   const autoSearchPromiseRef = useRef(null);
   const lastFetchParamsRef = useRef("");
+  const fetchIdRef = useRef(0);
 
   const [isExactSearchMatch, setIsExactSearchMatch] = useState(false);
   const [filter, setFilter] = useState([]);
@@ -1031,6 +1032,7 @@ function Targeting() {
       }
 
       lastFetchParamsRef.current = requestSignature;
+      const currentFetchId = ++fetchIdRef.current;
       setIsTableLoading(true);
       if (!isReload) setChartLoading(true);
       const apiOptions = { skipLoader: true };
@@ -1072,6 +1074,8 @@ function Targeting() {
 
       try {
         const e = await ApiTargetingListing(data, apiOptions);
+        // Discard a stale response if a newer request (ad-type / filter change) started.
+        if (currentFetchId !== fetchIdRef.current) return;
         if (e?.isSuccess) {
           const getTotalsRow = () => {
             const totalRow = e?.totalRow ?? {};
@@ -1100,21 +1104,24 @@ function Targeting() {
           Toast.error(e?.message);
         }
       } catch (e) {
+        if (currentFetchId !== fetchIdRef.current) return;
         lastFetchParamsRef.current = "";
         Toast.error(t("Something went wrong"));
       } finally {
-        setIsTableLoading(false);
+        if (currentFetchId === fetchIdRef.current) setIsTableLoading(false);
       }
 
       if (!isReload) {
         try {
           const e = await ApiTargetingChartListing(data);
+          if (currentFetchId !== fetchIdRef.current) return;
           if (e?.isSuccess) setChartData(e?.data);
           else Toast.error(e?.message);
         } catch (e) {
+          if (currentFetchId !== fetchIdRef.current) return;
           Toast.error(t("Something went wrong"));
         } finally {
-          setChartLoading(false);
+          if (currentFetchId === fetchIdRef.current) setChartLoading(false);
         }
       }
     }

@@ -471,6 +471,7 @@ function Product() {
 
   const [loading, setLoading] = useState(true);
   const lastFetchParamsRef = useRef("");
+  const fetchIdRef = useRef(0);
 
   const ApiListing = (argOverride = {}) => {
     if (profileId?.value && selectedAdType && date.length !== 0) {
@@ -493,16 +494,21 @@ function Product() {
         ...argOverride,
       };
 
-      const requestSignature = JSON.stringify(data);
+      // adType travels as a header, not in the body — include it in the dedup
+      // signature so switching SP/SB/SD/All isn't mistaken for a duplicate.
+      const requestSignature = JSON.stringify({ ...data, adType: selectedAdType });
       if (!isReload && lastFetchParamsRef.current === requestSignature) {
         return;
       }
 
       lastFetchParamsRef.current = requestSignature;
+      const currentFetchId = ++fetchIdRef.current;
       setLoading(true);
 
       ApiProductListing(data)
         .then((e) => {
+          // Discard a stale response if a newer request (ad-type / filter change) started.
+          if (currentFetchId !== fetchIdRef.current) return;
           if (e?.isSuccess) {
             setTableData(e?.getProductAds);
             setGroupsData(e);
@@ -512,10 +518,11 @@ function Product() {
           setCustomFilterFlag(false);
         })
         .catch((e) => {
+          if (currentFetchId !== fetchIdRef.current) return;
           Toast.error(t("Something went wrong"));
         })
         .finally(() => {
-          setLoading(false);
+          if (currentFetchId === fetchIdRef.current) setLoading(false);
         });
     }
   };

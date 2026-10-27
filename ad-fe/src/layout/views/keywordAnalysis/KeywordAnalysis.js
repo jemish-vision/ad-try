@@ -284,6 +284,7 @@ const KEYWORD_ANALYSIS_COLUMNS = [
   };
 
   const lastFetchParamsRef = useRef("");
+  const fetchIdRef = useRef(0);
 
   const handleRefresh = () => {
     fetchGrid(gridPage, gridPerPage, sortCol, sortOrder, true);
@@ -302,8 +303,11 @@ const KEYWORD_ANALYSIS_COLUMNS = [
     const fromDateStr = dateRange?.[0] ? moment(dateRange[0]).format("YYYY-MM-DD") : undefined;
     const toDateStr = dateRange?.[1] ? moment(dateRange[1]).format("YYYY-MM-DD") : undefined;
 
+    // adType travels as a header, not in the body — include it in the dedup
+    // signature so switching SP/SB/SD/All isn't mistaken for a duplicate.
     const requestSignature = JSON.stringify({
       profileId: profileId.value,
+      adType: selectedAdType,
       searchTermPageNo: page,
       searchTermPerPage: perPage,
       fromDate: fromDateStr,
@@ -319,6 +323,7 @@ const KEYWORD_ANALYSIS_COLUMNS = [
     }
 
     lastFetchParamsRef.current = requestSignature;
+    const currentFetchId = ++fetchIdRef.current;
     setLoading(true);
     try {
       const payload = {
@@ -337,6 +342,9 @@ const KEYWORD_ANALYSIS_COLUMNS = [
 
       const res = await ApiKeywordAnalysis(payload);
 
+      // Discard a stale response if a newer request (ad-type / filter change) started.
+      if (currentFetchId !== fetchIdRef.current) return;
+
       if (res?.isSuccess) {
         setGridData(res.getKeywordAnalysisData || []);
         setTotalRecords(res.totalKeywordAnalysisData || 0);
@@ -345,7 +353,7 @@ const KEYWORD_ANALYSIS_COLUMNS = [
     } catch (err) {
       console.error("Keyword Analysis Error:", err);
     } finally {
-      setLoading(false);
+      if (currentFetchId === fetchIdRef.current) setLoading(false);
     }
   };
 

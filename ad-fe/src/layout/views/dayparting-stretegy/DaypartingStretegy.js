@@ -795,6 +795,7 @@ const HourlyTrackingSection = ({ profileId }) => {
   };
 
   const lastFetchParamsRef = useRef("");
+  const fetchIdRef = useRef(0);
 
   const fetchHourlyData = async (selectedDateArg) => {
     const d = selectedDateArg || date;
@@ -803,8 +804,12 @@ const HourlyTrackingSection = ({ profileId }) => {
     const startDateStr = moment(d[0]).format("YYYY-MM-DD");
     const endDateStr = moment(d[1]).format("YYYY-MM-DD");
 
+    // The ad type travels as an HTTP header, not in the payload, so it must be
+    // part of the dedup signature — otherwise switching SP/SB/SD/All looks like
+    // an identical request and the fetch short-circuits (UI stuck on loading).
     const requestSignature = JSON.stringify({
       profileId,
+      adType: selectedAdType,
       startDate: startDateStr,
       endDate: endDateStr,
     });
@@ -814,6 +819,7 @@ const HourlyTrackingSection = ({ profileId }) => {
     }
 
     lastFetchParamsRef.current = requestSignature;
+    const currentFetchId = ++fetchIdRef.current;
 
     try {
       setChartLoading(true);
@@ -824,16 +830,20 @@ const HourlyTrackingSection = ({ profileId }) => {
         endDate: endDateStr,
       };
       const response = await ApiHourlyCampaignTracking(payload);
+      // A newer request started (ad-type / date change) — discard this stale
+      // response so a slow earlier call can't overwrite fresh data.
+      if (currentFetchId !== fetchIdRef.current) return;
       if (response?.isSuccess) {
         setHourlyData(response?.result?.hourlyData);
       } else {
         Toast.error(response?.message);
       }
     } catch {
+      if (currentFetchId !== fetchIdRef.current) return;
       lastFetchParamsRef.current = "";
       Toast.error(t("Something went wrong"));
     } finally {
-      setChartLoading(false);
+      if (currentFetchId === fetchIdRef.current) setChartLoading(false);
     }
   };
 
@@ -845,7 +855,8 @@ const HourlyTrackingSection = ({ profileId }) => {
     if (profileId && date?.length) {
       fetchHourlyData(date);
     }
-  }, [profileId, date]);
+    // selectedAdType is included so switching SP/SB/SD/All refetches the hourly data.
+  }, [profileId, date, selectedAdType]);
 
   const handleDateChange = (newDate) => {
     setDate(newDate);
