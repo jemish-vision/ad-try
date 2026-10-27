@@ -29,6 +29,7 @@ describe("adTypeAll guard", () => {
     expect(getEffectiveAdType("/search-term", "All")).toBe("All");
     expect(getEffectiveAdType("/search-term/", "All")).toBe("All");
     expect(getEffectiveAdType("/placement", "All")).toBe("All");
+    expect(getEffectiveAdType("/products", "All")).toBe("All");
   });
 
   test("isAllSupportedRoute honors the allowlist (and trailing slashes)", () => {

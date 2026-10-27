@@ -87,9 +87,12 @@ function buildSubRequest(req, adType, fetchLimit) {
 
 function compareRows(field, dir) {
   const factor = dir === "asc" ? 1 : -1;
+  // Dates are captured as Date objects (the handler's res.send runs before JSON
+  // serialization), so normalise them to timestamps for a correct order.
+  const norm = (v) => (v instanceof Date ? v.getTime() : v);
   return (a, b) => {
-    const av = a == null ? null : a[field];
-    const bv = b == null ? null : b[field];
+    const av = a == null ? null : norm(a[field]);
+    const bv = b == null ? null : norm(b[field]);
     // nulls always sort last, regardless of direction
     if (av == null && bv == null) return 0;
     if (av == null) return 1;

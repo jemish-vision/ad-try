@@ -6,6 +6,8 @@ import AgTable from "../../../common/grid/AgTable";
 import { ShadcnDateRangePicker as DateRangePicker } from "../../../components/ui/date-range-picker";
 import { predefinedRanges } from "../../../common/helper/calendarValues/calendarValues";
 import { ProfileContext } from "../../../helper/usecontext/useContext";
+import { AdTypeScopeNote, AdTypeBadge } from "../../../helper/filter/AdTypeScopeNote";
+import { isShowingAllAdTypes } from "../../../helper/filter/adTypeAll";
 import { ApiProductListing } from "../../../api-wrapper/product/ApiProduct";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../../../components/ui/select";
 
@@ -62,6 +64,11 @@ function Product() {
   const [date, setDate] = useState([]);
   const [editData, setEditData] = useState();
   let { profileId, selectedAdType, selectedDate, setSelectedDate } = useContext(ProfileContext);
+  // Combined view active? Product ads span all three ad types (SP+SB+SD).
+  const showAllTypes = isShowingAllAdTypes(
+    typeof window !== "undefined" ? window.location.pathname : "",
+    selectedAdType
+  );
   const dispatch = useDispatch();
   const location = useLocation();
   const [status, setStatus] = useState("ENABLED");
@@ -189,6 +196,24 @@ function Product() {
         );
       },
     },
+
+    // ── Ad Type (only under the combined "All" view) ─────────────────────
+    ...(showAllTypes ? [{
+      headerName: t("Type"),
+      field: "adType",
+      title: "Type",
+      maxWidth: 90,
+      sortable: true,
+      resizable: true,
+      suppressMovable: true,
+      exportFormatter: (val) => String(val || "").toUpperCase(),
+      cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      cellRenderer: (params) => {
+        const row = params.data;
+        if (!row || row?.isTotalRow) return null;
+        return <AdTypeBadge type={params.value} />;
+      },
+    }] : []),
 
     // ── Sales ────────────────────────────────────────────────────────────
     {
@@ -676,6 +701,12 @@ function Product() {
               </div>
             </div>
           </div>
+
+          {showAllTypes && (
+            <div style={{ padding: "0 0 10px 0" }}>
+              <AdTypeScopeNote selectedAdType={selectedAdType} excludedAdTypes={groupsData?.excludedAdTypes} />
+            </div>
+          )}
 
           <div className="glass-grid-container overflow-hidden">
             <div
