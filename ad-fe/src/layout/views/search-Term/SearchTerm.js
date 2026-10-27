@@ -46,6 +46,8 @@ import { Badge } from "../../../components/ui/badge";
 import { buildMongoQuery, formatCondition } from "../../../utility/common";
 import { CustomModal } from "../../../helper/modal/CustomModal";
 import usePageFilter from "../../../helper/filter/usePageFilter";
+import { AdTypeScopeNote, AdTypeBadge } from "../../../helper/filter/AdTypeScopeNote";
+import { isShowingAllAdTypes } from "../../../helper/filter/adTypeAll";
 import "./SearchTerm.css";
 import { AppTooltip } from "../../../components/ui/AppTooltip";
 
@@ -150,6 +152,12 @@ function SearchTerm() {
 
   // Context for profile and global date range
   let { profileId, selectedAdType, selectedDate, setSelectedDate } = useContext(ProfileContext);
+  // Combined SP+SB (+SD) view active on this screen? (Campaign View is
+  // All-ready; Product View is single-type only for now — see guard below.)
+  const showAllTypes = isShowingAllAdTypes(
+    typeof window !== "undefined" ? window.location.pathname : "",
+    selectedAdType
+  );
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const [searchName, setSearchName] = useState("");
@@ -161,6 +169,16 @@ function SearchTerm() {
     }, 350);
     return () => clearTimeout(handler);
   }, [searchName]);
+
+  // Product View is single-type only for now; under the combined "All" view keep
+  // the user on Campaign View so the product endpoint is never called with
+  // "All" (which would silently fall back to SP-only data).
+  useEffect(() => {
+    if (showAllTypes && viewMode === "product") {
+      setViewMode("campaign");
+      setTableData([]);
+    }
+  }, [showAllTypes, viewMode]);
 
   const [filterModal, setfilterModal] = useState();
 
@@ -378,6 +396,24 @@ function SearchTerm() {
       sortable: true,
       resizable: true,
     },
+    // Ad-type column: only meaningful (and only present) under the combined
+    // "All" view, where rows come from different ad types.
+    ...(showAllTypes && viewMode === "campaign" ? [{
+      headerName: t("Type"),
+      field: "adType",
+      title: "Type",
+      maxWidth: 90,
+      sortable: true,
+      resizable: true,
+      suppressMovable: true,
+      exportFormatter: (val) => String(val || "").toUpperCase(),
+      cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      cellRenderer: (params) => {
+        const row = params.data;
+        if (!row || row?.isTotalRow) return null;
+        return <AdTypeBadge type={params.value} />;
+      },
+    }] : []),
     {
       headerName: t("Status"),
       field: "existTargeting",
@@ -598,7 +634,7 @@ function SearchTerm() {
       headerComponent: AgCustomHeader,
       headerComponentParams: { ...sharedFilterParams, field: "ctr", hasFilter: true },
     },
-  ], [isMobile, t, selectAll, viewMode, tableData, displayedSearchTerms, selectedRows, visibleColumns, sharedFilterParams]);
+  ], [isMobile, t, selectAll, viewMode, tableData, displayedSearchTerms, selectedRows, visibleColumns, sharedFilterParams, selectedAdType]);
 
 
 
@@ -1836,6 +1872,17 @@ function SearchTerm() {
           </div>
         </div>
 
+        {showAllTypes && (
+          <div style={{ padding: "0 14px 10px 14px" }}>
+            <AdTypeScopeNote selectedAdType={selectedAdType} excludedAdTypes={searchTermData?.excludedAdTypes} />
+            {viewMode === "product" && (
+              <div className="mt-2 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                {t("Product View shows one ad type at a time. Switch to Campaign View for the combined All view, or pick a single ad type.")}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Folder-style Tab Selector matching LifetimeTracker */}
         <div className="glass-grid-container overflow-hidden">
           <div
@@ -1867,14 +1914,19 @@ function SearchTerm() {
             ].map((tab) => {
               const isActive = viewMode === tab.key;
               const isHovered = hoveredTab === tab.key;
+              // Product View is not part of the combined "All" view yet.
+              const isDisabled = showAllTypes && tab.key === "product";
 
               return (
                 <ShadcnButton
                   id={`search-term-tab-${tab.key}`}
                   key={tab.key}
                   variant="ghost"
+                  disabled={isDisabled}
+                  title={isDisabled ? t("Available per single ad type (SP/SB/SD)") : undefined}
                   className="shadow-none border-0 hover:bg-transparent"
                   onClick={() => {
+                    if (isDisabled) return;
                     if (viewMode !== tab.key) {
                       setTableData([]);
                       setCampaignsLoading(true);
@@ -1890,13 +1942,14 @@ function SearchTerm() {
                     padding: "10px 42px 10px 22px",
                     background: "transparent",
                     border: "none",
-                    cursor: "pointer",
+                    cursor: isDisabled ? "not-allowed" : "pointer",
                     outline: "none",
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
                     transition: "all 0.2s ease",
                     minHeight: "42px",
+                    opacity: isDisabled ? 0.45 : 1,
                   }}
                 >
                   <svg

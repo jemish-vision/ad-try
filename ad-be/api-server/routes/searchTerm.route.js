@@ -5,11 +5,22 @@ const { getSearchTermDetailsData, getAllSearchTerms, getSearchTermsProductView, 
 const router = express.Router();
 const { verifyToken } = require("../middleware/user.auth");
 const { AdTypeModels } = require("../middleware/adTypeModel.middleware");
+const { withAllAdTypes } = require("../helper/allAdTypeHandler");
 const { uploadExcelFile } = require("../helper/excelFileUpload");
+
+// Search terms exist only for SP + SB (Sponsored Display has none), so "All"
+// here merges SP + SB and reports SD as excluded.
+const allSearchTerms = withAllAdTypes(getAllSearchTerms, {
+    dataKey: "getSearchTerm",
+    totalKey: "totalSearchTerm",
+    totalRowKey: "totalRow",
+    numericTotalFields: ["impressions", "clicks", "orders", "spend", "sales"],
+    excludeSD: true,
+});
 
 router.post("/getSearchTermIdData/:id", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, getSearchTermDetailsData);
 
-router.post("/getAllSearchTerms", verifyToken, validateRoutePermission(SYSTEM_PAGES.SEARCH_TERM, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, getAllSearchTerms);
+router.post("/getAllSearchTerms", verifyToken, validateRoutePermission(SYSTEM_PAGES.SEARCH_TERM, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, allSearchTerms);
 router.post("/getSearchTermsProductView", verifyToken, validateRoutePermission(SYSTEM_PAGES.SEARCH_TERM, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, getSearchTermsProductView);
 router.post("/addToNegative", verifyToken, validateRoutePermission(SYSTEM_PAGES.SEARCH_TERM, PAGE_ACTIONS.CREATE), addToNegative);
 router.post("/addToNegativeProduct", verifyToken, validateRoutePermission(SYSTEM_PAGES.SEARCH_TERM, PAGE_ACTIONS.CREATE), addToNegativeProduct);

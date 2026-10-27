@@ -17,7 +17,7 @@ export const AD_TYPE_ALL = "All";
 // entity whose own ad type governs.
 //   Phase 1 targets (added as each endpoint lands):
 //   "/campaigns", "/targeting", "/search-term", "/placement", "/products", "/history"
-export const ALL_SUPPORTED_ROUTES = [];
+export const ALL_SUPPORTED_ROUTES = ["/search-term"];
 
 // Views where SD contributes no data (keywords, search terms, placements), so
 // "All" there means SP + SB only, with a "no SD data" note.

@@ -12,19 +12,31 @@ describe("adTypeAll guard", () => {
     expect(getEffectiveAdType("/targeting", "SD")).toBe("SD");
   });
 
-  test("All degrades to SP on routes not yet migrated (allowlist empty)", () => {
+  test("All degrades to SP on routes not yet migrated", () => {
     // Until an endpoint is migrated its route is not in ALL_SUPPORTED_ROUTES,
     // so "All" must degrade to SP rather than silently show SP-labelled data.
     expect(getEffectiveAdType("/campaigns", "All")).toBe("SP");
     expect(getEffectiveAdType("/orders", "All")).toBe("SP");
     // detail/drilldown routes are never list routes
     expect(getEffectiveAdType("/targeting/detail/123", "All")).toBe("SP");
+    // sibling routes that only share a prefix must not be treated as supported
+    expect(getEffectiveAdType("/search-term-rule", "All")).toBe("SP");
+    expect(getEffectiveAdType("/search-term-history", "All")).toBe("SP");
+  });
+
+  test("All is sent on migrated routes", () => {
+    // Search terms is migrated, so "All" is passed through there.
+    expect(getEffectiveAdType("/search-term", "All")).toBe("All");
+    expect(getEffectiveAdType("/search-term/", "All")).toBe("All");
   });
 
   test("isAllSupportedRoute honors the allowlist (and trailing slashes)", () => {
-    // With the allowlist empty no route is supported yet.
+    expect(isAllSupportedRoute("/search-term")).toBe(true);
+    expect(isAllSupportedRoute("/search-term/")).toBe(true);
     expect(isAllSupportedRoute("/campaigns")).toBe(false);
     expect(isAllSupportedRoute("/campaigns/")).toBe(false);
+    // prefix-sharing siblings are not matched
+    expect(isAllSupportedRoute("/search-term-rule")).toBe(false);
   });
 
   test("SD-excluded routes are flagged", () => {
