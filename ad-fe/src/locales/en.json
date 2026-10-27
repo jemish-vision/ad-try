@@ -7040,5 +7040,7 @@
   "Response error": "Response error",
   "Unable to load unanswered questions.": "Unable to load unanswered questions.",
   "No profiles found": "No profiles found",
-  "Retry": "Retry"
+  "Retry": "Retry",
+  "Showing combined data across": "Showing combined data across",
+  "no {{types}} data for this view": "no {{types}} data for this view"
 }

@@ -7036,5 +7036,11 @@
   "Response error": "応答エラー",
   "Unable to load unanswered questions.": "未回答の質問を読み込めませんでした。",
   "No profiles found": "プロファイルが見つかりません",
-  "Retry": "再試行"
+  "Retry": "再試行",
+  "All Ad Types": "すべての広告タイプ",
+  "Showing combined data across": "次の広告タイプの統合データを表示:",
+  "no {{types}} data for this view": "このビューには{{types}}のデータがありません",
+  "Select a single ad type (SP, SB or SD) to create a campaign": "キャンペーンを作成するには、単一の広告タイプ（SP、SB、SD）を選択してください",
+  "Available per single ad type (SP/SB/SD)": "単一の広告タイプ（SP/SB/SD）ごとに利用可能",
+  "Product View shows one ad type at a time. Switch to Campaign View for the combined All view, or pick a single ad type.": "商品ビューでは一度に1つの広告タイプのみ表示されます。統合された「すべて」ビューを見るにはキャンペーンビューに切り替えるか、単一の広告タイプを選択してください。"
 }

@@ -8,16 +8,16 @@ function ConfigTypeDropdown({ compact = false }) {
     const { selectedAdType: selection, setSelectedAdType: setSelection } = useContext(ProfileContext);
 
     const typeList = useMemo(() => [
+        // "All" = SP + SB + SD combined. Listed first per request; SP remains the
+        // default (the seeding effect below seeds "SP" explicitly, not typeList[0]).
+        { key: "All", label: t("All Ad Types") },
         { key: "SP", label: t("Sponsored Products") },
         { key: "SB", label: t("Sponsored Brands") },
-        { key: "SD", label: t("Sponsored Display") },
-        // "All" = SP + SB + SD combined. Listed last so SP stays the default
-        // (the seeding effect below picks typeList[0]).
-        { key: "All", label: t("All Ad Types") }
+        { key: "SD", label: t("Sponsored Display") }
     ], [t]);
 
     useEffect(() => {
-        if (!selection) setSelection(typeList[0].key);
+        if (!selection) setSelection("SP");
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selection]);
 

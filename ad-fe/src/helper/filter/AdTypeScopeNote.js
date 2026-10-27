@@ -1,5 +1,6 @@
 import React from "react";
-import { AD_TYPE_ALL, isShowingAllAdTypes } from "./adTypeAll";
+import { useTranslation } from "react-i18next";
+import { isShowingAllAdTypes } from "./adTypeAll";
 
 // SP / SB / SD pill. Colours match the chatbot report table
 // (helper/chatbot/reporting/ReportTable.js) so the two surfaces read alike.
@@ -9,17 +10,19 @@ const BADGE_CLASSES = {
   SD: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
 };
 
-const TYPE_LABELS = { SP: "Sponsored Products", SB: "Sponsored Brands", SD: "Sponsored Display" };
+// Translation keys for each ad type's full name (keys already exist in locales).
+const TYPE_LABEL_KEYS = { SP: "Sponsored Products", SB: "Sponsored Brands", SD: "Sponsored Display" };
 
 export function AdTypeBadge({ type }) {
-  const t = String(type || "").toUpperCase();
-  const cls = BADGE_CLASSES[t] || "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20";
+  const { t } = useTranslation();
+  const key = String(type || "").toUpperCase();
+  const cls = BADGE_CLASSES[key] || "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20";
   return (
     <span
       className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9.5px] font-bold tracking-wider border ${cls}`}
-      title={TYPE_LABELS[t] || t}
+      title={TYPE_LABEL_KEYS[key] ? t(TYPE_LABEL_KEYS[key]) : key}
     >
-      {t || "—"}
+      {key || "—"}
     </span>
   );
 }
@@ -32,11 +35,13 @@ export function AdTypeBadge({ type }) {
 //                   dropped a type for this view
 //   pathname        current route (defaults to window.location.pathname)
 export function AdTypeScopeNote({ selectedAdType, excludedAdTypes, pathname }) {
+  const { t } = useTranslation();
   const path = pathname || (typeof window !== "undefined" ? window.location.pathname : "");
   if (!isShowingAllAdTypes(path, selectedAdType)) return null;
 
   const excluded = Array.isArray(excludedAdTypes) ? excludedAdTypes.map((x) => String(x).toUpperCase()) : [];
   const shown = ["SP", "SB", "SD"].filter((x) => !excluded.includes(x));
+  const excludedLabels = excluded.map((x) => (TYPE_LABEL_KEYS[x] ? t(TYPE_LABEL_KEYS[x]) : x)).join(", ");
 
   return (
     <div
@@ -44,17 +49,17 @@ export function AdTypeScopeNote({ selectedAdType, excludedAdTypes, pathname }) {
       role="status"
     >
       <span className="font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-        {AD_TYPE_ALL}
+        {t("All")}
       </span>
       <span className="flex items-center gap-1.5">
-        Showing combined data across
+        {t("Showing combined data across")}
         {shown.map((x) => (
           <AdTypeBadge key={x} type={x} />
         ))}
       </span>
       {excluded.length > 0 && (
         <span className="text-slate-500 dark:text-slate-400">
-          — no {excluded.map((x) => TYPE_LABELS[x] || x).join(", ")} data for this view.
+          — {t("no {{types}} data for this view", { types: excludedLabels })}
         </span>
       )}
     </div>

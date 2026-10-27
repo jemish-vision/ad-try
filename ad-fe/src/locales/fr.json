@@ -7036,5 +7036,11 @@
   "Response error": "Erreur de réponse",
   "Unable to load unanswered questions.": "Impossible de charger les questions sans réponse.",
   "No profiles found": "Aucun profil trouvé",
-  "Retry": "Réessayer"
+  "Retry": "Réessayer",
+  "All Ad Types": "Tous les types d'annonces",
+  "Showing combined data across": "Affichage des données combinées pour",
+  "no {{types}} data for this view": "aucune donnée {{types}} pour cette vue",
+  "Select a single ad type (SP, SB or SD) to create a campaign": "Sélectionnez un seul type d'annonce (SP, SB ou SD) pour créer une campagne",
+  "Available per single ad type (SP/SB/SD)": "Disponible par type d'annonce unique (SP/SB/SD)",
+  "Product View shows one ad type at a time. Switch to Campaign View for the combined All view, or pick a single ad type.": "La vue Produit affiche un seul type d'annonce à la fois. Passez à la vue Campagne pour la vue combinée « Tous » ou choisissez un seul type d'annonce."
 }

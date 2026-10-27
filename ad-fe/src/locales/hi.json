@@ -7036,5 +7036,11 @@
   "Response error": "प्रतिक्रिया त्रुटि",
   "Unable to load unanswered questions.": "अनुत्तरित प्रश्न लोड करने में असमर्थ।",
   "No profiles found": "कोई प्रोफ़ाइल नहीं मिली",
-  "Retry": "पुनः प्रयास करें"
+  "Retry": "पुनः प्रयास करें",
+  "All Ad Types": "सभी विज्ञापन प्रकार",
+  "Showing combined data across": "संयुक्त डेटा दिखा रहे हैं:",
+  "no {{types}} data for this view": "इस व्यू के लिए {{types}} डेटा उपलब्ध नहीं है",
+  "Select a single ad type (SP, SB or SD) to create a campaign": "कैंपेन बनाने के लिए एक ही विज्ञापन प्रकार (SP, SB या SD) चुनें",
+  "Available per single ad type (SP/SB/SD)": "प्रति एकल विज्ञापन प्रकार (SP/SB/SD) उपलब्ध",
+  "Product View shows one ad type at a time. Switch to Campaign View for the combined All view, or pick a single ad type.": "प्रोडक्ट व्यू एक समय में एक ही विज्ञापन प्रकार दिखाता है। संयुक्त 'All' व्यू के लिए कैंपेन व्यू पर जाएं, या कोई एक विज्ञापन प्रकार चुनें।"
 }
