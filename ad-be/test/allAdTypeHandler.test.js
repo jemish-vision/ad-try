@@ -4,8 +4,10 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   withAllAdTypes,
+  withAllAdTypesChart,
   deriveStandardRatios,
   compareRows,
+  round,
 } = require("../api-server/helper/allAdTypeHandler");
 
 // --- fake per-type data (plays the role of the three collections) ---------
@@ -240,4 +242,83 @@ test("per-type fetch is capped at pageNo*perPage but totals stay whole", async (
   // counts still reflect the full set, not the cap
   assert.equal(res.body.totalSearchTerm, 4);
   assert.equal(res.body.totalRow.spend, 280);
+});
+
+test("mergeTotalRow hook owns the merged total row", async () => {
+  const w = withAllAdTypes(fakeHandler, {
+    dataKey: "getSearchTerm",
+    totalKey: "totalSearchTerm",
+    totalRowKey: "totalRow",
+    numericTotalFields: BASE,
+    excludeSD: true,
+    mergeTotalRow: (rows, sums) => ({ summedSpend: sums.spend, typeCount: rows.length }),
+  });
+  const res = makeRes();
+  await w(makeReq("All", { pageNo: 1, perPage: 10 }), res);
+  // spend across SP+SB = 280; two contributing types
+  assert.equal(res.body.totalRow.summedSpend, 280);
+  assert.equal(res.body.totalRow.typeCount, 2);
+  assert.equal(res.body.totalRow.isTotalRow, true); // totalRowExtra still applied
+  // default acos/roas are NOT added when a custom mergeTotalRow is supplied
+  assert.equal(res.body.totalRow.acos, undefined);
+});
+
+// --- chart (time-series) wrapper ------------------------------------------
+const CHART = {
+  SP: [
+    { reportDate: "2024-01-01", impressions: 10, clicks: 5, orders: 2, spend: 100, sales: 200 },
+    { reportDate: "2024-01-02", impressions: 20, clicks: 4, orders: 1, spend: 40, sales: 10 },
+  ],
+  SB: [
+    { reportDate: "2024-01-01", impressions: 8, clicks: 4, orders: 3, spend: 80, sales: 160 },
+  ],
+  SD: [
+    { reportDate: "2024-01-02", impressions: 5, clicks: 1, orders: 0, spend: 5, sales: 0 },
+  ],
+};
+
+function fakeChartHandler(req, res) {
+  const rows = (CHART[req.adType] || []).map((r) => ({ ...r }));
+  return res.status(200).send({
+    isSuccess: true,
+    data: rows,
+    filteredTargetingIds: rows.map((_, i) => `${req.adType}-${i}`),
+    totalFilteredTargetings: rows.length,
+  });
+}
+
+test("chart wrapper sums rows per date across types (not concatenated)", async () => {
+  const w = withAllAdTypesChart(fakeChartHandler, {
+    excludeSD: false,
+    mergeExtra: (bodies) => {
+      const ids = [];
+      for (const b of bodies) if (Array.isArray(b.filteredTargetingIds)) ids.push(...b.filteredTargetingIds);
+      return { filteredTargetingIds: ids, totalFilteredTargetings: ids.length };
+    },
+  });
+  const res = makeRes();
+  await w(makeReq("All", {}), res);
+  assert.equal(res.statusCode, 200);
+  const data = res.body.data;
+  // one point per date, ascending
+  assert.deepEqual(data.map((d) => d.reportDate), ["2024-01-01", "2024-01-02"]);
+  // 2024-01-01: SP(100) + SB(80) = 180 spend, 200+160 = 360 sales
+  const d1 = data.find((d) => d.reportDate === "2024-01-01");
+  assert.equal(d1.spend, 180);
+  assert.equal(d1.sales, 360);
+  assert.equal(d1.acos, round((180 / 360) * 100));
+  // 2024-01-02: SP(40) + SD(5) = 45 spend
+  const d2 = data.find((d) => d.reportDate === "2024-01-02");
+  assert.equal(d2.spend, 45);
+  // extra fields merged
+  assert.equal(res.body.totalFilteredTargetings, 4); // 2 SP + 1 SB + 1 SD
+  assert.deepEqual(res.body.adTypes, ["SP", "SB", "SD"]);
+});
+
+test("chart wrapper passes a single ad type through untouched", async () => {
+  const w = withAllAdTypesChart(fakeChartHandler, {});
+  const res = makeRes();
+  await w(makeReq("SP", {}), res);
+  assert.equal(res.body.data.length, 2);
+  assert.equal(res.body.adTypes, undefined);
 });

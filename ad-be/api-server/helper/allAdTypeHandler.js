@@ -74,14 +74,14 @@ function captureResponse() {
 
 // A per-type request that delegates to the real req (so handlers still read
 // req.config / req.headers / req.query / req.params unchanged) but overrides the
-// ad-type context and the pagination window.
-function buildSubRequest(req, adType, fetchLimit) {
+// ad-type context and, optionally, some body fields (e.g. the pagination window).
+function buildSubRequest(req, adType, bodyOverride) {
   const subReq = Object.create(req);
   subReq.adType = adType;
   subReq.adTypes = [adType];
   subReq.isAllAdTypes = false;
   subReq.models = (req.modelsByType && req.modelsByType[adType]) || req.models;
-  subReq.body = { ...req.body, pageNo: 1, perPage: fetchLimit };
+  subReq.body = bodyOverride ? { ...req.body, ...bodyOverride } : { ...req.body };
   return subReq;
 }
 
@@ -122,6 +122,10 @@ function compareRows(field, dir) {
 //   sortField          (body) => field name to sort on          (default body.fieldName || "spend")
 //   sortDir            (body) => "asc" | "desc"                  (default body.sortType === "ASC")
 //   totalRowExtra      static fields to keep on the merged total row (default { isTotalRow: true })
+//   mergeTotalRow      (perTypeTotalRows[], summedTotals) => merged total row.
+//                      When given it fully owns the merged total row (use it for
+//                      endpoints with averaged fields or extra ratios the default
+//                      sum + acos/roas/cpc/ctr cannot reproduce).
 //   pageNoKey          response key for the current page number  (default "pageNo"; null to omit)
 //   perPageKey         response key for the page size            (default "perPage"; null to omit)
 //   totalPagesKey      response key for the page count            (optional, e.g. "totalPages")
@@ -137,6 +141,7 @@ function withAllAdTypes(handler, config = {}) {
     sortField = (body) => (body && body.fieldName) || "spend",
     sortDir = (body) => (body && body.sortType === "ASC" ? "asc" : "desc"),
     totalRowExtra = { isTotalRow: true },
+    mergeTotalRow = null,
     pageNoKey = "pageNo",
     perPageKey = "perPage",
     totalPagesKey = null,
@@ -162,7 +167,7 @@ function withAllAdTypes(handler, config = {}) {
     // Run each type's native query, capped at the rows that could reach this page.
     const subResults = [];
     for (const adType of adTypes) {
-      const subReq = buildSubRequest(req, adType, fetchLimit);
+      const subReq = buildSubRequest(req, adType, { pageNo: 1, perPage: fetchLimit });
       const { mockRes, promise } = captureResponse();
       await handler(subReq, mockRes);
       const result = await promise;
@@ -204,7 +209,13 @@ function withAllAdTypes(handler, config = {}) {
         0,
       );
     }
-    const mergedTotalRow = { ...summedTotals, ...deriveRatios(summedTotals), ...totalRowExtra };
+    let mergedTotalRow;
+    if (typeof mergeTotalRow === "function") {
+      const perTypeTotalRows = subResults.map(({ body }) => (body[totalRowKey] || {}));
+      mergedTotalRow = { ...mergeTotalRow(perTypeTotalRows, summedTotals), ...totalRowExtra };
+    } else {
+      mergedTotalRow = { ...summedTotals, ...deriveRatios(summedTotals), ...totalRowExtra };
+    }
 
     // Start from the first type's body to carry through any endpoint-specific
     // static fields, then override the merged bits.
@@ -224,9 +235,106 @@ function withAllAdTypes(handler, config = {}) {
   };
 }
 
+// Standard per-row chart ratios (adds conversionRate to the usual four).
+function deriveChartRatios(totals) {
+  const r = deriveStandardRatios(totals);
+  const clicks = Number(totals.clicks) || 0;
+  const orders = Number(totals.orders) || 0;
+  r.conversionRate = clicks > 0 ? round((orders / clicks) * 100) : 0;
+  return r;
+}
+
+// "All" wrapper for time-series chart endpoints. Unlike a grid, chart rows from
+// different ad types that share the same bucket (e.g. a reportDate) must be
+// SUMMED into one point, not concatenated — and there is no pagination. For a
+// single type it passes straight through; for "All" it runs each type, groups
+// the rows by `groupKey`, sums `sumFields`, re-derives the ratios, sorts the
+// buckets ascending, and merges any extra top-level fields.
+//
+// config:
+//   dataKey      response key holding the series array  (default "data")
+//   groupKey     bucket field to group/sum on            (default "reportDate")
+//   sumFields    base metrics to sum per bucket           (default impressions/clicks/orders/spend/sales)
+//   deriveRatios (summedBucket) => ratio fields           (default cpc/acos/roas/ctr/conversionRate)
+//   excludeSD    true for SP+SB-only features
+//   mergeExtra   (perTypeBodies[]) => extra top-level fields to set on the payload
+function withAllAdTypesChart(handler, config = {}) {
+  const {
+    dataKey = "data",
+    groupKey = "reportDate",
+    sumFields = ["impressions", "clicks", "orders", "spend", "sales"],
+    deriveRatios = deriveChartRatios,
+    excludeSD = false,
+    mergeExtra = null,
+  } = config;
+
+  return async function allAdTypeChartRoute(req, res) {
+    if (req.adType !== "All") {
+      return handler(req, res);
+    }
+
+    const adTypes = resolveAdTypes("All", { excludeSD });
+    const excludedAdTypes = resolveAdTypes("All").filter((t) => !adTypes.includes(t));
+
+    const subResults = [];
+    for (const adType of adTypes) {
+      const subReq = buildSubRequest(req, adType); // charts have no pagination
+      const { mockRes, promise } = captureResponse();
+      await handler(subReq, mockRes);
+      const result = await promise;
+      if (!result || result.statusCode !== 200 || !result.body || result.body.isSuccess !== true) {
+        return res
+          .status((result && result.statusCode) || 500)
+          .send((result && result.body) || { isSuccess: false, message: "Something went wrong" });
+      }
+      subResults.push({ adType, body: result.body });
+    }
+
+    // Group every type's rows by the bucket key, summing the base metrics.
+    const buckets = new Map();
+    for (const { body } of subResults) {
+      const rows = Array.isArray(body[dataKey]) ? body[dataKey] : [];
+      for (const row of rows) {
+        if (!row || typeof row !== "object") continue;
+        const key = row[groupKey];
+        let agg = buckets.get(key);
+        if (!agg) {
+          agg = { [groupKey]: key };
+          for (const f of sumFields) agg[f] = 0;
+          buckets.set(key, agg);
+        }
+        for (const f of sumFields) agg[f] += Number(row[f]) || 0;
+      }
+    }
+
+    const merged = Array.from(buckets.values())
+      .map((agg) => {
+        const base = {};
+        for (const f of sumFields) base[f] = round(agg[f]);
+        return { [groupKey]: agg[groupKey], ...base, ...deriveRatios(agg) };
+      })
+      .sort((a, b) => compareRows(groupKey, "asc")(a, b));
+
+    const payload = {
+      ...subResults[0].body,
+      [dataKey]: merged,
+      adTypes,
+    };
+    if (typeof mergeExtra === "function") {
+      Object.assign(payload, mergeExtra(subResults.map(({ body }) => body)) || {});
+    }
+    if (excludedAdTypes.length > 0) payload.excludedAdTypes = excludedAdTypes;
+
+    return res.status(200).send(payload);
+  };
+}
+
 module.exports = {
   withAllAdTypes,
+  withAllAdTypesChart,
   deriveStandardRatios,
+  deriveChartRatios,
+  round,
   // exported for tests
   captureResponse,
   buildSubRequest,

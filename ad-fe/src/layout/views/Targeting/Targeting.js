@@ -5,6 +5,8 @@ import Filter from "../../../helper/filter/Filter";
 import { ApiStatusChange, ApiTargetingListing, ApiTargetingChartListing, ApiAdjustBids } from "../../../api-wrapper/targeting/ApiTargeting";
 import moment from "moment-timezone";
 import { ProfileContext } from "../../../helper/usecontext/useContext";
+import { AdTypeScopeNote, AdTypeBadge } from "../../../helper/filter/AdTypeScopeNote";
+import { isShowingAllAdTypes } from "../../../helper/filter/adTypeAll";
 import { handleLoader, Toast, useDispatch } from "../../../helper/links/Link";
 import { ShadcnDateRangePicker as DateRangePicker } from "../../../components/ui/date-range-picker";
 import { predefinedRanges } from "../../../common/helper/calendarValues/calendarValues";
@@ -93,6 +95,11 @@ function Targeting() {
 
   const { t } = useTranslation();
   let { profileId, selectedAdType, currencyCode, countryCode, selectedDate, setSelectedDate } = useContext(ProfileContext);
+  // Combined SP+SB+SD view active on the /targeting screen?
+  const showAllTypes = isShowingAllAdTypes(
+    typeof window !== "undefined" ? window.location.pathname : "",
+    selectedAdType
+  );
   const { campaignId } = useParams();
 
   const { state: tourState } = useTour();
@@ -442,6 +449,23 @@ function Targeting() {
         );
       },
     },
+    // Ad-type column: present only under the combined "All" view.
+    ...(showAllTypes ? [{
+      headerName: t("Type"),
+      field: "adType",
+      title: "Type",
+      maxWidth: 90,
+      sortable: true,
+      resizable: true,
+      suppressMovable: true,
+      exportFormatter: (val) => String(val || "").toUpperCase(),
+      cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      cellRenderer: (params) => {
+        const row = params.data;
+        if (!row || row?.isTotalRow) return null;
+        return <AdTypeBadge type={params.value} />;
+      },
+    }] : []),
     {
       headerName: t("Targeting Type"),
       field: "matchType",
@@ -633,7 +657,7 @@ function Targeting() {
       headerComponent: AgCustomHeader,
       headerComponentParams: { ...sharedFilterParams, field: "roas", hasFilter: true },
     },
-  ], [disablePinning, tableData, selectedRows, selectAll, t, currencyCode, visibleColumns]);
+  ], [disablePinning, tableData, selectedRows, selectAll, t, currencyCode, visibleColumns, showAllTypes]);
 
   useEffect(() => {
     const fetchCustomColumns = async () => {
@@ -1816,6 +1840,11 @@ function Targeting() {
                 onBack={() => navigate("/campaigns")}
               />
             </div>
+          </div>
+        )}
+        {showAllTypes && (
+          <div style={{ padding: "0 0 10px 0" }}>
+            <AdTypeScopeNote selectedAdType={selectedAdType} excludedAdTypes={targetingData?.excludedAdTypes} />
           </div>
         )}
         <Chart chartLoading={chartLoading} chartData={chartData} totalRow={totalRow} id={"targeting-chart"} />
