@@ -62,7 +62,7 @@ function AgingConfigModal({ profileId, fromDate, toDate, isOpen, onClose }) {
                     profileId,
                     fulfillmentType: "FBA",
                     fromDate: fromDate || moment().subtract(30, "days").format("YYYY-MM-DD"),
-                    toDate: toDate || moment().format("YYYY-MM-DD"),
+                    toDate: toDate || moment().subtract(1, "days").format("YYYY-MM-DD"),
                     pageNo: 1,
                     perPage: 200,
                 }),

@@ -171,11 +171,7 @@ export const addCampaignQuery = (sendData) => {
     const isOutOfBudget = appliedFilters?.some(filter => filter?.type === "OutOfBudget" || filter?.value === "OUT_OF_BUDGET") || campaignStatus === "OUT_OF_BUDGET";
 
     if (isOutOfBudget) {
-        mongoQuery["$or"] = [
-            { status: "OUT_OF_BUDGET" },
-            { status: "out_of_budget" },
-            { $and: [{ budget: { $gt: 0 } }, { $expr: { $gte: ["$spend", "$budget"] } }] }
-        ];
+        // Out-of-budget is handled cleanly by the backend using campaignStatus / status parameter and real-time latest record resolution
     } else if (campaignStatus) {
         if (campaignStatus === "NOT_ARCHIVED") {
             mongoQuery["status"] = { $ne: "ARCHIVED" };
@@ -490,6 +486,16 @@ export const addBudgetRuleQuery = (sendData, labels, cType) => {
             addClause({ targetingType: { $eq: conditionStringValue } });
         }
 
+        // Handle Out of Budget conditions
+        if (["OutOfBudget", "Out of Budget"].includes(conditionType)) {
+            addClause({
+                $or: [
+                    { status: { $eq: "OUT_OF_BUDGET" } },
+                    { isOutOfBudget: { $eq: true } }
+                ]
+            });
+        }
+
         if (["Impressions", "Clicks", "Orders", "Sales", "ROAS", "ACOS", "Spend", "CPC", "Budget", "TimeInBudget", "BudgetUsage"].includes(conditionType) && isCFilterExist) {
             let operator = {};
             const type = conditionType === "TimeInBudget" ? "timeInBudget" : `${conditionType}`.toLowerCase()
@@ -684,6 +690,10 @@ export const buildRecommendationQuery = (conditions) => {
 
     conditions.forEach((cond) => {
         const { conditionType, conditionOperator, conditionValue } = cond;
+
+        if (['Out of Budget', 'OutOfBudget'].includes(conditionType)) {
+            return;
+        }
 
         // Map condition types to database fields
         const fieldMapping = {

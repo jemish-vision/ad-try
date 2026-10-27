@@ -78,6 +78,8 @@ const checkArr = [
   "getChangesByCampaign",
   "getChangesByProduct",
   "getChangesByKeyword",
+  "getAssignedCampaignComparison",
+  "getAdTypeBreakdown",
   "previewSDCreative",
   "getRecommendationData",
   "getTotalRecommendationCount",
@@ -228,7 +230,7 @@ axios.interceptors.request.use(
     let parsedProfile = null;
     try {
       parsedProfile = JSON.parse(localStorage.getItem("profile"));
-    } catch (e) {}
+    } catch (e) { }
 
     const configId =
       config.headers?.["x-config-id"] ||

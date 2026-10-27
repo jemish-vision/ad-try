@@ -17,7 +17,7 @@ import {
   Moon, Sun, UserCircle,
   House, Users, Globe, Gear, Package,
   CalendarCheck, Prohibit, BookOpen, Headset, Buildings,
-  ShieldCheck, ChartLineUp, CaretRight, List, SignOut, FileText, X, ClockCountdown,
+  ShieldCheck, ChartLineUp, CaretRight, List, SignOut, FileText, X, ClockCountdown, ChatCenteredText,
 } from "@phosphor-icons/react";
 import { ApiDeleteDeviceToken } from "../../../api-wrapper/devices/ApiDeviceToken";
 import { ApiGetProfile } from "../../../api-wrapper/customer/ApiCustomer";
@@ -39,6 +39,7 @@ const OWNER_NAV = [
   { name: "Holiday/Special Days", icon: <CalendarCheck size={17} weight="regular" />, path: "/holiday" },
   { name: "Rule Blocked Time", icon: <Prohibit size={17} weight="regular" />, path: "/rule-blocked-time" },
   { name: "Support Ticket", icon: <Headset size={17} weight="regular" />, path: "/support-ticket" },
+  { name: "Chatbot Gaps", icon: <ChatCenteredText size={17} weight="regular" />, path: "/unanswered-questions" },
 
   /* { name: "User Guide", icon: <BookOpen size={17} weight="regular" />, path: "/user-guide" }, */
 ];

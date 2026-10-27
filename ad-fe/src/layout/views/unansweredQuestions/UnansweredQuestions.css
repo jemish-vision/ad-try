@@ -1,0 +1,155 @@
+.uq-page .uq-description { margin:5px 0 0; font-size:12px; color:var(--text-secondary,#64748b); }
+
+/* Compact, properly sized filter bar */
+.uq-page .uq-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-end;
+  padding: 16px 14px 16px;
+}
+.uq-page .uq-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary, #64748b);
+}
+.uq-page .uq-filters .uq-search {
+  width: 280px;
+  max-width: 280px;
+  flex: 0 0 280px;
+}
+.uq-page .uq-filter-field {
+  width: 240px;
+  max-width: 240px;
+  flex: 0 0 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.uq-page .uq-filter-field label {
+  flex: none;
+}
+
+.uq-profile-cell { display:flex; flex-direction:column; justify-content:center; line-height:1.4; padding:6px 0; }
+.uq-profile-cell small { color:var(--text-secondary,#64748b); font-size:10px; }
+.uq-badge { display:inline-block; border-radius:6px; background:#e2f1ff; color:#175f91; padding:3px 7px; font-size:11px; font-weight:600; line-height:1.5; }
+.uq-badge-error { background:#fce9e9; color:#a42336; }
+.uq-badge-unsupported { background:#f3eafb; color:#714295; }
+[data-theme="dark"] .uq-badge { background:#173c55; color:#96d6fa; }
+[data-theme="dark"] .uq-badge-error { background:#4b2532; color:#ffacb6; }
+[data-theme="dark"] .uq-badge-unsupported { background:#352c50; color:#d1b5fa; }
+.uq-page .uq-error { color:#a42336; background:#fff1f2; border:1px solid #efc5cb; padding:14px; border-radius:8px; margin:0 14px 14px; }
+[data-theme="dark"] .uq-page .uq-error { color:#ffbbc2; background:#342431; border-color:#72404b; }
+.uq-page .uq-error button { margin-left:12px; }
+.uq-truncated { display:inline-block; margin-left:8px; font-size:10px; line-height:1.5; padding:2px 5px; border-radius:4px; background:#fef3c7; color:#854d0e; }
+[data-theme="dark"] .uq-truncated { background:#49351f; color:#fde68a; }
+
+/* Searchable Profile Dropdown - Solid, Opaque Popover */
+.uq-profile-popover {
+  width: var(--radix-popover-trigger-width, 240px);
+  min-width: 240px;
+  background-color: #ffffff;
+  color: #0f172a;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  overflow: hidden;
+  z-index: 100000;
+}
+[data-theme="dark"] .uq-profile-popover {
+  background-color: #0f172a;
+  color: #f8fafc;
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+}
+
+.uq-profile-search-wrap {
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  gap: 8px;
+  background-color: #f8fafc;
+}
+[data-theme="dark"] .uq-profile-search-wrap {
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+  background-color: rgba(255, 255, 255, 0.04);
+}
+.uq-profile-search-wrap input,
+.uq-profile-search-wrap input:focus,
+.uq-profile-search-wrap input:focus-visible {
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  font-size: 12px;
+  width: 100%;
+  color: inherit;
+}
+.uq-profile-search-wrap input::placeholder {
+  color: #94a3b8;
+}
+
+.uq-profile-item-id {
+  font-size: 10px;
+  line-height: 1.3;
+  color: #64748b;
+  opacity: 0.85;
+}
+.uq-profile-item.selected .uq-profile-item-id {
+  color: #0284c7;
+  opacity: 0.85;
+}
+[data-theme="dark"] .uq-profile-item-id {
+  color: #94a3b8;
+}
+[data-theme="dark"] .uq-profile-item.selected .uq-profile-item-id {
+  color: #7dd3fc;
+}
+
+.uq-profile-list {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px;
+}
+.uq-profile-list::-webkit-scrollbar {
+  width: 6px;
+}
+.uq-profile-list::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 4px;
+}
+[data-theme="dark"] .uq-profile-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.uq-profile-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: inherit;
+  transition: background-color 0.15s ease;
+}
+.uq-profile-item:hover {
+  background-color: #f1f5f9;
+}
+[data-theme="dark"] .uq-profile-item:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+.uq-profile-item.selected {
+  font-weight: 600;
+  color: #0284c7;
+  background-color: #f0f9ff;
+}
+[data-theme="dark"] .uq-profile-item.selected {
+  color: #38bdf8;
+  background-color: rgba(56, 189, 248, 0.12);
+}

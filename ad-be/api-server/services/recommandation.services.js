@@ -38,7 +38,7 @@ const recordCampaignHistorySafely = async (historyData) => {
     if (!historyData || !historyData.configId || !historyData.changeLevel) return;
 
     // Deduplicate identical history records created within the last 30 seconds
-    const thirtySecondsAgo = new Date(Date.now() - 30 * 1000);
+    const thirtySecondsAgo = new Date(Date.now() - 15 * 60 * 1000); // 15-minute deduplication window
     const filter = {
       configId: historyData.configId,
       profileId: historyData.profileId,

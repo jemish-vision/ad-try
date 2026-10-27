@@ -59,6 +59,10 @@ function ConfigProfileDropdown({ ConfigList, compact = false, toggleFavorite }) 
         storeData.profile = findProfile;
         storeData.currencyCode = profile?.currencyCode;
         localStorage.setItem("profile", JSON.stringify(storeData));
+
+        window.dispatchEvent(new CustomEvent("profileChanged", {
+            detail: { profile: findProfile || profile, config: findConfig || config }
+        }));
     }, [profileList, setProfileId, setProfileData, setSelection]);
 
     const filteredGroups = useMemo(() => {

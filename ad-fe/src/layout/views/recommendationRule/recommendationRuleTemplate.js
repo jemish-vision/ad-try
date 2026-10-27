@@ -104,4 +104,27 @@ export const RecommendationRuleTemplates = [
       ],
     },
   },
+
+  {
+    id: "out-of-budget-campaigns",
+    title: "Out of Budget Campaigns",
+    description:
+      "Monitor and surface campaigns that have exhausted their daily budget so you can adjust budgets accordingly.",
+    icon: Lightbulb,
+    iconColor: "text-amber-500",
+    iconBg: "bg-amber-100 dark:bg-amber-900/30",
+    data: {
+      ruleName: "Out of Budget Campaigns",
+      reportDate: "TODAY",
+      gridName: "Campaign",
+      conditions: [
+        {
+          conditionType: "Out of Budget",
+          conditionOperator: "",
+          conditionValue: "",
+        },
+      ],
+      actions: [],
+    },
+  },
 ];

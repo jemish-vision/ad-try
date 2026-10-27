@@ -800,7 +800,7 @@ const getTypeBasedRuleData = async (rule, type, model, capture = false) => {
     },
     {
       $match: {
-        status: { $in: ["ENABLED", "PAUSED", "enabled", "paused"] }
+        status: { $in: ["ENABLED", "PAUSED", "enabled", "paused", "OUT_OF_BUDGET", "out_of_budget"] }
       }
     }
   ]);
@@ -1139,7 +1139,7 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
           actionType.actionName == "setBudget"
         ) {
           let actionValue = actionType.actionValue;
-          const baseline = existingActive ? (parseFloat(existingActive.oldValue) || parseFloat(campaign.budget)) : parseFloat(campaign.budget);
+          const baseline = (rule.allowMultiTimeChanges || !existingActive) ? (parseFloat(campaign.budget) || parseFloat(existingActive?.oldValue) || 0) : (parseFloat(existingActive?.oldValue) || parseFloat(campaign.budget) || 0);
           calculatedBudget = baseline;
 
           if (actionType.actionValueType == "Percentage") {
@@ -1166,7 +1166,7 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
           oldValue = baseline;
           newValue = calculatedBudget;
 
-          if (existingActive && Number(existingActive.newValue) === calculatedBudget && Number(campaign.budget) === calculatedBudget) {
+          if (!rule.allowMultiTimeChanges && existingActive && Number(existingActive.newValue) === calculatedBudget && Number(campaign.budget) === calculatedBudget) {
             await recordRuleExecutionChange({
               conditionSnapshot: campaign.conditionSnapshot,
               configId: rule.configId,
@@ -1286,7 +1286,15 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
 
         const updateFields = {};
         if (status) updateFields.status = status;
-        if (calculatedBudget) updateFields.budget = calculatedBudget;
+        if (calculatedBudget) {
+          updateFields.budget = calculatedBudget;
+          if (campaign.status === "OUT_OF_BUDGET" || campaign.isOutOfBudget) {
+            updateFields.status = "ENABLED";
+            if (calculatedBudget > 0 && campaign.spend !== undefined) {
+              updateFields["budgetTracking.lastUsagePercentage"] = Math.round((Number(campaign.spend) / calculatedBudget) * 10000) / 100;
+            }
+          }
+        }
 
         bulkOps.push({
           updateOne: {
@@ -1433,7 +1441,7 @@ const runSponsoredBrandRule = async (rule, checkConfigAds, profile, currentDate,
         ) {
           let actionValue = actionType.actionValue;
           // Anchor to baseline
-          const baseline = existingActive ? (parseFloat(existingActive.oldValue) || parseFloat(campaign.budget)) : parseFloat(campaign.budget);
+          const baseline = (rule.allowMultiTimeChanges || !existingActive) ? (parseFloat(campaign.budget) || parseFloat(existingActive?.oldValue) || 0) : (parseFloat(existingActive?.oldValue) || parseFloat(campaign.budget) || 0);
           calculatedBudget = baseline;
 
           if (actionType.actionValueType == "Percentage") {
@@ -1461,7 +1469,7 @@ const runSponsoredBrandRule = async (rule, checkConfigAds, profile, currentDate,
           newValue = calculatedBudget;
 
           // Check if setting is already in effect
-          if (existingActive && Number(existingActive.newValue) === calculatedBudget && Number(campaign.budget) === calculatedBudget) {
+          if (!rule.allowMultiTimeChanges && existingActive && Number(existingActive.newValue) === calculatedBudget && Number(campaign.budget) === calculatedBudget) {
             await recordRuleExecutionChange({
               conditionSnapshot: campaign.conditionSnapshot,
               configId: rule.configId,
@@ -1581,7 +1589,15 @@ const runSponsoredBrandRule = async (rule, checkConfigAds, profile, currentDate,
 
         const updateFields = {};
         if (status) updateFields.status = status;
-        if (calculatedBudget) updateFields.budget = calculatedBudget;
+        if (calculatedBudget) {
+          updateFields.budget = calculatedBudget;
+          if (campaign.status === "OUT_OF_BUDGET" || campaign.isOutOfBudget) {
+            updateFields.status = "ENABLED";
+            if (calculatedBudget > 0 && campaign.spend !== undefined) {
+              updateFields["budgetTracking.lastUsagePercentage"] = Math.round((Number(campaign.spend) / calculatedBudget) * 10000) / 100;
+            }
+          }
+        }
 
         bulkOps.push({
           updateOne: {
@@ -1728,7 +1744,7 @@ const runSponsoredDisplayRule = async (rule, checkConfigAds, profile, currentDat
         ) {
           let actionValue = actionType.actionValue;
           // Anchor to baseline
-          const baseline = existingActive ? (parseFloat(existingActive.oldValue) || parseFloat(campaign.budget)) : parseFloat(campaign.budget);
+          const baseline = (rule.allowMultiTimeChanges || !existingActive) ? (parseFloat(campaign.budget) || parseFloat(existingActive?.oldValue) || 0) : (parseFloat(existingActive?.oldValue) || parseFloat(campaign.budget) || 0);
           calculatedBudget = baseline;
 
           if (actionType.actionValueType == "Percentage") {
@@ -1756,7 +1772,7 @@ const runSponsoredDisplayRule = async (rule, checkConfigAds, profile, currentDat
           newValue = calculatedBudget;
 
           // Check if setting is already in effect
-          if (existingActive && Number(existingActive.newValue) === calculatedBudget && Number(campaign.budget) === calculatedBudget) {
+          if (!rule.allowMultiTimeChanges && existingActive && Number(existingActive.newValue) === calculatedBudget && Number(campaign.budget) === calculatedBudget) {
             await recordRuleExecutionChange({
               conditionSnapshot: campaign.conditionSnapshot,
               configId: rule.configId,
@@ -1876,7 +1892,15 @@ const runSponsoredDisplayRule = async (rule, checkConfigAds, profile, currentDat
 
         const updateFields = {};
         if (status) updateFields.status = status.toUpperCase();
-        if (calculatedBudget) updateFields.budget = calculatedBudget;
+        if (calculatedBudget) {
+          updateFields.budget = calculatedBudget;
+          if (campaign.status === "OUT_OF_BUDGET" || campaign.isOutOfBudget) {
+            updateFields.status = "ENABLED";
+            if (calculatedBudget > 0 && campaign.spend !== undefined) {
+              updateFields["budgetTracking.lastUsagePercentage"] = Math.round((Number(campaign.spend) / calculatedBudget) * 10000) / 100;
+            }
+          }
+        }
 
         bulkOps.push({
           updateOne: {

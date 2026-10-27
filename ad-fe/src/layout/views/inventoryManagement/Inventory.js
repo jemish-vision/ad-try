@@ -769,7 +769,7 @@ function Inventory() {
 
   useEffect(() => {
     const firstDate = new Date(moment().subtract(7, "days").format("YYYY-MM-DD"));
-    const lastDate = new Date();
+    const lastDate = moment().subtract(1, "days").toDate();
     setDate([firstDate, lastDate]);
   }, []);
 

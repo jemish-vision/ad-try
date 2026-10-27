@@ -84,7 +84,8 @@ const ApiCustomChatBotStream = async ({ data, signal, onStatus, onReport, onToke
       throw new Error(`HTTP ${response.status}`);
     }
 
-    if (!response.body) {
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("text/event-stream") || !response.body) {
       const fallback = await response.json();
       onDone?.(fallback);
       return fallback;
@@ -93,6 +94,7 @@ const ApiCustomChatBotStream = async ({ data, signal, onStatus, onReport, onToke
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let isDoneDispatched = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -126,11 +128,34 @@ const ApiCustomChatBotStream = async ({ data, signal, onStatus, onReport, onToke
           } else if (eventType === "token") {
             onToken?.(parsed.delta);
           } else if (eventType === "done") {
+            isDoneDispatched = true;
             onDone?.(parsed);
           } else if (eventType === "error") {
+            isDoneDispatched = true;
             onError?.(parsed);
           }
         } catch (_) {}
+      }
+    }
+
+    if (!isDoneDispatched) {
+      if (buffer.trim()) {
+        try {
+          let eventType = "message";
+          let dataPayload = "";
+          for (const line of buffer.split("\n")) {
+            if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+            else if (line.startsWith("data: ")) dataPayload = line.slice(6);
+          }
+          if (dataPayload) {
+            const parsed = JSON.parse(dataPayload);
+            if (eventType === "done") { isDoneDispatched = true; onDone?.(parsed); }
+            else if (eventType === "error") { isDoneDispatched = true; onError?.(parsed); }
+          }
+        } catch (_) {}
+      }
+      if (!isDoneDispatched) {
+        onDone?.({ replyMessage: "Response complete." });
       }
     }
   } catch (err) {

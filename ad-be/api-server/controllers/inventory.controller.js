@@ -1474,20 +1474,25 @@ exports.getSalesDashboard = async (req, res) => {
         const pAdSales = pAds.adSales || 0;
         const pSpend = pAds.spend || 0;
         const pClicks = pAds.clicks || 0;
+        const pImpressions = pAds.impressions || 0;
         const pAdOrders = pAds.adOrders || 0;
 
         const organicSales = totalSales - adSales;
+        const pOrganicSales = pTotalSales - pAdSales;
 
         const tacos = totalSales ? (spend / totalSales) * 100 : 0;
         const acos = adSales ? (spend / adSales) * 100 : 0;
         const roas = spend ? adSales / spend : 0;
         const conversionRate = clicks ? (adOrders / clicks) * 100 : 0;
         const ctr = impressions ? (clicks / impressions) * 100 : 0;
+        const cpc = clicks ? Number((spend / clicks).toFixed(2)) : 0;
 
         const pTacos = pTotalSales ? (pSpend / pTotalSales) * 100 : 0;
         const pAcos = pAdSales ? (pSpend / pAdSales) * 100 : 0;
         const pRoas = pSpend ? pAdSales / pSpend : 0;
         const pConversionRate = pClicks ? (pAdOrders / pClicks) * 100 : 0;
+        const pCtr = pImpressions ? (pClicks / pImpressions) * 100 : 0;
+        const pCpc = pClicks ? Number((pSpend / pClicks).toFixed(2)) : 0;
 
         const calcChange = (cur, prev) =>
             prev ? Number((((cur - prev) / prev) * 100).toFixed(2)) : 0;
@@ -1561,6 +1566,8 @@ exports.getSalesDashboard = async (req, res) => {
                 adSalesChangeAbs: Number((adSales - pAdSales).toFixed(2)),
 
                 organicSales: Number(organicSales.toFixed(2)),
+                organicSalesChange: calcChange(organicSales, pOrganicSales),
+                organicSalesChangeAbs: Number((organicSales - pOrganicSales).toFixed(2)),
 
                 spend: Number(spend.toFixed(2)),
                 spendChange: calcChange(spend, pSpend),
@@ -1583,9 +1590,25 @@ exports.getSalesDashboard = async (req, res) => {
                 conversionRateChangeAbs: Number((conversionRate - pConversionRate).toFixed(2)),
 
                 ctr: Number(ctr.toFixed(2)),
+                ctrChange: calcChange(ctr, pCtr),
+                ctrChangeAbs: Number((ctr - pCtr).toFixed(2)),
+
+                clicks,
+                clicksChange: calcChange(clicks, pClicks),
+                clicksChangeAbs: Number((clicks - pClicks).toFixed(2)),
+
+                impressions,
+                impressionsChange: calcChange(impressions, pImpressions),
+                impressionsChangeAbs: Number((impressions - pImpressions).toFixed(2)),
+
+                cpc,
+                cpcChange: calcChange(cpc, pCpc),
+                cpcChangeAbs: Number((cpc - pCpc).toFixed(2)),
 
                 totalOrders,
                 adOrders,
+                adOrdersChange: calcChange(adOrders, pAdOrders),
+                adOrdersChangeAbs: Number((adOrders - pAdOrders).toFixed(2)),
 
                 cvrTimeline: timeline,
 
@@ -1606,7 +1629,12 @@ exports.getSalesDashboard = async (req, res) => {
 
 exports.getSalesTrendGraph = async (req, res) => {
 
-    const configId = req?.config?.configId;
+    const rawConfigId = req?.config?.configId || req?.headers?.["x-config-id"] || req?.body?.configId;
+    const configIdFilter = rawConfigId
+        ? (mongoose.Types.ObjectId.isValid(rawConfigId)
+            ? { $in: [String(rawConfigId), new mongoose.Types.ObjectId(rawConfigId)] }
+            : String(rawConfigId))
+        : null;
 
     try {
 
@@ -1630,8 +1658,8 @@ exports.getSalesTrendGraph = async (req, res) => {
         fromDate = fromDate || moment().subtract(7, "days").format("YYYY-MM-DD");
 
         const listingFilter = {
-            configId,
             profileId: Number(profileId),
+            ...(configIdFilter && { configId: configIdFilter }),
             ...(marketplaceId && { marketplaceId }),
             ...(productTypes && { productType: { $in: [productTypes] } }),
             ...(productName && {
@@ -1643,28 +1671,36 @@ exports.getSalesTrendGraph = async (req, res) => {
             }),
         };
 
-        const products = await productListingSchema.find(listingFilter).select("asin").limit(2000).lean();
-        const asinList = products.map(p => p.asin);
+        const hasProductFilter = Boolean(productTypes || productName);
+        let asinList = [];
+
+        if (hasProductFilter) {
+            const products = await productListingSchema.find(listingFilter).select("asin").limit(2000).lean();
+            asinList = products.map(p => p.asin);
+        }
+
+        const adType = req.adType || "SP";
+        const mainCampaignModel = AD_TYPE_COLLECTIONS?.[`${adType}Model`]?.campaignSchema || campaignSchema;
+        const mainProductAdsModel = AD_TYPE_COLLECTIONS?.[`${adType}Model`]?.productAdsSchema || productAdsSchema;
 
         const matchAds = {
-            configId,
             profileId: Number(profileId),
             reportDate: { $gte: fromDate, $lte: toDate },
-            asins: { $in: asinList },
+            ...(configIdFilter && { configId: configIdFilter }),
+            ...(hasProductFilter && { asin: { $in: asinList } }),
         };
 
         const matchBusiness = {
-            configId,
             profileId: Number(profileId),
             reportDate: { $gte: fromDate, $lte: toDate },
-            asin: { $in: asinList },
+            ...(configIdFilter && { configId: configIdFilter }),
+            ...(hasProductFilter && { asin: { $in: asinList } }),
         };
 
-        const adType = req.adType || "SP";
-        const mainProductAdsModel = AD_TYPE_COLLECTIONS?.[`${adType}Model`]?.productAdsSchema || productAdsSchema;
+        const adsModel = hasProductFilter ? mainProductAdsModel : mainCampaignModel;
 
         const [adsAgg, salesAgg, dailyAgg] = await Promise.all([
-            mainProductAdsModel.aggregate([
+            adsModel.aggregate([
                 { $match: matchAds },
                 {
                     $group: {
@@ -1691,7 +1727,7 @@ exports.getSalesTrendGraph = async (req, res) => {
                 {
                     $match: {
                         profileId: Number(profileId),
-                        ...(configId && { configId: mongoose.Types.ObjectId.isValid(configId) ? new mongoose.Types.ObjectId(configId) : configId }),
+                        ...(configIdFilter && { configId: configIdFilter }),
                         date: { $gte: fromDate, $lte: toDate }
                     }
                 },
@@ -1733,12 +1769,16 @@ exports.getSalesTrendGraph = async (req, res) => {
             const clicks = adsData.clicks || 0;
             const adOrders = adsData.adOrders || 0;
 
-            const totalSales = dailyMap[date] !== undefined ? dailyMap[date] : (salesData.totalSales || 0);
-            const totalOrders = salesData.totalOrders || 0;
+            const rawTotalSales = dailyMap[date] !== undefined ? dailyMap[date] : (salesData.totalSales || 0);
+            const rawTotalOrders = salesData.totalOrders || 0;
 
-            const profit = totalSales - spend;
-            const organicSales = totalSales - adSales;
-            const organicOrders = totalOrders - adOrders;
+            // Total sales cannot be less than ad sales, and total orders cannot be less than ad orders
+            const totalSales = Math.max(rawTotalSales, adSales);
+            const totalOrders = Math.max(rawTotalOrders, adOrders);
+
+            const profit = totalSales > 0 ? Number((totalSales - spend).toFixed(2)) : 0;
+            const organicSales = totalSales > 0 && totalSales >= adSales ? Number((totalSales - adSales).toFixed(2)) : 0;
+            const organicOrders = totalOrders > 0 && totalOrders >= adOrders ? (totalOrders - adOrders) : 0;
 
             const tacos = totalSales ? (spend / totalSales) * 100 : 0;
             const acos = adSales ? (spend / adSales) * 100 : 0;
@@ -1874,9 +1914,13 @@ exports.getTopProductsGrid = async (req, res) => {
         const adType = req.adType || "SP";
         const mainCampaignModel = AD_TYPE_COLLECTIONS?.[`${adType}Model`]?.campaignSchema || campaignSchema;
 
-        const activeCampaigns = hasActiveCampaigns
+        let activeCampaigns = hasActiveCampaigns
             ? await mainCampaignModel.distinct("campaignId", { configId, profileId: Number(profileId), status: "ENABLED", reportDate: { $eq: currentDate } })
             : await mainCampaignModel.distinct("campaignId", { configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
+
+        if (!activeCampaigns || !activeCampaigns.length) {
+            activeCampaigns = await mainCampaignModel.distinct("campaignId", { configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
+        }
 
         const pipeline = [
 
@@ -2156,9 +2200,13 @@ exports.getProductDecisionMatrix = async (req, res) => {
         const adType = req.adType || "SP";
         const mainCampaignModel = AD_TYPE_COLLECTIONS?.[`${adType}Model`]?.campaignSchema || campaignSchema;
 
-        const activeCampaigns = hasActiveCampaigns
+        let activeCampaigns = hasActiveCampaigns
             ? await mainCampaignModel.distinct("campaignId", { configId, profileId: Number(profileId), status: "ENABLED", reportDate: { $eq: currentDate } })
             : await mainCampaignModel.distinct("campaignId", { configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
+
+        if (!activeCampaigns || !activeCampaigns.length) {
+            activeCampaigns = await mainCampaignModel.distinct("campaignId", { configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
+        }
 
         const pipeline = [
 
@@ -2327,9 +2375,17 @@ exports.getDashboardInsights = async (req, res) => {
             });
         }
 
-        page = Number(page);
-        limit = Number(limit);
+        page = Math.max(1, Number(page) || 1);
+        limit = Math.max(1, Math.min(100, Number(limit) || 15));
         const skip = (page - 1) * limit;
+
+        const cacheKey = `smart_insights:${profileId}:${configId || "all"}:${fromDate}:${toDate}:${marketplaceId || "all"}:${productTypes || "all"}:${productName || "all"}:${page}:${limit}`;
+        try {
+            const cached = await getCacheWithLog(cacheKey);
+            if (cached) {
+                return res.status(200).send(typeof cached === "string" ? JSON.parse(cached) : cached);
+            }
+        } catch (_) {}
 
         const currentDate = moment().format("YYYY-MM-DD");
         toDate = toDate || moment().format("YYYY-MM-DD");
@@ -2356,7 +2412,20 @@ exports.getDashboardInsights = async (req, res) => {
         const adType = req.adType || "SP";
         const mainCampaignModel = AD_TYPE_COLLECTIONS?.[`${adType}Model`]?.campaignSchema || campaignSchema;
 
-        const activeCampaigns = await mainCampaignModel.distinct("campaignId", { configId, profileId: Number(profileId), status: "ENABLED", reportDate: { $eq: currentDate } });
+        const hasActiveCampaigns = await campaignSchema.exists({
+            configId,
+            profileId: Number(profileId),
+            status: "ENABLED",
+            reportDate: { $gte: moment().subtract(2, "days").format("YYYY-MM-DD") }
+        });
+
+        let activeCampaigns = hasActiveCampaigns
+            ? await mainCampaignModel.distinct("campaignId", { configId, profileId: Number(profileId), status: "ENABLED", reportDate: { $eq: currentDate } })
+            : await mainCampaignModel.distinct("campaignId", { configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
+
+        if (!activeCampaigns || !activeCampaigns.length) {
+            activeCampaigns = await mainCampaignModel.distinct("campaignId", { configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
+        }
 
         const pipeline = [
             { $match: matchListing },
@@ -2484,57 +2553,77 @@ exports.getDashboardInsights = async (req, res) => {
             { $group: { _id: "$asin", doc: { $first: "$$ROOT" } } },
             { $replaceRoot: { newRoot: "$doc" } },
             {
-                $project: {
-                    _id: 0,
-                    asin: 1,
-                    type: 1,
-
-                    message: {
-                        $switch: {
-                            branches: [
-                                { case: { $eq: ["$type", "scale"] }, then: { $concat: ["Increase budget to scale sales for ", { $ifNull: ["$sku", ""] }] } },
-                                { case: { $eq: ["$type", "stop"] }, then: { $concat: ["Reduce bids or pause ads for ", { $ifNull: ["$sku", ""] }] } },
-                                { case: { $eq: ["$type", "fix"] }, then: { $concat: ["Improve listing quality for ", { $ifNull: ["$sku", ""] }] } },
-                                { case: { $eq: ["$type", "optimize"] }, then: { $concat: ["Reduce ad spend to avoid stock-out for ", { $ifNull: ["$sku", ""] }] } }
-                            ],
-                            default: ""
-                        }
-                    },
-
-                    smallMessage: {
-                        $switch: {
-                            branches: [
-                                {
-                                    case: { $eq: ["$type", "scale"] },
-                                    then: { $concat: ["(ROAS ", { $toString: "$roasValue" }, ")"] }
+                $facet: {
+                    metadata: [{ $count: "total" }],
+                    data: [
+                        { $skip: skip },
+                        { $limit: limit },
+                        {
+                            $project: {
+                                _id: 0,
+                                asin: 1,
+                                type: 1,
+                                message: {
+                                    $switch: {
+                                        branches: [
+                                            { case: { $eq: ["$type", "scale"] }, then: { $concat: ["Increase budget to scale sales for ", { $ifNull: ["$sku", ""] }] } },
+                                            { case: { $eq: ["$type", "stop"] }, then: { $concat: ["Reduce bids or pause ads for ", { $ifNull: ["$sku", ""] }] } },
+                                            { case: { $eq: ["$type", "fix"] }, then: { $concat: ["Improve listing quality for ", { $ifNull: ["$sku", ""] }] } },
+                                            { case: { $eq: ["$type", "optimize"] }, then: { $concat: ["Reduce ad spend to avoid stock-out for ", { $ifNull: ["$sku", ""] }] } }
+                                        ],
+                                        default: ""
+                                    }
                                 },
-                                {
-                                    case: { $eq: ["$type", "stop"] },
-                                    then: { $concat: ["(ACOS ", { $toString: "$acosValue" }, "%)"] }
-                                },
-                                {
-                                    case: { $eq: ["$type", "fix"] },
-                                    then: { $concat: ["(High clicks ", { $toString: "$clicksValue" }, ", Low CVR ", { $toString: "$cvrValue" }, "%)"] }
-                                },
-                                {
-                                    case: { $eq: ["$type", "optimize"] },
-                                    then: { $concat: ["(Only ", { $toString: "$stockDaysValue" }, " days stock left)"] }
+                                smallMessage: {
+                                    $switch: {
+                                        branches: [
+                                            {
+                                                case: { $eq: ["$type", "scale"] },
+                                                then: { $concat: ["(ROAS ", { $toString: "$roasValue" }, ")"] }
+                                            },
+                                            {
+                                                case: { $eq: ["$type", "stop"] },
+                                                then: { $concat: ["(ACOS ", { $toString: "$acosValue" }, "%)"] }
+                                            },
+                                            {
+                                                case: { $eq: ["$type", "fix"] },
+                                                then: { $concat: ["(High clicks ", { $toString: "$clicksValue" }, ", Low CVR ", { $toString: "$cvrValue" }, "%)"] }
+                                            },
+                                            {
+                                                case: { $eq: ["$type", "optimize"] },
+                                                then: { $concat: ["(Only ", { $toString: "$stockDaysValue" }, " days stock left)"] }
+                                            }
+                                        ],
+                                        default: ""
+                                    }
                                 }
-                            ],
-                            default: ""
+                            }
                         }
-                    }
+                    ]
                 }
             }
-
         ];
 
-        const insights = await productListingSchema.aggregate(pipeline);
+        const [aggRes] = await productListingSchema.aggregate(pipeline).allowDiskUse(true);
+        const total = aggRes?.metadata?.[0]?.total || 0;
+        const insights = aggRes?.data || [];
 
-        return res.status(200).send({
+        const responsePayload = {
             isSuccess: true,
             data: insights,
-        });
+            pagination: {
+                page,
+                limit,
+                total,
+                hasMore: (page * limit) < total
+            }
+        };
+
+        try {
+            await setCacheWithLog(cacheKey, JSON.stringify(responsePayload), 180);
+        } catch (_) {}
+
+        return res.status(200).send(responsePayload);
 
     } catch (err) {
         write_logs({ message: `[getDashboardInsights Error] ${err?.message || err} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });

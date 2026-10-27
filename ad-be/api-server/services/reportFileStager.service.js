@@ -2,6 +2,7 @@ const fs = require("fs");
 const { chain } = require("stream-chain");
 const { parser } = require("stream-json");
 const { streamArray } = require("stream-json/streamers/StreamArray");
+const moment = require("moment-timezone");
 const { normalizeReportRow } = require("../helper/reportNormalization.helper");
 const { isExtendedEntity, normalizeExtendedRow, extendedRowKey } = require("../helper/reportExtendedEntities.helper");
 const { redisClient } = require("./redis.service");
@@ -53,6 +54,51 @@ const stageReportFileInRedis = async ({
     createdAt: new Date().toISOString(),
   });
 
+  // For targeting reports where Amazon omits target IDs for auto-targets,
+  // pre-load existing Amazon target IDs (T-) for active auto-targets so rows map directly to genuine IDs.
+  // Uses index on { configId, profileId, reportDate } with recent dates to keep memory and query time minimal.
+  let targetIdMap = null;
+  if (entity === "targeting" || entity === "sbTargeting") {
+    try {
+      const mongoose = require("mongoose");
+      const targetModel = entity === "sbTargeting"
+        ? require("../models/sbTargeting.model")
+        : require("../models/targeting.model");
+
+      const resolvedConfig = mongoose.Types.ObjectId.isValid(configId)
+        ? new mongoose.Types.ObjectId(String(configId))
+        : configId;
+
+      const latestDoc = await targetModel.findOne(
+        { configId: resolvedConfig, profileId: Number(profileId) },
+        { reportDate: 1 }
+      ).sort({ reportDate: -1 }).lean();
+
+      if (latestDoc?.reportDate) {
+        const dateThreshold = moment(latestDoc.reportDate).subtract(14, "days").format("YYYY-MM-DD");
+        const existingTargets = await targetModel.find({
+          configId: resolvedConfig,
+          profileId: Number(profileId),
+          reportDate: { $gte: dateThreshold },
+          keywordType: "TARGETING_EXPRESSION_PREDEFINED",
+          targetId: { $regex: /^T-/ },
+        }).select("campaignId adGroupId targeting targetId").lean();
+
+        targetIdMap = new Map();
+        for (const t of existingTargets) {
+          if (t.campaignId && t.adGroupId && t.targeting && t.targetId) {
+            const key = `${t.campaignId}:${t.adGroupId}:${t.targeting}`;
+            if (!targetIdMap.has(key)) {
+              targetIdMap.set(key, t.targetId);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      write_logs({ message: `[stageReportFileInRedis] Warning loading targetIdMap: ${err.message}`, log_type: "warn" });
+    }
+  }
+
   return new Promise((resolve, reject) => {
     const pipeline = chain([
       fs.createReadStream(filePath),
@@ -83,6 +129,7 @@ const stageReportFileInRedis = async ({
           configId,
           profileId,
           accountType,
+          targetIdMap,
         });
 
         // 2. Intra-file duplicate detection

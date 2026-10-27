@@ -9,6 +9,7 @@ const {
 const { requestTurn } = require('./aiProvider.service');
 const { createReportService } = require('./chatbotReporting.handlers');
 const { explainReport } = require('./chatbotReporting/readableExplanation');
+const { recordUnansweredQuestion } = require('./unansweredQuestion.capture');
 const {
   SUMMARY_METRICS,
   extractExplicitSingleMetric,
@@ -29,13 +30,74 @@ function reportNeedsPeriod(category) {
 // When the user's question names no time period and none carries over from the
 // previous report, we ask which range to use rather than silently assuming one.
 // reportContext.period is the carried-over window from an earlier turn.
-function missingPeriodClarification(category, message, reportContext) {
+function missingPeriodClarification(category, message, reportContext, reportArguments) {
   if (!reportNeedsPeriod(category)) return null;
+  if (reportArguments && reportArguments.period && (reportArguments.period.preset || reportArguments.period.fromDate)) {
+    return null;
+  }
   const carriedPeriod = reportContext && reportContext.period && reportContext.period.preset;
   if (carriedPeriod) return null;
   if (messageMentionsTimePeriod(message)) return null;
   return 'Which date range should I report on? For example: yesterday, last 7 days, '
     + 'last 14 days, last 30 days, this month, or a specific range like 2026-10-01 to 2026-10-07.';
+}
+
+function hasComparisonRequest(message = '') {
+  const text = typeof message === 'string' ? message.toLowerCase() : '';
+  if (!text) return false;
+  if (/\b(?:what\s+is\s+(?:this\s+)?(?:project|app|platform|advertiseiq)|how\s+does\s+advertiseiq\s+compare)\b/i.test(text)) return false;
+  return /\b(?:compare|compared|comparison|comparing|vs\.?|versus)\b/i.test(text);
+}
+
+function extractCalendarDates(text = '') {
+  return text.match(/\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b|\b\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\b|\b\d{1,2}(?:st|nd|rd|th)?\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b|\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?\b/gi) || [];
+}
+
+function extractPeriodPresets(text = '') {
+  const presets = [];
+  const patterns = [
+    ['this_week', /\bthis\s+week\b/i],
+    ['last_week', /\blast\s+week\b/i],
+    ['this_month', /\bthis\s+month\b/i],
+    ['last_month', /\blast\s+month\b/i],
+    ['yesterday', /\byesterday\b/i],
+    ['today', /\btoday\b/i],
+    ['last_7_days', /\b(?:last|past|in|over)\s+(?:the\s+)?7\s+days\b/i],
+    ['last_14_days', /\b(?:last|past|in|over)\s+(?:the\s+)?14\s+days\b/i],
+    ['last_30_days', /\b(?:last|past|in|over)\s+(?:the\s+)?30\s+days\b/i],
+    ['previous_period', /\b(?:previous|prior)\s+period\b/i],
+    ['previous_week', /\b(?:previous|prior|the)\s+week\s+before\b|\b(?:previous|prior)\s+week\b/i],
+    ['previous_month', /\b(?:previous|prior)\s+month\b/i],
+    ['previous_day', /\b(?:day\s+before(?: yesterday)?|prior\s+day|previous\s+day)\b/i],
+  ];
+  for (const [key, reg] of patterns) {
+    if (reg.test(text)) presets.push(key);
+  }
+  return presets;
+}
+
+function missingComparisonDatesClarification(message = '', reportContext = null) {
+  if (!hasComparisonRequest(message)) return null;
+
+  const dates = extractCalendarDates(message);
+  const presets = extractPeriodPresets(message);
+  const hasContextPeriod = Boolean(reportContext?.period?.preset || reportContext?.period?.fromDate);
+
+  const hasBothPeriods = dates.length >= 2 || presets.length >= 2 ||
+    (dates.length >= 1 && presets.length >= 1) ||
+    (hasContextPeriod && (dates.length >= 1 || presets.length >= 1));
+
+  if (hasBothPeriods) return null;
+
+  if (dates.length === 1) {
+    return `Which date range would you like to compare ${dates[0]} against? Please specify the dates to compare from and to (for example: ${dates[0]} vs 31-08-2026, or this week vs last week).`;
+  }
+  if (presets.length === 1 && !hasContextPeriod) {
+    const label = presets[0].replace(/_/g, ' ');
+    return `Which date range would you like to compare ${label} against? Please specify the dates to compare from and to (for example: ${label} vs the previous period, or this week vs last week).`;
+  }
+
+  return 'Which date ranges would you like to compare? Please specify the dates to compare from and to (for example: this week vs last week, or 2026-09-01 to 2026-09-07 vs 2026-08-25 to 2026-08-31).';
 }
 
 const SYSTEM_PROMPT = `You are AdvertiseIQ's Amazon Advertising Assistant.
@@ -78,11 +140,14 @@ CRITICAL INSTRUCTIONS:
   - In your response, give a direct, concise answer stating that metric clearly with supporting context (e.g. spend and sales for ACOS).
 - GENERAL PERFORMANCE SUMMARIES: When the user asks for an overall performance summary (e.g. "how did my ads perform yesterday", "summary for last 7 days", "performance overview"):
   - Request all 7 KPIs (spend, sales, acos, roas, orders, cpc, cvr).
-  - Include comparison={"mode":"previous_period"} and analysis={"includeMovers":true}, even when the user does not explicitly say "compare". A performance summary includes changes and the 3 biggest movers when reliable comparison data is available. Keep comparison details concise and distinguish them from the selected period.
-- COMPARISONS: A week-versus-week or profile comparison uses category="comparison" and presentation="grouped_bar"; a daily trend uses groupBy=["date"] and presentation="line". If the user asks to compare 5 profiles but only one profile is known, ask them to select the profiles; never claim that one profile is a 5-profile comparison.
+  - Set comparison={"mode":"none"} and analysis={"includeMovers":false}.
+  - Do NOT include comparison to the previous period and do NOT include movers unless the user explicitly requested a comparison. Never promise or assume a comparison when asking for date clarification.
+- COMPARISONS: When the user asks for a comparison:
+  - If the user asks for a comparison but does not specify both date ranges to compare (the "from" and "to" periods, e.g. "compare my performance", "compare yesterday", "compare sales"): do NOT call run_report. Ask the user which dates or date ranges they would like to compare from and to.
+  - When both periods to compare are provided (e.g. "this week vs last week" or custom date ranges): use category="comparison" and presentation="grouped_bar". If the user asks to compare multiple profiles or profile data, explain that cross-profile comparison is not supported because AdvertiseIQ reports on one selected profile at a time.
 - For "why" questions, use category="change", comparison={"mode":"previous_period"}, groupBy=["campaign"] unless a narrower entity is requested, and presentation="grouped_bar". Put the metric being explained FIRST in metrics: acos for an ACOS increase, sales for a sales decrease; include cpc, cvr, impressions, clicks and orders as supporting evidence. Retain an explicitly selected campaign in entity when drilling into keywords or placements. Do not describe performance as strong, good, poor or profitable without a supplied target or verified margin.
 - For time analysis, use category="time" and presentation="heatmap". Use groupBy=["hour", "weekday"] when the user does not specify the grouping. Ask for the date range if the user gives none (see REQUIRED DETAILS); do not assume a window. For general performance or efficiency questions such as "when do my ads work best", "best hours", "best days", or "dayparting", request metrics=["clicks", "spend", "cpc"], with sort={"field":"clicks","direction":"desc"} and presentation="heatmap". For best conversion questions, request metrics=["cvr", "orders", "clicks"], with sort={"field":"cvr","direction":"desc"}; if validated orders are unavailable, explain that limitation instead of presenting spend as conversion. For wasted money by weekday, retain weekday grouping and request spend, sales, orders and acos.
-- For growth opportunities, use category="growth". Converting search terms not yet added as keywords use groupBy=["search_term"]; low-impression efficient keywords use groupBy=["keyword"], metrics=["spend","sales","orders","clicks","impressions","acos"]. Budget questions ("which campaigns run out of budget", "budget utilization", "am I budget-capped") use groupBy=["campaign"]; a budget-use report (per-campaign budget, spend, utilization and capped days) is returned. Use the user's target ACOS when supplied, otherwise ask for it when required. Default to SP when the ad type is unspecified; ask for the date range if the user gives none (see REQUIRED DETAILS).
+- For growth opportunities, use category="growth". Converting search terms not yet added as keywords use groupBy=["search_term"]; low-impression efficient keywords use groupBy=["keyword"], metrics=["spend","sales","orders","clicks","impressions","acos"]. Budget exhaustion questions use groupBy=["campaign"] ("which campaigns run out of budget", "budget utilization", "am I budget-capped"); a budget-use report (per-campaign budget, spend, utilization and capped days) is returned. Use the user's target ACOS when supplied, otherwise ask for it when required. Default to SP when the ad type is unspecified; ask for the date range if the user gives none (see REQUIRED DETAILS).
 - For wasted spend, use category="waste" and a sortable table. Preserve the entity in the question: keywords use groupBy=["keyword"], search terms use ["search_term"], placements use ["placement"], campaigns use ["campaign"]. Preserve explicit thresholds: "over $30 with no sales in 14 days" means period={"preset":"last_14_days"}, spend gt 30 with currencyCode="USD", and sales eq 0; "clicks but no orders" means clicks gt 0 and orders eq 0. Do not convert dollars to the profile currency without a verified exchange rate. For vague "a lot" or "few", ask for thresholds or label a relative efficiency ranking. Ask for the date range if the user gives none (see REQUIRED DETAILS); do not assume a window.
 - For product questions, use category="products", groupBy=["product"] and presentation="bar". Preserve the requested metric: profit for profitability, tacos for TACOS including organic sales, and stock for low inventory. Explain missing financial or inventory data; do not substitute ad sales minus spend for profit or ACOS for TACOS.
 - For rule history and "what did my rules change / did my rule run", use category="rules", groupBy=["rule"] and presentation="table". The report shows confirmed applied rule actions when available (each with its execution time and the before-to-after value it set). Report a performance change after a rule as observed, not proven to be caused by it; do not invent an applied timestamp. For the effectiveness of one specific rule, ask the user which rule if they have not named it.
@@ -269,7 +334,7 @@ function sanitizeReportRequest(args = {}, context = {}) {
   if (!comparison || typeof comparison !== 'object' || !comparison.mode) {
     if (reportCtx.comparison && reportCtx.comparison.mode) {
       comparison = reportCtx.comparison;
-    } else if (['summary', 'change'].includes(validCategory)) {
+    } else if (validCategory === 'change') {
       comparison = { mode: 'previous_period' };
     } else {
       comparison = { mode: 'none' };
@@ -482,7 +547,7 @@ function isGeneralOrConversationalQuestion(message = '') {
   if (!text) return true;
 
   // Greetings & casual affirmations
-  if (/^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening)|howdy|greetings|thanks|thank\s+you|ok|okay|got\s+it|cool|nice)[!.,?]?$/i.test(text)) {
+  if (/^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening)|howdy|greetings|thanks|thank\s+you|ok|okay|got\s+it|cool|nice|yes|yep|yeah|sure|yup|no|nope|nah|correct|right|fine|please)[!.,?]?$/i.test(text)) {
     return true;
   }
 
@@ -514,6 +579,9 @@ function isGeneralOrConversationalQuestion(message = '') {
 
 function isAnalyticsQuestion(message = '') {
   const text = typeof message === 'string' ? message.toLowerCase() : '';
+  if (/\b(?:stock\s+(?:price|market|exchange|quote|ticker|shares?)|(?:share|shares)\s+price|stocks)\b/i.test(text)) {
+    return false;
+  }
   const analyticsKeywords = [
     'spend', 'sales', 'acos', 'roas', 'cpc', 'cvr', 'orders', 'clicks',
     'impressions', 'campaign', 'keyword', 'search term', 'placement',
@@ -538,13 +606,14 @@ function knownSummaryRequest(message, input, authContext) {
     return null;
   }
 
+  const wantsComparison = hasExplicitComparisonIntent(message);
   return {
     category: 'summary',
     profileIds,
     period: { preset: text.includes('yesterday') ? 'yesterday' : 'this_week' },
-    comparison: { mode: 'previous_period' },
+    comparison: wantsComparison ? { mode: 'previous_period' } : { mode: 'none' },
     metrics: [...DEFAULT_METRICS_BY_CATEGORY.summary],
-    analysis: { includeMovers: true },
+    analysis: { includeMovers: wantsComparison },
   };
 }
 
@@ -571,6 +640,10 @@ function safeReportFailure(error) {
     return 'You do not have permission to view reporting for the requested profile or report section.';
   }
 
+  if (/future/i.test(error?.message || '') || error?.code === 'REPORT_FUTURE_DATE') {
+    return 'That date is in the future. Reporting is only available for past or current dates.';
+  }
+
   if ([400, 422].includes(error?.statusCode)) {
     return 'This report selection is unsupported or incomplete. Check the profile, date range, metric and filter currency.';
   }
@@ -589,6 +662,17 @@ function unsupportedRequestExplanation(message) {
 
   if (/competitor.*(?:spend|sales|orders|private)/i.test(message)) {
     return 'I can only access verified performance data for your authorized Amazon advertising accounts. Competitor private spend data is not available.';
+  }
+
+  if (
+    (/\b(?:\d{1,2}|multiple|two|three|four|five|six|several|all)\s+profiles\b/i.test(message) &&
+      /\b(?:compar\w*|vs\.?|versus|against|doing|perform|each other)\b/i.test(message)) ||
+    /\bcompar\w*\s+(?:(?:my|the|all|these|between)\s+)?profiles?\b/i.test(message) ||
+    /\bcompar\w*\s+(?:data\s+across\s+profiles?|profile\s+data)\b/i.test(message) ||
+    /\bprofiles?\s+(?:data\s+)?compared\s+to\s+each\s+other\b/i.test(message) ||
+    /\b(?:cross[- ]profile|across\s+profiles?)\b/i.test(message)
+  ) {
+    return 'I cannot compare profile data across multiple profiles. AdvertiseIQ supports reporting for one selected profile at a time. Please switch to the profile you want to view.';
   }
 
   return null;
@@ -704,14 +788,32 @@ function isReadableGroundedExplanation(text, report) {
   return hasCampaignEvidence || !/\b(?:one|1|a single)\s+campaign\b/i.test(text);
 }
 
+function unansweredReportCapability(report) {
+  if (report?.status !== 'unavailable') return false;
+  const gaps = report.freshness?.missingInputs;
+  if (!Array.isArray(gaps)) return false;
+  // Only known source/capability gaps. Ordinary empty dates, incomplete imports,
+  // attribution windows and disconnected reads are not unsupported questions.
+  return gaps.some(gap => typeof gap === 'string' && /(?:Product profit requires product costs, selling fees|Reconciled total product sales including organic and complete advertising spend|Fresh sellable inventory (?:joined to advertised ASIN\/SKU identities|and validated product sales velocity)|Amazon Seller account \(SP-API\) connection for product, stock and total-sales reports|A reconciled Sponsored Brands per-product allocation is not established)/.test(gap));
+}
+
+function directAnswerIsUnanswered(text) {
+  if (!text) return true;
+  // Date/entity/profile requests are useful clarifications even if they explain
+  // that the assistant cannot answer until the missing detail is supplied.
+  if (/\b(?:please (?:select|specify|provide|share)|which (?:date|period|profile|campaign|rule)|what (?:date|period|profile|campaign|rule)|without (?:a |the |your )?(?:date|period|profile|campaign|rule))\b/i.test(text)) return false;
+  return /\bi (?:(?:do not|don't|don’t) (?:know|have (?:enough |any |the )?(?:information|data|an answer)|have access to (?:that|this|the requested) (?:information|data))|(?:cannot|can't|can’t|am unable to) (?:answer|help with|support|(?:access|retrieve) (?:that|the requested|your requested|this) (?:data|information)|provide (?:that|the requested|this) (?:data|information|answer)))\b|\bi['’]m unable to (?:answer|help with|support)\b|\bthis (?:feature|capability|request) is (?:not supported|unsupported)\b|\b(?:not supported|unsupported) (?:by|in|on) (?:advertiseiq|this (?:assistant|platform))\b/i.test(text);
+}
+
 function createChatService({
   aiProvider = { requestTurn },
   reportService = createReportService(),
   faqService = null,
   clientFactory = null,
   now = () => Date.now(),
+  unansweredRecorder = recordUnansweredQuestion,
 } = {}) {
-  return async function executeChatTurn(input = {}, authContext = {}) {
+  async function generateChatTurn(input = {}, authContext = {}) {
     const startTime = now();
     const timings = {};
 
@@ -773,6 +875,7 @@ function createChatService({
     const unsupportedExplanation = unsupportedRequestExplanation(message);
     if (unsupportedExplanation) {
       return {
+        unansweredReason: 'unsupported',
         replyMessage: unsupportedExplanation,
         report: null,
         isReport: false,
@@ -807,12 +910,23 @@ function createChatService({
     const profileSelection = input.profileIds || authContext.profileIds || input.reportContext?.profileIds;
     const selectedProfiles = Array.isArray(profileSelection) ? profileSelection : [];
     const selectedProfileCount = new Set(selectedProfiles.map(String)).size;
-    if (requestedProfileCount > selectedProfileCount && /\b(?:compar|doing|perform|profiles)\b/i.test(message)) {
+    if (requestedProfileCount > 1 && /\b(?:compar|doing|perform|profiles)\b/i.test(message)) {
       return {
-        replyMessage: `You asked to compare ${requestedProfileCount} profiles, but ${selectedProfileCount === 1 ? 'only one profile is currently selected' : `only ${selectedProfileCount} profiles are currently selected`}. Please select the profiles to compare or share their names.`,
+        replyMessage: 'I cannot compare profile data across multiple profiles. AdvertiseIQ supports reporting for one selected profile at a time. Please switch to the profile you want to view.',
         report: null,
         isReport: false,
         stopConversion: false,
+      };
+    }
+
+    const comparisonClarification = missingComparisonDatesClarification(message, input.reportContext);
+    if (comparisonClarification) {
+      return {
+        replyMessage: comparisonClarification,
+        report: null,
+        isReport: false,
+        stopConversion: false,
+        timings: { totalDurationMs: now() - startTime },
       };
     }
 
@@ -1015,6 +1129,10 @@ When the user asks relative follow-up questions:
     if (!reportToolCall) {
       if (!isGeneralOrConversationalQuestion(message) && isAnalyticsQuestion(message)) {
         return {
+          // Asking for missing scope is a clarification, not an unanswered query.
+          ...(!missingPeriodClarification('summary', message, input.reportContext)
+            && !/^(?:which|what|please (?:select|specify|provide|share)|could you|can you)\b/i.test((turn1.text || '').trim())
+            ? { unansweredReason: 'unanswered' } : {}),
           replyMessage: 'I could not verify reporting data for that question. Please specify the report, profile and date range, or choose a report follow-up button.',
           report: null,
           isReport: false,
@@ -1028,6 +1146,8 @@ When the user asks relative follow-up questions:
         ? `I am your AdvertiseIQ advertising assistant for ${activeProf.name || 'Tagdo'}. How can I help you today?`
         : 'I am your AdvertiseIQ advertising assistant. How can I help you today?';
       return {
+        ...(directAnswerIsUnanswered(turn1.text)
+          ? { unansweredReason: 'unanswered' } : {}),
         replyMessage: turn1.text || defaultText,
         report: null,
         isReport: false,
@@ -1047,18 +1167,19 @@ When the user asks relative follow-up questions:
       // question gives no time reference and none carries over from a prior
       // report, ask the user which range to use instead of defaulting.
       // (Malformed args fall through to sanitizeReportRequest's validation.)
-      const resolvedCategory = (reportArguments && reportArguments.category)
-        || input.reportContext?.category || 'summary';
-      const periodClarification = missingPeriodClarification(resolvedCategory, message, input.reportContext);
-      if (periodClarification) {
-        timings.totalDurationMs = now() - startTime;
-        return {
-          replyMessage: periodClarification,
-          report: null,
-          isReport: false,
-          stopConversion: false,
-          timings,
-        };
+      if (reportArguments && typeof reportArguments === 'object' && !Array.isArray(reportArguments)) {
+        const resolvedCategory = reportArguments.category || input.reportContext?.category || 'summary';
+        const periodClarification = missingPeriodClarification(resolvedCategory, message, input.reportContext, reportArguments);
+        if (periodClarification) {
+          timings.totalDurationMs = now() - startTime;
+          return {
+            replyMessage: periodClarification,
+            report: null,
+            isReport: false,
+            stopConversion: false,
+            timings,
+          };
+        }
       }
 
       const reportRequest = sanitizeReportRequest(reportArguments, {
@@ -1146,6 +1267,8 @@ When the user asks relative follow-up questions:
 
     const totalInputTokens = (turn1.usage?.inputTokens || 0) + (turn2.usage?.inputTokens || 0);
     const totalOutputTokens = (turn1.usage?.outputTokens || 0) + (turn2.usage?.outputTokens || 0);
+    const totalCacheCreationInputTokens = (turn1.usage?.cacheCreationInputTokens || 0) + (turn2.usage?.cacheCreationInputTokens || 0);
+    const totalCacheReadInputTokens = (turn1.usage?.cacheReadInputTokens || 0) + (turn2.usage?.cacheReadInputTokens || 0);
 
     return {
       replyMessage: isReadableGroundedExplanation(turn2.text, reportResult)
@@ -1160,9 +1283,28 @@ When the user asks relative follow-up questions:
         turn2: turn2.usage,
         totalInputTokens,
         totalOutputTokens,
+        cacheCreationInputTokens: totalCacheCreationInputTokens,
+        cacheReadInputTokens: totalCacheReadInputTokens,
       },
       timings,
     };
+  }
+
+  // Every transport (JSON and SSE) uses this service, so a turn is recorded once.
+  return async function executeChatTurn(input = {}, authContext = {}) {
+    const result = await generateChatTurn(input, authContext);
+    const { unansweredReason, ...response } = result;
+    const reason = unansweredReason || (unansweredReportCapability(result.report) ? 'unsupported' : null)
+      || (!result.isReport && result.error?.statusCode >= 500 ? 'error' : null);
+    if (reason && typeof unansweredRecorder === 'function') {
+      try {
+        await unansweredRecorder(input, authContext, reason);
+      } catch (_) {
+        // Capture is best-effort; it cannot turn a valid chat reply into an error.
+        console.warn('[unanswered-question] Recording failed');
+      }
+    }
+    return response;
   };
 }
 
@@ -1182,5 +1324,8 @@ module.exports = {
   normalizeQuestionReportArguments,
   messageMentionsTimePeriod,
   missingPeriodClarification,
+  missingComparisonDatesClarification,
+  unansweredReportCapability,
+  directAnswerIsUnanswered,
   createChatService,
 };

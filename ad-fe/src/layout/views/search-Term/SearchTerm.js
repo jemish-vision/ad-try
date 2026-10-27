@@ -484,8 +484,9 @@ function SearchTerm() {
     },
     ...(viewMode !== "product" ? [{
       headerName: t("adGroupName"),
-      field: "adGroupname",
+      field: "adGroupName",
       title: "AD Group Name",
+      valueGetter: (params) => params.data?.adGroupName || params.data?.adGroupname || "-",
       ...(checkOrderColumns("AD Group Name")),
       sortable: true,
       resizable: true,

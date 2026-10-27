@@ -120,6 +120,14 @@ export default function TargetingDetail() {
   const [historyList, setHistoryList] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [activeSourceTab, setActiveSourceTab] = useState("All");
+
+  // ACOS Lookback Period states
+  const [acosPeriod, setAcosPeriod] = useState("7");
+  const [customDays, setCustomDays] = useState(7);
+  const [customDateRange, setCustomDateRange] = useState([
+    moment().subtract(7, "days").toDate(),
+    moment().subtract(1, "days").toDate(),
+  ]);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [perPage, setPerPage] = useState(firstPageRows);
@@ -169,6 +177,16 @@ export default function TargetingDetail() {
           adType: selectedAdType || "SP",
           fromDate: fromDateStr,
           toDate: toDateStr,
+          acosLookbackMode: acosPeriod,
+          acosLookbackDays: acosPeriod === "custom_days" ? customDays : Number(acosPeriod) || 7,
+          customAcosFromDate:
+            acosPeriod === "custom_range" && customDateRange?.[0]
+              ? moment(customDateRange[0]).format("YYYY-MM-DD")
+              : undefined,
+          customAcosToDate:
+            acosPeriod === "custom_range" && customDateRange?.[1]
+              ? moment(customDateRange[1]).format("YYYY-MM-DD")
+              : undefined,
         }),
       ]);
 
@@ -214,6 +232,66 @@ export default function TargetingDetail() {
     } finally {
       setChartLoading(false);
       setLoadingHistory(false);
+    }
+  };
+
+  const fetchHistory = async (
+    period = acosPeriod,
+    days = customDays,
+    customRange = customDateRange
+  ) => {
+    if (!activeProfileId || !targetId) return;
+
+    const fromDateStr = date?.[0] ? moment(date[0]).format("YYYY-MM-DD") : undefined;
+    const toDateStr = date?.[1] ? moment(date[1]).format("YYYY-MM-DD") : undefined;
+
+    setLoadingHistory(true);
+    try {
+      const payload = {
+        profileId: activeProfileId,
+        targetId,
+        campaignId: targetInfo.campaignId || queryCampaignId,
+        adType: selectedAdType || "SP",
+        fromDate: fromDateStr,
+        toDate: toDateStr,
+        acosLookbackMode: period,
+        acosLookbackDays: period === "custom_days" ? days : Number(period) || 7,
+        customAcosFromDate:
+          period === "custom_range" && customRange?.[0]
+            ? moment(customRange[0]).format("YYYY-MM-DD")
+            : undefined,
+        customAcosToDate:
+          period === "custom_range" && customRange?.[1]
+            ? moment(customRange[1]).format("YYYY-MM-DD")
+            : undefined,
+      };
+
+      const historyRes = await ApiGetTargetingHistory(payload);
+      if (historyRes?.isSuccess) {
+        setHistoryList(historyRes.data || []);
+        if (historyRes.targetInfo) {
+          setTargetInfo((prev) => ({
+            ...prev,
+            targeting: prev.targeting || historyRes.targetInfo.targeting,
+            matchType: prev.matchType || historyRes.targetInfo.matchType,
+            campaignName: prev.campaignName || historyRes.targetInfo.campaignName,
+          }));
+        }
+      } else {
+        setHistoryList([]);
+      }
+    } catch (err) {
+      console.error("[TargetingDetail] Fetch History Error:", err);
+      Toast.error(t("Something went wrong while loading targeting history"));
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleAcosPeriodChange = (val) => {
+    setAcosPeriod(val);
+    if (val !== "custom_days" && val !== "custom_range") {
+      fetchHistory(val, customDays, customDateRange);
     }
   };
 
@@ -479,6 +557,65 @@ export default function TargetingDetail() {
         },
       },
       {
+        headerName: t("ACOS"),
+        field: "acos",
+        title: "ACOS",
+        minWidth: 140,
+        flex: 1.1,
+        sortable: true,
+        resizable: true,
+        cellRenderer: (params) => {
+          const val = params.value;
+          const range = params.data?.acosDateRange || params.data?.dateRange;
+          const spend = params.data?.spend;
+          const sales = params.data?.sales;
+
+          const rangeText =
+            range?.startDate && range?.endDate
+              ? `${moment(range.startDate).format("DD/MM/YYYY")} – ${moment(range.endDate).format("DD/MM/YYYY")}`
+              : "";
+
+          if (val === null || val === undefined || val === "—") {
+            return <span className="text-slate-400 font-mono text-xs">—</span>;
+          }
+
+          const numVal = Number(val);
+          if (isNaN(numVal) || (numVal === 0 && (!sales || sales === 0))) {
+            return (
+              <div
+                className="flex flex-col justify-center py-1 leading-tight"
+                title={rangeText ? `Period: ${rangeText}\nSpend: ${CurrencyCode(spend || 0)}\nSales: ${CurrencyCode(0)}` : ""}
+              >
+                <span className="text-slate-400 font-mono text-xs font-semibold">—</span>
+                {rangeText && (
+                  <span className="text-[10px] text-slate-400 tracking-tight">{rangeText}</span>
+                )}
+              </div>
+            );
+          }
+
+          return (
+            <div
+              className="flex flex-col justify-center py-1 leading-tight"
+              title={
+                rangeText
+                  ? `Period: ${rangeText}\nSpend: ${CurrencyCode(spend || 0)}\nSales: ${CurrencyCode(sales || 0)}`
+                  : `Spend: ${CurrencyCode(spend || 0)}\nSales: ${CurrencyCode(sales || 0)}`
+              }
+            >
+              <span className="font-mono text-xs font-bold text-slate-800 dark:text-slate-100">
+                {numVal.toFixed(2)}%
+              </span>
+              {rangeText && (
+                <span className="text-[10px] text-slate-400 tracking-tight font-medium">
+                  {rangeText}
+                </span>
+              )}
+            </div>
+          );
+        },
+      },
+      {
         headerName: t("Change Source"),
         field: "changeSource",
         title: "Change Source",
@@ -651,12 +788,12 @@ export default function TargetingDetail() {
               {/* Source Dropdown, Search & Export Controls */}
               <div className="flex items-center gap-2 flex-wrap">
                 {/* Source Filter Dropdown */}
-                <div id="targeting-detail-source-filter" style={{ width: "160px" }}>
+                <div id="targeting-detail-source-filter" style={{ width: "150px" }}>
                   <Select value={activeSourceTab} onValueChange={(val) => setActiveSourceTab(val)}>
                     <SelectTrigger className="h-9 w-full text-xs font-medium bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
                       <SelectValue placeholder={t("All Sources")} />
                     </SelectTrigger>
-                    <SelectContent className="z-[99999] min-w-[160px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg">
+                    <SelectContent className="z-[99999] min-w-[150px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg">
                       <SelectItem value="All" className="text-xs py-1.5 cursor-pointer">
                         {t("All Sources")}
                       </SelectItem>
@@ -674,6 +811,74 @@ export default function TargetingDetail() {
                       </SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+
+                {/* ACOS Lookback Period Selector */}
+                <div id="targeting-detail-acos-period" className="flex items-center gap-1.5 flex-wrap">
+                  <div style={{ width: "150px" }}>
+                    <Select value={acosPeriod} onValueChange={(val) => handleAcosPeriodChange(val)}>
+                      <SelectTrigger className="h-9 w-full text-xs font-medium bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                        <SelectValue placeholder={t("7 Days ACOS")} />
+                      </SelectTrigger>
+                      <SelectContent className="z-[99999] min-w-[150px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg">
+                        <SelectItem value="7" className="text-xs py-1.5 cursor-pointer">
+                          {t("7 Days ACOS")}
+                        </SelectItem>
+                        <SelectItem value="14" className="text-xs py-1.5 cursor-pointer">
+                          {t("14 Days ACOS")}
+                        </SelectItem>
+                        <SelectItem value="30" className="text-xs py-1.5 cursor-pointer">
+                          {t("30 Days ACOS")}
+                        </SelectItem>
+                        <SelectItem value="custom_days" className="text-xs py-1.5 cursor-pointer">
+                          {t("Custom Days")}
+                        </SelectItem>
+                        <SelectItem value="custom_range" className="text-xs py-1.5 cursor-pointer">
+                          {t("Custom Date Range")}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {acosPeriod === "custom_days" && (
+                    <div className="flex items-center gap-1 bg-white dark:bg-slate-950 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-800 h-9 shadow-sm">
+                      <input
+                        type="number"
+                        min="1"
+                        max="365"
+                        value={customDays}
+                        onChange={(e) => setCustomDays(Math.max(1, Number(e.target.value) || 1))}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            fetchHistory(acosPeriod, customDays, customDateRange);
+                          }
+                        }}
+                        onBlur={() => fetchHistory(acosPeriod, customDays, customDateRange)}
+                        className="w-12 h-7 text-center text-xs font-bold bg-transparent text-slate-800 dark:text-slate-100 focus:outline-none"
+                        title={t("Enter number of lookback days and press Enter")}
+                      />
+                      <span className="text-[11px] font-semibold text-slate-400">
+                        {t("days")}
+                      </span>
+                    </div>
+                  )}
+
+                  {acosPeriod === "custom_range" && (
+                    <div style={{ width: "230px" }}>
+                      <DateRangePicker
+                        className="w-full h-9 text-xs font-medium"
+                        ranges={predefinedRanges}
+                        value={customDateRange}
+                        onChange={(val) => {
+                          if (val && val[0] && val[1]) {
+                            setCustomDateRange(val);
+                            fetchHistory(acosPeriod, customDays, val);
+                          }
+                        }}
+                        placeholder={t("Select Date Range")}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div id="targeting-detail-search" className="relative flex items-center" style={{ width: "240px", height: "36px" }}>

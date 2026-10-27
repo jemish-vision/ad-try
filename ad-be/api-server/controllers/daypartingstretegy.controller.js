@@ -39,21 +39,55 @@ const { write_logs } = require("../../winston/utility/logger");
 const safeInsertHistoryDocs = async (docs) => {
   if (!docs || !docs.length) return;
   try {
-    const thirtySecondsAgo = new Date(Date.now() - 30 * 1000);
-    const existing = await campaignChangeHistorySchema.find({
-      configId: docs[0]?.configId,
-      profileId: docs[0]?.profileId,
-      createdAt: { $gte: thirtySecondsAgo },
-    }).select("changeLevel changeType newValue").lean();
+    const configId = docs[0]?.configId;
+    const profileId = docs[0]?.profileId;
+    if (!configId || !profileId) {
+      await campaignChangeHistorySchema.insertMany(docs, { ordered: false });
+      return;
+    }
 
-    const existingKeys = new Set(existing.map((e) => `${e.changeLevel}_${e.changeType}_${e.newValue}`));
-    const deduplicated = docs.filter((d) => !existingKeys.has(`${d.changeLevel}_${d.changeType}_${d.newValue}`));
+    // Filter out no-op changes (oldValue equals newValue)
+    const validDocs = docs.filter((d) => {
+      if (d.oldValue !== undefined && d.oldValue !== null && d.oldValue !== "—" && d.newValue !== undefined && d.newValue !== null) {
+        const oldValStr = String(d.oldValue).trim();
+        const newValStr = String(d.newValue).trim();
+        if (oldValStr && newValStr && oldValStr === newValStr) return false;
+      }
+      return true;
+    });
+
+    if (!validDocs.length) return;
+
+    // Check for identical changes within the last 15 minutes
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+    const changeLevels = [...new Set(validDocs.map((d) => d.changeLevel).filter(Boolean))];
+
+    const existing = await campaignChangeHistorySchema.find({
+      configId,
+      profileId,
+      changeLevel: { $in: changeLevels },
+      createdAt: { $gte: fifteenMinutesAgo },
+    }).select("changeLevel changeType targeting matchType newValue").lean();
+
+    const makeKey = (e) => `${e.changeLevel}_${e.changeType}_${(e.targeting || "").toLowerCase().trim()}_${(e.matchType || "").toLowerCase().trim()}_${String(e.newValue || "").trim()}`;
+    const existingKeys = new Set(existing.map(makeKey));
+
+    const deduplicated = [];
+    const seenInBatch = new Set();
+    for (const d of validDocs) {
+      const key = makeKey(d);
+      if (!existingKeys.has(key) && !seenInBatch.has(key)) {
+        seenInBatch.add(key);
+        deduplicated.push(d);
+      }
+    }
 
     if (deduplicated.length > 0) {
       await campaignChangeHistorySchema.insertMany(deduplicated, { ordered: false });
     }
   } catch (err) {
     console.error("Error in safeInsertHistoryDocs:", err?.message || err);
+    await campaignChangeHistorySchema.insertMany(docs, { ordered: false }).catch(() => {});
   }
 };
 

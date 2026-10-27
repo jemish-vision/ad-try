@@ -13,7 +13,8 @@ function CurrencyFormat(amount, currencyCode) {
         } catch (e) {}
     }
 
-    const formatted = Intl.NumberFormat("en-US", {
+    const isIndia = (code ?? "INR") === "INR";
+    const formatted = Intl.NumberFormat(isIndia ? "en-IN" : "en-US", {
         currency: code ?? "INR",
         minimumFractionDigits: 0,
         maximumFractionDigits: 2,

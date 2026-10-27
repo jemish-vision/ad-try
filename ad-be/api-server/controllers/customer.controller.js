@@ -35,6 +35,7 @@ const { write_logs } = require("../../winston/utility/logger");
 const { getMostMatchedFAQ, getMeaningfulWord } = require("../helper/chatbot");
 const { createChatService, isAnalyticsQuestion, isGeneralOrConversationalQuestion } = require("../services/chatbotReporting.chat");
 const defaultReportingChatService = createChatService();
+const { recordUnansweredQuestion } = require("../services/unansweredQuestion.capture");
 const AD_TYPE_COLLECTIONS = require("../helper/adTypeCollections");
 const { ROLES } = require("../constants/roles");
 const { default: mongoose } = require("mongoose");
@@ -386,6 +387,22 @@ exports.getFilter = async (req, res) => {
       },
       { $sort: { createdAt: -1 } }
     ]);
+
+    if (pageName === "Budget Rules") {
+      const hasOOB = filters.some(f => f.value === "OutOfBudget" || f.value === "Out of Budget");
+      if (!hasOOB) {
+        filters.push({
+          name: "Out of Budget",
+          value: "OutOfBudget",
+          label: "Out of Budget",
+          isDefault: true,
+          isActive: true,
+          isSPFilter: true,
+          isSBFilter: true,
+          isSDFilter: true
+        });
+      }
+    }
 
     return res.status(200).send({
       filters,
@@ -1817,7 +1834,10 @@ exports.customChatBot = async (req, res) => {
       }
     }
 
+    const hasHistory = Array.isArray(req.body?.history) && req.body.history.length > 0;
     const isReporting = Boolean(
+      isContinuing ||
+      hasHistory ||
       followUpRequest ||
       safeReportContext ||
       isAnalyticsQuestion(message) ||
@@ -1915,27 +1935,51 @@ exports.customChatBot = async (req, res) => {
     const matchedFAQ = await getMostMatchedFAQ(message);
     const wordCount = getMeaningfulWord(message)?.length;
 
+    let nonReportingReply = '';
+    let stopConversion = false;
+    let stopType;
+
     if (!matchedFAQ) {
       if (wordCount <= 3) {
-        return res.status(200).send({
-          replyMessage: `<p><b>Sorry!</b> 😕 I don’t understand your meaning.</p><p>Please describe your issue in more detail so I can help you better.</p>`,
-          stopConversion: false
-        });
-      }
-
-      return res.status(200).send({
-        replyMessage: `
+        nonReportingReply = `<p><b>Sorry!</b> 😕 I don’t understand your meaning.</p><p>Please describe your issue in more detail so I can help you better.</p>`;
+      } else {
+        await recordUnansweredQuestion({ message, profileIds: activeProfileIds }, {
+          userId,
+          configId: req.config?.configId || req.user?.configId,
+          organizationId,
+        }, 'unanswered');
+        nonReportingReply = `
           <p><b>Thanks for explaining.</b> 📝</p>
           <p>I couldn’t find an exact answer, so I’m creating a support ticket for you.</p>
           <p>📧 Our team will contact you shortly.</p>
-        `,
-        stopConversion: true,
-        stopType: "CREATE_TICKET"
-      });
+        `;
+        stopConversion = true;
+        stopType = "CREATE_TICKET";
+      }
+    } else {
+      nonReportingReply = matchedFAQ?.answer || '';
     }
 
-    const replyMessage = matchedFAQ?.answer
-    return res.status(200).send({ replyMessage });
+    if (isStream) {
+      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders?.();
+      res.write(`event: done\ndata: ${JSON.stringify({
+        replyMessage: nonReportingReply,
+        report: null,
+        isReport: false,
+        stopConversion,
+        stopType,
+      })}\n\n`);
+      return res.end();
+    }
+
+    return res.status(200).send({
+      replyMessage: nonReportingReply,
+      stopConversion,
+      stopType,
+    });
   } catch (error) {
       write_logs({ message: `[customChatBot Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     if (res.headersSent) {

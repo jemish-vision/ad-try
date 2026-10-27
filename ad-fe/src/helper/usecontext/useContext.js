@@ -116,6 +116,20 @@ export function UseContext({ children }) {
   }, [localStorage.getItem("profile")]);
 
   useEffect(() => {
+    const handleProfileChange = (e) => {
+      if (e?.detail?.profile) {
+        setcurrencyCode(e.detail.profile.currencyCode);
+      }
+      try {
+        const profileObj = JSON.parse(localStorage.getItem("profile"));
+        if (profileObj) setstoreDara(profileObj);
+      } catch (err) {}
+    };
+    window.addEventListener("profileChanged", handleProfileChange);
+    return () => window.removeEventListener("profileChanged", handleProfileChange);
+  }, []);
+
+  useEffect(() => {
     if (selectedAdType) localStorage.setItem("adType", selectedAdType)
   }, [selectedAdType]);
 

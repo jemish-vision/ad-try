@@ -72,6 +72,12 @@ const ApiImportRecommandationRule = (data) => {
         .then(res => res.data).catch(res => res.data)
 }
 
+const ApiGetRecommendationsHub = (data) => {
+    const dashboardApi = `${process.env.REACT_APP_API_BASE}/api/dashboard/`;
+    return axios.post(`${dashboardApi}recommendations-hub`, data, { headers: { ...headers, 'x-skip-loader': true }, skipLoader: true })
+        .then(res => res.data).catch(res => res.data);
+};
+
 export {
     ApiGetRules,
     ApiGetRuleById,
@@ -89,5 +95,6 @@ export {
 
     ApiExportRecommandationRule,
     ApiImportRecommandationRule,
+    ApiGetRecommendationsHub,
 };
 

@@ -150,7 +150,8 @@ function CurrencyCode(amount, code) {
   }
 
   try {
-    const currency = Intl.NumberFormat('en-US', {
+    const isIndia = currenccy === "INR";
+    const currency = Intl.NumberFormat(isIndia ? "en-IN" : "en-US", {
       style: 'currency',
       currency: currenccy,
     }).format(num);

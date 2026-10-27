@@ -505,7 +505,18 @@ function RecomandationRules({ hideFilter = false } = {}) {
             wrapText: true,
             cellRenderer: (params) => {
                 const e = params.data;
-                if (!e || !e.actions || e.actions.length === 0) return null;
+                if (!e) return null;
+                const hasOob = Array.isArray(e.conditions) && e.conditions.some(c => String(c?.conditionType || "").toLowerCase().replace(/[\s_]+/g, "") === "outofbudget");
+
+                if (!e.actions || e.actions.length === 0) {
+                    return (
+                        <div className="rule_type">
+                            <span className="badge badge-light-warning text-warning" style={{ fontSize: "12px", padding: "4px 8px" }}>
+                                {hasOob ? t("No actions (Out of Budget monitoring)") : t("No actions")}
+                            </span>
+                        </div>
+                    );
+                }
 
                 const gridName = e.gridName;
 
@@ -616,6 +627,7 @@ function RecomandationRules({ hideFilter = false } = {}) {
     const getRule = (queryArg = arg) => {
         if (selectedCampagin?.profileSendID && selectedCampagin?.selectedAdType) {
             setLoading(true);
+            dispatch(handleLoader(true));
             let data = {
                 profileId: selectedCampagin?.profileSendID,
                 fieldName: "createdAt",
@@ -625,13 +637,12 @@ function RecomandationRules({ hideFilter = false } = {}) {
             ApiGetRules(data)
                 .then((res) => {
                     setLoading(false);
+                    dispatch(handleLoader(false));
                     if (res.isSuccess) {
-                        dispatch(handleLoader(false));
                         setTableData(res.data);
                         setTotalRecords(res?.totalRecords);
                         if (Array.isArray(res?.allRulesSchedule)) setExistingRulesSchedule(res?.allRulesSchedule)
                     } else {
-                        dispatch(handleLoader(false));
                         Toast.error(res.message);
                     }
                 })
@@ -665,6 +676,7 @@ function RecomandationRules({ hideFilter = false } = {}) {
     };
 
     useEffect(() => {
+        setTableData([]);
         getRule(arg);
     }, [selectedCampagin?.profileSendID, selectedCampagin?.selectedAdType]);
 
@@ -682,6 +694,19 @@ function RecomandationRules({ hideFilter = false } = {}) {
             paddingLeft: "15px",
             listStyleType: "none",
         };
+
+        const isOob = String(conditionType || "").toLowerCase().replace(/[\s_]+/g, "") === "outofbudget";
+        if (isOob) {
+            return (
+                <ul key={index} style={outerStyle}>
+                    <li>
+                        <span className="badge badge-light-warning text-warning" style={{ fontSize: "12px", padding: "4px 8px" }}>
+                            {t("Out of Budget")}
+                        </span>
+                    </li>
+                </ul>
+            );
+        }
 
         if (conditionStatus) {
             return (

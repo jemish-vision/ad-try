@@ -675,11 +675,23 @@ function BudgetRule() {
     conditionValue,
     conditionValueType,
   ) => {
-    const isStatus = conditionType.toLowerCase().includes("status");
-    const isDate = conditionType.toLowerCase().includes("date") || conditionType.toLowerCase().includes("creation");
+    const isStatus = conditionType?.toLowerCase()?.includes("status") || ["outofbudget", "out of budget"].includes(conditionType?.toLowerCase());
+    const isDate = conditionType?.toLowerCase()?.includes("date") || conditionType?.toLowerCase()?.includes("creation");
 
     let getOperator = conditionOperators?.find((x) => x.key === conditionOperator)?.value;
     let getValueType = conditionValueType === "Percentage" ? "% of budget" : "";
+
+    if (["outofbudget", "out of budget"].includes(conditionType?.toLowerCase())) {
+      return (
+        <span
+          key={index}
+          className="rule-chip rule-chip-condition status"
+        >
+          <i className="fa fa-info-circle mr-1" style={{ fontSize: "10px", opacity: 0.7 }}></i>
+          <strong>{t("Out of Budget")}</strong>
+        </span>
+      );
+    }
 
     if (conditionStatus) {
       return (

@@ -294,14 +294,25 @@ exports.getCampaigns = async (req, res) => {
       then: hs.scoreName,
     }));
 
+    const queryConfigId = mongoose.Types.ObjectId.isValid(configId) ? new mongoose.Types.ObjectId(configId) : configId;
+    const queryProfileId = !isNaN(Number(profileId)) ? Number(profileId) : profileId;
+    const cleanFilteredCampaignIds = Array.isArray(filteredCampaignIds) && filteredCampaignIds.length > 0
+      ? filteredCampaignIds.flatMap((id) => [id, !isNaN(Number(id)) ? Number(id) : null, String(id)].filter(Boolean))
+      : [];
+
+    const todayDate = moment().tz(timezone || "UTC").format("YYYY-MM-DD");
+    const yesterdayDate = moment().tz(timezone || "UTC").subtract(1, "days").format("YYYY-MM-DD");
+    const effectiveStatusMaxDate = (toDate && toDate < todayDate) ? toDate : todayDate;
+    const statusReportDateMin = moment(effectiveStatusMaxDate).subtract(14, "days").format("YYYY-MM-DD");
+
     // Base match stage
     const matchStage = {
       $match: {
-        configId,
-        profileId,
+        configId: queryConfigId,
+        profileId: queryProfileId,
         reportDate,
-        ...(filteredCampaignIds.length > 0 && {
-          campaignId: { $in: filteredCampaignIds },
+        ...(cleanFilteredCampaignIds.length > 0 && {
+          campaignId: { $in: cleanFilteredCampaignIds },
         }),
         ...(type && { type }),
         ...(searchName && {
@@ -312,15 +323,121 @@ exports.getCampaigns = async (req, res) => {
       },
     };
 
+    let effectiveStatusFilter = status;
+    if (!effectiveStatusFilter && customFilter?.$or && Array.isArray(customFilter.$or)) {
+      if (customFilter.$or.some(c => c.status === "OUT_OF_BUDGET" || c.status === "out_of_budget")) {
+        effectiveStatusFilter = "OUT_OF_BUDGET";
+      }
+    }
+    if (customFilter && customFilter.$or && Array.isArray(customFilter.$or)) {
+      if (customFilter.$or.some(c => c.status === "OUT_OF_BUDGET" || c.status === "out_of_budget")) {
+        delete customFilter.$or;
+      }
+    }
+    if (customFilter?.status) {
+      if (!effectiveStatusFilter) effectiveStatusFilter = customFilter.status?.$eq || customFilter.status;
+      delete customFilter.status;
+    }
+
+    const latestStatusMap = new Map();
+
+    if (effectiveStatusFilter) {
+      try {
+        const latestStatusDocs = await adTypeCampaignSchema.aggregate([
+          {
+            $match: {
+              configId: queryConfigId,
+              profileId: queryProfileId,
+              reportDate: { $gte: statusReportDateMin, $lte: effectiveStatusMaxDate },
+            },
+          },
+          {
+            $sort: { reportDate: -1, updatedAt: -1 },
+          },
+          {
+            $group: {
+              _id: "$campaignId",
+              status: { $first: "$status" },
+              campaignStatus: { $first: "$campaignStatus" },
+              isOutOfBudget: { $first: "$isOutOfBudget" },
+              budget: { $first: "$budget" },
+              dailySpend: { $first: { $ifNull: ["$dailySpend", "$spend"] } },
+              timeInBudget: { $first: "$timeInBudget" },
+              budgetTracking: { $first: "$budgetTracking" },
+              latestReportDate: { $first: "$reportDate" },
+            },
+          },
+        ]).allowDiskUse(true);
+
+        const matchingCampaignIds = [];
+        for (const doc of latestStatusDocs) {
+          latestStatusMap.set(doc._id, doc);
+          latestStatusMap.set(String(doc._id), doc);
+          latestStatusMap.set(Number(doc._id), doc);
+
+          const currentStatus = (doc.status || "").toUpperCase();
+          const campaignStatusVal = (doc.campaignStatus || "").toUpperCase();
+          const dailySpend = doc.dailySpend !== undefined && doc.dailySpend !== null ? Number(doc.dailySpend) : null;
+          const budget = Number(doc.budget) || 0;
+          const timeInBudget = doc.timeInBudget !== undefined && doc.timeInBudget !== null ? Number(doc.timeInBudget) : undefined;
+          const estSpend = Number(doc.budgetTracking?.estimatedSpend) || 0;
+          const usagePct = Number(doc.budgetTracking?.lastUsagePercentage) || 0;
+
+          const isDocOob = Boolean(
+            currentStatus === "OUT_OF_BUDGET" ||
+            campaignStatusVal === "OUT_OF_BUDGET" ||
+            doc.isOutOfBudget === true ||
+            (currentStatus === "ENABLED" && budget > 0 && (
+              usagePct >= 100 ||
+              estSpend >= budget ||
+              (dailySpend !== null && dailySpend >= budget) ||
+              (timeInBudget !== undefined && timeInBudget > 0 && timeInBudget < 100 && (
+                (dailySpend !== null && dailySpend >= budget * 0.8) ||
+                (estSpend >= budget * 0.8)
+              ))
+            ))
+          );
+
+          if (effectiveStatusFilter === "OUT_OF_BUDGET" || effectiveStatusFilter === "out_of_budget") {
+            if (isDocOob) {
+              matchingCampaignIds.push(doc._id);
+            }
+          } else if (effectiveStatusFilter === "NOT_ARCHIVED") {
+            if (currentStatus !== "ARCHIVED") {
+              matchingCampaignIds.push(doc._id);
+            }
+          } else if (effectiveStatusFilter === "ENABLED") {
+            if (currentStatus === "ENABLED") {
+              matchingCampaignIds.push(doc._id);
+            }
+          } else if (effectiveStatusFilter === "PAUSED") {
+            if (currentStatus === "PAUSED") {
+              matchingCampaignIds.push(doc._id);
+            }
+          } else if (effectiveStatusFilter === "ARCHIVED") {
+            if (currentStatus === "ARCHIVED") {
+              matchingCampaignIds.push(doc._id);
+            }
+          } else if (currentStatus === String(effectiveStatusFilter).toUpperCase()) {
+            matchingCampaignIds.push(doc._id);
+          }
+        }
+
+        const numericAndStringMatchingIds = matchingCampaignIds.flatMap(id => [id, !isNaN(Number(id)) ? Number(id) : null, String(id)].filter(Boolean));
+
+        if (matchStage.$match.campaignId?.$in) {
+          matchStage.$match.campaignId.$in = matchStage.$match.campaignId.$in.filter(id => numericAndStringMatchingIds.includes(id));
+        } else {
+          matchStage.$match.campaignId = { $in: numericAndStringMatchingIds };
+        }
+      } catch (err) {
+        write_logs({ message: `[getCampaigns status filtering error] ${err?.message || err}`, log_type: "error" });
+      }
+    }
+
     const commonPipeline = [
       matchStage,
-      {
-        $setWindowFields: {
-          partitionBy: "$campaignId",
-          sortBy: { reportDate: -1 },
-          output: { status: { $first: "$status" } },
-        },
-      },
+      { $sort: { reportDate: -1 } },
       {
         $group: {
           _id: { campaignId: "$campaignId" },
@@ -429,7 +546,7 @@ exports.getCampaigns = async (req, res) => {
           },
         },
       },
-      ...(status
+      ...((status && !effectiveStatusFilter)
         ? [
           {
             $match: status === "OUT_OF_BUDGET"
@@ -437,7 +554,6 @@ exports.getCampaigns = async (req, res) => {
                 $or: [
                   { status: "OUT_OF_BUDGET" },
                   { status: "out_of_budget" },
-                  { $and: [{ budget: { $gt: 0 } }, { $expr: { $gte: ["$spend", "$budget"] } }] }
                 ]
               }
               : hasActiveCampaigns
@@ -890,12 +1006,117 @@ exports.getCampaigns = async (req, res) => {
       );
     });
 
-    campaignResult = campaignResult.map((campaign) => ({
-      ...campaign,
-      placements:
-        placementSubResult.find((p) => p.campaignId === campaign.campaignId)
-          ?.placementsData ?? [],
-    }));
+    // Fetch latest record status for each campaign (today's date or yesterday / latest updated record)
+    const missingCampaignIds = campaignIds.filter((cid) => !latestStatusMap.has(cid) && !latestStatusMap.has(String(cid)) && !latestStatusMap.has(Number(cid)));
+    if (missingCampaignIds.length > 0) {
+      try {
+        const missingList = missingCampaignIds.flatMap(id => [id, !isNaN(Number(id)) ? Number(id) : null, String(id)].filter(Boolean));
+        // First try today or yesterday
+        const targetMaxDate = (toDate && toDate < todayDate) ? toDate : todayDate;
+        const targetYesterdayDate = moment(targetMaxDate).subtract(1, "days").format("YYYY-MM-DD");
+        const latestCampaignDocs = await adTypeCampaignSchema.aggregate([
+          {
+            $match: {
+              configId: queryConfigId,
+              profileId: queryProfileId,
+              campaignId: { $in: missingList },
+              reportDate: { $gte: targetYesterdayDate, $lte: targetMaxDate },
+            },
+          },
+          {
+            $sort: { reportDate: -1, updatedAt: -1 },
+          },
+          {
+            $group: {
+              _id: "$campaignId",
+              status: { $first: "$status" },
+              campaignStatus: { $first: "$campaignStatus" },
+              isOutOfBudget: { $first: "$isOutOfBudget" },
+              budget: { $first: "$budget" },
+              dailySpend: { $first: { $ifNull: ["$dailySpend", "$spend"] } },
+              timeInBudget: { $first: "$timeInBudget" },
+              budgetTracking: { $first: "$budgetTracking" },
+              latestReportDate: { $first: "$reportDate" },
+            },
+          },
+        ]);
+
+        for (const doc of latestCampaignDocs) {
+          latestStatusMap.set(doc._id, doc);
+          latestStatusMap.set(String(doc._id), doc);
+          latestStatusMap.set(Number(doc._id), doc);
+        }
+
+        // For any campaign not found in today/yesterday, fetch latest available record
+        const stillMissing = missingCampaignIds.filter((cid) => !latestStatusMap.has(cid) && !latestStatusMap.has(String(cid)) && !latestStatusMap.has(Number(cid)));
+        if (stillMissing.length > 0) {
+          const fallbackDocs = await adTypeCampaignSchema.aggregate([
+            {
+              $match: {
+                configId: queryConfigId,
+                profileId: queryProfileId,
+                campaignId: { $in: stillMissing.flatMap(id => [id, !isNaN(Number(id)) ? Number(id) : null, String(id)].filter(Boolean)) },
+              },
+            },
+            {
+              $sort: { reportDate: -1, updatedAt: -1 },
+            },
+            {
+              $group: {
+                _id: "$campaignId",
+                status: { $first: "$status" },
+                campaignStatus: { $first: "$campaignStatus" },
+                isOutOfBudget: { $first: "$isOutOfBudget" },
+                budget: { $first: "$budget" },
+                dailySpend: { $first: { $ifNull: ["$dailySpend", "$spend"] } },
+                timeInBudget: { $first: "$timeInBudget" },
+                budgetTracking: { $first: "$budgetTracking" },
+                latestReportDate: { $first: "$reportDate" },
+              },
+            },
+          ]);
+
+          for (const doc of fallbackDocs) {
+            latestStatusMap.set(doc._id, doc);
+            latestStatusMap.set(String(doc._id), doc);
+            latestStatusMap.set(Number(doc._id), doc);
+          }
+        }
+      } catch (err) {
+        write_logs({ message: `[getCampaigns latest status fetch error] ${err?.message || err}`, log_type: "error" });
+      }
+    }
+
+    campaignResult = campaignResult.map((campaign) => {
+      const latest =
+        latestStatusMap.get(campaign.campaignId) ||
+        latestStatusMap.get(Number(campaign.campaignId)) ||
+        latestStatusMap.get(String(campaign.campaignId));
+
+      const currentStatus = latest?.status || campaign.status;
+      const currentCampaignStatus = latest?.campaignStatus || campaign.campaignStatus;
+      const currentIsOutOfBudget = latest?.isOutOfBudget !== undefined ? latest.isOutOfBudget : campaign.isOutOfBudget;
+      const currentBudget = Number(latest?.budget !== undefined ? latest.budget : campaign.budget) || 0;
+      const currentDailySpend = latest?.dailySpend !== undefined && latest?.dailySpend !== null ? Number(latest.dailySpend) : null;
+      const currentTimeInBudget = latest?.timeInBudget !== undefined && latest?.timeInBudget !== null ? Number(latest.timeInBudget) : (campaign.timeInBudget !== undefined && campaign.timeInBudget !== null ? Number(campaign.timeInBudget) : undefined);
+      const latestReportDate = latest?.latestReportDate || null;
+
+      return {
+        ...campaign,
+        status: currentStatus,
+        latestStatus: currentStatus,
+        campaignStatus: currentCampaignStatus,
+        isOutOfBudget: currentIsOutOfBudget,
+        dailySpend: currentDailySpend,
+        latestBudget: currentBudget,
+        latestReportDate,
+        timeInBudget: currentTimeInBudget,
+        budgetTracking: latest?.budgetTracking,
+        placements:
+          placementSubResult.find((p) => p.campaignId === campaign.campaignId)
+            ?.placementsData ?? [],
+      };
+    });
 
     const notifySetting = await adNotificationSettingSchema
       .findOne({
@@ -5649,7 +5870,7 @@ exports.getHistory = async (req, res) => {
     const configId = new mongoose.Types.ObjectId(req?.config?.configId);
     const adType = req.adType;
 
-    let { pageNo = 1, perPage = 10, fromDate, toDate, profileId, type, searchName, targeting, matchType, placement, source, campaignId, fieldName, sortType, changeType, historyScope } = req.body;
+    let { pageNo = 1, perPage = 10, fromDate, toDate, profileId, type, searchName, targeting, matchType, placement, source, campaignId, fieldName, sortType, changeType, historyScope, dateOption } = req.body;
 
     if (!profileId) {
       return res.status(400).send({
@@ -5707,7 +5928,8 @@ exports.getHistory = async (req, res) => {
     }
 
 
-    if (fromDate && toDate) {
+        const isAllDates = String(dateOption).toLowerCase() === "all" || (!fromDate && !toDate);
+    if (!isAllDates && fromDate && toDate) {
       filter.createdAt = {
         $gte: moment(fromDate).tz(timezone).startOf("day").toDate(),
         $lte: moment(toDate).tz(timezone).endOf("day").toDate(),
@@ -5770,25 +5992,18 @@ exports.getHistory = async (req, res) => {
           .find({
             configId,
             profileId: !isNaN(numericProfileId) ? numericProfileId : profileId,
-            $and: [
-              {
-                $or: [
-                  { campaign_id: String(campaignId) },
-                  { campaign_id: Number(campaignId) },
-                  { "data.campaign_id": String(campaignId) },
-                  { "data.campaign_id": Number(campaignId) },
-                ],
-              },
-              {
-                $or: [
-                  { dataset_id: "ads-campaign-management-campaigns" },
-                  { "data.dataset_id": "ads-campaign-management-campaigns" },
-                ],
-              },
-            ],
+            campaign_id: { $in: [String(campaignId), Number(campaignId)] },
+            dataset_id: "ads-campaign-management-campaigns",
           })
-          .sort({ last_updated_date_time: 1, createdAt: 1 })
           .lean();
+
+        if (streamDocs && streamDocs.length > 1) {
+          streamDocs.sort((a, b) => {
+            const da = new Date(a.last_updated_date_time || a.creation_date_time || a.createdAt).getTime();
+            const db = new Date(b.last_updated_date_time || b.creation_date_time || b.createdAt).getTime();
+            return da - db;
+          });
+        }
 
         if (streamDocs.length > 1) {
           const placementNames = {
@@ -5923,7 +6138,20 @@ exports.getHistory = async (req, res) => {
     if (matchType && `${matchType}`.trim()) {
       const escapeRegex = (s) => (RegExp.escape ? RegExp.escape(s) : s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
       const cleanMatch = String(matchType).toLowerCase().replace(/^(keyword|automatic|targeting)\s*[-:]\s*/i, "").trim();
-      filter.matchType = { $regex: new RegExp(escapeRegex(cleanMatch), "i") };
+      const matchRegex = new RegExp(escapeRegex(cleanMatch), "i");
+      const matchTypeCondition = {
+        $or: [
+          { matchType: { $regex: matchRegex } },
+          { matchType: null },
+          { matchType: { $exists: false } },
+          { matchType: "" },
+        ],
+      };
+      if (filter.$and) {
+        filter.$and.push(matchTypeCondition);
+      } else {
+        filter.$and = [matchTypeCondition];
+      }
     }
 
     if (placement && `${placement}`.trim()) {
@@ -6039,47 +6267,64 @@ exports.getHistory = async (req, res) => {
     }
 
     // History Scope Classification Filter (Dayparting / Recommendation / Other / All)
-    if (historyScope && historyScope !== "all") {
-      const scope = String(historyScope).toLowerCase();
-      if (scope === "dayparting") {
-        const daypartingConditions = [
-          { source: "DAYPARTING" },
-          { changeType: { $regex: /dayparting/i } },
-        ];
-        if (filter.$and) {
-          filter.$and.push({ $or: daypartingConditions });
-        } else {
-          filter.$and = [{ $or: daypartingConditions }];
+    if (historyScope) {
+      const rawScopes = Array.isArray(historyScope) ? historyScope : [historyScope];
+      const scopes = rawScopes.map((s) => String(s).toLowerCase().trim()).filter(Boolean);
+      const isAll = scopes.includes("all") || (scopes.includes("dayparting") && scopes.includes("recommendation") && (scopes.includes("other") || scopes.includes("rule")));
+
+      if (!isAll && scopes.length > 0) {
+        const combinedScopeOr = [];
+
+        if (scopes.includes("dayparting")) {
+          combinedScopeOr.push(
+            { source: "DAYPARTING" },
+            { changeType: { $regex: /dayparting/i } }
+          );
         }
-      } else if (scope === "recommendation") {
-        const recoConditions = [
-          { source: "RECOMMENDATION" },
-          {
-            changeType: {
-              $regex: /^Update (Targeting Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
-            },
-          },
-        ];
-        if (filter.$and) {
-          filter.$and.push({ $or: recoConditions });
-        } else {
-          filter.$and = [{ $or: recoConditions }];
+
+        if (scopes.includes("recommendation")) {
+          combinedScopeOr.push(
+            { source: "RECOMMENDATION" },
+            {
+              $and: [
+                { source: { $nin: ["AMAZON_SQS", "AMAZON_API", "DAYPARTING"] } },
+                { updatedFrom: { $ne: "Amazon Stream" } },
+                {
+                  changeType: {
+                    $regex: /^Update (Targeting Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$|^Revert/i,
+                  },
+                },
+              ],
+            }
+          );
         }
-      } else if (scope === "other" || scope === "rule") {
-        // Other History / Rule History: normal rule changes + manual changes, strictly EXCLUDING Dayparting & Recommendation
-        const otherConditions = [
-          { source: { $nin: ["DAYPARTING", "RECOMMENDATION"] } },
-          { changeType: { $not: /dayparting/i } },
-          {
-            changeType: {
-              $not: /^Update (Targeting Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
-            },
-          },
-        ];
-        if (filter.$and) {
-          filter.$and.push(...otherConditions);
-        } else {
-          filter.$and = [...otherConditions];
+
+        if (scopes.includes("other") || scopes.includes("rule")) {
+          combinedScopeOr.push({
+            $and: [
+              { source: { $nin: ["DAYPARTING", "RECOMMENDATION"] } },
+              { changeType: { $not: /dayparting/i } },
+              {
+                $or: [
+                  { source: { $in: ["AMAZON_SQS", "AMAZON_API"] } },
+                  { updatedFrom: "Amazon Stream" },
+                  {
+                    changeType: {
+                      $not: /^Update (Targeting Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
+                    },
+                  },
+                ],
+              },
+            ],
+          });
+        }
+
+        if (combinedScopeOr.length > 0) {
+          if (filter.$and) {
+            filter.$and.push({ $or: combinedScopeOr });
+          } else {
+            filter.$and = [{ $or: combinedScopeOr }];
+          }
         }
       }
     }
@@ -6298,48 +6543,54 @@ exports.getHistory = async (req, res) => {
       if (cleanTargetIds.length) targetOrClauses.push({ targetId: { $in: cleanTargetIds } });
       if (cleanTargetTexts.length) targetOrClauses.push({ targeting: { $in: cleanTargetTexts } });
 
+      const targetFilter = {
+        configId,
+        profileId: queryProfileId,
+        ...(cleanCampaignKeys.length ? { campaignId: { $in: cleanCampaignKeys } } : {}),
+        $or: targetOrClauses,
+      };
+
       const [campaignDocs, adGroupDocs, userDocs, targetDocs] = await Promise.all([
         cleanCampaignKeys.length
           ? mongoose.connection
-              .collection(campaignCollection)
-              .find({
-                configId,
-                profileId: queryProfileId,
-                campaignId: { $in: cleanCampaignKeys },
-              })
-              .project({ campaignId: 1, name: 1, status: 1, type: 1, reportDate: 1, createdAt: 1 })
-              .sort({ reportDate: -1, createdAt: -1 })
-              .toArray()
+            .collection(campaignCollection)
+            .find({
+              configId,
+              profileId: queryProfileId,
+              campaignId: { $in: cleanCampaignKeys },
+            })
+            .project({ campaignId: 1, name: 1, status: 1, type: 1, reportDate: 1, createdAt: 1 })
+            .sort({ reportDate: -1, createdAt: -1 })
+            .limit(cleanCampaignKeys.length * 5)
+            .toArray()
           : [],
         cleanAdGroupKeys.length
           ? mongoose.connection
-              .collection(adGroupCollection)
-              .find({
-                configId,
-                profileId: queryProfileId,
-                adGroupId: { $in: cleanAdGroupKeys },
-              })
-              .project({ adGroupId: 1, name: 1, reportDate: 1, createdAt: 1 })
-              .sort({ reportDate: -1, createdAt: -1 })
-              .toArray()
+            .collection(adGroupCollection)
+            .find({
+              configId,
+              profileId: queryProfileId,
+              adGroupId: { $in: cleanAdGroupKeys },
+            })
+            .project({ adGroupId: 1, name: 1, reportDate: 1, createdAt: 1 })
+            .sort({ reportDate: -1, createdAt: -1 })
+            .limit(cleanAdGroupKeys.length * 5)
+            .toArray()
           : [],
         cleanUserIds.length
           ? mongoose.connection
-              .collection("users")
-              .find({ _id: { $in: cleanUserIds } })
-              .project({ email: 1 })
-              .toArray()
+            .collection("users")
+            .find({ _id: { $in: cleanUserIds } })
+            .project({ email: 1 })
+            .toArray()
           : [],
         targetOrClauses.length
           ? mongoose.connection
-              .collection(targetingCollection)
-              .find({
-                configId,
-                profileId: queryProfileId,
-                $or: targetOrClauses,
-              })
-              .project({ targetId: 1, targeting: 1, matchType: 1, keywordType: 1 })
-              .toArray()
+            .collection(targetingCollection)
+            .find(targetFilter)
+            .project({ targetId: 1, targeting: 1, matchType: 1, keywordType: 1, adGroupId: 1, campaignId: 1 })
+            .limit((cleanTargetIds.length + cleanTargetTexts.length) * 5)
+            .toArray()
           : [],
       ]);
 
@@ -6352,11 +6603,23 @@ exports.getHistory = async (req, res) => {
       }
 
       const agMap = new Map();
+      const campAdGroupsMap = new Map();
       for (const a of adGroupDocs) {
         if (!agMap.has(a.adGroupId)) agMap.set(a.adGroupId, a);
         if (!agMap.has(String(a.adGroupId))) agMap.set(String(a.adGroupId), a);
         const n = Number(a.adGroupId);
         if (!isNaN(n) && !agMap.has(n)) agMap.set(n, a);
+
+        if (a.campaignId != null) {
+          const cidStr = String(a.campaignId);
+          if (!campAdGroupsMap.has(cidStr)) {
+            campAdGroupsMap.set(cidStr, []);
+          }
+          const list = campAdGroupsMap.get(cidStr);
+          if (!list.some((existing) => String(existing.adGroupId) === String(a.adGroupId))) {
+            list.push(a);
+          }
+        }
       }
 
       const userMap = new Map();
@@ -6365,16 +6628,25 @@ exports.getHistory = async (req, res) => {
       }
 
       const targetMap = new Map();
+      const targetAdGroupMap = new Map();
       for (const t of targetDocs) {
         const m = t.matchType || t.keywordType;
         if (m) {
           if (t.targetId && !targetMap.has(t.targetId)) targetMap.set(t.targetId, m);
           if (t.targeting && !targetMap.has(t.targeting)) targetMap.set(t.targeting, m);
         }
+        if (t.adGroupId) {
+          if (t.targetId && !targetAdGroupMap.has(String(t.targetId))) targetAdGroupMap.set(String(t.targetId), t.adGroupId);
+          if (t.targeting) {
+            const key = `${t.campaignId}_${t.targeting}`;
+            if (!targetAdGroupMap.has(key)) targetAdGroupMap.set(key, t.adGroupId);
+            if (!targetAdGroupMap.has(t.targeting)) targetAdGroupMap.set(t.targeting, t.adGroupId);
+          }
+        }
       }
 
       // Check fallback targeting collections if some targets were not found
-      const stillMissingTexts = cleanTargetTexts.filter((txt) => !targetMap.has(txt));
+      const stillMissingTexts = cleanTargetTexts.filter((txt) => !targetMap.has(txt) || !targetAdGroupMap.has(txt));
       if (stillMissingTexts.length > 0) {
         try {
           const fallbackCols = ["sbtargetings", "sdtargetings", "targetings"].filter(
@@ -6386,14 +6658,24 @@ exports.getHistory = async (req, res) => {
               .find({
                 configId,
                 profileId: queryProfileId,
+                ...(cleanCampaignKeys.length ? { campaignId: { $in: cleanCampaignKeys } } : {}),
                 targeting: { $in: stillMissingTexts },
               })
-              .project({ targetId: 1, targeting: 1, matchType: 1, keywordType: 1 })
+              .project({ targetId: 1, targeting: 1, matchType: 1, keywordType: 1, adGroupId: 1, campaignId: 1 })
+              .limit(stillMissingTexts.length * 5)
               .toArray();
             for (const fb of fbDocs) {
               const m = fb.matchType || fb.keywordType;
               if (m && fb.targeting && !targetMap.has(fb.targeting)) {
                 targetMap.set(fb.targeting, m);
+              }
+              if (fb.adGroupId) {
+                if (fb.targetId && !targetAdGroupMap.has(String(fb.targetId))) targetAdGroupMap.set(String(fb.targetId), fb.adGroupId);
+                if (fb.targeting) {
+                  const key = `${fb.campaignId}_${fb.targeting}`;
+                  if (!targetAdGroupMap.has(key)) targetAdGroupMap.set(key, fb.adGroupId);
+                  if (!targetAdGroupMap.has(fb.targeting)) targetAdGroupMap.set(fb.targeting, fb.adGroupId);
+                }
               }
             }
           }
@@ -6500,7 +6782,6 @@ exports.getHistory = async (req, res) => {
     }
 
     return res.status(200).send({
-      message: "Campaign History Fetched Successfully.",
       isSuccess: true,
       currentPageNo: page,
       totalRecords: totalRecords || 0,
@@ -6540,27 +6821,44 @@ exports.getLatestCampaignHistory = async (req, res) => {
       changeLevel: { $in: allCampaignIds },
     };
 
-    if (historyScope && historyScope !== "all") {
-      const scope = String(historyScope).toLowerCase();
-      if (scope === "dayparting") {
-        baseMatch.$or = [
-          { source: { $regex: /^dayparting$/i } },
-          { changeType: { $regex: /dayparting/i } },
-        ];
-      } else if (scope === "recommendation") {
-        baseMatch.$or = [
-          { source: { $regex: /^recommendation$/i } },
-          {
+    if (historyScope) {
+      const rawScopes = Array.isArray(historyScope) ? historyScope : [historyScope];
+      const scopes = rawScopes.map((s) => String(s).toLowerCase().trim()).filter(Boolean);
+      const isAll = scopes.includes("all") || (scopes.includes("dayparting") && scopes.includes("recommendation") && (scopes.includes("other") || scopes.includes("rule")));
+
+      if (!isAll && scopes.length > 0) {
+        const combinedScopeOr = [];
+
+        if (scopes.includes("dayparting")) {
+          combinedScopeOr.push(
+            { source: { $regex: /^dayparting$/i } },
+            { changeType: { $regex: /dayparting/i } }
+          );
+        }
+
+        if (scopes.includes("recommendation")) {
+          combinedScopeOr.push(
+            { source: { $regex: /^recommendation$/i } },
+            {
+              changeType: {
+                $regex: /^Update (Targeting Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
+              },
+            }
+          );
+        }
+
+        if (scopes.includes("other") || scopes.includes("rule")) {
+          combinedScopeOr.push({
+            source: { $not: /^(dayparting|recommendation)$/i },
             changeType: {
-              $regex: /^Update (Targeting Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
+              $not: /dayparting|^Update (Targeting Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
             },
-          },
-        ];
-      } else if (scope === "other" || scope === "rule") {
-        baseMatch.source = { $not: /^(dayparting|recommendation)$/i };
-        baseMatch.changeType = {
-          $not: /dayparting|^Update (Targeting Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
-        };
+          });
+        }
+
+        if (combinedScopeOr.length > 0) {
+          baseMatch.$or = combinedScopeOr;
+        }
       }
     }
 
@@ -9844,6 +10142,73 @@ exports.addNegativeTargetings = async (req, res) => {
   }
 };
 
+
+const getOutOfBudgetAggregationCondition = () => ({
+  $or: [
+    { $eq: ["$campaign.campaignStatus", "OUT_OF_BUDGET"] },
+    { $eq: ["$campaign.campaignStatus", "out_of_budget"] },
+    { $eq: ["$campaign.status", "OUT_OF_BUDGET"] },
+    { $eq: ["$campaign.status", "out_of_budget"] },
+    { $eq: ["$latestStatus.status", "OUT_OF_BUDGET"] },
+    { $eq: ["$latestStatus.status", "out_of_budget"] },
+    {
+      $gte: [
+        { $ifNull: ["$latestStatus.budgetTracking.lastUsagePercentage", { $ifNull: ["$campaign.budgetTracking.lastUsagePercentage", 0] }] },
+        100,
+      ],
+    },
+    {
+      $and: [
+        { $gt: [{ $ifNull: ["$latestStatus.budget", "$campaign.budget"] }, 0] },
+        {
+          $gte: [
+            { $ifNull: ["$latestStatus.budgetTracking.estimatedSpend", { $ifNull: ["$campaign.budgetTracking.estimatedSpend", 0] }] },
+            { $ifNull: ["$latestStatus.budget", "$campaign.budget"] },
+          ],
+        },
+      ],
+    },
+    {
+      $and: [
+        { $gt: [{ $ifNull: ["$latestStatus.budget", "$campaign.budget"] }, 0] },
+        {
+          $gte: [
+            { $ifNull: ["$latestStatus.dailySpend", { $ifNull: ["$campaign.dailySpend", 0] }] },
+            { $ifNull: ["$latestStatus.budget", "$campaign.budget"] },
+          ],
+        },
+      ],
+    },
+    {
+      $and: [
+        { $gt: [{ $ifNull: ["$latestStatus.budget", "$campaign.budget"] }, 0] },
+        { $gte: ["$campaign.spend", { $ifNull: ["$latestStatus.budget", "$campaign.budget"] }] },
+      ],
+    },
+    {
+      $and: [
+        { $gt: [{ $ifNull: ["$latestStatus.budget", "$campaign.budget"] }, 0] },
+        { $gte: ["$spend", { $ifNull: ["$latestStatus.budget", "$campaign.budget"] }] },
+      ],
+    },
+    {
+      $and: [
+        { $gt: [{ $ifNull: ["$latestStatus.timeInBudget", { $ifNull: ["$campaign.timeInBudget", 0] }] }, 0] },
+        { $lt: [{ $ifNull: ["$latestStatus.timeInBudget", { $ifNull: ["$campaign.timeInBudget", 100] }] }, 100] },
+        { $gt: [{ $ifNull: ["$latestStatus.budget", "$campaign.budget"] }, 0] },
+        {
+          $or: [
+            { $gte: ["$campaign.spend", { $multiply: [{ $ifNull: ["$latestStatus.budget", "$campaign.budget"] }, 0.8] }] },
+            { $gte: ["$spend", { $multiply: [{ $ifNull: ["$latestStatus.budget", "$campaign.budget"] }, 0.8] }] },
+            { $gte: [{ $ifNull: ["$latestStatus.budgetTracking.estimatedSpend", 0] }, { $multiply: [{ $ifNull: ["$latestStatus.budget", "$campaign.budget"] }, 0.8] }] },
+            { $gte: [{ $ifNull: ["$latestStatus.dailySpend", 0] }, { $multiply: [{ $ifNull: ["$latestStatus.budget", "$campaign.budget"] }, 0.8] }] },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
 exports.campaignPipeline = (query, toDate, type = "SP") => {
   const matchStage = {
     $match: query,
@@ -9978,9 +10343,22 @@ exports.campaignPipeline = (query, toDate, type = "SP") => {
         costType: "$campaign.costType",
         clicks: 1,
         name: "$campaign.name",
-        status: "$campaign.campaignStatus",
-        budget: "$campaign.budget",
-        todayBudget: "$campaign.budget",
+        status: {
+          $cond: [
+            getOutOfBudgetAggregationCondition(),
+            "OUT_OF_BUDGET",
+            "$campaign.campaignStatus",
+          ],
+        },
+        isOutOfBudget: {
+          $cond: [
+            getOutOfBudgetAggregationCondition(),
+            true,
+            false,
+          ],
+        },
+        budget: { $ifNull: ["$latestStatus.budget", "$campaign.budget"] },
+        todayBudget: { $ifNull: ["$latestStatus.budget", "$campaign.budget"] },
         todaySpend: "$campaign.spend",
         totalBudget: 1,
         timeInBudget: 1,
@@ -10173,8 +10551,23 @@ exports.sbCampaignPipeline = (query, toDate) => {
         costType: "$campaign.costType",
         clicks: 1,
         name: "$campaign.name",
-        status: "$campaign.campaignStatus",
-        budget: "$campaign.budget",
+        status: {
+          $cond: [
+            getOutOfBudgetAggregationCondition(),
+            "OUT_OF_BUDGET",
+            "$campaign.campaignStatus",
+          ],
+        },
+        isOutOfBudget: {
+          $cond: [
+            getOutOfBudgetAggregationCondition(),
+            true,
+            false,
+          ],
+        },
+        budget: { $ifNull: ["$latestStatus.budget", "$campaign.budget"] },
+        todayBudget: { $ifNull: ["$latestStatus.budget", "$campaign.budget"] },
+        todaySpend: "$spend",
         cpc: {
           $round: [
             {
@@ -10363,8 +10756,23 @@ exports.sdCampaignPipeline = (query, toDate) => {
         costType: "$campaign.costType",
         clicks: 1,
         name: "$campaign.name",
-        status: "$campaign.campaignStatus",
-        budget: "$campaign.budget",
+        status: {
+          $cond: [
+            getOutOfBudgetAggregationCondition(),
+            "OUT_OF_BUDGET",
+            "$campaign.campaignStatus",
+          ],
+        },
+        isOutOfBudget: {
+          $cond: [
+            getOutOfBudgetAggregationCondition(),
+            true,
+            false,
+          ],
+        },
+        budget: { $ifNull: ["$latestStatus.budget", "$campaign.budget"] },
+        todayBudget: { $ifNull: ["$latestStatus.budget", "$campaign.budget"] },
+        todaySpend: "$spend",
         cpc: {
           $round: [
             {

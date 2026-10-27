@@ -1283,7 +1283,7 @@ exports.getAllSearchTerms = async (req, res) => {
             query: Query
         } = req.body;
         const customFilter = sanitizeQueryObject(safeJSON(Query)) ?? {};
-        const { campaignId, adGroupId, ...extraFilter } = typeof customFilter === "object" ? customFilter : {}
+        const { campaignId, adGroupId, ...extraFilter } = typeof customFilter === "object" ? customFilter : {};
 
         if (!profileId) {
             return res
@@ -1302,15 +1302,73 @@ exports.getAllSearchTerms = async (req, res) => {
             $lte: toDate || moment().tz(timezone).format("YYYY-MM-DD"),
         };
 
+        // Pre-fetch campaign details for this profile on lastDate (typically 80-130 docs, takes ~5ms)
+        const adTypeCampaignCollection = AD_TYPE_COLLECTIONS?.[adType]?.["campaign"] || "campaigns";
+        const campaignDocs = await mongoose.connection.collection(adTypeCampaignCollection).find(
+            { configId: typedConfigId, profileId: numericProfileId, reportDate: lastDate },
+            { projection: { campaignId: 1, name: 1, status: 1 } }
+        ).toArray();
+
+        const campaignMap = new Map();
+        for (const c of campaignDocs) {
+            campaignMap.set(c.campaignId, c);
+        }
+
+        // Check if campaignStatus filter is requested (from body or query object)
+        let requestedCampaignStatus = req.body.campaignStatus;
+        if (!requestedCampaignStatus && extraFilter.campaignStatus) {
+            if (typeof extraFilter.campaignStatus === "object" && extraFilter.campaignStatus.$eq) {
+                requestedCampaignStatus = extraFilter.campaignStatus.$eq;
+            } else if (typeof extraFilter.campaignStatus === "string") {
+                requestedCampaignStatus = extraFilter.campaignStatus;
+            }
+        }
+        delete extraFilter.campaignStatus;
+
+        // Check if campaignName filter is in extraFilter
+        let nameMatchingCampaignIds = null;
+        if (extraFilter.campaignName) {
+            const pattern = extraFilter.campaignName.$regex ? new RegExp(extraFilter.campaignName.$regex, extraFilter.campaignName.$options || "i") : null;
+            const exactVal = typeof extraFilter.campaignName === "string" ? extraFilter.campaignName : extraFilter.campaignName.$eq;
+            nameMatchingCampaignIds = campaignDocs
+                .filter(c => pattern ? pattern.test(c.name) : exactVal ? c.name === exactVal : true)
+                .map(c => c.campaignId);
+            delete extraFilter.campaignName;
+        }
+
+        let allowedCampaignIds = campaignDocs
+            .filter(c => !requestedCampaignStatus || String(c.status).toUpperCase() === String(requestedCampaignStatus).toUpperCase())
+            .map(c => c.campaignId);
+
+        if (nameMatchingCampaignIds !== null) {
+            allowedCampaignIds = allowedCampaignIds.filter(id => nameMatchingCampaignIds.includes(id));
+        }
+
         let campaignIdFilter = null;
         if (campaignId) {
             if (typeof campaignId === "object" && campaignId.$in && Array.isArray(campaignId.$in)) {
-                campaignIdFilter = { $in: campaignId.$in.map(Number) };
+                campaignIdFilter = campaignId.$in.map(Number);
             } else if (Array.isArray(campaignId)) {
-                campaignIdFilter = { $in: campaignId.map(Number) };
+                campaignIdFilter = campaignId.map(Number);
             } else if (!isNaN(Number(campaignId))) {
-                campaignIdFilter = Number(campaignId);
+                campaignIdFilter = [Number(campaignId)];
             }
+        }
+
+        if (campaignIdFilter && campaignIdFilter.length > 0) {
+            allowedCampaignIds = allowedCampaignIds.filter(id => campaignIdFilter.includes(Number(id)));
+        }
+
+        // If a status or campaign filter was requested and no campaigns matched, return empty immediately
+        if ((requestedCampaignStatus || campaignIdFilter || nameMatchingCampaignIds !== null) && allowedCampaignIds.length === 0) {
+            return res.status(200).send({
+                isSuccess: true,
+                totalSearchTerm: 0,
+                getSearchTerm: [],
+                totalRow: { impressions: 0, clicks: 0, orders: 0, spend: 0, sales: 0, acos: 0, roas: 0, cpc: 0, ctr: 0, isTotalRow: true },
+                pageNo: Number(pageNo),
+                perPage: Number(perPage)
+            });
         }
 
         let adGroupIdFilter = null;
@@ -1326,13 +1384,14 @@ exports.getAllSearchTerms = async (req, res) => {
 
         const normalize = (s) => (s || "").trim().toLowerCase();
 
+        // Optimized pipeline: uses index on { configId, profileId, campaignId, reportDate } without expensive $lookup
         const commonPipeline = [
             {
                 $match: {
                     configId: typedConfigId,
                     profileId: numericProfileId,
                     reportDate,
-                    ...(campaignIdFilter && { campaignId: campaignIdFilter }),
+                    ...(allowedCampaignIds.length > 0 && (requestedCampaignStatus || campaignIdFilter || nameMatchingCampaignIds !== null) ? { campaignId: { $in: allowedCampaignIds } } : {}),
                     ...(adGroupIdFilter && { adGroupId: adGroupIdFilter }),
                     ...(filteredSearchTerms && filteredSearchTerms.length > 0 && { $or: filteredSearchTerms }),
                     ...(searchName && { searchTerm: { $regex: new RegExp(RegExp.escape(`${searchName}`?.trim()), "i") } }),
@@ -1358,40 +1417,6 @@ exports.getAllSearchTerms = async (req, res) => {
                     status: { $first: "$status" },
                     keywordType: { $first: "$keywordType" }
                 }
-            },
-            {
-                $lookup: {
-                    from: AD_TYPE_COLLECTIONS?.[adType]?.["campaign"],
-                    let: {
-                        cId: "$_id.campaignId",
-                        pId: "$_id.profileId",
-                        end: lastDate
-                    },
-                    pipeline: [
-                        {
-                            $match: {
-                                configId: typedConfigId,
-                                profileId: numericProfileId,
-                                reportDate: lastDate,
-                                $expr: {
-                                    $eq: ["$campaignId", "$$cId"]
-                                }
-                            }
-                        },
-                        {
-                            $project: {
-                                _id: 0,
-                                campaignId: 1,
-                                name: 1,
-                                status: 1
-                            }
-                        }
-                    ],
-                    as: "campaign"
-                }
-            },
-            {
-                $unwind: { path: "$campaign", preserveNullAndEmptyArrays: true }
             },
             {
                 $project: {
@@ -1422,8 +1447,6 @@ exports.getAllSearchTerms = async (req, res) => {
                     reportDate: 1,
                     status: 1,
                     keywordType: 1,
-                    campaignName: "$campaign.name",
-                    campaignStatus: "$campaign.status",
                     acos: {
                         $cond: [
                             { $gt: ["$sales", 0] },
@@ -1491,7 +1514,7 @@ exports.getAllSearchTerms = async (req, res) => {
             sortStage = { spend: -1 };
         }
 
-        const [facetResult] = await adTypeSearchTermSchema.aggregate([
+        const aggQuery = adTypeSearchTermSchema.aggregate([
             ...commonPipeline,
             {
                 $facet: {
@@ -1557,6 +1580,9 @@ exports.getAllSearchTerms = async (req, res) => {
             }
         ]).allowDiskUse(true);
 
+        // Let MongoDB choose an available index; named indexes may differ by database/ad type.
+        const [facetResult] = await aggQuery;
+
         const searchTermResult = facetResult?.data || [];
         const totalRecords = facetResult?.totalCount?.[0]?.total || 0;
         const totalRow = facetResult?.totalRow?.[0] || {
@@ -1571,23 +1597,46 @@ exports.getAllSearchTerms = async (req, res) => {
             ctr: 0
         };
 
-        // Fetch targeting data for each search term on current page
+        // Attach campaignName & campaignStatus from in-memory map
+        for (const item of searchTermResult) {
+            const c = campaignMap.get(item.campaignId);
+            item.campaignName = c?.name || "";
+            item.campaignStatus = c?.status || "";
+        }
+
+        // Fast targeting enrichment: query only for search terms on the current page
+        const pageSearchTerms = [...new Set(searchTermResult.map(item => item.searchTerm).filter(Boolean))];
         const uniqueCampaignIds = [...new Set(searchTermResult.map(item => item.campaignId).filter(Boolean))];
         const uniqueAdGroupIds = [...new Set(searchTermResult.map(item => item.adGroupId).filter(Boolean))];
 
         let targetingData = [];
-        if (uniqueCampaignIds.length > 0) {
+        if (pageSearchTerms.length > 0 && uniqueCampaignIds.length > 0) {
             targetingData = await adTypeTargetingSchema.find({
                 configId: typedConfigId,
                 profileId: numericProfileId,
-                campaignId: { $in: uniqueCampaignIds },
-                adGroupId: { $in: uniqueAdGroupIds }
+                reportDate: lastDate,
+                targeting: { $in: pageSearchTerms }
             }, {
                 campaignId: 1,
                 adGroupId: 1,
                 targeting: 1,
                 keywordType: 1
             }).lean();
+
+            if (targetingData.length === 0) {
+                targetingData = await adTypeTargetingSchema.find({
+                    configId: typedConfigId,
+                    profileId: numericProfileId,
+                    campaignId: { $in: uniqueCampaignIds },
+                    adGroupId: { $in: uniqueAdGroupIds },
+                    targeting: { $in: pageSearchTerms }
+                }, {
+                    campaignId: 1,
+                    adGroupId: 1,
+                    targeting: 1,
+                    keywordType: 1
+                }).limit(uniqueCampaignIds.length * 50).lean();
+            }
         }
 
         // Create a fast lookup map: key = `${campaignId}_${adGroupId}_${targeting}`
@@ -1622,7 +1671,7 @@ exports.getAllSearchTerms = async (req, res) => {
             .status(500)
             .send({ isSuccess: false, message: error?.message || "Something went wrong" });
     }
-}
+};
 
 exports.getSearchTermsProductView = async (req, res) => {
     try {

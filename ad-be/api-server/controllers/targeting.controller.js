@@ -135,8 +135,8 @@ exports.cronGenerateTargetingReport = async (generateWeeklyReport = false, gener
         const cronName = generateBiWeeklyReport
             ? "BiWeekly Report"
             : generateWeeklyReport || pastSyncObj != null
-            ? "Weekly Report"
-            : "Targeting Report";
+                ? "Weekly Report"
+                : "Targeting Report";
 
         const allowedProfiles = await getAllowedSyncProfiles("TARGETING", "ads", recurring);
         const getProfileId = (await profileSchema.find({ isActive: true, isAdsSyncEnabled: true, ...(profileId && { profileId }), ...(configId && { configId }) }).lean())
@@ -1755,7 +1755,6 @@ exports.manualGenerateReport = async (req, res) => {
                         profile.timezone,
                         profile.currencyCode
                     );
-                    console.log("SP", reportSpResponse);
                     responseSPStatus = reportSpResponse;
                 }
                 if (responseSPStatus != "COMPLETED") {
@@ -1905,132 +1904,132 @@ exports.ruleHistory = async (req, res) => {
 
         pipeline.push({
             $facet: {
-                    data: [
-                        { $skip: perPage * (pageNo - 1) },
-                        { $limit: perPage },
-                        {
-                            $lookup: {
-                                from: "affectedcampaignbyrules",
-                                let: {
-                                    ruleId: "$ruleId",
-                                    ruleDate: "$ruleDate",
-                                    ruleTime: "$ruleTime",
-                                    profileId: "$profileId",
-                                },
-                                pipeline: [
-                                    {
-                                        $match: {
-                                            $expr: {
-                                                $and: [
-                                                    { $eq: ["$profileId", "$$profileId"] },
-                                                    { $eq: ["$ruleSchema", "TargetingRule"] },
-                                                    { $eq: ["$ruleId", "$$ruleId"] },
-                                                    { $eq: ["$ruleDate", "$$ruleDate"] },
-                                                    { $eq: ["$ruleTime", "$$ruleTime"] }
-                                                ]
-                                            }
-                                        }
-                                    },
-                                    {
-                                        $group: {
-                                            _id: "$campaignId",
-                                            campaignId: { $first: "$campaignId" },
-                                            name: { $first: "$name" },
-                                            type: { $first: "$type" },
-                                            ruleDate: { $first: "$ruleDate" },
-                                            ruleTime: { $first: "$ruleTime" },
-                                        }
-                                    },
-                                    {
-                                        $project: {
-                                            _id: 0,
-                                            campaignId: 1,
-                                            name: 1,
-                                            ruleDate: 1,
-                                            ruleTime: 1,
-                                            type: 1,
-                                        }
-                                    }
-                                ],
-                                as: "affectedCampaigns"
-                            }
-                        },
-                        {
-                            $lookup: {
-                                from: "affectedcampaignbyrules",
-                                let: {
-                                    ruleId: "$ruleId",
-                                    ruleDate: "$ruleDate",
-                                    ruleTime: "$ruleTime",
-                                    profileId: "$profileId",
-                                },
-                                pipeline: [
-                                    {
-                                        $match: {
-                                            $expr: {
-                                                $and: [
-                                                    { $eq: ["$profileId", "$$profileId"] },
-                                                    { $eq: ["$ruleSchema", "TargetingRule"] },
-                                                    { $eq: ["$ruleId", "$$ruleId"] },
-                                                    { $eq: ["$ruleDate", "$$ruleDate"] },
-                                                    { $eq: ["$ruleTime", "$$ruleTime"] }
-                                                ]
-                                            }
-                                        }
-                                    },
-                                    {
-                                        $project: {
-                                            _id: 1,
-                                            campaignId: 1,
-                                            adGroupId: 1,
-                                            adGroupName: 1,
-                                            targetId: 1,
-                                            name: 1,
-                                            targetName: 1,
-                                            targetType: 1,
-                                            oldValue: 1,
-                                            newValue: 1,
-                                            ruleDate: 1,
-                                            ruleTime: 1,
-                                            type: 1,
-                                            changed: 1,
-                                            isReverted: 1,
-                                            isActive: 1,
-                                            closedAt: 1,
-                                            impressions: 1,
-                                            clicks: 1,
-                                            spend: 1,
-                                            sales: 1,
-                                            orders: 1,
-                                            acos: 1,
-                                            roas: 1,
-                                            cpc: 1,
-                                            ctr: 1,
-                                        }
-                                    }
-                                ],
-                                as: "affectedTargets"
-                            }
-                        },
-                        {
-                            $lookup: {
-                                from: "campaignproducteligiblestatusbyrules",
-                                let: { ruleId: "$ruleId", ruleDate: "$ruleDate", profileId: "$profileId", configId: "$configId" },
-                                pipeline: [
-                                    {
-                                        $match: { $expr: { $and: [{ $eq: ["$ruleId", "$$ruleId"] }, { $eq: ["$ruleDate", "$$ruleDate"] }, { $eq: ["$profileId", "$$profileId"] }, { $eq: ["$configId", "$$configId"] }] } },
-                                    },
-                                    { $count: "count" },
-                                ],
-                                as: "lowProductStats",
+                data: [
+                    { $skip: perPage * (pageNo - 1) },
+                    { $limit: perPage },
+                    {
+                        $lookup: {
+                            from: "affectedcampaignbyrules",
+                            let: {
+                                ruleId: "$ruleId",
+                                ruleDate: "$ruleDate",
+                                ruleTime: "$ruleTime",
+                                profileId: "$profileId",
                             },
+                            pipeline: [
+                                {
+                                    $match: {
+                                        $expr: {
+                                            $and: [
+                                                { $eq: ["$profileId", "$$profileId"] },
+                                                { $eq: ["$ruleSchema", "TargetingRule"] },
+                                                { $eq: ["$ruleId", "$$ruleId"] },
+                                                { $eq: ["$ruleDate", "$$ruleDate"] },
+                                                { $eq: ["$ruleTime", "$$ruleTime"] }
+                                            ]
+                                        }
+                                    }
+                                },
+                                {
+                                    $group: {
+                                        _id: "$campaignId",
+                                        campaignId: { $first: "$campaignId" },
+                                        name: { $first: "$name" },
+                                        type: { $first: "$type" },
+                                        ruleDate: { $first: "$ruleDate" },
+                                        ruleTime: { $first: "$ruleTime" },
+                                    }
+                                },
+                                {
+                                    $project: {
+                                        _id: 0,
+                                        campaignId: 1,
+                                        name: 1,
+                                        ruleDate: 1,
+                                        ruleTime: 1,
+                                        type: 1,
+                                    }
+                                }
+                            ],
+                            as: "affectedCampaigns"
                         }
-                    ],
-                    totalCount: [
-                        { $count: "count" }
-                    ]
-                }
-            });
+                    },
+                    {
+                        $lookup: {
+                            from: "affectedcampaignbyrules",
+                            let: {
+                                ruleId: "$ruleId",
+                                ruleDate: "$ruleDate",
+                                ruleTime: "$ruleTime",
+                                profileId: "$profileId",
+                            },
+                            pipeline: [
+                                {
+                                    $match: {
+                                        $expr: {
+                                            $and: [
+                                                { $eq: ["$profileId", "$$profileId"] },
+                                                { $eq: ["$ruleSchema", "TargetingRule"] },
+                                                { $eq: ["$ruleId", "$$ruleId"] },
+                                                { $eq: ["$ruleDate", "$$ruleDate"] },
+                                                { $eq: ["$ruleTime", "$$ruleTime"] }
+                                            ]
+                                        }
+                                    }
+                                },
+                                {
+                                    $project: {
+                                        _id: 1,
+                                        campaignId: 1,
+                                        adGroupId: 1,
+                                        adGroupName: 1,
+                                        targetId: 1,
+                                        name: 1,
+                                        targetName: 1,
+                                        targetType: 1,
+                                        oldValue: 1,
+                                        newValue: 1,
+                                        ruleDate: 1,
+                                        ruleTime: 1,
+                                        type: 1,
+                                        changed: 1,
+                                        isReverted: 1,
+                                        isActive: 1,
+                                        closedAt: 1,
+                                        impressions: 1,
+                                        clicks: 1,
+                                        spend: 1,
+                                        sales: 1,
+                                        orders: 1,
+                                        acos: 1,
+                                        roas: 1,
+                                        cpc: 1,
+                                        ctr: 1,
+                                    }
+                                }
+                            ],
+                            as: "affectedTargets"
+                        }
+                    },
+                    {
+                        $lookup: {
+                            from: "campaignproducteligiblestatusbyrules",
+                            let: { ruleId: "$ruleId", ruleDate: "$ruleDate", profileId: "$profileId", configId: "$configId" },
+                            pipeline: [
+                                {
+                                    $match: { $expr: { $and: [{ $eq: ["$ruleId", "$$ruleId"] }, { $eq: ["$ruleDate", "$$ruleDate"] }, { $eq: ["$profileId", "$$profileId"] }, { $eq: ["$configId", "$$configId"] }] } },
+                                },
+                                { $count: "count" },
+                            ],
+                            as: "lowProductStats",
+                        },
+                    }
+                ],
+                totalCount: [
+                    { $count: "count" }
+                ]
+            }
+        });
 
         const result = await targetingRuleHistorySchema.aggregate(pipeline);
         const getRules = await enrichWithCampaignMetrics(result[0].data, profileId, "TargetingRule");
@@ -2226,12 +2225,19 @@ const createBidHistory = async (targetingId, newValue, configId, profileId, titl
         const getTargetingSchema = type === "SB" ? sbTargetingSchema : type === "SD" ? sdTargetingSchema : targetingSchema;
         const cleanTargetId = String(targetingId).replace(/^[TK]-/, "");
         const possibleIds = [targetingId, cleanTargetId, `T-${cleanTargetId}`, `K-${cleanTargetId}`];
+        if (!isNaN(Number(cleanTargetId))) {
+            possibleIds.push(Number(cleanTargetId));
+        }
+
+        const numericProfileId = Number(profileId);
+        const queryProfileId = !isNaN(numericProfileId) ? numericProfileId : profileId;
 
         // In targeting table, sorting using reportDate desc and createdAt / createdDate desc, getting first record
         const targeting = await getTargetingSchema
             .findOne({
                 targetId: { $in: possibleIds },
                 ...(configId ? { configId } : {}),
+                ...(queryProfileId ? { profileId: queryProfileId } : {}),
             })
             .sort({ reportDate: -1, createdAt: -1, createdDate: -1 })
             .lean();
@@ -2241,11 +2247,95 @@ const createBidHistory = async (targetingId, newValue, configId, profileId, titl
         }
 
         const newBidVal = Number(newValue);
-        const oldBidVal = targeting?.keywordBid !== undefined && targeting?.keywordBid !== null
+        if (isNaN(newBidVal)) return;
+
+        let oldBidVal = targeting?.keywordBid !== undefined && targeting?.keywordBid !== null
             ? Number(targeting.keywordBid)
             : (targeting?.bid !== undefined && targeting?.bid !== null ? Number(targeting.bid) : null);
 
-        if (oldBidVal !== null && oldBidVal === newBidVal) return;
+        // 1. If target's current active bid in targeting table already equals newBidVal, no change to record
+        if (oldBidVal !== null && !isNaN(oldBidVal) && oldBidVal === newBidVal) return;
+
+        const isDayparting = explicitSource === "DAYPARTING" || /dayparting/i.test(title);
+        const isRule = explicitSource === "RULE" || /rule|cron/i.test(title);
+
+        // Deduplication time window:
+        // Dayparting rules operate on hourly slots -> check within current hour slot or last 60 minutes
+        // General rules -> check last 15 minutes
+        // Manual/Other -> check last 60 seconds (increased from 30s)
+        const now = new Date();
+        const startOfCurrentHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0);
+        const dedupeSince = isDayparting
+            ? new Date(Math.min(now.getTime() - 60 * 60 * 1000, startOfCurrentHour.getTime()))
+            : isRule
+                ? new Date(now.getTime() - 15 * 60 * 1000)
+                : new Date(now.getTime() - 60 * 1000);
+
+        const targetIdQueries = [
+            { targetId: cleanTargetId },
+            { targetId: String(cleanTargetId) },
+            { targetId: targetingId },
+            { targetId: `T-${cleanTargetId}` },
+            { targetId: `K-${cleanTargetId}` },
+        ];
+        if (!isNaN(Number(cleanTargetId))) {
+            targetIdQueries.push({ targetId: Number(cleanTargetId) });
+        }
+        if (targeting?.campaignId && (targeting?.targeting || targeting?.keywordText)) {
+            targetIdQueries.push({
+                changeLevel: targeting.campaignId,
+                targeting: targeting?.targeting || targeting?.keywordText,
+            });
+        }
+
+        // 2. Check the latest history record for this target in campaignChangeHistory
+        const latestCampaignHistory = await campaignChangeHistorySchema?.findOne({
+            configId,
+            profileId: queryProfileId,
+            $or: targetIdQueries,
+        }).sort({ createdAt: -1, _id: -1 }).lean();
+
+        if (latestCampaignHistory) {
+            const latestNewVal = Number(latestCampaignHistory.newValue);
+            // If the latest history record already set the bid to newBidVal, skip to avoid duplicate
+            if (!isNaN(latestNewVal) && latestNewVal === newBidVal) {
+                return;
+            }
+            // Use latest recorded newValue as oldBidVal if available for continuity
+            if (!isNaN(latestNewVal)) {
+                oldBidVal = latestNewVal;
+                if (oldBidVal === newBidVal) return;
+            }
+        }
+
+        // 3. Also check targetingHistorySchema for latest recorded bid
+        const latestTargetingHistory = await targetingHistorySchema.findOne({
+            configId,
+            profileId: queryProfileId,
+            targetId: cleanTargetId,
+        }).sort({ createdAt: -1, _id: -1 }).lean();
+
+        if (latestTargetingHistory) {
+            const latestTargetingBid = Number(latestTargetingHistory.bid);
+            if (!isNaN(latestTargetingBid) && latestTargetingBid === newBidVal) {
+                return;
+            }
+        }
+
+        // 4. Check for existing record within the dedupe window (current hour slot for dayparting)
+        const existingCampaignChange = await campaignChangeHistorySchema?.findOne({
+            configId,
+            profileId: queryProfileId,
+            $or: targetIdQueries,
+            createdAt: { $gte: dedupeSince },
+        }).sort({ createdAt: -1 }).lean();
+
+        if (existingCampaignChange) {
+            const existingVal = Number(existingCampaignChange.newValue);
+            if (!isNaN(existingVal) && existingVal === newBidVal) {
+                return;
+            }
+        }
 
         // Get ACOS of first record of that filter
         let currentAcos = 0;
@@ -2255,18 +2345,20 @@ const createBidHistory = async (targetingId, newValue, configId, profileId, titl
             currentAcos = Number(((Number(targeting.spend) / Number(targeting.sales)) * 100).toFixed(2));
         }
 
-        // 1. Immediately record in targetingHistory table
+        // 5. Immediately record in targetingHistory table
         try {
             const existingRecent = await targetingHistorySchema.findOne({
+                configId,
+                profileId: queryProfileId,
                 targetId: cleanTargetId,
                 bid: newBidVal,
-                createdAt: { $gte: new Date(Date.now() - 60 * 1000) }
+                createdAt: { $gte: dedupeSince },
             });
 
             if (!existingRecent) {
                 await targetingHistorySchema.create({
                     configId,
-                    profileId,
+                    profileId: queryProfileId,
                     targetId: cleanTargetId,
                     campaignId: String(targeting?.campaignId || ""),
                     adGroupId: String(targeting?.adGroupId || ""),
@@ -2287,46 +2379,34 @@ const createBidHistory = async (targetingId, newValue, configId, profileId, titl
             console.error("Error creating targetingHistory entry in createBidHistory:", historyErr?.message || historyErr);
         }
 
-        // 2. Also record in campaignChangeHistorySchema
-        const existingCampaignChange = await campaignChangeHistorySchema?.findOne({
-            configId,
-            profileId,
-            changeLevel: targeting?.campaignId,
-            changeType: title,
-            newValue: newBidVal,
-            ...(targeting?.matchType ? { matchType: targeting.matchType } : {}),
-            createdAt: { $gte: new Date(Date.now() - 30 * 1000) }
-        }).lean();
-
-        if (!existingCampaignChange) {
-            const computedSource = explicitSource || (
-                /dayparting/i.test(title)
-                    ? "DAYPARTING"
-                    : /rule|cron/i.test(title)
+        // 6. Also record in campaignChangeHistorySchema
+        const computedSource = explicitSource || (
+            isDayparting
+                ? "DAYPARTING"
+                : isRule
                     ? "RULE"
                     : "MANUAL"
-            );
+        );
 
-            await campaignChangeHistorySchema?.create({
-                configId,
-                profileId,
-                changeLevel: targeting?.campaignId,
-                changeType: title,
-                targeting: targeting?.targeting || targeting?.keywordText,
-                matchType: targeting?.matchType || targeting?.targetType || null,
-                targetId: cleanTargetId || null,
-                oldValue: oldBidVal,
-                newValue: newBidVal,
-                updatedFrom: "Targeting",
-                source: computedSource,
-                userId,
-                type: type || "SP"
-            });
-        }
+        await campaignChangeHistorySchema?.create({
+            configId,
+            profileId: queryProfileId,
+            changeLevel: targeting?.campaignId,
+            changeType: title,
+            targeting: targeting?.targeting || targeting?.keywordText,
+            matchType: targeting?.matchType || targeting?.targetType || null,
+            targetId: cleanTargetId || null,
+            oldValue: oldBidVal !== null && oldBidVal !== undefined ? String(oldBidVal) : null,
+            newValue: String(newBidVal),
+            updatedFrom: "Targeting",
+            source: computedSource,
+            userId,
+            type: type || "SP",
+        });
     } catch (e) {
         console.error("Error in createBidHistory:", e?.message || e);
     }
-}
+};
 
 const createStatusHistory = async (targetingId, newValue, configId, profileId, title, userId, type, explicitSource) => {
     const getTargetingSchema = type === "SB" ? sbTargetingSchema : type === "SD" ? sdTargetingSchema : targetingSchema;
@@ -2359,8 +2439,8 @@ const createStatusHistory = async (targetingId, newValue, configId, profileId, t
                     /dayparting/i.test(title)
                         ? "DAYPARTING"
                         : /rule|cron/i.test(title)
-                        ? "RULE"
-                        : "MANUAL"
+                            ? "RULE"
+                            : "MANUAL"
                 );
 
                 await campaignChangeHistorySchema?.create({
@@ -2400,8 +2480,8 @@ const createCampaignHistory = async (campaignId, changeType, oldValue, newValue,
             /dayparting/i.test(changeType)
                 ? "DAYPARTING"
                 : /rule|cron/i.test(changeType)
-                ? "RULE"
-                : "MANUAL"
+                    ? "RULE"
+                    : "MANUAL"
         );
 
         await campaignChangeHistorySchema?.create({
@@ -2437,8 +2517,8 @@ const createAdGroupHistory = async (campaignId, adGroupId, changeType, oldValue,
             /dayparting/i.test(changeType)
                 ? "DAYPARTING"
                 : /rule|cron/i.test(changeType)
-                ? "RULE"
-                : "MANUAL"
+                    ? "RULE"
+                    : "MANUAL"
         );
 
         await campaignChangeHistorySchema?.create({
@@ -2784,6 +2864,13 @@ async function processSPTargetings({
         nextTargetsToken = token;
 
         if (!targetingClauses.length) continue;
+
+        // Reconcile and heal any existing R- records for these targets
+        await reconcileTargetingRRecordsForClauses({
+            configId: profile.configId,
+            profileId: profile.profileId,
+            targetingClauses,
+        });
 
         const targetingBulkOps = [];
         const campaignMaxBidMap = {};
@@ -4469,7 +4556,7 @@ const getTypeBasedRuleData = async (rule, type, model, capture = false) => {
 
     const conditionStages = [];
 
-  if (rule.query && rule?.query?.[type]) {
+    if (rule.query && rule?.query?.[type]) {
         let parsedQuery = sanitizeQueryObject(safeJsonParse(rule?.query?.[type]));
         conditionStages.push({ $match: parsedQuery });
     }
@@ -4856,7 +4943,7 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
                         });
                     }
 
-                    if (existingActive && Number(existingActive.newValue) === calculatedBid && Number(targeting.keywordBid) === calculatedBid) {
+                    if (existingActive && Number(existingActive.newValue) === calculatedBid && (Number(targeting.keywordBid) === calculatedBid || isDayparting)) {
                         await recordRuleExecutionChange({
                             conditionSnapshot: targeting.conditionSnapshot,
                             configId: rule.configId,
@@ -5015,9 +5102,12 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
                     "SP",
                     isDayparting ? "DAYPARTING" : "RULE"
                 );
+                const rawTId = String(targeting?.targetId || "").replace(/^[TK]-/, "");
+                const allTIds = [targeting?.targetId, rawTId, `T-${rawTId}`, `K-${rawTId}`];
+                if (!isNaN(Number(rawTId))) allTIds.push(Number(rawTId));
                 bulkTargetingOps.push({
                     updateMany: {
-                        filter: { targetId: targeting?.targetId },
+                        filter: { targetId: { $in: Array.from(new Set(allTIds)) } },
                         update: { $set: { keywordBid: Number(keywordBid) } }
                     }
                 });
@@ -7724,7 +7814,7 @@ exports.importTargetingRule = async (req, res) => {
 
         if (bulkOps.length) {
             await prepareSnapshotBulkUpdates(targetingRuleSchema, bulkOps);
-      await targetingRuleSchema.bulkWrite(bulkOps);
+            await targetingRuleSchema.bulkWrite(bulkOps);
         }
 
         return res.status(200).send({
@@ -8398,7 +8488,18 @@ exports.createKeywords = async (req, res) => {
 
 exports.getTargetingHistory = async (req, res) => {
     try {
-        const { profileId, campaignId, targetId, adType = "SP", fromDate, toDate } = req.body;
+        const {
+            profileId,
+            campaignId,
+            targetId,
+            adType = "SP",
+            fromDate,
+            toDate,
+            acosLookbackMode = "7",
+            acosLookbackDays = 7,
+            customAcosFromDate,
+            customAcosToDate,
+        } = req.body;
 
         if (!targetId && !campaignId) {
             return res.status(400).send({
@@ -8407,33 +8508,42 @@ exports.getTargetingHistory = async (req, res) => {
             });
         }
 
+        const configId = req.body.configId || req.query?.configId || req?.config?.configId || req?.headers?.["x-config-id"] || req?.headers?.["configid"];
+        const resolvedConfigId = configId && mongoose.Types.ObjectId.isValid(configId) ? new mongoose.Types.ObjectId(String(configId)) : null;
+
+        const numProfileId = profileId ? Number(profileId) : null;
+        const numCampaignId = campaignId ? Number(campaignId) : null;
+        const strCampaignId = campaignId ? String(campaignId) : null;
+
         const cleanTargetId = targetId ? String(targetId).replace(/^[TK]-/, "").trim() : "";
         const possibleTargetIds = targetId
-            ? [
+            ? Array.from(new Set([
                 String(targetId),
                 cleanTargetId,
                 `T-${cleanTargetId}`,
                 `K-${cleanTargetId}`,
-                ...(isNaN(Number(cleanTargetId)) ? [] : [Number(cleanTargetId)]),
-            ].filter(Boolean)
+            ].filter(Boolean)))
             : [];
+        const numTargetId = !isNaN(Number(cleanTargetId)) && cleanTargetId !== "" ? Number(cleanTargetId) : null;
 
         // Determine targeting model based on adType
         let targetModel = targetingSchema;
         if (adType === "SB") targetModel = sbTargetingSchema;
         if (adType === "SD") targetModel = sdTargetingSchema;
 
-        // Get current/latest targeting record
+        // 1. Get current/latest targeting record
         let currentAcos = 0;
         let targetName = "";
         let targetMatchType = "";
         let targetCampaignName = "";
         try {
+            const targetQuery = {
+                ...(possibleTargetIds.length > 0 ? { targetId: { $in: possibleTargetIds } } : {}),
+                ...(campaignId ? { campaignId: { $in: [numCampaignId, strCampaignId].filter(Boolean) } } : {}),
+                ...(numProfileId ? { profileId: numProfileId } : {}),
+            };
             const tRecord = await targetModel
-                .findOne({
-                    ...(possibleTargetIds.length > 0 ? { targetId: { $in: possibleTargetIds } } : {}),
-                    ...(campaignId ? { campaignId: { $in: [Number(campaignId), String(campaignId)].filter(Boolean) } } : {}),
-                })
+                .findOne(targetQuery)
                 .sort({ reportDate: -1, createdAt: -1 })
                 .lean();
 
@@ -8451,52 +8561,63 @@ exports.getTargetingHistory = async (req, res) => {
             // ignore
         }
 
-        // 1. Build filter for targetingHistory (AMS / stream / direct)
-        const historyFilter = {};
+        // 2. Build indexed filters for parallel queries
+        const historyFilter = {
+            targetId: { $in: possibleTargetIds },
+            ...(campaignId ? { campaignId: { $in: [strCampaignId, numCampaignId].filter(Boolean) } } : {}),
+            ...(numProfileId ? { profileId: numProfileId } : {}),
+        };
+
+        const changeHistoryFilter = {
+            ...(resolvedConfigId ? { configId: resolvedConfigId } : {}),
+            ...(numProfileId ? { profileId: numProfileId } : {}),
+            ...(numCampaignId ? { changeLevel: numCampaignId } : {}),
+        };
+        const orConditions = [];
         if (possibleTargetIds.length > 0) {
-            historyFilter.$or = [
-                { targetId: { $in: possibleTargetIds } },
-                { target_id: { $in: possibleTargetIds } },
-            ];
-        }
-        if (campaignId) {
-            const cFilter = [
-                { campaignId: String(campaignId) },
-                { campaignId: Number(campaignId) },
-                { campaign_id: String(campaignId) },
-                { campaign_id: Number(campaignId) },
-            ];
-            if (historyFilter.$or) {
-                historyFilter.$and = [{ $or: historyFilter.$or }, { $or: cFilter }];
-                delete historyFilter.$or;
-            } else {
-                historyFilter.$or = cFilter;
+            orConditions.push({ targetId: { $in: possibleTargetIds } });
+            if (numTargetId) {
+                orConditions.push({ changeLevel: numTargetId });
             }
         }
-        if (profileId) {
-            const pFilter = [
-                { profileId: Number(profileId) || profileId },
-                { profileId: String(profileId) },
-            ];
-            if (historyFilter.$and) {
-                historyFilter.$and.push({ $or: pFilter });
-            } else if (historyFilter.$or) {
-                historyFilter.$and = [{ $or: historyFilter.$or }, { $or: pFilter }];
-                delete historyFilter.$or;
-            } else {
-                historyFilter.$or = pFilter;
-            }
+        if (targetName) {
+            orConditions.push({ targeting: targetName });
+        }
+        if (orConditions.length > 0) {
+            changeHistoryFilter.$or = orConditions;
         }
 
-        const historyDocs = await targetingHistorySchema
-            .find(historyFilter)
-            .sort({ last_updated_date_time: -1, createdAt: -1 })
-            .lean();
+        const ruleActionFilter = {
+            amazonEntityId: { $in: possibleTargetIds.map(String) },
+            ...(numProfileId ? { profileId: numProfileId } : {}),
+            ...(resolvedConfigId ? { configId: resolvedConfigId } : {}),
+        };
+
+        const targetDailyFilter = {
+            ...(possibleTargetIds.length > 0 || targetName ? {
+                $or: [
+                    ...(possibleTargetIds.length > 0 ? [{ targetId: { $in: possibleTargetIds } }] : []),
+                    ...(targetName ? [{ targeting: targetName }] : []),
+                ],
+            } : {}),
+            ...(campaignId ? { campaignId: { $in: [numCampaignId, strCampaignId].filter(Boolean) } } : {}),
+            ...(numProfileId ? { profileId: { $in: [numProfileId, String(numProfileId)].filter(Boolean) } } : {}),
+            ...(resolvedConfigId ? { configId: resolvedConfigId } : {}),
+        };
+
+        // 3. Execute all independent database queries concurrently via Promise.all
+        const [profile, historyDocs, manualChanges, ruleActions, dailyStats] = await Promise.all([
+            getProfile(configId, profileId).catch(() => null),
+            targetingHistorySchema.find(historyFilter).sort({ last_updated_date_time: -1 }).lean().catch(() => []),
+            campaignChangeHistorySchema.find(changeHistoryFilter).sort({ createdAt: -1 }).lean().catch(() => []),
+            ruleActionExecutionSchema.find(ruleActionFilter).sort({ appliedAt: -1, createdAt: -1 }).lean().catch(() => []),
+            targetModel.find(targetDailyFilter, { reportDate: 1, spend: 1, sales: 1 }).lean().catch(() => []),
+        ]);
 
         const historyList = [];
 
         // Add entries from targetingHistory
-        for (const doc of historyDocs) {
+        for (const doc of (historyDocs || [])) {
             const date = doc.last_updated_date_time || doc.creation_date_time || doc.createdAt;
             const itemAcos = doc.acos !== undefined && doc.acos !== null && !isNaN(Number(doc.acos)) && Number(doc.acos) > 0 ? Number(doc.acos) : currentAcos;
             const itemOldAcos = doc.oldAcos !== undefined && doc.oldAcos !== null && !isNaN(Number(doc.oldAcos)) ? Number(doc.oldAcos) : itemAcos;
@@ -8537,109 +8658,77 @@ exports.getTargetingHistory = async (req, res) => {
             });
         }
 
-        // 2. Query campaignChangeHistorySchema (Manual Portal edits, Rules, Dayparting)
-        try {
-            const manualChanges = await campaignChangeHistorySchema
-                .find({
-                    $or: [
-                        ...(possibleTargetIds.length > 0
-                            ? [
-                                { changeLevel: { $in: possibleTargetIds } },
-                                { targetId: { $in: possibleTargetIds } },
-                                { targeting: { $in: possibleTargetIds } },
-                            ]
-                            : []),
-                        ...(targetName ? [{ targeting: targetName }] : []),
-                    ],
-                })
-                .sort({ createdAt: -1 })
-                .lean();
+        // Add entries from campaignChangeHistory
+        for (const mc of (manualChanges || [])) {
+            const oldValNum = Number(String(mc.oldValue).replace(/[^0-9.-]/g, ""));
+            const newValNum = Number(String(mc.newValue).replace(/[^0-9.-]/g, ""));
+            const isOldNum = !isNaN(oldValNum) && mc.oldValue !== "" && mc.oldValue !== null;
+            const isNewNum = !isNaN(newValNum) && mc.newValue !== "" && mc.newValue !== null;
 
-            for (const mc of manualChanges) {
-                const oldValNum = Number(String(mc.oldValue).replace(/[^0-9.-]/g, ""));
-                const newValNum = Number(String(mc.newValue).replace(/[^0-9.-]/g, ""));
-                const isOldNum = !isNaN(oldValNum) && mc.oldValue !== "" && mc.oldValue !== null;
-                const isNewNum = !isNaN(newValNum) && mc.newValue !== "" && mc.newValue !== null;
+            let cSource = "Manual";
+            const rawSource = String(mc.source || mc.updatedFrom || mc.changeType || "").toLowerCase();
+            if (rawSource.includes("dayparting")) cSource = "Dayparting";
+            else if (rawSource.includes("rule")) cSource = "Rule";
 
-                let cSource = "Manual";
-                const rawSource = String(mc.source || mc.updatedFrom || mc.changeType || "").toLowerCase();
-                if (rawSource.includes("dayparting")) cSource = "Dayparting";
-                else if (rawSource.includes("rule")) cSource = "Rule";
-
-                let act = mc.changeType || "Bid Updated";
-                if (/pause/i.test(String(mc.newValue)) || /status.*pause/i.test(String(mc.changeType))) {
-                    act = "Status: Paused";
-                } else if (/enable/i.test(String(mc.newValue)) || /status.*enable/i.test(String(mc.changeType))) {
-                    act = "Status: Enabled";
-                } else if (isOldNum && isNewNum) {
-                    act = newValNum > oldValNum ? "Bid Increased" : newValNum < oldValNum ? "Bid Decreased" : "Bid Updated";
-                }
-
-                historyList.push({
-                    _id: mc._id,
-                    lastChangeDate: mc.createdAt,
-                    targeting: mc.targeting || targetName,
-                    matchType: mc.matchType || targetMatchType,
-                    targetId: mc.targetId || mc.changeLevel || cleanTargetId,
-                    action: act,
-                    previousValue: isOldNum ? oldValNum : (mc.oldValue || "—"),
-                    updatedValue: isNewNum ? newValNum : (mc.newValue || "—"),
-                    oldBid: isOldNum ? oldValNum : null,
-                    bidAmount: isNewNum ? newValNum : 0,
-                    changeSource: cSource,
-                    source: mc.changeType || mc.updatedFrom || mc.source || "Manual (Platform)",
-                    acos: currentAcos,
-                    oldAcos: currentAcos,
-                });
+            let act = mc.changeType || "Bid Updated";
+            if (/pause/i.test(String(mc.newValue)) || /status.*pause/i.test(String(mc.changeType))) {
+                act = "Status: Paused";
+            } else if (/enable/i.test(String(mc.newValue)) || /status.*enable/i.test(String(mc.changeType))) {
+                act = "Status: Enabled";
+            } else if (isOldNum && isNewNum) {
+                act = newValNum > oldValNum ? "Bid Increased" : newValNum < oldValNum ? "Bid Decreased" : "Bid Updated";
             }
-        } catch (e) {
-            // ignore
+
+            historyList.push({
+                _id: mc._id,
+                lastChangeDate: mc.createdAt,
+                targeting: mc.targeting || targetName,
+                matchType: mc.matchType || targetMatchType,
+                targetId: mc.targetId || mc.changeLevel || cleanTargetId,
+                action: act,
+                previousValue: isOldNum ? oldValNum : (mc.oldValue || "—"),
+                updatedValue: isNewNum ? newValNum : (mc.newValue || "—"),
+                oldBid: isOldNum ? oldValNum : null,
+                bidAmount: isNewNum ? newValNum : 0,
+                changeSource: cSource,
+                source: mc.changeType || mc.updatedFrom || mc.source || "Manual (Platform)",
+                acos: currentAcos,
+                oldAcos: currentAcos,
+            });
         }
 
-        // 3. Query ruleActionExecutionSchema (Automated Rule and Dayparting Actions)
-        try {
-            const ruleActions = await ruleActionExecutionSchema
-                .find({
-                    amazonEntityId: { $in: possibleTargetIds.map(String) },
-                    ...(profileId ? { profileId: Number(profileId) || profileId } : {}),
-                })
-                .sort({ appliedAt: -1, createdAt: -1 })
-                .lean();
+        // Add entries from ruleActions
+        for (const ra of (ruleActions || [])) {
+            const cSource = ra.ruleFamily === "dayparting-rules" ? "Dayparting" : "Rule";
+            const oldNum = Number(ra.previousValue);
+            const newNum = Number(ra.desiredValue);
+            const isOldNum = !isNaN(oldNum) && ra.previousValue !== null;
+            const isNewNum = !isNaN(newNum) && ra.desiredValue !== null;
 
-            for (const ra of ruleActions) {
-                const cSource = ra.ruleFamily === "dayparting-rules" ? "Dayparting" : "Rule";
-                const oldNum = Number(ra.previousValue);
-                const newNum = Number(ra.desiredValue);
-                const isOldNum = !isNaN(oldNum) && ra.previousValue !== null;
-                const isNewNum = !isNaN(newNum) && ra.desiredValue !== null;
-
-                let act = "Bid Updated";
-                if (ra.actionType === "STATUS_PAUSE") act = "Status: Paused";
-                else if (ra.actionType === "STATUS_ENABLE") act = "Status: Enabled";
-                else if (isOldNum && isNewNum) {
-                    act = newNum > oldNum ? "Bid Increased" : newNum < oldNum ? "Bid Decreased" : "Bid Updated";
-                }
-
-                historyList.push({
-                    _id: ra._id,
-                    lastChangeDate: ra.appliedAt || ra.startedAt || ra.createdAt,
-                    targeting: targetName,
-                    matchType: targetMatchType,
-                    targetId: ra.amazonEntityId || cleanTargetId,
-                    action: act,
-                    previousValue: isOldNum ? oldNum : (ra.previousValue || "—"),
-                    updatedValue: isNewNum ? newNum : (ra.desiredValue || "—"),
-                    oldBid: isOldNum ? oldNum : null,
-                    bidAmount: isNewNum ? newNum : 0,
-                    changeSource: cSource,
-                    source: ra.ruleFamily === "dayparting-rules" ? "Dayparting Strategy" : "Targeting Rule Execution",
-                    acos: currentAcos,
-                    oldAcos: currentAcos,
-                    state: ra.state,
-                });
+            let act = "Bid Updated";
+            if (ra.actionType === "STATUS_PAUSE") act = "Status: Paused";
+            else if (ra.actionType === "STATUS_ENABLE") act = "Status: Enabled";
+            else if (isOldNum && isNewNum) {
+                act = newNum > oldNum ? "Bid Increased" : newNum < oldNum ? "Bid Decreased" : "Bid Updated";
             }
-        } catch (e) {
-            // ignore
+
+            historyList.push({
+                _id: ra._id,
+                lastChangeDate: ra.appliedAt || ra.startedAt || ra.createdAt,
+                targeting: targetName,
+                matchType: targetMatchType,
+                targetId: ra.amazonEntityId || cleanTargetId,
+                action: act,
+                previousValue: isOldNum ? oldNum : (ra.previousValue || "—"),
+                updatedValue: isNewNum ? newNum : (ra.desiredValue || "—"),
+                oldBid: isOldNum ? oldNum : null,
+                bidAmount: isNewNum ? newNum : 0,
+                changeSource: cSource,
+                source: ra.ruleFamily === "dayparting-rules" ? "Dayparting Strategy" : "Targeting Rule Execution",
+                acos: currentAcos,
+                oldAcos: currentAcos,
+                state: ra.state,
+            });
         }
 
         // Sort chronologically ascending to compute transitions and calculate metrics
@@ -8647,8 +8736,6 @@ exports.getTargetingHistory = async (req, res) => {
             (a, b) => new Date(a.lastChangeDate).getTime() - new Date(b.lastChangeDate).getTime()
         );
 
-        const configId = req?.config?.configId;
-        const profile = await getProfile(configId, profileId);
         const timezone = profile?.timezone || "UTC";
         const todayStr = moment().tz(timezone).format("YYYY-MM-DD");
         const globalFromDate = fromDate ? moment(fromDate).format("YYYY-MM-DD") : todayStr;
@@ -8682,18 +8769,24 @@ exports.getTargetingHistory = async (req, res) => {
 
         const finalItems = filteredTransitions.length > 0 ? filteredTransitions : historyList;
 
+        const lookbackNum = Number(acosLookbackDays) > 0 ? Number(acosLookbackDays) : 7;
+        const isCustomRange = acosLookbackMode === "custom_range" && customAcosFromDate && customAcosToDate;
+
         // Calculate date-wise ACOS: spend / sales * 100 for each interval
         for (let i = 0; i < finalItems.length; i++) {
             const item = finalItems[i];
             let startDate = null;
             let endDate = null;
 
-            if (i > 0 && finalItems[i - 1]?.lastChangeDate) {
-                startDate = moment(finalItems[i - 1].lastChangeDate).format("YYYY-MM-DD");
-                endDate = moment(item.lastChangeDate).format("YYYY-MM-DD");
+            if (isCustomRange) {
+                startDate = moment(customAcosFromDate).format("YYYY-MM-DD");
+                endDate = moment(customAcosToDate).format("YYYY-MM-DD");
             } else {
-                startDate = globalFromDate;
-                endDate = globalToDate;
+                const changeDateStr = item.lastChangeDate
+                    ? moment(item.lastChangeDate).format("YYYY-MM-DD")
+                    : todayStr;
+                endDate = changeDateStr;
+                startDate = moment(changeDateStr).subtract(lookbackNum, "days").format("YYYY-MM-DD");
             }
 
             if (moment(startDate).isAfter(moment(endDate))) {
@@ -8702,38 +8795,25 @@ exports.getTargetingHistory = async (req, res) => {
                 endDate = temp;
             }
 
-            try {
-                const stats = await targetModel.aggregate([
-                    {
-                        $match: {
-                            targetId: { $in: possibleTargetIds },
-                            ...(campaignId ? { campaignId: { $in: [Number(campaignId), String(campaignId)].filter(Boolean) } } : {}),
-                            reportDate: { $gte: startDate, $lte: endDate },
-                        },
-                    },
-                    {
-                        $group: {
-                            _id: null,
-                            totalSpend: { $sum: "$spend" },
-                            totalSales: { $sum: "$sales" },
-                        },
-                    },
-                ]);
+            let totalSpend = 0;
+            let totalSales = 0;
 
-                const totalSpend = Number(stats[0]?.totalSpend) || 0;
-                const totalSales = Number(stats[0]?.totalSales) || 0;
-                const calculatedAcos = totalSales > 0 ? Number(((totalSpend / totalSales) * 100).toFixed(2)) : 0;
-
-                item.oldAcos = calculatedAcos;
-                item.acos = calculatedAcos;
-                item.spend = Number(totalSpend.toFixed(2));
-                item.sales = Number(totalSales.toFixed(2));
-                item.dateRange = { startDate, endDate };
-            } catch (calcErr) {
-                item.oldAcos = item.oldAcos || 0;
-                item.acos = item.acos || 0;
-                item.dateRange = { startDate, endDate };
+            if (dailyStats && dailyStats.length > 0) {
+                for (const stat of dailyStats) {
+                    if (stat.reportDate && stat.reportDate >= startDate && stat.reportDate <= endDate) {
+                        totalSpend += Number(stat.spend) || 0;
+                        totalSales += Number(stat.sales) || 0;
+                    }
+                }
             }
+
+            const calculatedAcos = totalSales > 0 ? Number(((totalSpend / totalSales) * 100).toFixed(2)) : 0;
+            item.oldAcos = calculatedAcos;
+            item.acos = calculatedAcos;
+            item.spend = Number(totalSpend.toFixed(2));
+            item.sales = Number(totalSales.toFixed(2));
+            item.acosDateRange = { startDate, endDate };
+            item.dateRange = { startDate, endDate };
         }
 
         // Sort newest to oldest for presentation
@@ -8782,3 +8862,263 @@ exports.getTargetingHistory = async (req, res) => {
     }
 };
 
+/**
+ * Reconciles and heals synthetic R- targeting records with their genuine Amazon T- IDs.
+ * Uses batch index queries and MongoDB bulkWrite to handle large datasets efficiently.
+ */
+async function reconcileTargetingRRecordsForClauses({ configId, profileId, targetingClauses }) {
+    if (!targetingClauses || !targetingClauses.length) return;
+
+    try {
+        const campaignIds = [...new Set(targetingClauses.map(c => c.campaignId))];
+        const rDocs = await targetingSchema.find({
+            configId,
+            profileId,
+            campaignId: { $in: campaignIds },
+            targetId: { $regex: /^R-/ },
+        }).lean();
+
+        if (!rDocs.length) return;
+
+        const clauseMap = new Map();
+        for (const c of targetingClauses) {
+            clauseMap.set(`${c.campaignId}:${c.adGroupId}:${c.targeting}`, c);
+        }
+
+        const candidateTargetIds = [...new Set(targetingClauses.map(c => c.targetId))];
+        const rDates = [...new Set(rDocs.map(r => r.reportDate))];
+
+        // Batch fetch all candidate T- documents in a single indexed query
+        const existingTDocs = await targetingSchema.find({
+            configId,
+            profileId,
+            campaignId: { $in: campaignIds },
+            targetId: { $in: candidateTargetIds },
+            reportDate: { $in: rDates },
+        }).lean();
+
+        const tDocMap = new Map();
+        for (const t of existingTDocs) {
+            tDocMap.set(`${t.campaignId}:${t.adGroupId}:${t.targetId}:${t.reportDate}`, t);
+        }
+
+        const bulkOps = [];
+        const deleteIds = [];
+        let healedCount = 0;
+        let mergedCount = 0;
+
+        for (const rDoc of rDocs) {
+            const clause = clauseMap.get(`${rDoc.campaignId}:${rDoc.adGroupId}:${rDoc.targeting}`);
+            if (!clause || !clause.targetId) continue;
+
+            const realTargetId = clause.targetId;
+            const tKey = `${rDoc.campaignId}:${rDoc.adGroupId}:${realTargetId}:${rDoc.reportDate}`;
+            const existingTDoc = tDocMap.get(tKey);
+
+            if (existingTDoc) {
+                bulkOps.push({
+                    updateOne: {
+                        filter: { _id: existingTDoc._id },
+                        update: {
+                            $set: {
+                                impressions: Math.max(existingTDoc.impressions || 0, rDoc.impressions || 0),
+                                clicks: Math.max(existingTDoc.clicks || 0, rDoc.clicks || 0),
+                                spend: Math.max(existingTDoc.spend || 0, rDoc.spend || 0),
+                                sales: Math.max(existingTDoc.sales || 0, rDoc.sales || 0),
+                                orders: Math.max(existingTDoc.orders || 0, rDoc.orders || 0),
+                                acos: rDoc.acos || existingTDoc.acos || 0,
+                                roas: rDoc.roas || existingTDoc.roas || 0,
+                                cpc: rDoc.cpc || existingTDoc.cpc || 0,
+                                ctr: rDoc.ctr || existingTDoc.ctr || 0,
+                                cvr: rDoc.cvr || existingTDoc.cvr || 0,
+                                conversionRate: rDoc.conversionRate || existingTDoc.conversionRate || 0,
+                                topOfSearchImpressionShare: rDoc.topOfSearchImpressionShare || existingTDoc.topOfSearchImpressionShare,
+                                status: clause.status || existingTDoc.status || rDoc.status,
+                                keywordBid: clause.keywordBid ?? existingTDoc.keywordBid ?? rDoc.keywordBid,
+                                matchType: clause.matchType || existingTDoc.matchType,
+                                keywordType: clause.keywordType || existingTDoc.keywordType,
+                            }
+                        }
+                    }
+                });
+                deleteIds.push(rDoc._id);
+                mergedCount++;
+            } else {
+                bulkOps.push({
+                    updateOne: {
+                        filter: { _id: rDoc._id },
+                        update: {
+                            $set: {
+                                targetId: realTargetId,
+                                status: clause.status || rDoc.status,
+                                keywordBid: clause.keywordBid ?? rDoc.keywordBid,
+                                matchType: clause.matchType || rDoc.matchType,
+                                keywordType: clause.keywordType || rDoc.keywordType,
+                            }
+                        }
+                    }
+                });
+                healedCount++;
+            }
+        }
+
+        if (bulkOps.length) {
+            await targetingSchema.bulkWrite(bulkOps, { ordered: false });
+        }
+        if (deleteIds.length) {
+            await targetingSchema.deleteMany({ _id: { $in: deleteIds } });
+        }
+
+        if (healedCount > 0 || mergedCount > 0) {
+            cron_logs({
+                message: `[reconcileTargetingRRecords] Reconciled ${healedCount} R- docs to real T- IDs, merged and removed ${mergedCount} duplicate R- docs via bulk operations.`,
+                log_type: "info"
+            });
+        }
+    } catch (err) {
+        cron_logs({
+            message: `[reconcileTargetingRRecords] Warning: ${err.message}`,
+            log_type: "warn"
+        });
+    }
+}
+
+/**
+ * Reconciles all synthetic R- records for a given profile against known T- targets in MongoDB.
+ * Optimized with campaign/adGroup batching and bulkWrite.
+ */
+exports.reconcileAllProfileTargetingRRecords = async ({ configId, profileId }) => {
+    try {
+        const resolvedConfig = configId && mongoose.Types.ObjectId.isValid(configId)
+            ? new mongoose.Types.ObjectId(String(configId))
+            : configId;
+        const numProfileId = Number(profileId) || profileId;
+
+        const rDocs = await targetingSchema.find({
+            ...(resolvedConfig && { configId: resolvedConfig }),
+            profileId: numProfileId,
+            targetId: { $regex: /^R-/ },
+        }).lean();
+
+        if (!rDocs.length) return { success: true, healedCount: 0, mergedCount: 0 };
+
+        const campaignIds = [...new Set(rDocs.map(r => r.campaignId))];
+        const adGroupIds = [...new Set(rDocs.map(r => r.adGroupId))];
+        const rDates = [...new Set(rDocs.map(r => r.reportDate))];
+
+        // Preload genuine T- targets specifically for the affected campaigns and ad groups
+        const tDocs = await targetingSchema.find({
+            ...(resolvedConfig && { configId: resolvedConfig }),
+            profileId: numProfileId,
+            campaignId: { $in: campaignIds },
+            adGroupId: { $in: adGroupIds },
+            targetId: { $regex: /^T-/ },
+        }).select("campaignId adGroupId targeting targetId status keywordBid matchType keywordType").lean();
+
+        const targetMap = new Map();
+        for (const t of tDocs) {
+            if (t.campaignId && t.adGroupId && t.targeting && t.targetId) {
+                const key = `${t.campaignId}:${t.adGroupId}:${t.targeting}`;
+                if (!targetMap.has(key)) {
+                    targetMap.set(key, t);
+                }
+            }
+        }
+
+        const candidateTargetIds = [...new Set([...targetMap.values()].map(t => t.targetId))];
+
+        const existingTDocs = await targetingSchema.find({
+            ...(resolvedConfig && { configId: resolvedConfig }),
+            profileId: numProfileId,
+            campaignId: { $in: campaignIds },
+            targetId: { $in: candidateTargetIds },
+            reportDate: { $in: rDates },
+        }).lean();
+
+        const tDocMap = new Map();
+        for (const t of existingTDocs) {
+            tDocMap.set(`${t.campaignId}:${t.adGroupId}:${t.targetId}:${t.reportDate}`, t);
+        }
+
+        const bulkOps = [];
+        const deleteIds = [];
+        let healedCount = 0;
+        let mergedCount = 0;
+
+        for (const rDoc of rDocs) {
+            const key = `${rDoc.campaignId}:${rDoc.adGroupId}:${rDoc.targeting}`;
+            const genuineTarget = targetMap.get(key);
+            if (!genuineTarget || !genuineTarget.targetId) continue;
+
+            const realTargetId = genuineTarget.targetId;
+            const tKey = `${rDoc.campaignId}:${rDoc.adGroupId}:${realTargetId}:${rDoc.reportDate}`;
+            const existingTDoc = tDocMap.get(tKey);
+
+            if (existingTDoc) {
+                bulkOps.push({
+                    updateOne: {
+                        filter: { _id: existingTDoc._id },
+                        update: {
+                            $set: {
+                                impressions: Math.max(existingTDoc.impressions || 0, rDoc.impressions || 0),
+                                clicks: Math.max(existingTDoc.clicks || 0, rDoc.clicks || 0),
+                                spend: Math.max(existingTDoc.spend || 0, rDoc.spend || 0),
+                                sales: Math.max(existingTDoc.sales || 0, rDoc.sales || 0),
+                                orders: Math.max(existingTDoc.orders || 0, rDoc.orders || 0),
+                                acos: rDoc.acos || existingTDoc.acos || 0,
+                                roas: rDoc.roas || existingTDoc.roas || 0,
+                                cpc: rDoc.cpc || existingTDoc.cpc || 0,
+                                ctr: rDoc.ctr || existingTDoc.ctr || 0,
+                                cvr: rDoc.cvr || existingTDoc.cvr || 0,
+                                conversionRate: rDoc.conversionRate || existingTDoc.conversionRate || 0,
+                                topOfSearchImpressionShare: rDoc.topOfSearchImpressionShare || existingTDoc.topOfSearchImpressionShare,
+                                status: genuineTarget.status || existingTDoc.status || rDoc.status,
+                                keywordBid: genuineTarget.keywordBid ?? existingTDoc.keywordBid ?? rDoc.keywordBid,
+                                matchType: genuineTarget.matchType || existingTDoc.matchType,
+                                keywordType: genuineTarget.keywordType || existingTDoc.keywordType,
+                            }
+                        }
+                    }
+                });
+                deleteIds.push(rDoc._id);
+                mergedCount++;
+            } else {
+                bulkOps.push({
+                    updateOne: {
+                        filter: { _id: rDoc._id },
+                        update: {
+                            $set: {
+                                targetId: realTargetId,
+                                status: genuineTarget.status || rDoc.status,
+                                keywordBid: genuineTarget.keywordBid ?? rDoc.keywordBid,
+                                matchType: genuineTarget.matchType || rDoc.matchType,
+                                keywordType: genuineTarget.keywordType || rDoc.keywordType,
+                            }
+                        }
+                    }
+                });
+                healedCount++;
+            }
+        }
+
+        if (bulkOps.length) {
+            await targetingSchema.bulkWrite(bulkOps, { ordered: false });
+        }
+        if (deleteIds.length) {
+            await targetingSchema.deleteMany({ _id: { $in: deleteIds } });
+        }
+
+        cron_logs({
+            message: `[reconcileAllProfileTargetingRRecords] Profile ${numProfileId}: Reconciled ${healedCount} R- docs, merged ${mergedCount} duplicate R- docs via bulk operations.`,
+            log_type: "info"
+        });
+
+        return { success: true, healedCount, mergedCount };
+    } catch (err) {
+        cron_logs({
+            message: `[reconcileAllProfileTargetingRRecords] Error: ${err.message}`,
+            log_type: "error"
+        });
+        return { success: false, error: err.message };
+    }
+};

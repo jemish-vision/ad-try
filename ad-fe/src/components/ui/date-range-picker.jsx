@@ -22,6 +22,9 @@ export function ShadcnDateRangePicker({
   disabledDate,
   align = "start",
   defaultOpen = false,
+  persistGlobalDate = true,
+  id = "date",
+  ariaLabel,
 }) {
   const { t } = useTranslation();
   const resolvedPlaceholder = placeholder ?? t("Select Date");
@@ -87,16 +90,18 @@ export function ShadcnDateRangePicker({
     if (internalDate?.from && internalDate?.to) {
       const dates = [internalDate.from, internalDate.to];
       onChange(dates);
-      try {
-        const arr = [
-          format(internalDate.from, "yyyy-MM-dd"),
-          format(internalDate.to, "yyyy-MM-dd")
-        ];
-        let storeData = JSON.parse(localStorage.getItem('profile')) || {};
-        storeData.date = arr;
-        localStorage.setItem('profile', JSON.stringify(storeData));
-        window.dispatchEvent(new CustomEvent("globalDateChanged", { detail: arr }));
-      } catch (e) {}
+      if (persistGlobalDate) {
+        try {
+          const arr = [
+            format(internalDate.from, "yyyy-MM-dd"),
+            format(internalDate.to, "yyyy-MM-dd")
+          ];
+          let storeData = JSON.parse(localStorage.getItem('profile')) || {};
+          storeData.date = arr;
+          localStorage.setItem('profile', JSON.stringify(storeData));
+          window.dispatchEvent(new CustomEvent("globalDateChanged", { detail: arr }));
+        } catch (e) {}
+      }
     } else if (!internalDate?.from && !internalDate?.to) {
       onChange(null);
     }
@@ -114,7 +119,8 @@ export function ShadcnDateRangePicker({
       <Popover open={isOpen} onOpenChange={setIsOpen} modal={false}>
         <PopoverTrigger asChild>
           <Button
-            id="date"
+            id={id}
+            aria-label={ariaLabel}
             variant={"outline"}
             size={"dateRangePicker"}
             className={cn(

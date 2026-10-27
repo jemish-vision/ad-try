@@ -108,22 +108,32 @@
 }
 
 /* ---------- KPI Card Container Responsive Grid ---------- */
-.dash-kpi-card-item {
-  flex: 1 1 0px !important;
-  min-width: 140px !important;
+#dashboard-top-cards {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 16px !important;
+  width: 100% !important;
 }
 
-@media (max-width: 1512px) {
-  .dash-kpi-card-item {
-    flex: 1 1 200px !important;
-    min-width: 200px !important;
+.dash-kpi-card-item {
+  width: 100% !important;
+  min-width: 0 !important;
+  flex: none !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+@media (max-width: 1280px) {
+  #dashboard-top-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 14px !important;
   }
 }
 
-@media (max-width: 768px) {
-  .dash-kpi-card-item {
-    flex: 1 1 calc(50% - 6px) !important;
-    min-width: 130px !important;
+@media (max-width: 640px) {
+  #dashboard-top-cards {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
   }
 }
 
@@ -1376,7 +1386,7 @@
     gap: 12px;
   }
 
-  .dash-filter-bar>*:first-child {
+  .dash-filter-bar>*:not(.dash-mode-switcher):first-child {
     flex: 1 1 auto;
     width: 100%;
     margin-bottom: 5px;
@@ -1431,7 +1441,8 @@
 
 /* Default (Desktop > 768px): Date+VS (Left), Marketplace (Left), Search (Right) */
 .dash-search-group {
-  margin-left: auto; /* Pushes Search to the far right */
+  margin-left: auto;
+  /* Pushes Search to the far right */
   flex: 1;
   min-width: 250px;
   max-width: 320px;
@@ -1440,11 +1451,13 @@
 /* Tablet (600px - 768px): Date+VS takes full width. Marketplace & Search move to new line, aligned Right */
 @media (max-width: 768px) {
   .dash-filter-left-group {
-    width: 100%; /* Force line break */
+    width: 100%;
+    /* Force line break */
   }
-  
+
   .dash-marketplace-group {
-    margin-left: auto; /* Pushes Marketplace & Search to the right on their new line */
+    margin-left: auto;
+    /* Pushes Marketplace & Search to the right on their new line */
   }
 
   .dash-search-group {
@@ -3038,4 +3051,85 @@
 
 .dash-filter-bar {
   animation: filter-bar-drop 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* =========================================================
+   Recommendations Hub & View Mode Switcher
+   ========================================================= */
+
+/* Mode Switcher Toggle */
+.dash-mode-switcher {
+  width: auto !important;
+  max-width: fit-content !important;
+  flex: 0 0 auto !important;
+  background: var(--button-secondary-bg, #f1f5f9);
+  border: 1px solid var(--glass-border-color, #e2e8f0);
+  border-radius: 12px;
+  padding: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  transition: all 0.2s ease;
+}
+
+[data-theme="dark"] .dash-mode-switcher {
+  width: auto !important;
+  max-width: fit-content !important;
+  flex: 0 0 auto !important;
+  background: rgba(30, 41, 59, 0.7);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dash-mode-switcher button {
+  cursor: pointer;
+}
+
+/* Recommendations Hub Styles */
+#dashboard-recommendations-hub {
+  margin: 0 !important;
+}
+
+#dashboard-recommendations-hub .card.glass-card {
+  background: var(--glass-bg, #ffffff);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  border-radius: var(--dash-card-radius, 20px);
+  border: var(--glass-border, 1px solid rgba(226, 232, 240, 0.8));
+  box-shadow: var(--glass-shadow, 0 4px 20px -2px rgba(0, 0, 0, 0.05));
+  transition: box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+[data-theme="dark"] #dashboard-recommendations-hub .card.glass-card {
+  background: var(--glass-bg, rgba(15, 23, 42, 0.65));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
+}
+
+#dashboard-recommendations-hub .scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+#dashboard-recommendations-hub .scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ── Sleek Modern Custom Scrollbar for Dashboard Cards ── */
+.dash-custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.dash-custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dash-custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 9999px;
+}
+.dash-custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.6);
+}
+.dash-custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
 }

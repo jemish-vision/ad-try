@@ -128,14 +128,16 @@ exports.cronGenerateFcInventoryLedgerReport = async (customParam1 = null) => {
         if (recurring) {
           cronData = await cronJobHistorySchema.findOneAndUpdate(
             { configId: profile.configId, profileId: profile.profileId, cronName: "FC Inventory Ledger", historyDate: todayStr },
-            { $set: { status: "PENDING" } },
+            { $setOnInsert: { status: "PENDING" } },
             { upsert: true, new: true }
           );
         }
         const result = await generateFcLedgerReportForDate(profile, startDate, endDate, checkSPConfig, recurring);
         cron_logs({ message: `[FC Ledger] Profile=${profile.profileId}, result=${result}`, log_type: result === "FAILED" ? "error" : "info" });
         if (recurring && cronData?._id) {
-          await cronJobHistorySchema.findByIdAndUpdate(cronData._id, { status: result === "COMPLETED" ? "COMPLETED" : result });
+          if (result === "COMPLETED" || result === "FAILED") {
+            await cronJobHistorySchema.findByIdAndUpdate(cronData._id, { status: result });
+          }
         }
         if (!recurring && cronjobid && result === "COMPLETED") {
           await cronJobHistorySchema.findByIdAndUpdate(cronjobid, { status: "COMPLETED" });
@@ -164,16 +166,31 @@ async function generateFcLedgerReportForDate(profile, startDate, endDate, token,
   }
   let existing = null;
   if (recurring) {
-    const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     existing = await reportsSchema.findOne({
       profileId: profile.profileId,
       configId: profile.configId,
-      startDate,
-      endDate,
       reportTypeId,
       status: { $in: ["PENDING", "PROCESSING", "IN_QUEUE", "IN_PROGRESS"] },
-      createdAt: { $gte: twelveHoursAgo },
+      createdAt: { $gte: twentyFourHoursAgo },
     }).sort({ createdAt: -1 }).lean();
+
+    if (!existing) {
+      const alreadyCompleted = await reportsSchema.findOne({
+        profileId: profile.profileId,
+        configId: profile.configId,
+        startDate,
+        endDate,
+        reportTypeId,
+        status: "COMPLETED",
+        createdAt: { $gte: twentyFourHoursAgo },
+      }).sort({ createdAt: -1 }).lean();
+
+      if (alreadyCompleted) {
+        cron_logs({ message: `[FC Ledger] Profile ${profile.profileId} report already completed (${startDate} to ${endDate})`, log_type: "info" });
+        return "COMPLETED";
+      }
+    }
   } else {
     existing = await reportsSchema.findOne({
       profileId: profile.profileId,
@@ -2162,12 +2179,17 @@ exports.getFcSkuMatrix = async (req, res) => {
       baseMatch.configId = new mongoose.Types.ObjectId(cleanConfigId);
     }
 
+    const profile = await profilesSchema.findOne(baseMatch).select("timezone").lean();
+    const timezone = profile?.timezone || "Asia/Kolkata";
+    const yesterday = moment().tz(timezone).subtract(1, "day").format("YYYY-MM-DD");
+    const completedSnapshotDate = targetDate < yesterday ? targetDate : yesterday;
+
     const ledgerStartDate = hasCustomRange
       ? moment(fromDate).format("YYYY-MM-DD")
-      : moment(targetDate).subtract(periodDays - 1, "days").format("YYYY-MM-DD");
+      : moment(completedSnapshotDate).subtract(periodDays - 1, "days").format("YYYY-MM-DD");
     const ledgerEndDate = hasCustomRange
       ? moment(toDate).format("YYYY-MM-DD")
-      : targetDate;
+      : completedSnapshotDate;
 
     // 1. Fetch FC-wise Stock on snapshot date + active FCs & SKUs from ledger
     const [stockRows, ledgerOrderRows, dbWarehouses, masterWarehouses] = await Promise.all([
@@ -2256,12 +2278,13 @@ exports.getFcSkuMatrix = async (req, res) => {
           .select("orderCreatedTime")
           .lean();
         if (latestOrderDoc?.orderCreatedTime) {
-          const latestOrderStr = moment(latestOrderDoc.orderCreatedTime).format("YYYY-MM-DD");
+          const latestOrderStr = moment(latestOrderDoc.orderCreatedTime).tz(timezone).format("YYYY-MM-DD");
           if (latestOrderStr > orderEndDateStr) {
             orderEndDateStr = latestOrderStr;
           }
         }
       }
+      orderEndDateStr = orderEndDateStr < yesterday ? orderEndDateStr : yesterday;
       orderStartDateStr = moment(orderEndDateStr)
         .subtract(periodDays - 1, "days")
         .format("YYYY-MM-DD");
@@ -2270,8 +2293,8 @@ exports.getFcSkuMatrix = async (req, res) => {
     const orderQuery = {
       ...baseMatch,
       orderCreatedTime: {
-        $gte: moment(orderStartDateStr).startOf("day").toDate(),
-        $lte: moment(orderEndDateStr).endOf("day").toDate(),
+        $gte: moment.tz(orderStartDateStr, timezone).startOf("day").toDate(),
+        $lte: moment.tz(orderEndDateStr, timezone).endOf("day").toDate(),
       },
       $or: [
         {
@@ -2576,24 +2599,21 @@ exports.getMfnToFbaRecommendations = async (req, res) => {
       };
     }
 
+    const profile = await profilesSchema.findOne({ profileId: cleanProfileId }).select("timezone").lean();
+    const timezone = profile?.timezone || "Asia/Kolkata";
+
     // Resolve date window
     let resolvedStart = null;
     let resolvedEnd = null;
 
     if (fromDate && toDate) {
-      resolvedStart = moment(fromDate).startOf("day").toDate();
-      resolvedEnd = moment(toDate).endOf("day").toDate();
+      resolvedStart = moment.tz(fromDate, timezone).startOf("day").toDate();
+      resolvedEnd = moment.tz(toDate, timezone).endOf("day").toDate();
     } else if (String(days).toUpperCase() !== "ALL") {
       const periodDays = Math.min(Math.max(parseInt(days, 10) || 30, 1), 365);
-      // Anchor to latest order date for this profile so historical/synced profiles always show results
-      const latestOrder = await orderDetailsModel
-        .findOne(baseMatch)
-        .sort({ orderCreatedTime: -1 })
-        .select("orderCreatedTime")
-        .lean();
-      const anchorMoment = latestOrder?.orderCreatedTime ? moment(latestOrder.orderCreatedTime) : moment();
-      resolvedEnd = anchorMoment.clone().endOf("day").toDate();
-      resolvedStart = anchorMoment.clone().subtract(periodDays - 1, "days").startOf("day").toDate();
+      const end = moment().tz(timezone).subtract(1, "day");
+      resolvedEnd = end.clone().endOf("day").toDate();
+      resolvedStart = end.clone().subtract(periodDays - 1, "days").startOf("day").toDate();
     }
 
     const queryMatch = { ...baseMatch };
@@ -2607,16 +2627,6 @@ exports.getMfnToFbaRecommendations = async (req, res) => {
         "orderId orderCreatedTime fulfillment.fulfilledBy recipient.deliveryAddress.stateOrRegion recipient.deliveryAddress.postalCode recipient.deliveryAddress.city orderItems"
       )
       .lean();
-
-    // If 0 MFN orders found in the narrow date range and no explicit custom fromDate was forced, fallback to all available MFN orders for this profile
-    if (orders.length === 0 && !fromDate && resolvedStart) {
-      orders = await orderDetailsModel
-        .find(baseMatch)
-        .select(
-          "orderId orderCreatedTime fulfillment.fulfilledBy recipient.deliveryAddress.stateOrRegion recipient.deliveryAddress.postalCode recipient.deliveryAddress.city orderItems"
-        )
-        .lean();
-    }
 
     // Collect pincodes where stateOrRegion is missing/unknown to batch lookup from postalCodeStateModel
     const missingStatePincodes = new Set();
@@ -2894,8 +2904,8 @@ exports.getMfnToFbaRecommendations = async (req, res) => {
         totalRecords,
         currentPage: Number(page),
         totalPages: Math.ceil(totalRecords / effectiveLimit),
-        periodStart: resolvedStart ? moment(resolvedStart).format("YYYY-MM-DD") : null,
-        periodEnd: resolvedEnd ? moment(resolvedEnd).format("YYYY-MM-DD") : null,
+        periodStart: resolvedStart ? moment(resolvedStart).tz(timezone).format("YYYY-MM-DD") : null,
+        periodEnd: resolvedEnd ? moment(resolvedEnd).tz(timezone).format("YYYY-MM-DD") : null,
         sendPercentage: Number(sendPercentage) || 70,
         minUnits: minUnitsThreshold,
         summary: {

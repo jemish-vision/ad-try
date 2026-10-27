@@ -1,6 +1,9 @@
-// Targeting metrics use inclusive reportDate bounds: N days means N calendar dates.
-// Other rule families continue using their existing date resolver.
+const { getRollingReportDates } = require('./rollingReportDates');
+
+// Share completed rolling dates with every other rule family.
 function getTargetingRuleDate(now, dateFilter, fallback) {
+  const rollingDates = getRollingReportDates(now, dateFilter);
+  if (rollingDates) return rollingDates;
   if (dateFilter === 'YESTERDAY') {
     const yesterday = now.clone().subtract(1, 'day').format('YYYY-MM-DD');
     return { fromDate: yesterday, toDate: yesterday };

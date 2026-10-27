@@ -326,9 +326,12 @@ function Placement() {
       cellRenderer: (params) => {
         const row = params.data;
         if (!row) return null;
+        const rawModifier = typeof row.placementModifier === "object" ? row.placementModifier?.$numberDecimal : row.placementModifier;
+        const parsedModifier = Number(rawModifier);
+        const bidModifierValue = !isNaN(parsedModifier) && rawModifier != null ? parsedModifier : 0;
         return (
           <InlineEditPopup
-            value={Number(typeof row.placementModifier === "object" ? row.placementModifier?.$numberDecimal : row.placementModifier)}
+            value={bidModifierValue}
             formatter={(v) => CurrencyFormat(v)}
             title={t("Bid")}
             currency={currencyCode}

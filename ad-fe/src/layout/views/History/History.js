@@ -649,11 +649,15 @@ function History(props) {
       cellRenderer: (params) => {
         const row = params.data;
         const source = row?.triggerSource || (
-          row?.updatedFrom === "Amazon Stream" || row?.source === "AMAZON_SQS" || row?.source === "AMAZON_API"
+          row?.updatedFrom === "Amazon Stream" || row?.source === "AMAZON_SQS" || row?.source === "AMAZON_API" || row?.source === "Amazon SQS" || row?.source === "Amazon API"
             ? "Amazon API"
-            : (row?.changeType || "").toLowerCase().match(/rule|cron job|recommendation/)
-              ? "Rule"
-              : "Manual"
+            : (row?.changeType || "").toLowerCase().match(/dayparting/) || row?.source === "DAYPARTING"
+              ? "Dayparting"
+              : (row?.changeType || "").toLowerCase().match(/recommendation/) || row?.source === "RECOMMENDATION" || /^update (targeting bid|camapign budget|campaign budget|placement bid|product pages placement bid|rest of search placement bid|top of search placement bid|targeting status|camapign status|campaign status)$|^add (target|negative target)$|^revert/i.test(row?.changeType || "")
+                ? "Recommendation"
+                : (row?.changeType || "").toLowerCase().match(/rule|cron job/) || row?.source === "RULE"
+                  ? "Rule"
+                  : "Manual"
         );
 
         let bg = isDark ? "rgba(59, 130, 246, 0.15)" : "#eff6ff";
@@ -671,6 +675,16 @@ function History(props) {
           color = isDark ? "#c084fc" : "#9333ea";
           border = isDark ? "1px solid rgba(168, 85, 247, 0.3)" : "1px solid #e9d5ff";
           label = "Rule";
+        } else if (source === "Dayparting") {
+          bg = isDark ? "rgba(99, 102, 241, 0.15)" : "#eef2ff";
+          color = isDark ? "#818cf8" : "#4f46e5";
+          border = isDark ? "1px solid rgba(99, 102, 241, 0.3)" : "1px solid #c7d2fe";
+          label = "Dayparting";
+        } else if (source === "Recommendation") {
+          bg = isDark ? "rgba(16, 185, 129, 0.15)" : "#ecfdf5";
+          color = isDark ? "#34d399" : "#059669";
+          border = isDark ? "1px solid rgba(16, 185, 129, 0.3)" : "1px solid #a7f3d0";
+          label = "Recommendation";
         }
 
         return (

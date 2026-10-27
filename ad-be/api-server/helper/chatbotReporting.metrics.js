@@ -36,6 +36,23 @@ function validateNumber(value, key, unit) {
   return value;
 }
 
+function validateConstituentNumber(value, key, unit) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new TypeError(`${key} must be a finite number or null`);
+  }
+  if (['spend', 'clicks', 'impressions'].includes(key) && value < 0) {
+    throw new TypeError(`${key} must be a finite nonnegative number or null`);
+  }
+  if (unit === 'count' && !Number.isSafeInteger(value)) {
+    throw new TypeError(`${key} must be a safe integer`);
+  }
+
+  return value;
+}
+
 function finiteResult(value, label) {
   if (!Number.isFinite(value)) {
     throw new RangeError(`${label} exceeds numeric range`);
@@ -66,12 +83,18 @@ function aggregateTotals(rows) {
     }
     for (const [key, unit] of Object.entries(BASE_UNITS)) {
       // Validate every constituent even after a missing value has been seen.
-      const value = validateNumber(row[key], key, unit);
+      const value = validateConstituentNumber(row[key], key, unit);
       if (value === null || totals[key] === null) {
         totals[key] = null;
       } else {
-        totals[key] = validateNumber(finiteResult(totals[key] + value, key), key, unit);
+        totals[key] = finiteResult(totals[key] + value, key);
       }
+    }
+  }
+
+  for (const [key, unit] of Object.entries(BASE_UNITS)) {
+    if (totals[key] !== null) {
+      totals[key] = validateNumber(totals[key], key, unit);
     }
   }
 

@@ -200,12 +200,14 @@ function BudgetRuleConfirmationModel({
             selector: (row) => row.status,
             cell: (row) => {
                 const isEnabled = row.status === "ENABLED";
+                const isOOB = row.status === "OUT_OF_BUDGET" || row.status === "out_of_budget";
                 return (
                     <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold whitespace-nowrap border ${
                         isEnabled ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30" :
+                        isOOB ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30" :
                         "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30"
                     }`}>
-                        {row.status === "ENABLED" ? t("Enabled") : row.status === "PAUSED" ? t("Paused") : row.status === "ARCHIVED" ? t("Archived") : t(row.status)}
+                        {row.status === "ENABLED" ? t("Enabled") : row.status === "PAUSED" ? t("Paused") : row.status === "ARCHIVED" ? t("Archived") : isOOB ? t("Out of Budget") : t(row.status)}
                     </span>
                 );
             },

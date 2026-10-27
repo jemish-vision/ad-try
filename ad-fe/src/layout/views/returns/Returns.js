@@ -122,7 +122,7 @@ const ReturnTracking = () => {
   // removed isExactSearchMatch
   const [orderDateRange, setOrderDateRange] = useState([
     moment().subtract(30, "days").toDate(),
-    new Date(),
+    moment().subtract(1, "days").toDate(),
   ]);
 
   useEffect(() => {
@@ -487,7 +487,7 @@ const ReturnTracking = () => {
   const handleClearAll = () => {
     setAppliedFilters([]);
     setSearch("");
-    setOrderDateRange([moment().subtract(30, "days").toDate(), new Date()]);
+    setOrderDateRange([moment().subtract(30, "days").toDate(), moment().subtract(1, "days").toDate()]);
   };
 
   // ─────────────────────────────────────────────────────────────────────────

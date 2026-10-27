@@ -431,7 +431,7 @@ async function fetchSPProductAdsPage({
         "Content-Type": "application/vnd.spProductAd.v3+json",
       },
       data: bodyData,
-      meta: { configId: configId, tokenKey: "adsAccessToken" }
+      meta: { configId: configId, tokenKey: "adsAccessToken", profileId: profileId }
     }));
 
     if (response.status !== 200) return { productAds: [], nextToken: null };
@@ -478,7 +478,7 @@ async function fetchSDProductAdsPage({
         Authorization: `Bearer ${checkConfigAds.adsAccessToken}`,
         "Content-Type": "application/json",
       },
-      meta: { configId: configId, tokenKey: "adsAccessToken" }
+      meta: { configId: configId, tokenKey: "adsAccessToken", profileId: profileId }
     }));
 
     if (response.status !== 200) return { productAds: [] };
@@ -655,7 +655,7 @@ async function getSpProductAds(
         Accept: "application/vnd.spProductAd.v3+json",
         "Content-Type": "application/vnd.spProductAd.v3+json",
       },
-      meta: { configId: configId, tokenKey: "adsAccessToken" }
+      meta: { configId: configId, tokenKey: "adsAccessToken", profileId: profileId }
     };
     const productAds = [];
     let nextToken = "";
@@ -1180,7 +1180,7 @@ async function spGenerateReport(
       "Amazon-Advertising-API-Scope": profileId,
       Authorization: `Bearer ${checkConfigAds.adsAccessToken}`,
     },
-    meta: { configId: configId, tokenKey: "adsAccessToken" }
+    meta: { configId: configId, tokenKey: "adsAccessToken", profileId: profileId }
   }));
 
   if (statusResp.data.status !== "COMPLETED") {
@@ -1368,7 +1368,7 @@ async function sdGenerateReport(
       "Amazon-Advertising-API-Scope": profileId,
       Authorization: `Bearer ${checkConfigAds.adsAccessToken}`,
     },
-    meta: { configId: configId, tokenKey: "adsAccessToken" }
+    meta: { configId: configId, tokenKey: "adsAccessToken", profileId: profileId }
   }));
 
   if (statusResp.data.status !== "COMPLETED") {
@@ -3261,7 +3261,7 @@ async function fetchSPProductPage({
         "Content-Type": "application/json",
       },
       data: bodyData,
-      meta: { configId: configId, tokenKey: "adsAccessToken" }
+      meta: { configId: configId, tokenKey: "adsAccessToken", profileId: profileId }
     }));
 
     if (response.status !== 200) return { ProductMetadataList: [], pageIndex };
@@ -3374,7 +3374,7 @@ async function fetchSBProductPage({
         "Content-Type": "application/json",
       },
       data: bodyData,
-      meta: { configId: configId, tokenKey: "adsAccessToken" }
+      meta: { configId: configId, tokenKey: "adsAccessToken", profileId: profileId }
     }));
 
     if (response.status !== 200) return { ProductMetadataList: [], pageIndex };
@@ -3487,7 +3487,7 @@ async function fetchSDProductPage({
         "Content-Type": "application/json",
       },
       data: bodyData,
-      meta: { configId: configId, tokenKey: "adsAccessToken" }
+      meta: { configId: configId, tokenKey: "adsAccessToken", profileId: profileId }
     }));
 
     if (response.status !== 200) return { ProductMetadataList: [], pageIndex };
@@ -3535,7 +3535,7 @@ async function getSpProducts(
         Authorization: `Bearer ${checkConfigAds.adsAccessToken}`,
         "Content-Type": "application/json",
       },
-      meta: { configId: configId, tokenKey: "adsAccessToken" }
+      meta: { configId: configId, tokenKey: "adsAccessToken", profileId: profileId }
     };
     const products = [];
     function makeRequest(pageIndex) {

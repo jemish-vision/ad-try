@@ -36,7 +36,7 @@ const TargetingSection = ({ campaignDetails, date, viewPress }) => {
   const [loading, setLoading] = useState(true);
   const [searchName, setSearchName] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ENABLED");
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(firstPageRows);
   const [sortModel, setSortModel] = useState({ fieldName: "totalSales", sortType: "DESC" });

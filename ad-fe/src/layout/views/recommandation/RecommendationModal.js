@@ -15,7 +15,8 @@ import CurrencyCode from "../../../helper/currencyCode/CurrencyCode";
 import { Toast } from "../../../helper/links/Link";
 import moment from "moment-timezone";
 import { openCampaignViewInNewTab } from "../../../utility/campaignNavigation";
-import { FiClock, FiFilter, FiX, FiCalendar, FiInfo } from "react-icons/fi";
+import { FiClock, FiFilter, FiX, FiCalendar, FiInfo, FiSearch, FiChevronDown } from "react-icons/fi";
+import { Popover, PopoverTrigger, PopoverContent } from "../../../components/ui/popover";
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "../../../components/ui/tooltip";
 import CampaignHistoryModal from "./CampaignHistoryModal";
 import RecommendationReviewModal from "./RecommendationReviewModal";
@@ -37,6 +38,8 @@ const CONDITION_SYMBOLS = {
     '=': '=',
     '!=': '≠',
 };
+
+const INDIVIDUAL_SCOPES = ["recommendation", "dayparting", "other"];
 
 const DATE_FILTER_LABEL_MAP = {
     TODAY: "Today",
@@ -76,6 +79,16 @@ export const parseRuleConditions = (rule) => {
             : [];
 
     const list = rawList.map((c) => {
+        const isOob = String(c?.conditionType || '').toLowerCase().replace(/[\s_]+/g, '') === 'outofbudget';
+        if (isOob) {
+            return {
+                type: 'Out of Budget',
+                op: '',
+                val: '',
+                text: 'Out of Budget',
+                isOob: true,
+            };
+        }
         let op = CONDITION_SYMBOLS[c.conditionOperator] || c.conditionOperator || '';
         let val = formatConditionValue(c.conditionType, c.conditionValue, c.conditionValueType);
         if (c.conditionOperator === 'BETWEEN') {
@@ -314,6 +327,28 @@ const DEFAULT_COLUMNS = [
 // ─── Static Cell Renderers ────────────────────────────────────────────────────
 const StatusCell = ({ value, isNewTarget = false }) => {
     const isEnabled = value === "ENABLED";
+    const isOutOfBudget = value === "OUT_OF_BUDGET" || value === "out_of_budget";
+
+    if (isOutOfBudget) {
+        return (
+            <span style={{
+                background: "rgba(245, 158, 11, 0.15)",
+                color: "#f59e0b",
+                border: "1px solid rgba(245, 158, 11, 0.35)",
+                padding: "2px 8px",
+                borderRadius: 20,
+                fontSize: 11,
+                fontWeight: 600,
+                display: "inline-flex",
+                alignItems: "center",
+                whiteSpace: "nowrap",
+                boxShadow: isNewTarget ? "0 0 8px rgba(245, 158, 11, 0.25)" : "none"
+            }}>
+                Out Of Budget
+            </span>
+        );
+    }
+
     return (
         <span style={{
             background: isEnabled ? "rgba(34, 197, 94, 0.15)" : "rgba(239, 68, 68, 0.15)",
@@ -589,6 +624,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
 
     // ─── Date range & pagination state ───
     const [dateRange, setDateRange] = useState([null, null]);
+    const [campaignSearch, setCampaignSearch] = useState("");
     const [internalData, setInternalData] = useState(snapshot?.data || []);
     const [internalCount, setInternalCount] = useState(snapshot?.totalRecords ?? snapshot?.count ?? 0);
     const [totalRecords, setTotalRecords] = useState(snapshot?.totalRecords ?? snapshot?.count ?? 0);
@@ -609,8 +645,10 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
             setDateRange([null, null]);
             setLatestHistoryMap({});
             setSelectedRows([]);
-            setOutsideHistoryScope("recommendation");
+            setOutsideHistoryScopes(["all", "recommendation", "dayparting", "other"]);
+            setScopePopoverOpen(false);
             setHistoryFilter("all");
+            setCampaignSearch("");
             setCurrentPage(1);
             setPerPage(25);
             lastFetchedKeyRef.current = "";
@@ -662,14 +700,37 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
     const [latestHistoryMap, setLatestHistoryMap] = useState({});
     const latestHistoryMapRef = useRef(latestHistoryMap);
     useEffect(() => { latestHistoryMapRef.current = latestHistoryMap; }, [latestHistoryMap]);
-    const [outsideHistoryScope, setOutsideHistoryScope] = useState("recommendation");
+    const [outsideHistoryScopes, setOutsideHistoryScopes] = useState(["all", "recommendation", "dayparting", "other"]);
+    const [scopePopoverOpen, setScopePopoverOpen] = useState(false);
+    const scopeOptions = useMemo(() => [
+        { value: "all", label: t("All History") },
+        { value: "recommendation", label: t("Recommendation History") },
+        { value: "dayparting", label: t("Dayparting History") },
+        { value: "other", label: t("Other History") },
+    ], [t]);
+
+    const isAllScope = outsideHistoryScopes.includes("all") || INDIVIDUAL_SCOPES.every((s) => outsideHistoryScopes.includes(s)) || outsideHistoryScopes.length === 0;
+    const apiHistoryScope = useMemo(() => {
+        return isAllScope ? "all" : outsideHistoryScopes.filter((s) => s !== "all");
+    }, [isAllScope, outsideHistoryScopes]);
     const [historyFilter, setHistoryFilter] = useState("all"); // "all" | "unchanged" | "before_days"
     const [filterDays, setFilterDays] = useState(7);
     const selectedRowsRef = useRef([]);
 
     // ─── Filtered Data based on History Filter & Bid/Budget Threshold ───
     const filteredData = useMemo(() => {
-        const list = transformedData || [];
+        let list = transformedData || [];
+
+        if (campaignSearch && campaignSearch.trim()) {
+            const q = campaignSearch.toLowerCase().trim();
+            list = list.filter((item) => {
+                const cName = String(item?.campaignName || item?.campaignDetails?.name || "").toLowerCase();
+                const cId = String(item?.campaignId || item?.campaignID || item?.campaign_id || "");
+                const tName = String(item?.targeting || item?.keywordText || item?.searchTerm || "").toLowerCase();
+                const agName = String(item?.adGroupName || item?.adGroupDetails?.name || "").toLowerCase();
+                return cName.includes(q) || cId.includes(q) || tName.includes(q) || agName.includes(q);
+            });
+        }
 
         if (historyFilter === "less_than_one") {
             return list.filter((item) => {
@@ -744,7 +805,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         }
 
         return nonLessThanOneList;
-    }, [transformedData, historyFilter, filterDays, latestHistoryMap, actions, gridName]);
+    }, [transformedData, historyFilter, filterDays, latestHistoryMap, actions, gridName, campaignSearch]);
 
     // ─── Data slice / view for current page ───
     // If backend returned paginated data (totalRecords > internalData.length),
@@ -802,7 +863,8 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         const activeProfileId = profileId || snapshot?.profileId;
         if (!campaignIdsKey || !activeProfileId) return;
 
-        const requestKey = `${activeProfileId}_${campaignIdsKey}_${outsideHistoryScope}`;
+        const scopesKey = Array.isArray(apiHistoryScope) ? apiHistoryScope.slice().sort().join(",") : apiHistoryScope;
+        const requestKey = `${activeProfileId}_${campaignIdsKey}_${scopesKey}`;
         if (lastFetchedKeyRef.current === requestKey) {
             return;
         }
@@ -813,7 +875,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         ApiGetLatestCampaignHistory({
             profileId: activeProfileId,
             campaignIds: uniqueCampaignIds,
-            historyScope: outsideHistoryScope,
+            historyScope: apiHistoryScope,
         }).then((res) => {
             if (isMounted && res?.isSuccess) {
                 const mapData = res?.data || {};
@@ -836,7 +898,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         });
 
         return () => { isMounted = false; };
-    }, [show, campaignIdsKey, uniqueCampaignIds, profileId, snapshot?.profileId, outsideHistoryScope]);
+    }, [show, campaignIdsKey, uniqueCampaignIds, profileId, snapshot?.profileId, apiHistoryScope]);
 
     useEffect(() => {
         setSelectedRows([]);
@@ -1095,8 +1157,29 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         setTimeout(refreshCheckboxCells, 0);
     }, [historyFilter, perPage, dateRange, fetchData, refreshCheckboxCells]);
 
-    const handleScopeChange = useCallback((newScope) => {
-        setOutsideHistoryScope(newScope);
+    const toggleScope = useCallback((scopeVal) => {
+        setOutsideHistoryScopes((prev) => {
+            if (scopeVal === "all") {
+                if (prev.includes("all") || INDIVIDUAL_SCOPES.every((s) => prev.includes(s))) {
+                    return [];
+                } else {
+                    return ["all", ...INDIVIDUAL_SCOPES];
+                }
+            }
+
+            const isSelected = prev.includes(scopeVal);
+            let next;
+            if (isSelected) {
+                next = prev.filter((s) => s !== scopeVal && s !== "all");
+            } else {
+                const withoutAll = prev.filter((s) => s !== "all");
+                next = [...withoutAll, scopeVal];
+                if (INDIVIDUAL_SCOPES.every((s) => next.includes(s))) {
+                    next.push("all");
+                }
+            }
+            return next;
+        });
         setCurrentPage(1);
         setTimeout(refreshCheckboxCells, 0);
     }, [refreshCheckboxCells]);
@@ -1153,7 +1236,8 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         // Campaign Status Change: e.g. [Enabled] → [Paused]
         campaignStatusCell: ({ value, data }) => {
             const action = actions.find((a) => ['CampaignEnable', 'CampaignPause'].includes(a.actionName));
-            const currentStatus = value || data?.campaignStatus || "ENABLED";
+            const isOob = data?.isOutOfBudget || value === "OUT_OF_BUDGET" || data?.campaignStatus === "OUT_OF_BUDGET" || data?.status === "OUT_OF_BUDGET";
+            const currentStatus = isOob ? "OUT_OF_BUDGET" : (value || data?.campaignStatus || data?.status || "ENABLED");
             if (!action) {
                 return <StatusCell value={currentStatus} />;
             }
@@ -1380,6 +1464,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
             const handleHistoryClick = (e) => {
                 e.stopPropagation();
                 e.preventDefault();
+                setScopePopoverOpen(false);
                 setSelectedHistoryCampaign({
                     campaignId: cid,
                     campaignName: cname,
@@ -1502,11 +1587,12 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
             return base;
         });
 
+        const hasActions = actions && actions.length > 0;
         return [
-            ...(canUpdate ? [checkboxColumn] : []),
+            ...(canUpdate && hasActions ? [checkboxColumn] : []),
             ...mappedColumns
         ];
-    }, [gridName, cellRendererMap, canUpdate, getRowId, toggleAll, headerCheckboxEvents, toggleRow]);
+    }, [gridName, cellRendererMap, canUpdate, getRowId, toggleAll, headerCheckboxEvents, toggleRow, actions]);
 
     const defaultColDef = useMemo(() => ({
         flex: 0,
@@ -1560,10 +1646,15 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         try {
             const res = await ApiApplyRuleRecommendation(ruleId, { profileId, items: selectedRows });
 
-            if (res?.isSuccess && res?.data?.isSuccess) {
+            if (res?.isSuccess && (res?.data?.isSuccess ?? true)) {
                 Toast.success(res?.data?.message || "Recommendation applied successfully");
                 setShowReviewModal(false);
+                const appliedRowIds = new Set(selectedRows.map((r) => getRowId(r)));
                 setSelectedRows([]);
+                setInternalData((prev) => (prev || []).filter((r) => !appliedRowIds.has(getRowId(r))));
+                setInternalCount((prev) => Math.max(0, prev - appliedRowIds.size));
+                setTotalRecords((prev) => Math.max(0, prev - appliedRowIds.size));
+                allFetchedDataRef.current = null;
                 lastFetchedKeyRef.current = "";
                 await fetchData(currentPage, perPage, dateRange);
                 if (typeof refreshGrid === "function") {
@@ -1669,16 +1760,37 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                                 AND
                                             </span>
                                         )}
-                                        <span
-                                            className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-sky-500/10 text-sky-700 dark:text-[#38bdf8] border border-sky-500/25 shadow-sm"
-                                            title={cond.text}
-                                        >
-                                            <span className="font-bold">{cond.type}</span>
-                                            <span className="font-mono text-slate-500 dark:text-slate-400 font-bold">{cond.op}</span>
-                                            <span className="font-mono font-bold text-sky-600 dark:text-sky-300">{cond.val}</span>
-                                        </span>
+                                        {cond.isOob ? (
+                                            <span
+                                                className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/25 shadow-sm"
+                                                title={cond.text}
+                                            >
+                                                <span className="font-bold">{cond.type}</span>
+                                            </span>
+                                        ) : (
+                                            <span
+                                                className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-sky-500/10 text-sky-700 dark:text-[#38bdf8] border border-sky-500/25 shadow-sm"
+                                                title={cond.text}
+                                            >
+                                                <span className="font-bold">{cond.type}</span>
+                                                <span className="font-mono text-slate-500 dark:text-slate-400 font-bold">{cond.op}</span>
+                                                <span className="font-mono font-bold text-sky-600 dark:text-sky-300">{cond.val}</span>
+                                            </span>
+                                        )}
                                     </div>
                                 ))}
+                            </div>
+                        )}
+
+                        {/* Note when no actions are configured or Out of Budget rule */}
+                        {actions.length === 0 && (
+                            <div className="flex flex-wrap items-center gap-2 mt-2.5">
+                                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300 text-xs shadow-sm">
+                                    <FiInfo className="text-amber-500 flex-shrink-0" size={14} />
+                                    <span className="font-medium">
+                                        {t("Note: It was show only for out of budget")}
+                                    </span>
+                                </div>
                             </div>
                         )}
 
@@ -1727,7 +1839,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                     {t("Filtered: {{count}} of {{total}}", { count: filteredData.length, total: transformedData.length })}
                                 </span>
                             )}
-                            {canUpdate && displayData.length > 0 && (
+                            {canUpdate && actions && actions.length > 0 && displayData.length > 0 && (
                                 <button
                                     type="button"
                                     id="recommendation-select-all-total-btn"
@@ -1772,40 +1884,102 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
 
                         {/* Filter controls right where red box is */}
                         <div className="flex items-center gap-2 flex-wrap">
-                            {/* History Scope Filter */}
-                            <Select
-                                value={outsideHistoryScope}
-                                onValueChange={(val) => handleScopeChange(val)}
+                            {/* Campaign Search Filter */}
+                            <div className="relative min-w-[200px] max-w-[260px]">
+                                <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+                                <input
+                                    type="text"
+                                    placeholder={t("Search campaign...")}
+                                    value={campaignSearch}
+                                    onChange={(e) => {
+                                        setCampaignSearch(e.target.value);
+                                        setCurrentPage(1);
+                                    }}
+                                    className="w-full h-[34px] pl-8 pr-7 text-xs bg-white dark:bg-[#1e293b]/70 border border-slate-200 dark:border-white/10 rounded-lg text-slate-700 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-sm"
+                                />
+                                {campaignSearch && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setCampaignSearch("");
+                                            setCurrentPage(1);
+                                        }}
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                                    >
+                                        <FiX size={12} />
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* History Scope Multi-Select Dropdown */}
+                            <Popover
+                                open={scopePopoverOpen && !showHistoryModal && !showReviewModal}
+                                onOpenChange={setScopePopoverOpen}
                             >
-                                <SelectTrigger
-                                    id="recommendation-outside-history-scope"
-                                    className="w-auto min-w-[210px] h-[34px] px-3 text-xs font-medium bg-white dark:bg-[#1e293b]/70 border border-slate-200 dark:border-white/10 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#1e293b] focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-sm cursor-pointer gap-2 transition-colors"
-                                >
-                                    <SelectValue>
-                                        {outsideHistoryScope === "recommendation"
-                                            ? t("Recommendation History")
-                                            : outsideHistoryScope === "dayparting"
-                                            ? t("Dayparting History")
-                                            : outsideHistoryScope === "other"
-                                            ? t("Other History")
-                                            : t("All History")}
-                                    </SelectValue>
-                                </SelectTrigger>
-                                <SelectContent className="z-[100000]">
-                                    <SelectItem value="recommendation" className="text-xs font-medium cursor-pointer">
-                                        {t("Recommendation History")}
-                                    </SelectItem>
-                                    <SelectItem value="dayparting" className="text-xs font-medium cursor-pointer">
-                                        {t("Dayparting History")}
-                                    </SelectItem>
-                                    <SelectItem value="other" className="text-xs font-medium cursor-pointer">
-                                        {t("Other History")}
-                                    </SelectItem>
-                                    <SelectItem value="all" className="text-xs font-medium cursor-pointer">
-                                        {t("All History")}
-                                    </SelectItem>
-                                </SelectContent>
-                            </Select>
+                                <PopoverTrigger asChild>
+                                    <button
+                                        id="recommendation-outside-history-scope"
+                                        type="button"
+                                        className="w-auto min-w-[195px] h-[34px] px-3 text-xs font-medium bg-white dark:bg-[#1e293b]/70 border border-slate-200 dark:border-white/10 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#1e293b] focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-sm cursor-pointer gap-2 transition-colors flex items-center justify-between"
+                                    >
+                                        <div className="flex items-center gap-1.5 truncate">
+                                            <FiClock size={13} className="text-slate-400 dark:text-slate-400 shrink-0" />
+                                            <span className="truncate">
+                                                {outsideHistoryScopes.includes("all") || INDIVIDUAL_SCOPES.every((s) => outsideHistoryScopes.includes(s))
+                                                    ? t("All History")
+                                                    : outsideHistoryScopes.length === 0
+                                                    ? t("Select History")
+                                                    : outsideHistoryScopes.length === 1
+                                                    ? scopeOptions.find((o) => o.value === outsideHistoryScopes[0])?.label || t("History")
+                                                    : t("{{count}} Selected", { count: outsideHistoryScopes.filter((s) => s !== "all").length })}
+                                            </span>
+                                        </div>
+                                        <FiChevronDown size={14} className="shrink-0 opacity-70" />
+                                    </button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-56 p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-xl z-[1050]">
+                                    <div className="space-y-0.5">
+                                        {/* All History option */}
+                                        <div
+                                            onClick={() => toggleScope("all")}
+                                            className={`flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                                                outsideHistoryScopes.includes("all") || INDIVIDUAL_SCOPES.every((s) => outsideHistoryScopes.includes(s))
+                                                    ? "bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300"
+                                                    : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                                            }`}
+                                        >
+                                            <span>{t("All History")}</span>
+                                            <StyledCheckbox
+                                                checked={outsideHistoryScopes.includes("all") || INDIVIDUAL_SCOPES.every((s) => outsideHistoryScopes.includes(s))}
+                                                onChange={() => toggleScope("all")}
+                                            />
+                                        </div>
+                                        <div className="h-px bg-slate-200 dark:bg-slate-800 my-1" />
+                                        {/* Individual scopes */}
+                                        {INDIVIDUAL_SCOPES.map((scopeVal) => {
+                                            const opt = scopeOptions.find((o) => o.value === scopeVal);
+                                            const isChecked = outsideHistoryScopes.includes(scopeVal);
+                                            return (
+                                                <div
+                                                    key={scopeVal}
+                                                    onClick={() => toggleScope(scopeVal)}
+                                                    className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
+                                                        isChecked
+                                                            ? "bg-sky-50/50 dark:bg-sky-950/20 text-sky-700 dark:text-sky-300"
+                                                            : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                                                    }`}
+                                                >
+                                                    <span>{opt?.label}</span>
+                                                    <StyledCheckbox
+                                                        checked={isChecked}
+                                                        onChange={() => toggleScope(scopeVal)}
+                                                    />
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </PopoverContent>
+                            </Popover>
 
                             {/* Campaign / History Filter */}
                             <Select
@@ -1945,7 +2119,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                         >
                             Close
                         </button>
-                        {PermissionCheck(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.UPDATE) && (
+                        {PermissionCheck(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.UPDATE) && actions && actions.length > 0 && (
                             <button
                                 id="recommandation-review"
                                 onClick={handleApplyClick}
@@ -1984,7 +2158,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                     ruleName={selectedHistoryCampaign.ruleName || rule?.ruleName || snapshot?.ruleName}
                     actions={selectedHistoryCampaign.actions || actions}
                     recommendationData={selectedHistoryCampaign.rowData}
-                    initialHistoryScope={outsideHistoryScope}
+                    initialHistoryScope={isAllScope ? "all" : apiHistoryScope}
                     latestCreatedAt={selectedHistoryCampaign.latestCreatedAt}
                 />
             )}

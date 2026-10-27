@@ -73,6 +73,8 @@ function AddRule({ setaddModalFlag, editId, setEditId, getRule, editData, setEdi
     { value: "AUTO", label: "Automatic Targeting" },
   ];
 
+
+
   const selector = [
     { value: "Number", label: "Number" },
     { value: "Percentage", label: "Percentage" },
@@ -226,7 +228,18 @@ function AddRule({ setaddModalFlag, editId, setEditId, getRule, editData, setEdi
           .then((e) => {
             if (e?.isSuccess) {
               const skipOption = ["CampaignsAndAdGroups"];
-              const filters = e?.filters?.map((el) => ({ ...el, label: el.name })).filter(e1 => !skipOption?.includes(e1?.value))
+              let filters = e?.filters?.map((el) => ({ ...el, label: el.name })).filter(e1 => !skipOption?.includes(e1?.value)) || [];
+              if (!filters.some(el => el?.value === "OutOfBudget" || el?.value === "Out of Budget")) {
+                filters.push({
+                  name: "Out of Budget",
+                  value: "OutOfBudget",
+                  label: "Out of Budget",
+                  isDefault: true,
+                  isSPFilter: true,
+                  isSBFilter: true,
+                  isSDFilter: true,
+                });
+              }
               setMainLabel(filters);
             } else {
               Toast.error(e?.message);
@@ -351,6 +364,8 @@ function AddRule({ setaddModalFlag, editId, setEditId, getRule, editData, setEdi
             flag = true;
             subArr.conditionStringValue = "Condition Status is required";
           }
+        } else if (["OutOfBudget", "Out of Budget"].includes(el?.conditionType)) {
+          // Out of Budget is self-contained without secondary fields
         } else {
           if (!el.conditionOperator) {
             flag = true;
@@ -481,6 +496,23 @@ function AddRule({ setaddModalFlag, editId, setEditId, getRule, editData, setEdi
       }
       setMainRuleData(data);
       removeError('conditions', index, 'conditionValue');
+      return;
+    }
+
+    if (address_type === "conditionType") {
+      obj.conditionType = value;
+      if (["OutOfBudget", "Out of Budget"].includes(value)) {
+        obj.conditionStringValue = obj.conditionStringValue || "OUT_OF_BUDGET";
+        obj.conditionOperator = "EQUAL_TO";
+        obj.conditionValue = "";
+      } else if (["Status", "Type", "Targeting Type"].includes(value)) {
+        obj.conditionOperator = "EQUAL_TO";
+        obj.conditionValue = "";
+      } else {
+        obj.conditionStringValue = "";
+      }
+      setMainRuleData(data);
+      removeError('conditions', index, 'conditionType');
       return;
     }
 
@@ -803,7 +835,8 @@ function AddRule({ setaddModalFlag, editId, setEditId, getRule, editData, setEdi
             {mainRuleData?.map((element, index) => {
               const conditionError = error?.conditions?.[index] || {};
               const isStatusType = ["Status", "Type", "Targeting Type"].includes(element?.conditionType);
-              const showOperators = !isStatusType && element?.conditionType;
+              const isOutOfBudgetType = ["OutOfBudget", "Out of Budget"].includes(element?.conditionType);
+              const showOperators = !isStatusType && !isOutOfBudgetType && element?.conditionType;
               return (
                 <div className="flex flex-wrap -mx-2 items-start mb-2" key={index}>
                   <div className="w-full md:w-3/12 px-2">
@@ -852,6 +885,7 @@ function AddRule({ setaddModalFlag, editId, setEditId, getRule, editData, setEdi
                           {element?.conditionType === 'Targeting Type' && targeting_type.map(el => (
                             <SelectItem key={el.value} value={String(el.value)}>{t(el.label)}</SelectItem>
                           ))}
+
                         </SelectContent>
                       </Select>
 

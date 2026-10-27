@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
-import ReactApexChart from "react-apexcharts";
 import { useTranslation } from "react-i18next";
+import ReactApexChart from "react-apexcharts";
 import CurrencyCode from "./currencyCode/CurrencyCode";
+import { formatRegionalCurrency, formatRegionalNumber } from "../utility/regionalNumberFormat";
 
 /* ─── Sparkline ──────────────────────────────────────────────────────────── */
 function Sparkline({ data, color }) {
@@ -61,14 +62,22 @@ function useCountUp(target, duration = 1000, enabled = true) {
 }
 
 /* ─── Delta Badge ─────────────────────────────────────────────────────────── */
-function formatDeltaAbs(val, isCur) {
+function formatDeltaAbs(val, isCur, marketplace = "IN", currencyCode = "INR") {
   if (val === null || val === undefined) return "";
   const sign = val >= 0 ? "+" : "-";
   const num = Math.abs(val);
-  const formatted = isCur
-    ? CurrencyCode(num)
-    : (num >= 1000 ? (num / 1000).toFixed(1) + "k" : num.toString());
-  return `${sign}${formatted}`;
+  if (isCur) {
+    if (num >= 100000) {
+      const formatted = formatRegionalCurrency(num, currencyCode || "INR", marketplace || "IN", 2);
+      return `${sign}${formatted}`;
+    } else {
+      const formatted = CurrencyCode(num);
+      return `${sign}${formatted}`;
+    }
+  } else {
+    const formatted = formatRegionalNumber(num, marketplace || "IN", 1);
+    return `${sign}${formatted}`;
+  }
 }
 
 const getIsometricSVG = (key) => {
@@ -265,6 +274,8 @@ const KPICard = ({
   isCurrency,
   index = 0,          // stagger index passed from parent
   metricKey,
+  marketplace = "IN",
+  currencyCode = "INR",
   style = {},
 }) => {
   const { t } = useTranslation();
@@ -326,24 +337,28 @@ const KPICard = ({
 
       {/* Body: value + sparkline/3D isometric icon */}
       {sparkline ? (
-        <div className="kpi-item-bottom" style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%", gap: "6px" }}>
+        <div className="kpi-item-bottom" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", width: "100%", gap: "6px", minWidth: 0 }}>
           {isLoading ? (
             <div className="kpi-skeleton-value" />
           ) : (
-            <span className={`kpi-item-value${green ? " green" : ""}${red ? " red" : ""}`} style={{ fontSize: "20px", fontWeight: "700" }}>
+            <span
+              className={`kpi-item-value${green ? " green" : ""}${red ? " red" : ""}`}
+              style={{ fontSize: "20px", fontWeight: "700", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+              title={typeof value === "string" ? value : undefined}
+            >
               {value}
             </span>
           )}
 
-          <div className="kpi-sparkline-container" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", width: "100%" }}>
+          <div className="kpi-sparkline-container" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", width: "100%", minWidth: 0 }}>
             {!isLoading && delta !== null && delta !== undefined && (
-              <span className={`kpi-item-delta inline-flex items-center ${green ? "positive" : "negative"}`}>
-                <span className="kpi-delta-arrow mr-1">{delta < 0 ? "↘" : "↗"}</span>
-                <span>{Math.abs(delta)}%</span>
+              <span className={`kpi-item-delta inline-flex items-center flex-wrap ${green ? "positive" : "negative"}`} style={{ maxWidth: "calc(100% - 76px)", overflow: "hidden" }}>
+                <span className="kpi-delta-arrow mr-1 shrink-0">{delta < 0 ? "↘" : "↗"}</span>
+                <span className="shrink-0">{Math.abs(delta)}%</span>
                 {deltaAbs !== undefined && deltaAbs !== null && (
                   <>
-                    <span className="mx-1.5 h-2.5 w-[1px] bg-current opacity-20" />
-                    <span className="opacity-90">{formatDeltaAbs(deltaAbs, isCurrency)}</span>
+                    <span className="mx-1 h-2.5 w-[1px] bg-current opacity-20 shrink-0" />
+                    <span className="opacity-90 shrink-0">{formatDeltaAbs(deltaAbs, isCurrency, marketplace, currencyCode)}</span>
                   </>
                 )}
               </span>
@@ -352,19 +367,33 @@ const KPICard = ({
           </div>
         </div>
       ) : (
-        <div className="kpi-item-bottom" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
+        <div className="kpi-item-bottom" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", minWidth: 0, gap: "10px" }}>
           <div className="kpi-item-value-row" style={{
             alignItems: metricKey ? "flex-start" : "center",
             textAlign: metricKey ? "left" : "center",
             display: "flex",
             flexDirection: "column",
-            gap: "2px",
-            flex: 1
+            gap: "3px",
+            flex: 1,
+            minWidth: 0,
+            overflow: "hidden"
           }}>
             {isLoading ? (
               <div className="kpi-skeleton-value" />
             ) : (
-              <span className={`kpi-item-value${green ? " green" : ""}${red ? " red" : ""}`} style={{ fontSize: "20px", fontWeight: "700" }}>
+              <span
+                className={`kpi-item-value${green ? " green" : ""}${red ? " red" : ""}`}
+                style={{
+                  fontSize: "21px",
+                  fontWeight: "700",
+                  maxWidth: "100%",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  display: "block"
+                }}
+                title={typeof value === "string" ? value : undefined}
+              >
                 {value}
               </span>
             )}
@@ -373,13 +402,21 @@ const KPICard = ({
               <div className="kpi-skeleton-delta" />
             ) : (
               delta !== null && delta !== undefined && (
-                <span className={`kpi-item-delta inline-flex items-center ${green ? "positive" : "negative"}`}>
-                  <span className="kpi-delta-arrow mr-1">{delta < 0 ? "↘" : "↗"}</span>
-                  <span>{Math.abs(delta)}%</span>
+                <span
+                  className={`kpi-item-delta inline-flex items-center flex-wrap ${green ? "positive" : "negative"}`}
+                  style={{
+                    maxWidth: "100%",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap"
+                  }}
+                >
+                  <span className="kpi-delta-arrow mr-1 shrink-0">{delta < 0 ? "↘" : "↗"}</span>
+                  <span className="shrink-0">{Math.abs(delta)}%</span>
                   {deltaAbs !== undefined && deltaAbs !== null && (
                     <>
-                      <span className="mx-1.5 h-2.5 w-[1px] bg-current opacity-20" />
-                      <span className="opacity-90">{formatDeltaAbs(deltaAbs, isCurrency)}</span>
+                      <span className="mx-1 h-2.5 w-[1px] bg-current opacity-20 shrink-0" />
+                      <span className="opacity-90 shrink-0">{formatDeltaAbs(deltaAbs, isCurrency, marketplace, currencyCode)}</span>
                     </>
                   )}
                 </span>
@@ -389,7 +426,7 @@ const KPICard = ({
 
           {/* 3D Isometric SVG Icon (rendered if no sparkline but metricKey is provided) */}
           {metricKey && (
-            <div className="kpi-isometric-icon-wrapper" style={{ flexShrink: 0, marginLeft: "10px" }}>
+            <div className="kpi-isometric-icon-wrapper" style={{ flexShrink: 0, marginLeft: "auto" }}>
               {getIsometricSVG(metricKey)}
             </div>
           )}

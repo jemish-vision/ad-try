@@ -47,24 +47,44 @@ function resolveConfig(overrides = {}) {
     ? overrides.maxTokens
     : Number(process.env.AI_MAX_TOKENS) || 2048;
 
+  const enablePromptCaching = overrides.enablePromptCaching !== undefined
+    ? Boolean(overrides.enablePromptCaching)
+    : process.env.AI_ENABLE_PROMPT_CACHING !== 'false';
+
+  const promptCacheTtl = overrides.promptCacheTtl
+    || process.env.AI_PROMPT_CACHE_TTL
+    || '1h';
+
   return {
     provider,
     model,
     apiKey,
     timeoutMs,
     maxTokens,
+    enablePromptCaching,
+    promptCacheTtl,
   };
 }
 
 // ---------------------------------------------------------------------------
 // Anthropic Implementation
 // ---------------------------------------------------------------------------
-function formatAnthropicTools(tools = []) {
-  return tools.map(tool => ({
+function formatAnthropicTools(tools = [], enableCaching = true, ttl = '1h') {
+  const formatted = tools.map(tool => ({
     name: tool.name,
     description: tool.description,
     input_schema: tool.parameters || { type: 'object', properties: {} },
   }));
+
+  if (enableCaching && formatted.length > 0) {
+    const cacheControl = { type: 'ephemeral' };
+    if (ttl) {
+      cacheControl.ttl = ttl;
+    }
+    formatted[formatted.length - 1].cache_control = cacheControl;
+  }
+
+  return formatted;
 }
 
 function formatAnthropicMessages(messages = [], toolResults = [], continuation = null) {
@@ -122,27 +142,51 @@ async function requestAnthropic(config, turn, clientFactory) {
   }
 
   const messages = formatAnthropicMessages(turn.messages, turn.toolResults, turn.continuation);
+  const enableCaching = config.enablePromptCaching !== false;
+  const ttl = config.promptCacheTtl || '1h';
+  const cacheControl = { type: 'ephemeral' };
+  if (ttl) {
+    cacheControl.ttl = ttl;
+  }
+
+  let system;
+  if (turn.instructions) {
+    system = enableCaching
+      ? [{ type: 'text', text: turn.instructions, cache_control: cacheControl }]
+      : turn.instructions;
+  }
+
   const payload = {
     model: config.model,
     max_tokens: config.maxTokens,
-    system: turn.instructions || undefined,
+    system,
     messages,
   };
 
   if (turn.tools && turn.tools.length) {
-    payload.tools = formatAnthropicTools(turn.tools);
+    payload.tools = formatAnthropicTools(turn.tools, enableCaching, ttl);
   }
+
+  const betaHeaders = ['prompt-caching-2024-07-31'];
+  if (ttl === '1h') {
+    betaHeaders.push('extended-cache-ttl-2025-04-11');
+  }
+
+  const requestOptions = {
+    signal: turn.signal,
+    ...(enableCaching ? { headers: { 'anthropic-beta': betaHeaders.join(',') } } : {}),
+  };
 
   let response;
   try {
     if (typeof turn.onToken === 'function' && typeof client.messages?.stream === 'function') {
-      const stream = client.messages.stream(payload, { signal: turn.signal });
+      const stream = client.messages.stream(payload, requestOptions);
       stream.on('text', (textDelta) => {
         try { turn.onToken(textDelta); } catch (_) {}
       });
       response = await stream.finalMessage();
     } else {
-      response = await client.messages.create(payload, { signal: turn.signal });
+      response = await client.messages.create(payload, requestOptions);
     }
   } catch (err) {
     throw providerError('AI_PROVIDER_ERROR', 'Anthropic API request failed', err);
@@ -174,6 +218,8 @@ async function requestAnthropic(config, turn, clientFactory) {
     usage: {
       inputTokens: response.usage?.input_tokens || 0,
       outputTokens: response.usage?.output_tokens || 0,
+      cacheCreationInputTokens: response.usage?.cache_creation_input_tokens || 0,
+      cacheReadInputTokens: response.usage?.cache_read_input_tokens || 0,
     },
     continuation: {
       provider: 'anthropic',
@@ -296,6 +342,8 @@ async function requestOpenAI(config, turn, clientFactory) {
     usage: {
       inputTokens: response.usage?.prompt_tokens || 0,
       outputTokens: response.usage?.completion_tokens || 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: response.usage?.prompt_tokens_details?.cached_tokens || 0,
     },
     continuation: {
       provider: 'openai',
@@ -432,6 +480,8 @@ async function requestGemini(config, turn, clientFactory) {
     usage: {
       inputTokens: response.usageMetadata?.promptTokenCount || 0,
       outputTokens: response.usageMetadata?.candidatesTokenCount || 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: response.usageMetadata?.cachedContentTokenCount || 0,
     },
     continuation: {
       provider: 'gemini',

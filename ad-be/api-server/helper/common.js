@@ -3,6 +3,7 @@ const axios = require("axios");
 const mongoose = require("mongoose");
 const { ObjectId } = mongoose.Types;
 const moment = require("moment-timezone");
+const { getRollingReportDates } = require("./rollingReportDates");
 const fs = require("fs");
 const zlib = require("node:zlib");
 const { parse } = require("csv-parse/sync");
@@ -552,7 +553,8 @@ function getNextTime(times, afterTime) {
 }
 
 const getRuleDate = (timezone, dateFilter, yearToDate) => {
-
+  const rollingDates = getRollingReportDates(moment().tz(timezone), dateFilter);
+  if (rollingDates) return rollingDates;
   let fromDate = moment().tz(timezone).format("YYYY-MM-DD");
   let toDate = moment().tz(timezone).format("YYYY-MM-DD");
 
@@ -560,16 +562,6 @@ const getRuleDate = (timezone, dateFilter, yearToDate) => {
     case "YESTERDAY":
       fromDate = moment().tz(timezone).subtract(1, "day").format('YYYY-MM-DD');
       toDate = moment().tz(timezone).format('YYYY-MM-DD');
-      break;
-
-    case "LAST_7_DAYS":
-      fromDate = moment().tz(timezone).subtract(7, "day").format('YYYY-MM-DD');
-      toDate = moment().tz(timezone).format('YYYY-MM-DD');
-      break;
-
-    case "LAST_7_DAYS_1":
-      fromDate = moment().tz(timezone).subtract(8, "day").format('YYYY-MM-DD');
-      toDate = moment().tz(timezone).subtract(1, "day").format('YYYY-MM-DD');
       break;
 
     case "THIS_WEEK":
@@ -580,11 +572,6 @@ const getRuleDate = (timezone, dateFilter, yearToDate) => {
     case "LAST_WEEK":
       fromDate = moment().tz(timezone).startOf('week').add(1, 'day').subtract(7, 'days').format('YYYY-MM-DD');
       toDate = moment().tz(timezone).endOf('week').add(1, 'day').subtract(7, 'days').format('YYYY-MM-DD');
-      break;
-
-    case "LAST_30_DAYS":
-      fromDate = moment().tz(timezone).subtract(30, "days").startOf("day").format("YYYY-MM-DD");
-      toDate = moment().tz(timezone).endOf("day").format("YYYY-MM-DD");
       break;
 
     case "THIS_MONTH":
@@ -602,11 +589,6 @@ const getRuleDate = (timezone, dateFilter, yearToDate) => {
       toDate = moment().tz(timezone).format("YYYY-MM-DD");
       break;
 
-
-    case "LAST_65_DAYS":
-      fromDate = moment().tz(timezone).subtract(65, "days").startOf("day").format("YYYY-MM-DD");
-      toDate = moment().tz(timezone).endOf("day").format("YYYY-MM-DD");
-      break;
 
     case "YEAR_TO_DATE":
       fromDate = moment().tz(timezone).startOf("year").format("YYYY-MM-DD");

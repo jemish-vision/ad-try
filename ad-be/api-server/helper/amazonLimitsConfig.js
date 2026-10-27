@@ -59,7 +59,7 @@ const DEFAULT_SP_API_LIMIT = { rate: 0.0167, burst: 15 };
  */
 const ADS_API_LIMIT = { rate: 2.0, burst: 10 };
 
-function getEndpointLimit(url, method, isSellerAPI) {
+function getEndpointLimit(url, method = 'GET', isSellerAPI) {
     if (!isSellerAPI) return ADS_API_LIMIT;
 
     let pathOnly = url;
@@ -69,8 +69,9 @@ function getEndpointLimit(url, method, isSellerAPI) {
         pathOnly = url.split('?')[0]; 
     }
     
+    const normalizedMethod = String(method || 'GET').toUpperCase();
     for (const route of spApiLimits) {
-        if (route.method === method.toUpperCase() && route.regex.test(pathOnly)) {
+        if (route.method === normalizedMethod && route.regex.test(pathOnly)) {
             return { rate: route.rate, burst: route.burst };
         }
     }

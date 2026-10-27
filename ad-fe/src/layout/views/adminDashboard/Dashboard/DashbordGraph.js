@@ -7,6 +7,7 @@ import {
 } from "recharts";
 import { Card } from "../../../../components/ui/card";
 import { AppTooltip } from "../../../../components/ui/AppTooltip";
+import { formatRegionalCurrency } from "../../../../utility/regionalNumberFormat";
 
 // Portal-based tooltip immune to AG-Grid CSS transform offsets
 
@@ -93,23 +94,37 @@ const fmtDate = (s) => {
     const d = new Date(s);
     return d.toLocaleDateString("en-IN", { month: "short", day: "numeric" });
 };
-const fmtVal = (v, fmt) => {
+const getActiveLocaleInfo = () => {
+    try {
+        const p = JSON.parse(localStorage.getItem("profile"));
+        return {
+            currencyCode: p?.currencyCode || p?.profile?.currencyCode || "INR",
+            marketplace: p?.countryCode || p?.profile?.countryCode || "IN",
+        };
+    } catch (e) {
+        return { currencyCode: "INR", marketplace: "IN" };
+    }
+};
+
+const fmtVal = (v, fmt, currencyCode, marketplace) => {
     if (v == null || v === "") return "";
     const n = Number(v);
     if (fmt === "currency") {
-        if (Math.abs(n) >= 100000) return `₹${(n / 100000).toFixed(1)}L`;
-        if (Math.abs(n) >= 1000) return `₹${(n / 1000).toFixed(1)}K`;
-        return `₹${n.toFixed(0)}`;
+        const localeInfo = (!currencyCode || !marketplace) ? getActiveLocaleInfo() : {};
+        const cur = currencyCode || localeInfo.currencyCode || "INR";
+        const mp = marketplace || localeInfo.marketplace || "IN";
+        return formatRegionalCurrency(n, cur, mp, 1);
     }
     if (fmt === "percent") return `${n.toFixed(2)}%`;
     return n % 1 === 0 ? `${n}` : n.toFixed(2);
 };
-const fmtAxis = (v, fmt) => {
+const fmtAxis = (v, fmt, currencyCode, marketplace) => {
     const n = Number(v);
     if (fmt === "currency") {
-        if (Math.abs(n) >= 100000) return `₹${(n / 100000).toFixed(0)}L`;
-        if (Math.abs(n) >= 1000) return `₹${(n / 1000).toFixed(0)}K`;
-        return `₹${n}`;
+        const localeInfo = (!currencyCode || !marketplace) ? getActiveLocaleInfo() : {};
+        const cur = currencyCode || localeInfo.currencyCode || "INR";
+        const mp = marketplace || localeInfo.marketplace || "IN";
+        return formatRegionalCurrency(n, cur, mp, 0);
     }
     if (fmt === "percent") return `${n}%`;
     return n;
@@ -958,9 +973,22 @@ const DashboardGraph = ({ isChartLoading = false, chartData = [] }) => {
     /* Aggregated data */
     const aggData = useMemo(() => {
         if (!chartData?.length) return [];
-        if (granularity === "Daily") return chartData.map(d => ({ ...d, label: fmtDate(d.date) }));
+
+        const normalizedData = chartData.map(d => {
+            const effectiveOrders = (d.orders != null && d.orders > 0) ? d.orders : (d.adOrders || 0);
+            const effectiveTotalSales = (d.totalSales != null && d.totalSales > 0) ? d.totalSales : (d.adSales || 0);
+            return {
+                ...d,
+                orders: effectiveOrders,
+                totalSales: effectiveTotalSales,
+                label: fmtDate(d.date),
+            };
+        });
+
+        if (granularity === "Daily") return normalizedData;
+
         const buckets = {};
-        chartData.forEach(d => {
+        normalizedData.forEach(d => {
             const dt = new Date(d.date);
             let key;
             if (granularity === "Weekly") {

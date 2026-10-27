@@ -14,6 +14,7 @@ import { ApiFileUpload } from "../../../api-wrapper/productList/ApiProductList";
 
 const getLast7Days = () => {
     const end = new Date();
+    end.setDate(end.getDate() - 1);
     const start = new Date();
     start.setDate(start.getDate() - 7);
     return [start, end];

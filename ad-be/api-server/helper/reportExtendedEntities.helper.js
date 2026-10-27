@@ -43,7 +43,8 @@ const biddingStrategy = (strategy) => {
   return "";
 };
 
-const normalizeExtendedRow = (source, { entity, importRunId, configId, profileId, accountType }) => {
+const normalizeExtendedRow = (source, contextObj) => {
+  const { entity, importRunId, configId, profileId, accountType, targetIdMap } = contextObj || {};
   if (!isExtendedEntity(entity)) throw new Error(`Unsupported report entity: ${entity}`);
   const context = `run=${importRunId} entity=${entity} profile=${profileId}`;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(source.date || "")) {
@@ -93,6 +94,8 @@ const normalizeExtendedRow = (source, { entity, importRunId, configId, profileId
         ? parseStrictMetric(source[`unitsSoldClicks${attributionDays}d`], `unitsSoldClicks${attributionDays}d`, context)
         : source.unitsSoldClicks ?? 0,
       biddingStartegy: biddingStrategy(source.campaignBiddingStrategy),
+      ...(source.campaignName && { campaignName: source.campaignName }),
+      ...(source.campaignStatus && { campaignStatus: String(source.campaignStatus).toUpperCase() }),
     });
   } else if (["targeting", "sbTargeting", "sdTargeting"].includes(entity)) {
     identity = {
@@ -108,13 +111,18 @@ const normalizeExtendedRow = (source, { entity, importRunId, configId, profileId
       if (source.targetingId) {
         setFields.targetId = `${["BROAD", "PHRASE", "EXACT"].includes(source.keywordType) ? "K" : "T"}-${source.targetingId}`;
       } else {
-        // SP targeting reports omit the API target ID. Keep an existing API ID
-        // when present; give newly inserted rows a stable ID for the model's
-        // unique (targetId, date) index.
-        const digest = crypto.createHash("sha256")
-          .update(JSON.stringify([campaignId, identity.adGroupId, targeting, identity.keywordType]))
-          .digest("hex").slice(0, 24);
-        setFields.defaultTargetId = `R-${digest}`;
+        // SP targeting reports omit the API target ID for auto-targets.
+        // Check if known targetId exists in context map (preloaded from listing sync)
+        const knownTargetId = targetIdMap?.get(`${campaignId}:${identity.adGroupId}:${targeting}`);
+        if (knownTargetId) {
+          setFields.defaultTargetId = knownTargetId;
+        } else {
+          // Give newly inserted rows a stable ID for the model's unique (targetId, date) index
+          const digest = crypto.createHash("sha256")
+            .update(JSON.stringify([campaignId, identity.adGroupId, targeting, identity.keywordType]))
+            .digest("hex").slice(0, 24);
+          setFields.defaultTargetId = `R-${digest}`;
+        }
       }
     } else {
       if (!source.targetingId) throw new Error(`[Validation Failure] Missing targetingId in ${context}`);
@@ -124,9 +132,28 @@ const normalizeExtendedRow = (source, { entity, importRunId, configId, profileId
     if (source.topOfSearchImpressionShare !== undefined) {
       setFields.topOfSearchImpressionShare = source.topOfSearchImpressionShare;
     }
+    const statusVal = source.adKeywordStatus || source.status || source.state || source.campaignStatus;
+    if (statusVal) {
+      setFields.status = String(statusVal).toUpperCase();
+    }
+    if (source.matchType) {
+      setFields.matchType = source.matchType;
+    }
+    if (source.keywordBid !== undefined && source.keywordBid !== null) {
+      setFields.keywordBid = Number(source.keywordBid) || 0;
+    }
   } else if (entity === "sbCampaign" || entity === "sdCampaign") {
     if (source.campaignName !== undefined) setFields.name = source.campaignName;
     if (source.campaignBudgetAmount !== undefined) setFields.budget = source.campaignBudgetAmount;
+    const statusVal = source.campaignStatus || source.status || source.state;
+    if (statusVal) {
+      setFields.status = String(statusVal).toUpperCase();
+    }
+    if (entity === "sbCampaign") {
+      setFields.type = "Sponsored Brands";
+    } else if (entity === "sdCampaign") {
+      setFields.type = "Sponsored Display";
+    }
   } else if (entity === "sdAdGroup") {
     identity = { campaignId, adGroupId: requiredNumber(source.adGroupId, "adGroupId", context), reportDate };
   }
@@ -154,7 +181,29 @@ const buildExtendedUpsertOp = (row, sourceVersion) => {
     importSourceVersion: sourceVersion,
   })) {
     if (field === "defaultTargetId") {
-      guarded.targetId = { $cond: [current, { $ifNull: ["$targetId", { $literal: value }] }, "$targetId"] };
+      // If the targetId in DB is missing OR is a synthetic "R-" ID and we now have a genuine "T-"/"K-" ID,
+      // update to the genuine ID. Otherwise keep the existing targetId.
+      const isValGenuine = typeof value === "string" && (value.startsWith("T-") || value.startsWith("K-"));
+      if (isValGenuine) {
+        const isSynthetic = {
+          $eq: [{ $substrCP: [{ $ifNull: ["$targetId", ""] }, 0, 2] }, "R-"]
+        };
+        const shouldReplace = {
+          $or: [
+            { $eq: [{ $ifNull: ["$targetId", null] }, null] },
+            isSynthetic
+          ]
+        };
+        guarded.targetId = {
+          $cond: [
+            current,
+            { $cond: [shouldReplace, { $literal: value }, "$targetId"] },
+            "$targetId"
+          ]
+        };
+      } else {
+        guarded.targetId = { $cond: [current, { $ifNull: ["$targetId", { $literal: value }] }, "$targetId"] };
+      }
       continue;
     }
     guarded[field] = { $cond: [current, { $literal: value }, `$${field}`] };

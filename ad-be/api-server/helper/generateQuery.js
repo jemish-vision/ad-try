@@ -3,7 +3,7 @@ const addHealthScoreSettingQuery = (healthScoreConditions, filters, cpSetting) =
     let conditions = [];
 
     healthScoreConditions.forEach((cond, index) => {
-        let { conditionType, conditionOperator, conditionValue, conditionMaxValue, useTargetAcos, queryOperator } = cond;
+        let { conditionType, conditionOperator, conditionValue, conditionMaxValue, useTargetAcos, queryOperator, conditionStringValue } = cond;
 
         let fieldCondition = null;
 
@@ -29,6 +29,10 @@ const addHealthScoreSettingQuery = (healthScoreConditions, filters, cpSetting) =
         // Handle Targeting types
         if (["Targeting Type"].includes(conditionType)) {
             fieldCondition = { targetingType: { $eq: conditionStringValue } };
+        }
+
+        if (["OutOfBudget", "Out of Budget"].includes(conditionType)) {
+            fieldCondition = { $or: [{ status: { $eq: "OUT_OF_BUDGET" } }, { isOutOfBudget: { $eq: true } }] };
         }
 
         // -------- Handle Default Metric Filters --------

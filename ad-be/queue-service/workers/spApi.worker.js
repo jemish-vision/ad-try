@@ -9,6 +9,7 @@ const { createSpApiProcessor } = require("../processors/spApi.processor");
 const { WorkerHeartbeat } = require("../observability/workerHeartbeat");
 const { registerGracefulShutdown } = require("../shutdown");
 const { closeMongoConnection } = require("../../shared/connection");
+const { cron_logs } = require("../../winston/cronAutomation/logger");
 
 let worker = null;
 let heartbeat = null;
@@ -40,27 +41,45 @@ async function startSpApiWorker() {
   });
 
   worker.on("active", (job) => {
-    console.log(`[SpApiWorker] Started job ${job.id} (${job.data?.task})`);
+    cron_logs({
+      message: `[SpApiWorker] Started job ${job.id} (${job.data?.task})`,
+      log_type: "info",
+    });
   });
 
   worker.on("completed", (job) => {
-    console.log(`[SpApiWorker] Completed job ${job.id} (${job.data?.task})`);
+    cron_logs({
+      message: `[SpApiWorker] Completed job ${job.id} (${job.data?.task})`,
+      log_type: "info",
+    });
   });
 
   worker.on("failed", (job, err) => {
-    console.error(`[SpApiWorker] Failed job ${job?.id} (${job?.data?.task}): ${err.message}`);
+    cron_logs({
+      message: `[SpApiWorker] Failed job ${job?.id} (${job?.data?.task}): ${err.message || err}`,
+      log_type: "error",
+    });
   });
 
   worker.on("error", (err) => {
-    console.error(`[SpApiWorker] Worker error: ${err.message}`);
+    cron_logs({
+      message: `[SpApiWorker] Worker error: ${err.message || err}`,
+      log_type: "error",
+    });
   });
 
-  console.log(`[SpApiWorker] Running with concurrency ${concurrency} (lockDuration: ${lockDuration}ms) on PID ${process.pid}`);
+  cron_logs({
+    message: `[SpApiWorker] Running with concurrency ${concurrency} (lockDuration: ${lockDuration}ms) on PID ${process.pid}`,
+    log_type: "info",
+  });
 
   registerGracefulShutdown({
     serviceName: "sp-api-worker",
     onShutdown: async () => {
-      console.log("[SpApiWorker] Closing worker...");
+      cron_logs({
+        message: "[SpApiWorker] Closing worker...",
+        log_type: "info",
+      });
       if (heartbeat) await heartbeat.stop();
       if (worker) await worker.close();
       if (heartbeatRedis) await heartbeatRedis.quit().catch(() => {});
@@ -74,7 +93,10 @@ async function startSpApiWorker() {
 
 if (require.main === module) {
   startSpApiWorker().catch((err) => {
-    console.error("[SpApiWorker] Fatal startup error:", err);
+    cron_logs({
+      message: `[SpApiWorker] Fatal startup error: ${err?.stack || err?.message || err}`,
+      log_type: "error",
+    });
     process.exit(1);
   });
 }

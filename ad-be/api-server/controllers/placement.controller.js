@@ -3840,7 +3840,21 @@ exports.getAllPlacements = async (req, res) => {
     const timezone = profile.timezone;
     const reportDate = {
       $gte: fromDate,
+      ...(toDate && { $lte: toDate }),
     };
+
+    let searchCampaignIds = null;
+    if (searchName) {
+      const { adTypeCampaignSchema } = req.models;
+      if (adTypeCampaignSchema) {
+        const matchedCamps = await adTypeCampaignSchema.find({
+          configId,
+          profileId: Number(profileId),
+          name: { $regex: new RegExp(RegExp.escape(`${searchName}`.trim()), "i") }
+        }).select("campaignId").lean();
+        searchCampaignIds = matchedCamps.map(c => c.campaignId);
+      }
+    }
 
     const hasActiveCampaigns = await campaignSchema.exists({
       configId,
@@ -3857,7 +3871,12 @@ exports.getAllPlacements = async (req, res) => {
           reportDate,
           ...(campaignId && { campaignId }),
           ...(filteredPlacements.length > 0 && { $or: filteredPlacements }),
-          ...(searchName && { campaignName: { $regex: new RegExp(RegExp.escape(`${searchName}`?.trim()), "i") } }),
+          ...(searchName && {
+            $or: [
+              { campaignName: { $regex: new RegExp(RegExp.escape(`${searchName}`?.trim()), "i") } },
+              ...(searchCampaignIds?.length ? [{ campaignId: { $in: searchCampaignIds } }] : [])
+            ]
+          }),
         }
       },
       {
@@ -3994,6 +4013,85 @@ exports.getAllPlacements = async (req, res) => {
     const result = await adTypePlacementSchema.aggregate(pipeline).allowDiskUse(true);
     const placementResult = result[0]?.data || [];
     const totalRecords = result[0].totalRecords[0]?.count || 0;
+
+    const missingCampaignIds = [
+      ...new Set(
+        placementResult
+          .filter(p => !p.campaignName || p.placementModifier == null || !p.biddingStartegy)
+          .map(p => p.campaignId)
+          .filter(Boolean)
+      )
+    ];
+
+    if (missingCampaignIds.length > 0) {
+      const { adTypeCampaignSchema } = req.models;
+      if (adTypeCampaignSchema) {
+        const campaigns = await adTypeCampaignSchema.find({
+          configId,
+          profileId: Number(profileId),
+          campaignId: { $in: missingCampaignIds }
+        }).select("campaignId name status dynamicBidding").sort({ reportDate: -1 }).lean();
+
+        const campaignMap = new Map();
+        for (const camp of campaigns) {
+          if (!campaignMap.has(camp.campaignId)) {
+            campaignMap.set(camp.campaignId, camp);
+          }
+        }
+
+        const placementKeyMap = {
+          "Top of Search": "PLACEMENT_TOP",
+          "Product pages": "PLACEMENT_PRODUCT_PAGE",
+          "Rest of Search": "PLACEMENT_REST_OF_SEARCH",
+          "Audience Segment": "AUDIENCE_SEGMENT",
+          "Business Placement": "SITE_AMAZON_BUSINESS",
+        };
+
+        for (const item of placementResult) {
+          const camp = campaignMap.get(item.campaignId);
+          if (camp) {
+            if (!item.campaignName && camp.name) {
+              item.campaignName = camp.name;
+            }
+            if (!item.campaignStatus && camp.status) {
+              item.campaignStatus = camp.status;
+            }
+            if (!item.biddingStartegy && camp.dynamicBidding?.strategy) {
+              const strat = camp.dynamicBidding.strategy;
+              item.biddingStartegy = ["legacy", "LEGACY_FOR_SALES"].includes(strat)
+                ? "Dynamic bids - down only"
+                : ["optimizeForSales", "AUTO_FOR_SALES"].includes(strat)
+                  ? "Dynamic bids - up and down"
+                  : "Fixed bid";
+            }
+            if (item.placementModifier == null) {
+              let percentage = 0;
+              const mappedKey = placementKeyMap[item.placement];
+              if (mappedKey) {
+                const pb = camp.dynamicBidding?.placementBidding?.find(p => p.placement === mappedKey);
+                if (pb && pb.percentage != null) {
+                  percentage = pb.percentage;
+                } else {
+                  const sc = camp.dynamicBidding?.shopperCohortBidding?.find(p => p.shopperCohortType === mappedKey);
+                  if (sc && sc.percentage != null) {
+                    percentage = sc.percentage;
+                  }
+                }
+              }
+              item.placementModifier = percentage;
+            }
+          } else if (item.placementModifier == null) {
+            item.placementModifier = 0;
+          }
+        }
+      }
+    }
+
+    for (const item of placementResult) {
+      if (item.placementModifier == null) {
+        item.placementModifier = 0;
+      }
+    }
 
     return res.status(200).send({
       isSuccess: true,

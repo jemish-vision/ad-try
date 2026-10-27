@@ -31,7 +31,7 @@ const FbaPlanning = () => {
     return () => observer.disconnect();
   }, []);
 
-  const [date, setDate] = useState([moment().subtract(30, 'days').toDate(), new Date()]);
+  const [date, setDate] = useState([moment().subtract(30, 'days').toDate(), moment().subtract(1, 'days').toDate()]);
 
   useEffect(() => {
     if (selectedDate && Array.isArray(selectedDate) && selectedDate.length >= 2) {

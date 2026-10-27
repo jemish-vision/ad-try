@@ -33,8 +33,8 @@ const AdsTrendsModal = ({ show, onClose }) => {
     const PERIODS = [
         { label: "Today", from: 0, to: 0 },
         { label: "Yesterday", from: 1, to: 1 },
-        { label: "Last 7 Days", from: 6, to: 0 },
-        { label: "Last 30 Days", from: 29, to: 0 },
+        { label: "Last 7 Days", from: 7, to: 1 },
+        { label: "Last 30 Days", from: 30, to: 1 },
         { label: "Last 60 Days", from: 59, to: 0 },
     ];
 

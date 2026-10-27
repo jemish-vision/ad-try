@@ -169,7 +169,10 @@ function hasInvalidMetrics(row) {
     if (value === null || value === undefined) {
       return false;
     }
-    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      return true;
+    }
+    if (['spend', 'clicks', 'impressions'].includes(metric) && value < 0) {
       return true;
     }
     return ['orders', 'clicks', 'impressions'].includes(metric) && !Number.isSafeInteger(value);
@@ -327,7 +330,7 @@ async function readDailyReport(input) {
     warnings: ['IMPORT_COVERAGE_UNVERIFIED'],
     missingInputs: ['VERIFIED_IMPORT_COVERAGE']
   };
-  const seen = new Set();
+  const seen = new Map();
   const missingMetrics = new Set();
 
   for (const row of rawRows) {
@@ -335,7 +338,6 @@ async function readDailyReport(input) {
     const invalidMetrics = hasInvalidMetrics(row);
     if (
       !key ||
-      seen.has(key) ||
       invalidMetrics ||
       row.currencyCode !== undefined && row.currencyCode !== profile.currencyCode
     ) {
@@ -344,8 +346,6 @@ async function readDailyReport(input) {
 
       if (!key) {
         warning = 'INVALID_DAILY_ROW_IDENTITY';
-      } else if (seen.has(key)) {
-        warning = 'DUPLICATE_DAILY_ROW';
       } else if (invalidMetrics) {
         warning = 'INVALID_DAILY_METRICS';
       }
@@ -356,7 +356,40 @@ async function readDailyReport(input) {
       result.rows = [];
       return result;
     }
-    seen.add(key);
+
+    const rowUpdatedAtMs = row.updatedAt instanceof Date || typeof row.updatedAt === 'string'
+      ? (Number.isFinite(new Date(row.updatedAt).getTime()) ? new Date(row.updatedAt).getTime() : null)
+      : null;
+
+    if (seen.has(key)) {
+      const existing = seen.get(key);
+      if (
+        rowUpdatedAtMs !== null &&
+        existing.updatedAtMs !== null &&
+        rowUpdatedAtMs > existing.updatedAtMs
+      ) {
+        // Newer snapshot supersedes older snapshot
+        seen.set(key, { row, updatedAtMs: rowUpdatedAtMs });
+      } else if (
+        rowUpdatedAtMs !== null &&
+        existing.updatedAtMs !== null &&
+        rowUpdatedAtMs < existing.updatedAtMs
+      ) {
+        // Existing snapshot is already newer, ignore older snapshot
+      } else {
+        // Indeterminate or identical timestamps cannot be safely resolved
+        result.verification = 'conflict';
+        result.warnings.push('DUPLICATE_DAILY_ROW');
+        result.missingInputs.push('CONSISTENT_DAILY_ROWS');
+        result.rows = [];
+        return result;
+      }
+    } else {
+      seen.set(key, { row, updatedAtMs: rowUpdatedAtMs });
+    }
+  }
+
+  for (const { row } of seen.values()) {
     for (const metric of BASE_METRICS) {
       if (row[metric] === null || row[metric] === undefined) {
         missingMetrics.add(metric);

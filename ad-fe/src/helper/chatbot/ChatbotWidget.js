@@ -10,7 +10,7 @@ import { useFormik } from "formik";
 import * as Yup from "yup";
 import { ProfileContext } from "../usecontext/useContext";
 import { TypingDots } from "./TypingDots";
-import { ApiCreateSupportTicket, ApiCustomChatBot, ApiCustomChatBotStream, ApiGetUserTickets } from "../../api-wrapper/customer/ApiCustomer";
+import { ApiCreateSupportTicket, ApiCustomChatBotStream, ApiGetUserTickets } from "../../api-wrapper/customer/ApiCustomer";
 import { useNavigate, useLocation } from "react-router-dom";
 import RaiseSupportTicket from "./RaiseSupportTicket";
 import BotLogo from "../../common/logo/logo.png";
@@ -495,6 +495,7 @@ const computeLineCheckpoints = (text) => {
 const ChatbotWidget = ({ isGlobal }) => {
     const { t } = useTranslation();
     const navigate = useNavigate();
+    const location = useLocation();
     const { loginUser, profileId, profileSendID, profileValue, selectedAdType, profileList } = useContext(ProfileContext);
     const profileNames = profileNameMap(profileList);
     const [isReportExpanded, setIsReportExpanded] = useState(false);

@@ -55,6 +55,7 @@ const CronJob = lazy(() => import("../layout/views/cronJob/CronJob"));
 const Packages = lazy(() => import("../layout/views/packages/Packages"));
 const Retention = lazy(() => import("../layout/views/retention/Retention"));
 const SupportTicket = lazy(() => import("../layout/views/supportTicket/SupportTicket"));
+const UnansweredQuestions = lazy(() => import("../layout/views/unansweredQuestions/UnansweredQuestions"));
 const AuthSupportChat = lazy(() => import("../layout/views/supportTicket/AuthSupportChat"));
 const RuleBlockedTime = lazy(() => import("../layout/views/ruleBlockedTime/RuleBlockedTime"));
 const DealsDashboard = lazy(() => import("../layout/views/deals-dashboard/DealsDashboard"));
@@ -428,6 +429,12 @@ const PagesRoutes = [
     component: <SupportTicket />,
     exact: true,
     name: "Support Ticket",
+  },
+  {
+    path: "/unanswered-questions",
+    component: <UnansweredQuestions />,
+    exact: true,
+    name: "Chatbot Gaps",
   },
   {
     path: "/support-ticket/:ticketId?",

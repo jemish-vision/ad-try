@@ -32,6 +32,8 @@ const normalizeReportRow = (row, { importRunId, entity, configId, profileId, acc
   };
   const calculatedMetrics = calcMetrics(baseMetrics);
 
+  const campaignStatus = (row.campaignStatus || row.status || row.state || "").toUpperCase();
+
   const normalized = {
     importRunId,
     entity,
@@ -42,6 +44,7 @@ const normalizeReportRow = (row, { importRunId, entity, configId, profileId, acc
     campaignBudgetAmount: row.campaignBudgetAmount !== undefined ? Number(row.campaignBudgetAmount) : undefined,
     reportDate,
     attributionDays,
+    ...(campaignStatus && { campaignStatus }),
     metrics: {
       impressions,
       clicks,
@@ -93,6 +96,12 @@ const buildMongoUpsertOp = (row, sourceVersion = Date.now()) => {
         update: [
           {
             $set: {
+              ...(row.campaignStatus ? {
+                status: {
+                  $cond: [{ $lte: [{ $ifNull: ["$importSourceVersion", 0] }, sourceVersion] }, row.campaignStatus, "$status"]
+                }
+              } : {}),
+              type: { $ifNull: ["$type", "Sponsored Products"] },
               name: {
                 $cond: [{ $lte: [{ $ifNull: ["$importSourceVersion", 0] }, sourceVersion] }, row.campaignName, "$name"]
               },

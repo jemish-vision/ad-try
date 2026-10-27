@@ -53,34 +53,39 @@ amazonAxios.interceptors.request.use(
                 log_type: "info",
             });
 
-            // PRE-FLIGHT RATE LIMIT CHECK
-            await checkRateLimit(profileId, config.url, config.method, sellerAPI);
+            // PRE-FLIGHT RATE LIMIT CHECK with local backoff for background workers
+            while (true) {
+                try {
+                    await checkRateLimit(profileId, config.url, config.method || 'GET', sellerAPI);
+                    break;
+                } catch (rateErr) {
+                    if (rateErr.message && rateErr.message.startsWith('LOCAL_RATE_LIMIT:')) {
+                        const msToWait = parseInt(rateErr.message.split(':')[1], 10);
+                        const isBackgroundWorker = isBackgroundWorkerExecution(config);
+
+                        if (!isBackgroundWorker) {
+                            // Frontend request: fail fast
+                            return Promise.reject({
+                                isRateLimit: true,
+                                message: "Amazon is currently busy processing data for this profile. Please try again in a few seconds."
+                            });
+                        }
+
+                        config._preFlightRetries = (config._preFlightRetries || 0) + 1;
+                        if (config._preFlightRetries >= 5) {
+                            return Promise.reject(new Error("Max pre-flight rate limit retries reached"));
+                        }
+
+                        // Background worker: Wait and retry locally without hitting Amazon
+                        await wait(msToWait + 50); // wait required time + 50ms jitter
+                        continue;
+                    }
+                    throw rateErr;
+                }
+            }
 
             return config;
         } catch (err) {
-            if (err.message && err.message.startsWith('LOCAL_RATE_LIMIT:')) {
-                const msToWait = parseInt(err.message.split(':')[1], 10);
-                const isBackgroundWorker = isBackgroundWorkerExecution(config);
-
-                if (!isBackgroundWorker) {
-                    // Frontend request: fail fast
-                    return Promise.reject({
-                        isRateLimit: true,
-                        message: "Amazon is currently busy processing data for this profile. Please try again in a few seconds."
-                    });
-                }
-
-                // Background worker: Wait and retry locally without hitting Amazon
-                await wait(msToWait + 50); // wait required time + 50ms jitter
-
-                config._preFlightRetries = (config._preFlightRetries || 0) + 1;
-                if (config._preFlightRetries >= 3) {
-                     return Promise.reject(new Error("Max pre-flight rate limit retries reached"));
-                }
-                // Try again recursively
-                return amazonAxios.request(config);
-            }
-
             write_logs({
                 message: `[amazonAxios Request Error] ${err.message}`,
                 log_type: "error",

@@ -7,8 +7,8 @@ import { ApiHistory } from "../../../api-wrapper/campaign/ApiCampaign";
 import { ProfileContext } from "../../../helper/usecontext/useContext";
 import CurrencyFormat from "../../../helper/currencyCode/CurrencyFormat";
 import moment from "moment-timezone";
-import { ShadcnDateRangePicker as DateRangePicker } from "../../../components/ui/date-range-picker";
-import { predefinedRanges } from "../../../common/helper/calendarValues/calendarValues";
+import { Popover, PopoverTrigger, PopoverContent } from "../../../components/ui/popover";
+import { StyledCheckbox } from "../../../common/grid/StyledCheckbox";
 import {
   FiClock,
   FiCalendar,
@@ -19,6 +19,7 @@ import {
   FiChevronRight,
   FiChevronsLeft,
   FiChevronsRight,
+  FiChevronDown,
 } from "react-icons/fi";
 import { MdOutlineClose } from "react-icons/md";
 import openCampaignViewInNewTab from "../../../utility/campaignNavigation";
@@ -105,7 +106,20 @@ const CampaignHistoryModal = ({
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedType, setSelectedType] = useState("All");
   const [selectedSource, setSelectedSource] = useState("All");
-  const [historyScope, setHistoryScope] = useState(() => initialHistoryScope || (gridName ? "recommendation" : "all"));
+  const INDIVIDUAL_SCOPES = useMemo(() => ["recommendation", "dayparting", "other"], []);
+
+  const [selectedScopes, setSelectedScopes] = useState(() => {
+    if (initialHistoryScope === "all") {
+      return ["all", "recommendation", "dayparting", "other"];
+    }
+    if (Array.isArray(initialHistoryScope)) {
+      return initialHistoryScope;
+    }
+    if (initialHistoryScope) {
+      return [initialHistoryScope];
+    }
+    return ["all", "recommendation", "dayparting", "other"];
+  });
 
   const effectiveTargeting = useMemo(
     () => propTargeting || (gridName === "Search Term" ? recommendationData?.searchTerm : null),
@@ -119,14 +133,45 @@ const CampaignHistoryModal = ({
   const filterTargetOnly = Boolean(effectiveTargeting);
 
   const scopeOptions = useMemo(() => [
+    { value: "all", label: t("All History") },
     { value: "recommendation", label: t("Recommendation History") },
     { value: "dayparting", label: t("Dayparting History") },
     { value: "other", label: t("Other History") },
-    { value: "all", label: t("All History") },
   ], [t]);
 
+  const toggleScope = (scopeVal) => {
+    setPage(1);
+    setSelectedSource("All");
+    setSelectedScopes((prev) => {
+      if (scopeVal === "all") {
+        if (prev.includes("all")) {
+          return [];
+        } else {
+          return ["all", ...INDIVIDUAL_SCOPES];
+        }
+      }
+
+      const isSelected = prev.includes(scopeVal);
+      let next;
+      if (isSelected) {
+        next = prev.filter((s) => s !== scopeVal && s !== "all");
+      } else {
+        const withoutAll = prev.filter((s) => s !== "all");
+        next = [...withoutAll, scopeVal];
+        if (INDIVIDUAL_SCOPES.every((s) => next.includes(s))) {
+          next.push("all");
+        }
+      }
+      return next;
+    });
+  };
+
   const availableSourceOptions = useMemo(() => {
-    if (historyScope === "other") {
+    const isAll = selectedScopes.includes("all") || INDIVIDUAL_SCOPES.every((s) => selectedScopes.includes(s)) || selectedScopes.length === 0;
+    if (isAll || selectedScopes.length > 1) {
+      return SOURCE_OPTIONS.map((opt) => ({ ...opt, label: t(opt.label) }));
+    }
+    if (selectedScopes.includes("other")) {
       return [
         { value: "All", label: t("All Sources") },
         { value: "Rule", label: t("Rule") },
@@ -134,35 +179,17 @@ const CampaignHistoryModal = ({
         { value: "Amazon API", label: t("Amazon API") },
       ];
     }
-    if (historyScope === "dayparting") {
+    if (selectedScopes.includes("dayparting")) {
       return [{ value: "All", label: t("Dayparting") }];
     }
-    if (historyScope === "recommendation") {
+    if (selectedScopes.includes("recommendation")) {
       return [{ value: "All", label: t("Recommendation") }];
     }
     return SOURCE_OPTIONS.map((opt) => ({ ...opt, label: t(opt.label) }));
-  }, [historyScope, t]);
+  }, [selectedScopes, INDIVIDUAL_SCOPES, t]);
 
-  // Default Date Range: spans to encompass latestCreatedAt or last 30 days
-  const [dateRange, setDateRange] = useState(() => {
-    const to = moment().toDate();
-    if (latestCreatedAt) {
-      const changeMoment = moment(latestCreatedAt);
-      const from = moment.min(moment().subtract(30, "days"), changeMoment.clone().subtract(2, "days")).toDate();
-      return [from, to];
-    }
-    return [moment().subtract(30, "days").toDate(), to];
-  });
-
-
-  const fromDate = useMemo(
-    () => (dateRange?.[0] ? moment(dateRange[0]).format("YYYY-MM-DD") : moment().subtract(30, "days").format("YYYY-MM-DD")),
-    [dateRange]
-  );
-  const toDate = useMemo(
-    () => (dateRange?.[1] ? moment(dateRange[1]).format("YYYY-MM-DD") : moment().format("YYYY-MM-DD")),
-    [dateRange]
-  );
+  const isOnlyRecommendation = selectedScopes.length === 1 && selectedScopes.includes("recommendation");
+  const isOnlyDayparting = selectedScopes.length === 1 && selectedScopes.includes("dayparting");
 
   const tableContainerRef = useRef(null);
 
@@ -220,12 +247,16 @@ const CampaignHistoryModal = ({
         apiType = "Campaign";
       }
 
+      const isAllScope =
+        selectedScopes.includes("all") ||
+        INDIVIDUAL_SCOPES.every((s) => selectedScopes.includes(s)) ||
+        selectedScopes.length === 0;
+      const apiHistoryScope = isAllScope ? "all" : selectedScopes.filter((s) => s !== "all");
+
       const payload = {
         profileId,
         campaignId,
         adType: adType || "SP",
-        fromDate,
-        toDate,
         pageNo: page,
         perPage: perPage,
         searchName: apiSearchName,
@@ -234,7 +265,7 @@ const CampaignHistoryModal = ({
         matchType: apiMatchType,
         placement: apiPlacement,
         changeType: apiChangeType,
-        historyScope: historyScope,
+        historyScope: apiHistoryScope,
         source: selectedSource !== "All" ? selectedSource : undefined,
       };
 
@@ -260,14 +291,13 @@ const CampaignHistoryModal = ({
     profileId,
     campaignId,
     adType,
-    fromDate,
-    toDate,
     page,
     perPage,
     debouncedSearch,
     selectedType,
     selectedSource,
-    historyScope,
+    selectedScopes,
+    INDIVIDUAL_SCOPES,
     filterTargetOnly,
     gridName,
     effectiveTargeting,
@@ -278,21 +308,19 @@ const CampaignHistoryModal = ({
   // 1. Reset state ONLY when the modal opens or closes, or when campaignId/gridName changes
   useEffect(() => {
     if (show) {
-      setHistoryScope(initialHistoryScope || (gridName ? "recommendation" : "all"));
+      const initScopes = initialHistoryScope === "all"
+        ? ["all", "recommendation", "dayparting", "other"]
+        : Array.isArray(initialHistoryScope)
+        ? initialHistoryScope
+        : initialHistoryScope
+        ? [initialHistoryScope]
+        : ["all", "recommendation", "dayparting", "other"];
+      setSelectedScopes(initScopes);
       setPage(1);
       setSearchQuery("");
       setDebouncedSearch("");
       setSelectedType("All");
       setSelectedSource("All");
-
-      const to = moment().toDate();
-      if (latestCreatedAt) {
-        const changeMoment = moment(latestCreatedAt);
-        const from = moment.min(moment().subtract(30, "days"), changeMoment.clone().subtract(2, "days")).toDate();
-        setDateRange([from, to]);
-      } else {
-        setDateRange([moment().subtract(30, "days").toDate(), to]);
-      }
     } else {
       setHistoryList([]);
       setTotalRecords(0);
@@ -303,7 +331,7 @@ const CampaignHistoryModal = ({
       setSelectedType("All");
       setSelectedSource("All");
     }
-  }, [show, campaignId, gridName, effectiveTargeting, initialHistoryScope, latestCreatedAt]);
+  }, [show, campaignId, gridName, effectiveTargeting, initialHistoryScope]);
 
   // 2. Fetch history whenever query parameters change while modal is open
   useEffect(() => {
@@ -454,7 +482,8 @@ const CampaignHistoryModal = ({
     <Dialog open={show} onOpenChange={setShow}>
       <DialogContent
         hideCloseButton={true}
-        className="max-w-[1300px] w-[96vw] p-0 gap-0 overflow-hidden border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-2xl bg-white dark:bg-[#0b1329] text-slate-800 dark:text-slate-100 z-[1050] flex flex-col max-h-[90vh]"
+        style={{ zIndex: 100050 }}
+        className="max-w-[1300px] w-[96vw] p-0 gap-0 overflow-hidden border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-2xl bg-white dark:bg-[#0b1329] text-slate-800 dark:text-slate-100 z-[100050] flex flex-col max-h-[90vh]"
         onInteractOutside={(e) => e.preventDefault()}
       >
         {/* Modal Header */}
@@ -470,12 +499,6 @@ const CampaignHistoryModal = ({
                   <DialogTitle className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white truncate">
                     {t("Change History")}
                   </DialogTitle>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
-                    <FiCalendar size={11} />
-                    {fromDate === toDate
-                      ? moment(fromDate).format("DD MMM YYYY")
-                      : `${moment(fromDate).format("DD MMM")} - ${moment(toDate).format("DD MMM YYYY")}`}
-                  </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-500 dark:text-slate-400">
                   {campaignName && (
@@ -563,52 +586,72 @@ const CampaignHistoryModal = ({
             )}
           </div>
 
-          {/* Right: Date Picker, History Scope, Type & Source Dropdowns */}
+          {/* Right: History Scope Multi-Select, Type & Source Dropdowns */}
           <div className="flex items-center gap-2.5 flex-wrap">
-            {/* Date Range Filter */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{t("Date")}:</span>
-              <DateRangePicker
-                className="w-[230px] sm:w-[250px]"
-                ranges={predefinedRanges}
-                value={dateRange}
-                placeholder={t("Select Date")}
-                onChange={(val) => {
-                  if (val && val[0] && val[1]) {
-                    setDateRange(val);
-                    setPage(1);
-                  }
-                }}
-                placement="bottomEnd"
-                format="yyyy-MM-dd"
-                cleanable={false}
-              />
-            </div>
-
-            {/* History Scope Dropdown */}
+            {/* History Scope Multi-Select Dropdown */}
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{t("History")}:</span>
-              <Select
-                value={historyScope}
-                onValueChange={(val) => {
-                  setHistoryScope(val);
-                  setSelectedSource("All");
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-[180px] h-9 text-xs font-semibold rounded-lg bg-sky-50 dark:bg-sky-950/40 border border-sky-300 dark:border-sky-700/60 text-sky-700 dark:text-sky-300 cursor-pointer">
-                  <SelectValue>
-                    {scopeOptions.find((opt) => opt.value === historyScope)?.label || t("Recommendation History")}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent className="z-[100000]">
-                  {scopeOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value} className="text-xs font-medium cursor-pointer">
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="h-9 px-3 text-xs font-semibold rounded-lg bg-sky-50 dark:bg-sky-950/40 border border-sky-300 dark:border-sky-700/60 text-sky-700 dark:text-sky-300 cursor-pointer flex items-center justify-between gap-2 min-w-[170px] max-w-[240px] hover:bg-sky-100/60 dark:hover:bg-sky-900/40 transition-colors shadow-sm"
+                  >
+                    <span className="truncate">
+                      {selectedScopes.includes("all") || INDIVIDUAL_SCOPES.every((s) => selectedScopes.includes(s))
+                        ? t("All History")
+                        : selectedScopes.length === 0
+                        ? t("Select History")
+                        : selectedScopes.length === 1
+                        ? scopeOptions.find((o) => o.value === selectedScopes[0])?.label || t("History")
+                        : t("{{count}} Selected", { count: selectedScopes.filter((s) => s !== "all").length })}
+                    </span>
+                    <FiChevronDown size={14} className="shrink-0 opacity-70" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-xl z-[100060]">
+                  <div className="space-y-0.5">
+                    {/* All History option */}
+                    <div
+                      onClick={() => toggleScope("all")}
+                      className={`flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                        selectedScopes.includes("all") || INDIVIDUAL_SCOPES.every((s) => selectedScopes.includes(s))
+                          ? "bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300"
+                          : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                      }`}
+                    >
+                      <span>{t("All History")}</span>
+                      <StyledCheckbox
+                        checked={selectedScopes.includes("all") || INDIVIDUAL_SCOPES.every((s) => selectedScopes.includes(s))}
+                        onChange={() => toggleScope("all")}
+                      />
+                    </div>
+                    <div className="h-px bg-slate-200 dark:bg-slate-800 my-1" />
+                    {/* Individual scopes */}
+                    {INDIVIDUAL_SCOPES.map((scopeVal) => {
+                      const opt = scopeOptions.find((o) => o.value === scopeVal);
+                      const isChecked = selectedScopes.includes(scopeVal);
+                      return (
+                        <div
+                          key={scopeVal}
+                          onClick={() => toggleScope(scopeVal)}
+                          className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
+                            isChecked
+                              ? "bg-sky-50/50 dark:bg-sky-950/20 text-sky-700 dark:text-sky-300"
+                              : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                          }`}
+                        >
+                          <span>{opt?.label}</span>
+                          <StyledCheckbox
+                            checked={isChecked}
+                            onChange={() => toggleScope(scopeVal)}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
 
             {/* Type Filter */}
@@ -620,14 +663,14 @@ const CampaignHistoryModal = ({
                   setSelectedType(val);
                   setPage(1);
                 }}
-                disabled={historyScope === "recommendation" && Boolean(gridName)}
+                disabled={isOnlyRecommendation && Boolean(gridName)}
               >
                 <SelectTrigger className="w-[140px] h-9 text-xs font-medium rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer">
                   <SelectValue>
                     {t(TYPE_OPTIONS.find((opt) => opt.value === selectedType)?.label || selectedType)}
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent className="z-[100000]">
+                <SelectContent className="z-[100060]">
                   {TYPE_OPTIONS.map((opt) => (
                     <SelectItem key={opt.value} value={opt.value} className="text-xs font-medium cursor-pointer">
                       {t(opt.label)}
@@ -646,14 +689,14 @@ const CampaignHistoryModal = ({
                   setSelectedSource(val);
                   setPage(1);
                 }}
-                disabled={historyScope === "dayparting" || historyScope === "recommendation"}
+                disabled={isOnlyDayparting || isOnlyRecommendation}
               >
                 <SelectTrigger className="w-[150px] h-9 text-xs font-medium rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer">
                   <SelectValue>
                     {availableSourceOptions.find((opt) => opt.value === selectedSource)?.label || selectedSource}
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent className="z-[100000]">
+                <SelectContent className="z-[100060]">
                   {availableSourceOptions.map((opt) => (
                     <SelectItem key={opt.value} value={opt.value} className="text-xs font-medium cursor-pointer">
                       {opt.label}
@@ -708,9 +751,18 @@ const CampaignHistoryModal = ({
                   {historyList.map((item, idx) => {
                     const rowCampaignName = item?.campaignDetails?.name || item?.campaignName || campaignName || "";
                     const rowCampaignId = item?.campaignDetails?.campaignId || item?.campaignId || item?.changeLevel || campaignId;
-                    const adGroupName = item?.adGroupDetails?.name || item?.adGroupName || "";
+                    const rawAdGroupName = item?.adGroupDetails?.name || item?.adGroupName || recommendationData?.adGroupName || "";
+                    const rawAdGroupId = item?.adGroupId || item?.adGroupDetails?.adGroupId || recommendationData?.adGroupId;
                     const isAdGroup = isAdGroupLevelChange(item);
-                    const primaryAdGroup = adGroupName || rowCampaignName || (item?.adGroupId ? `AdGroup #${item.adGroupId}` : "");
+
+                    // Ensure primaryAdGroup only shows the actual ad group name, never falling back to the campaign name
+                    let primaryAdGroup = "";
+                    if (rawAdGroupName && rawAdGroupName.toLowerCase() !== rowCampaignName.toLowerCase()) {
+                      primaryAdGroup = rawAdGroupName;
+                    } else if (rawAdGroupId && String(rawAdGroupId) !== String(rowCampaignId)) {
+                      primaryAdGroup = `Ad Group #${rawAdGroupId}`;
+                    }
+
                     const formattedChangeType = formatAmazonChangeType(item);
 
                     const formattedDate = moment(item.createdAt).format("DD/MM/YYYY hh:mm:ss A");
@@ -727,21 +779,27 @@ const CampaignHistoryModal = ({
                         <td className="py-3 px-4 min-w-[260px] max-w-[340px]">
                           {isAdGroup && (primaryAdGroup || rowCampaignName) ? (
                             <div className="flex flex-col gap-0.5 min-w-0">
-                              <div className="flex items-center min-w-0 text-[12px] font-semibold">
-                                <span className="text-slate-400 dark:text-slate-500 mr-1 flex-shrink-0 font-medium">
-                                  {t("Ad Group")}:
-                                </span>
-                                <span
-                                  className="truncate cursor-pointer text-sky-600 dark:text-[#38bdf8] hover:underline font-semibold"
-                                  title={primaryAdGroup}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openCampaignViewInNewTab(item, rowCampaignName, { campaignId: rowCampaignId });
-                                  }}
-                                >
-                                  {primaryAdGroup}
-                                </span>
-                              </div>
+                              {primaryAdGroup ? (
+                                <div className="flex items-center min-w-0 text-[12px] font-semibold">
+                                  <span className="text-slate-400 dark:text-slate-500 mr-1 flex-shrink-0 font-medium">
+                                    {t("Ad Group")}:
+                                  </span>
+                                  <span
+                                    className="truncate cursor-pointer text-sky-600 dark:text-[#38bdf8] hover:underline font-semibold"
+                                    title={primaryAdGroup}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openCampaignViewInNewTab(item, rowCampaignName, {
+                                        campaignId: rowCampaignId,
+                                        adGroupId: rawAdGroupId,
+                                        adGroupName: primaryAdGroup
+                                      });
+                                    }}
+                                  >
+                                    {primaryAdGroup}
+                                  </span>
+                                </div>
+                              ) : null}
                               {rowCampaignName && (
                                 <div className="flex items-center min-w-0 text-[11px]">
                                   <span className="text-slate-400 dark:text-slate-500 mr-1 flex-shrink-0">
@@ -866,7 +924,7 @@ const CampaignHistoryModal = ({
                 <SelectTrigger className="w-[75px] h-7 px-2 text-xs rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer">
                   <SelectValue>{perPage}</SelectValue>
                 </SelectTrigger>
-                <SelectContent className="z-[100000]">
+                <SelectContent className="z-[100060]">
                   <SelectItem value="10" className="text-xs font-medium cursor-pointer">10</SelectItem>
                   <SelectItem value="25" className="text-xs font-medium cursor-pointer">25</SelectItem>
                   <SelectItem value="50" className="text-xs font-medium cursor-pointer">50</SelectItem>

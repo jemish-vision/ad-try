@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useCallback, useContext } from "react";
+import React, { useEffect, useState, useCallback, useContext, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../../components/ui/dialog";
 import { ApiGetTargetingHistory } from "../../../../api-wrapper/targeting/ApiTargeting";
 import CurrencyCode from "../../../../helper/currencyCode/CurrencyCode";
-import { FiClock, FiCalendar, FiDollarSign, FiPercent, FiRefreshCw, FiArrowRight, FiTag } from "react-icons/fi";
+import { FiClock, FiRefreshCw } from "react-icons/fi";
+import { MdOutlineClose } from "react-icons/md";
 import moment from "moment-timezone";
 import { ProfileContext } from "../../../../helper/usecontext/useContext";
 
@@ -23,6 +24,7 @@ const TargetingHistoryModal = ({
   const { currencyCode } = useContext(ProfileContext) || {};
   const [loading, setLoading] = useState(false);
   const [historyList, setHistoryList] = useState([]);
+  const tableContainerRef = useRef(null);
 
   const fetchHistory = useCallback(async () => {
     if (!targetId && !campaignId) return;
@@ -58,6 +60,26 @@ const TargetingHistoryModal = ({
     }
   }, [show, fetchHistory]);
 
+  // Support Shift + Mouse Scroll for horizontal scrolling
+  useEffect(() => {
+    const el = tableContainerRef.current;
+    if (!el) return;
+
+    const handleWheel = (e) => {
+      if (e.shiftKey && e.deltaY !== 0) {
+        el.scrollLeft += e.deltaY;
+        e.preventDefault();
+      } else if (Math.abs(e.deltaX) > 0) {
+        el.scrollLeft += e.deltaX;
+      }
+    };
+
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => {
+      el.removeEventListener("wheel", handleWheel);
+    };
+  }, [loading, historyList.length, show]);
+
   const formatDateTime = (dateStr) => {
     if (!dateStr) return "—";
     const m = moment(dateStr);
@@ -71,16 +93,19 @@ const TargetingHistoryModal = ({
 
   return (
     <Dialog open={show} onOpenChange={setShow}>
-      <DialogContent className="sm:max-w-[750px] p-0 gap-0 overflow-hidden border-0 rounded-2xl shadow-2xl bg-white dark:bg-[#0f172a] text-slate-800 dark:text-slate-100 z-[1050]">
+      <DialogContent
+        hideCloseButton={true}
+        className="max-w-[1050px] w-[95vw] p-0 gap-0 overflow-hidden border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-2xl bg-white dark:bg-[#0f172a] text-slate-800 dark:text-slate-100 z-[1050] flex flex-col max-h-[90vh]"
+      >
         {/* Header */}
-        <DialogHeader className="px-6 py-4 border-b border-slate-200 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/50">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center flex-shrink-0">
+        <DialogHeader className="px-6 py-4 border-b border-slate-200 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-900/60 flex-shrink-0">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center flex-shrink-0 shadow-sm border border-blue-500/20">
                 <FiClock size={20} />
               </div>
               <div className="min-w-0">
-                <DialogTitle className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">
+                <DialogTitle className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white">
                   {t("Targeting Bid History")}
                 </DialogTitle>
                 <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -95,26 +120,39 @@ const TargetingHistoryModal = ({
                     </span>
                   )}
                   {campaignName && (
-                    <span className="truncate max-w-[240px] text-slate-500 dark:text-slate-400" title={campaignName}>
+                    <span className="truncate max-w-[280px] text-slate-500 dark:text-slate-400" title={campaignName}>
                       • {campaignName}
                     </span>
                   )}
                 </div>
               </div>
             </div>
-            <button
-              onClick={fetchHistory}
-              disabled={loading}
-              className="p-2 mr-6 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors flex-shrink-0"
-              title={t("Refresh History")}
-            >
-              <FiRefreshCw size={16} className={loading ? "animate-spin text-blue-500" : ""} />
-            </button>
+
+            {/* Perfectly aligned Refresh and Close button pair */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                type="button"
+                onClick={fetchHistory}
+                disabled={loading}
+                className="w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center text-slate-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all cursor-pointer opacity-80 hover:opacity-100 shadow-sm"
+                title={t("Refresh History")}
+              >
+                <FiRefreshCw size={14} className={loading ? "animate-spin text-blue-500" : ""} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setShow(false)}
+                className="w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center text-slate-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all cursor-pointer opacity-80 hover:opacity-100 shadow-sm"
+                title={t("Close")}
+              >
+                <MdOutlineClose size={18} />
+              </button>
+            </div>
           </div>
         </DialogHeader>
 
         {/* Content Body */}
-        <div className="p-6 max-h-[60vh] overflow-y-auto">
+        <div className="p-6 overflow-hidden flex-1 flex flex-col min-h-0">
           {loading ? (
             <div className="py-16 flex flex-col items-center justify-center gap-3">
               <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -135,35 +173,29 @@ const TargetingHistoryModal = ({
               </p>
             </div>
           ) : (
-            <div className="overflow-hidden border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 font-semibold uppercase tracking-wider">
-                    <th className="py-3 px-4">
-                      <div className="flex items-center gap-1.5">
-                        <FiCalendar size={13} className="text-slate-400" />
-                        <span>{t("Last Updated Time")}</span>
-                      </div>
+            <div
+              ref={tableContainerRef}
+              className="overflow-x-auto overflow-y-auto max-h-[60vh] w-full max-w-full border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm bg-white dark:bg-[#0f172a]"
+              style={{ WebkitOverflowScrolling: "touch" }}
+            >
+              <table className="w-full text-left border-collapse text-xs min-w-[950px]">
+                <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-sm">
+                  <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 font-semibold uppercase tracking-wider text-[11px]">
+                    <th className="py-3 px-4 whitespace-nowrap min-w-[190px] bg-slate-50 dark:bg-slate-900">
+                      {t("Last Updated Time")}
                     </th>
-                    <th className="py-3 px-4 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <FiDollarSign size={13} className="text-slate-400" />
-                        <span>{t("Old Bid")}</span>
-                      </div>
+                    <th className="py-3 px-4 text-center whitespace-nowrap min-w-[120px] bg-slate-50 dark:bg-slate-900">
+                      {t("Old Bid")}
                     </th>
-                    <th className="py-3 px-4 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <FiDollarSign size={13} className="text-slate-400" />
-                        <span>{t("New Bid")}</span>
-                      </div>
+                    <th className="py-3 px-4 text-center whitespace-nowrap min-w-[130px] bg-slate-50 dark:bg-slate-900">
+                      {t("New Bid")}
                     </th>
-                    <th className="py-3 px-4 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <FiPercent size={13} className="text-slate-400" />
-                        <span>{t("Old Bid ACOS")}</span>
-                      </div>
+                    <th className="py-3 px-4 text-center whitespace-nowrap min-w-[130px] bg-slate-50 dark:bg-slate-900">
+                      {t("Old Bid ACOS")}
                     </th>
-                    <th className="py-3 px-4 text-right">{t("Source")}</th>
+                    <th className="py-3 px-4 text-left whitespace-nowrap min-w-[340px] bg-slate-50 dark:bg-slate-900">
+                      {t("Source / Change Details")}
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
@@ -246,15 +278,20 @@ const TargetingHistoryModal = ({
                           )}
                         </td>
 
-                        {/* Source */}
-                        <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                        {/* Source / Change Details */}
+                        <td className="py-3.5 px-4 text-left whitespace-nowrap">
                           <span
-                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium border ${item.source?.includes("Stream")
-                                ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border-indigo-200/60 dark:border-indigo-800/60"
-                                : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700"
-                              }`}
+                            className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-medium border ${
+                              item.changeSource === "Dayparting"
+                                ? "bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border-purple-200/60 dark:border-purple-800/60"
+                                : item.changeSource === "Rule"
+                                ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200/60 dark:border-amber-800/60"
+                                : item.changeSource === "Manual"
+                                ? "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200/60 dark:border-blue-800/60"
+                                : "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border-indigo-200/60 dark:border-indigo-800/60"
+                            }`}
+                            title={item.source || "Amazon Marketing Stream"}
                           >
-                            <FiTag size={10} />
                             <span>{item.source || "Amazon Marketing Stream"}</span>
                           </span>
                         </td>

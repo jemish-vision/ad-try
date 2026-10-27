@@ -9,6 +9,7 @@ const { createRulesProcessor } = require("../processors/rules.processor");
 const { WorkerHeartbeat } = require("../observability/workerHeartbeat");
 const { registerGracefulShutdown } = require("../shutdown");
 const { closeMongoConnection } = require("../../shared/connection");
+const { cron_logs } = require("../../winston/cronAutomation/logger");
 
 let worker = null;
 let heartbeat = null;
@@ -38,27 +39,45 @@ async function startRulesWorker() {
   });
 
   worker.on("active", (job) => {
-    console.log(`[RulesWorker] Started job ${job.id} (${job.data?.task})`);
+    cron_logs({
+      message: `[RulesWorker] Started job ${job.id} (${job.data?.task})`,
+      log_type: "info",
+    });
   });
 
   worker.on("completed", (job) => {
-    console.log(`[RulesWorker] Completed job ${job.id} (${job.data?.task})`);
+    cron_logs({
+      message: `[RulesWorker] Completed job ${job.id} (${job.data?.task})`,
+      log_type: "info",
+    });
   });
 
   worker.on("failed", (job, err) => {
-    console.error(`[RulesWorker] Failed job ${job?.id} (${job?.data?.task}): ${err.message}`);
+    cron_logs({
+      message: `[RulesWorker] Failed job ${job?.id} (${job?.data?.task}): ${err.message || err}`,
+      log_type: "error",
+    });
   });
 
   worker.on("error", (err) => {
-    console.error(`[RulesWorker] Worker error: ${err.message}`);
+    cron_logs({
+      message: `[RulesWorker] Worker error: ${err.message || err}`,
+      log_type: "error",
+    });
   });
 
-  console.log(`[RulesWorker] Running with concurrency ${concurrency} on PID ${process.pid}`);
+  cron_logs({
+    message: `[RulesWorker] Running with concurrency ${concurrency} on PID ${process.pid}`,
+    log_type: "info",
+  });
 
   registerGracefulShutdown({
     serviceName: "rules-worker",
     onShutdown: async () => {
-      console.log("[RulesWorker] Closing worker...");
+      cron_logs({
+        message: "[RulesWorker] Closing worker...",
+        log_type: "info",
+      });
       if (heartbeat) await heartbeat.stop();
       if (worker) await worker.close();
       if (leaseRedis) await leaseRedis.quit().catch(() => {});
@@ -72,7 +91,10 @@ async function startRulesWorker() {
 
 if (require.main === module) {
   startRulesWorker().catch((err) => {
-    console.error("[RulesWorker] Fatal startup error:", err);
+    cron_logs({
+      message: `[RulesWorker] Fatal startup error: ${err?.stack || err?.message || err}`,
+      log_type: "error",
+    });
     process.exit(1);
   });
 }

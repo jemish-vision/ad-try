@@ -25,6 +25,7 @@ const getData = async () => {
       let statusConditions = "";
       let typeConditions = "";
       let targetingTypeConditions = "";
+      let outOfBudgetConditions = "";
       await Promise.all(
         rule.conditions.map(async (condition) => {
           let conditionValue = condition.conditionValue;
@@ -253,6 +254,19 @@ const getData = async () => {
           ) {
             targetingTypeConditions = campaign.targetingType == condition?.conditionStringValue;
           }
+          if (
+            ["OutOfBudget", "Out of Budget"].includes(condition.conditionType) &&
+            outOfBudgetConditions !== false
+          ) {
+            const isOOB =
+              campaign.status === "OUT_OF_BUDGET" ||
+              campaign.latestStatus === "OUT_OF_BUDGET" ||
+              campaign.isOutOfBudget === true ||
+              (Number(campaign.budget) > 0 && Number(campaign.todaySpend || campaign.spend) >= Number(campaign.budget)) ||
+              (Number(campaign.timeInBudget) > 0 && Number(campaign.timeInBudget) < 100);
+
+            outOfBudgetConditions = isOOB;
+          }
         })
       );
       // write_logs({
@@ -272,7 +286,8 @@ const getData = async () => {
         timeInBudgetConditions,
         statusConditions,
         typeConditions,
-        targetingTypeConditions
+        targetingTypeConditions,
+        outOfBudgetConditions
       ];
       const conditions = conditionsArray.filter((value) => value !== "");
       let result = false;

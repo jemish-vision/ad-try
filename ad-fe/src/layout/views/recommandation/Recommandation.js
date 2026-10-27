@@ -8,7 +8,7 @@ import {
   ApiGetRecommendationData,
   ApiDeleteRecommendation,
 } from "../../../api-wrapper/recommendation/ApiRecommendation";
-import { Toast, useDispatch } from "../../../helper/links/Link";
+import { Toast, useDispatch, handleLoader } from "../../../helper/links/Link";
 import RecommendationModal from "./RecommendationModal";
 import { CustomModal } from "../../../helper/modal/CustomModal";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../components/ui/dialog";
@@ -114,6 +114,10 @@ function RecommendationItem({ id, recommendation, onClick, onEdit, onDelete, isD
   const [hovered, setHovered] = useState(false);
   const actions = getActionDetails(recommendation.actions, recommendation.gridName);
 
+  const hasOob = Array.isArray(recommendation?.conditions) && recommendation.conditions.some(c =>
+    String(c?.conditionType || "").toLowerCase().replace(/[\s_]+/g, "") === "outofbudget"
+  );
+
   return (
     <div
       id={id}
@@ -157,7 +161,7 @@ function RecommendationItem({ id, recommendation, onClick, onEdit, onDelete, isD
           alignItems: "center",
           gap: 10,
           flexWrap: "wrap",
-          marginBottom: actions.length > 0 ? 8 : 0,
+          marginBottom: actions.length > 0 || hasOob ? 8 : 0,
         }}>
           <span style={{
             fontSize: 16,
@@ -168,6 +172,35 @@ function RecommendationItem({ id, recommendation, onClick, onEdit, onDelete, isD
             {recommendation.ruleName}
           </span>
         </div>
+        {actions.length === 0 && (hasOob || !recommendation.actions?.length) && (
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+          }}>
+            {hasOob && (
+              <span style={{
+                background: isDark ? "rgba(245, 158, 11, 0.15)" : "#fef3c7",
+                color: isDark ? "#fbbf24" : "#d97706",
+                padding: "2px 8px",
+                borderRadius: "12px",
+                fontSize: 11,
+                fontWeight: 600,
+                border: isDark ? "1px solid rgba(245, 158, 11, 0.3)" : "1px solid #fde68a",
+              }}>
+                {t("Out of Budget")}
+              </span>
+            )}
+            <span style={{
+              fontSize: 11.5,
+              color: isDark ? "#94a3b8" : "#64748b",
+              fontStyle: "italic",
+            }}>
+              {t("Note: It was show only for out of budget")}
+            </span>
+          </div>
+        )}
         {actions.length > 0 && (
           <div style={{
             display: "flex",
@@ -418,6 +451,7 @@ function Recommendation() {
   const fetchRecommendations = useCallback(async () => {
     if (!selectedCampaign?.profileSendID) return;
     setLoading(true);
+    dispatch(handleLoader(true));
     try {
       const res = await ApiGetRecommendation({
         profileId: selectedCampaign.profileSendID,
@@ -432,8 +466,17 @@ function Recommendation() {
       Toast.error(t("Failed to load recommendations"));
     } finally {
       setLoading(false);
+      dispatch(handleLoader(false));
     }
-  }, [selectedCampaign?.profileSendID, selectedCampaign?.selectedAdType, t]);
+  }, [selectedCampaign?.profileSendID, selectedCampaign?.selectedAdType, dispatch, t]);
+
+  useEffect(() => {
+    setRecommendations([]);
+    setShowModal(false);
+    setModalData(null);
+    setDeleteTarget(null);
+    setaddModalFlag(false);
+  }, [selectedCampaign?.profileSendID, selectedCampaign?.selectedAdType]);
 
   useEffect(() => {
     if (activeTab === 0) {
@@ -601,9 +644,9 @@ function Recommendation() {
               </div>
 
               {/* Loading State */}
-              {isFirstLoad ? (
+              {loading ? (
                 <div>
-                  {[0, 1, 2, 3, 4].map(i => <SkeletonItem key={i} />)}
+                  {[0, 1, 2, 3, 4].map(i => <SkeletonItem key={i} isDark={isDark} />)}
                 </div>
               ) : sortedRecommendations.length === 0 ? (
                 <div style={{

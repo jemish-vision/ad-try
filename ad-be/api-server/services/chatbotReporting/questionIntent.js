@@ -59,6 +59,7 @@ function normalizeKnownWasteQuestion(args, message) {
   return {
     ...args,
     category: 'waste',
+    period: args.period || { preset: 'last_7_days' },
     groupBy: [relativeCampaigns ? 'campaign' : 'search_term'],
     metrics: ['spend', 'sales', 'orders', 'clicks', 'acos'],
     filters: relativeCampaigns ? [] : [
@@ -168,8 +169,13 @@ function normalizeQuestionReportArguments(args, message, reportContext) {
     result.analysis = { ...result.analysis, includeMovers: false };
   } else if (['summary', 'comparison'].includes(result.category) && isPerformanceSummaryQuestion(message)) {
     result.metrics = [...SUMMARY_METRICS];
-    if (!result.comparison || result.comparison.mode === 'none') result.comparison = { mode: 'previous_period' };
-    result.analysis = { ...result.analysis, includeMovers: true };
+    if (wantsComparison) {
+      if (!result.comparison || result.comparison.mode === 'none') result.comparison = { mode: 'previous_period' };
+      result.analysis = { ...result.analysis, includeMovers: true };
+    } else {
+      result.comparison = { mode: 'none' };
+      result.analysis = { ...result.analysis, includeMovers: false };
+    }
   }
 
   const waste = normalizeWeekdayWasteQuestion(normalizeKnownWasteQuestion(result, message), message);

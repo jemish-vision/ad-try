@@ -14,8 +14,6 @@ import {
   Check,
   X,
   TrendingUp,
-  Clock,
-  ChevronDown,
   ArrowDown,
   Loader2,
   Square
@@ -27,14 +25,12 @@ import {
   ApiGetChatSessions,
   ApiSaveChatSession,
   ApiDeleteChatSession,
-  ApiClearChatSessions,
   ApiRenameChatSession,
   ApiMigrateChatSessions
 } from "../../../api-wrapper/customer/ApiCustomer";
 import AssistantMessage from "./AssistantMessage";
 import Toast from "../../../common/helper/toast/Toast";
-import { PermissionCheck } from "../../../helper/permission/PermissionCheck";
-import { SYSTEM_PAGES, PAGE_ACTIONS } from "../../../common/constants/permissions";
+import { PAGE_ACTIONS } from "../../../common/constants/permissions";
 import { ROLES } from "../../../common/constants/roles";
 import { createReportContext, profileNameMap } from "../../../helper/chatbot/reporting/reportDisplay";
 import {

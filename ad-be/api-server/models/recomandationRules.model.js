@@ -5,21 +5,14 @@ const conditionSchema = new mongoose.Schema(
     conditionType: {
       type: String,
       trim: true,
-      enum: ["Impressions", "Clicks", "Orders", "Sales", "ACOS", "ROAS", "Spend", "CPC", "CTR", "CVR"],
     },
     conditionOperator: {
       type: String,
       trim: true,
-      enum: [
-        "LESS_THAN",
-        "LESS_THAN_OR_EQUAL_TO",
-        "GREATER_THAN_OR_EQUAL_TO",
-        "GREATER_THAN",
-        "EQUAL_TO",
-      ],
+      default: "",
     },
     conditionValue: {
-      type: Number,
+      type: mongoose.Schema.Types.Mixed,
       default: null,
     },
   },

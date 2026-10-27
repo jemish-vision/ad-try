@@ -406,8 +406,8 @@ const WarehouseDetails = () => {
   const [matrixFcStates, setMatrixFcStates] = useState({});
   const [matrixDays, setMatrixDays] = useState("30");
   const [matrixCustomRange, setMatrixCustomRange] = useState(() => [
-    moment().subtract(29, "days").toDate(),
-    new Date(),
+    moment().subtract(30, "days").toDate(),
+    moment().subtract(1, "days").toDate(),
   ]);
   const [matrixPeriodStart, setMatrixPeriodStart] = useState(null);
   const [exporting, setExporting] = useState(false);

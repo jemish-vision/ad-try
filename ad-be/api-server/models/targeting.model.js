@@ -247,5 +247,6 @@ targetingSchema.pre("findOneAndUpdate", function () {
 
 targetingSchema.index({ profileId: 1, reportDate: 1, campaignId: 1, adGroupId: 1, targeting: 1 });
 targetingSchema.index({ configId: 1, profileId: 1, status: 1, reportDate: 1, targeting: 1 });
+targetingSchema.index({ createdAt: 1 });
 
 module.exports = new mongoose.model("targeting", targetingSchema);

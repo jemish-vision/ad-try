@@ -129,15 +129,24 @@ const HealthScoreBadge = React.memo(({ healthScore }) => {
 export const getCampaignDeliveryStatus = (row) => {
   if (!row) return { key: "UNKNOWN", label: "-", tooltip: "" };
   const rawStatus = (row.status || "").toUpperCase();
-  const spend = Number(row.spend) || 0;
-  const budget = Number(row.budget) || 0;
+  const dailySpend = row.dailySpend !== undefined && row.dailySpend !== null ? Number(row.dailySpend) : null;
+  const budget = Number(row.latestBudget || row.budget) || 0;
   const timeInBudget = row.timeInBudget !== undefined && row.timeInBudget !== null ? Number(row.timeInBudget) : undefined;
+  const estSpend = Number(row.budgetTracking?.estimatedSpend) || 0;
+  const usagePct = Number(row.budgetTracking?.lastUsagePercentage) || 0;
 
-  // 1. Check Out of Budget (Amazon Ads logic)
+  // 1. Check Out of Budget (Amazon Ads logic based on latest report date status / today's budget tracking & daily spend)
   const isOutOfBudget =
     rawStatus === "OUT_OF_BUDGET" ||
-    (rawStatus === "ENABLED" && budget > 0 && spend >= budget) ||
-    (timeInBudget !== undefined && timeInBudget > 0 && timeInBudget < 100 && budget > 0 && spend >= budget * 0.95);
+    (rawStatus === "ENABLED" && budget > 0 && (
+      usagePct >= 100 ||
+      estSpend >= budget ||
+      (dailySpend !== null && dailySpend >= budget) ||
+      (timeInBudget !== undefined && timeInBudget > 0 && timeInBudget < 100 && (
+        (dailySpend !== null && dailySpend >= budget * 0.8) ||
+        (estSpend >= budget * 0.8)
+      ))
+    ));
 
   if (isOutOfBudget) {
     return {

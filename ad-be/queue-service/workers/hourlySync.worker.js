@@ -9,6 +9,7 @@ const { createHourlySyncProcessor } = require("../processors/hourlySync.processo
 const { WorkerHeartbeat } = require("../observability/workerHeartbeat");
 const { registerGracefulShutdown } = require("../shutdown");
 const { closeMongoConnection } = require("../../shared/connection");
+const { cron_logs } = require("../../winston/cronAutomation/logger");
 
 let worker = null;
 let heartbeat = null;
@@ -40,27 +41,45 @@ async function startHourlySyncWorker() {
   });
 
   worker.on("active", (job) => {
-    console.log(`[HourlySyncWorker] Started job ${job.id} (${job.data?.task})`);
+    cron_logs({
+      message: `[HourlySyncWorker] Started job ${job.id} (${job.data?.task})`,
+      log_type: "info",
+    });
   });
 
   worker.on("completed", (job) => {
-    console.log(`[HourlySyncWorker] Completed job ${job.id} (${job.data?.task})`);
+    cron_logs({
+      message: `[HourlySyncWorker] Completed job ${job.id} (${job.data?.task})`,
+      log_type: "info",
+    });
   });
 
   worker.on("failed", (job, err) => {
-    console.error(`[HourlySyncWorker] Failed job ${job?.id} (${job?.data?.task}): ${err.message}`);
+    cron_logs({
+      message: `[HourlySyncWorker] Failed job ${job?.id} (${job?.data?.task}): ${err.message || err}`,
+      log_type: "error",
+    });
   });
 
   worker.on("error", (err) => {
-    console.error(`[HourlySyncWorker] Worker error: ${err.message}`);
+    cron_logs({
+      message: `[HourlySyncWorker] Worker error: ${err.message || err}`,
+      log_type: "error",
+    });
   });
 
-  console.log(`[HourlySyncWorker] Running with concurrency ${concurrency} on PID ${process.pid}`);
+  cron_logs({
+    message: `[HourlySyncWorker] Running with concurrency ${concurrency} on PID ${process.pid}`,
+    log_type: "info",
+  });
 
   registerGracefulShutdown({
     serviceName: "sync-worker",
     onShutdown: async () => {
-      console.log("[HourlySyncWorker] Closing worker...");
+      cron_logs({
+        message: "[HourlySyncWorker] Closing worker...",
+        log_type: "info",
+      });
       if (heartbeat) await heartbeat.stop();
       if (worker) await worker.close();
       if (heartbeatRedis) await heartbeatRedis.quit().catch(() => {});
@@ -74,7 +93,10 @@ async function startHourlySyncWorker() {
 
 if (require.main === module) {
   startHourlySyncWorker().catch((err) => {
-    console.error("[HourlySyncWorker] Fatal startup error:", err);
+    cron_logs({
+      message: `[HourlySyncWorker] Fatal startup error: ${err?.stack || err?.message || err}`,
+      log_type: "error",
+    });
     process.exit(1);
   });
 }

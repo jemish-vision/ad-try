@@ -1,9 +1,8 @@
 import React, { useState, useCallback, useEffect, useContext, useRef, useMemo } from "react";
-import { SYSTEM_PAGES, PAGE_ACTIONS } from "src/common/constants";
+import { SYSTEM_PAGES, PAGE_ACTIONS, ROLES } from "src/common/constants";
 import subDays from "date-fns/subDays";
 import ReactApexChart from "react-apexcharts";
 import { useNavigate } from "react-router-dom";
-import ReactDOM from "react-dom";
 import { ProfileContext } from "../../../helper/usecontext/useContext";
 import useSpConnection from "../../../helper/hooks/useSpConnection";
 import { ApiGetProductTypes } from "../../../api-wrapper/productList/ApiProductList";
@@ -14,8 +13,8 @@ import moment from "moment";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { addDashboardQuery } from "../../../utility/createQuery";
 import Filter from "../../../helper/filter/Filter";
-import { FiSearch, FiFilter, FiArrowDownCircle, FiRefreshCw, FiCheckCircle, FiXCircle } from "react-icons/fi";
-import { TbCurrencyDollar, TbPercentage } from "react-icons/tb";
+import { FiSearch, FiFilter, FiArrowDownCircle, FiRefreshCw, FiCheckCircle, FiXCircle, FiLayers } from "react-icons/fi";
+import { TbPercentage } from "react-icons/tb";
 import { MdOutlineClose } from "react-icons/md";
 import AgTable from "../../../common/grid/AgTable";
 import CustomizeColumns from "../../../helper/modal/CustomizeColumns";
@@ -27,19 +26,23 @@ import AgCustomHeader from "../../../common/grid/AgCustomHeader";
 import { useTranslation } from "react-i18next";
 import "./AdminDashboard.css";
 import CurrencyCode from "../../../helper/currencyCode/CurrencyCode";
+import CurrencyFormat from "../../../helper/currencyCode/CurrencyFormat";
 import KPICard from "../../../helper/KPICard";
 import { ShadcnDateRangePicker as DateRangePicker } from "../../../components/ui/date-range-picker";
 import { predefinedRanges } from "../../../common/helper/calendarValues/calendarValues";
 import DashbordGraph from "./Dashboard/DashbordGraph";
-import TopChangesWidget from "./TopChangesWidget";
+import DashboardRecommendations from "./Dashboard/DashboardRecommendations";
+import AssignedCampaignsWidget from "./Dashboard/AssignedCampaignsWidget";
+import AdTypeBreakdownWidget from "./Dashboard/AdTypeBreakdownWidget";
+import TimeBasedAnalyticsWidget, { OrdersByDayWidget, PeakHoursWidget } from "./Dashboard/TimeBasedAnalyticsWidget";
+import WasteAndScalingAlertsWidget, { WasteSpendWidget } from "./Dashboard/WasteAndScalingAlertsWidget";
+import ProductPerformanceMatrixWidget from "./Dashboard/ProductPerformanceMatrixWidget";
+import SmartInsightsWidget from "./Dashboard/SmartInsightsWidget";
 import { PermissionCheck } from "../../../helper/permission/PermissionCheck";
-import { Card, CardHeader, CardTitle, CardContent } from "../../../components/ui/card";
+import { Card } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
-import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { AppTooltip } from "../../../components/ui/AppTooltip";
-import { ROLES } from "src/common/constants";
-import nav from "src/router/nav";
 
 const ACTION_LABELS = {
   SCALE: { label: "⚡ SCALE", className: "scale" },
@@ -123,9 +126,9 @@ const KPI_CARDS_MOCK = [
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-const AdminDashboard = () => {
+export default function AdminDashboard() {
   const { t } = useTranslation();
-  const { isConnected: isSpConnected, isLoaded: isSpLoaded } = useSpConnection();
+  const { isConnected: isSpConnected, isLoaded: isSpLoaded, profile: activeProfile } = useSpConnection();
 
   const navigate = useNavigate();
   const dispatch = useDispatch();
@@ -158,11 +161,46 @@ const AdminDashboard = () => {
 
   const { profileId, currencyCode, pagePermission, selectedDate, setSelectedDate, selectedAdType } = useContext(ProfileContext);
 
+  const getProfileIdString = (p) => {
+    if (!p) return null;
+    if (typeof p === "string") return p;
+    if (typeof p === "object") {
+      return p.value || p.profileId || p._id || p.id || null;
+    }
+    return String(p);
+  };
+
+  const getStoredProfile = () => {
+    try {
+      const p = JSON.parse(localStorage.getItem("profile"));
+      return p?.profile || p || null;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  const [activeProfileObj, setActiveProfileObj] = useState(() => getStoredProfile());
+
+  const currentProfileId = useMemo(() => {
+    return getProfileIdString(profileId) || activeProfileObj?.profileId || getStoredProfile()?.profileId || null;
+  }, [profileId, activeProfileObj]);
+
+  useEffect(() => {
+    const handleProfileChange = (e) => {
+      const prof = e?.detail?.profile;
+      if (prof) {
+        setActiveProfileObj(prof);
+      }
+    };
+    window.addEventListener("profileChanged", handleProfileChange);
+    return () => window.removeEventListener("profileChanged", handleProfileChange);
+  }, []);
+
   const [date, setDate] = useState(() => {
     if (selectedDate && Array.isArray(selectedDate) && selectedDate.length >= 2) {
       return [moment(selectedDate[0]).toDate(), moment(selectedDate[1]).toDate()];
     }
-    return [subDays(new Date(), 7), new Date()];
+    return [subDays(new Date(), 7), subDays(new Date(), 1)];
   });
 
   const [marketplace, setMarketplace] = useState("A21TJRUUN4KGV");
@@ -188,8 +226,54 @@ const AdminDashboard = () => {
       } catch (err) { }
     }
   };
+  const isVendor = useMemo(() => {
+    let storedProfile = null;
+    let storedUser = null;
+    try {
+      const rawProf = localStorage.getItem("profile");
+      if (rawProf) storedProfile = JSON.parse(rawProf)?.profile || null;
+      const rawUser = localStorage.getItem("user");
+      if (rawUser) storedUser = JSON.parse(rawUser);
+    } catch (e) {}
+
+    const prof = activeProfile || storedProfile;
+    const typeStr = String(
+      prof?.type ||
+      prof?.subType ||
+      prof?.accountType ||
+      prof?.accountInfo?.type ||
+      storedUser?.accountType ||
+      storedUser?.role ||
+      ""
+    ).toLowerCase();
+
+    return typeStr.includes("vendor");
+  }, [activeProfile]);
+
+  const [dashboardMode, setDashboardMode] = useState(() => (isVendor ? "ads" : "seller")); // "seller" | "ads"
+
+  useEffect(() => {
+    if (isVendor && dashboardMode !== "ads") {
+      setDashboardMode("ads");
+    }
+  }, [isVendor, dashboardMode]);
   const [productTypes, setProductTypes] = useState([]);
   const [marketplaceList, setMarketplaceList] = useState([]);
+  const activeCountryCode = useMemo(() => {
+    return activeProfileObj?.countryCode || marketplaceList.find(m => m.marketPlaceId === marketplace)?.countryCode || "IN";
+  }, [activeProfileObj, marketplaceList, marketplace]);
+  const activeCurrencyCode = useMemo(() => {
+    return activeProfileObj?.currencyCode || currencyCode || "INR";
+  }, [activeProfileObj, currencyCode]);
+
+  useEffect(() => {
+    if (activeProfileObj?.countryCode && marketplaceList.length > 0) {
+      const matched = marketplaceList.find(m => m.countryCode === activeProfileObj.countryCode);
+      if (matched && matched.marketPlaceId !== marketplace) {
+        setMarketplace(matched.marketPlaceId);
+      }
+    }
+  }, [activeProfileObj?.countryCode, marketplaceList, marketplace]);
   const [kpiData, setKpiData] = useState(null);
   const [isKpiLoading, setIsKpiLoading] = useState(false);
   const [isGraphLoading, setIsGraphLoading] = useState(false);
@@ -198,6 +282,10 @@ const AdminDashboard = () => {
   const [isMatrixLoading, setIsMatrixLoading] = useState(false);
 
   const [insightsData, setInsightsData] = useState([]);
+  const [insightsPage, setInsightsPage] = useState(1);
+  const [hasMoreInsights, setHasMoreInsights] = useState(true);
+  const [isInsightsLoadingMore, setIsInsightsLoadingMore] = useState(false);
+  const [isInsightsLoading, setIsInsightsLoading] = useState(false);
 
   // ── Grid state ─────────────────────────────────────────────────────────────
   const [gridData, setGridData] = useState([]);
@@ -489,7 +577,9 @@ const AdminDashboard = () => {
   // Fetch Product Types for Category Dropdown
   const loadProductTypes = async () => {
     try {
-      const res = await ApiGetProductTypes({ profileId: profileId?.value });
+      const pid = currentProfileId;
+      if (!pid) return;
+      const res = await ApiGetProductTypes({ profileId: pid });
       if (res?.isSuccess) {
         if (res.marketplace_id) setMarketplace(res.marketplace_id);
         setProductTypes(
@@ -509,10 +599,12 @@ const AdminDashboard = () => {
 
   // Fetch KPI Cards
   const loadKpiData = async () => {
+    const pid = currentProfileId;
+    if (!pid) return;
     try {
       setIsKpiLoading(true);
       const res = await ApiGetDashboardCards({
-        profileId: profileId?.value,
+        profileId: pid,
         fromDate: moment(date?.[0]).format("YYYY-MM-DD"),
         toDate: moment(date?.[1]).format("YYYY-MM-DD"),
         marketplaceId: marketplace || "",
@@ -532,10 +624,12 @@ const AdminDashboard = () => {
 
   // Fetch Chart Data
   const loadChartData = async () => {
+    const pid = currentProfileId;
+    if (!pid) return;
     try {
       setIsGraphLoading(true);
       const res = await ApiGetDashboardGraph({
-        profileId: profileId?.value,
+        profileId: pid,
         fromDate: moment(date?.[0]).format("YYYY-MM-DD"),
         toDate: moment(date?.[1]).format("YYYY-MM-DD"),
         marketplaceId: marketplace || "",
@@ -559,7 +653,7 @@ const AdminDashboard = () => {
       const customFilter = addDashboardQuery({ appliedFilters: dynamicFilters, selectedMatrix });
 
       const payload = {
-        profileId: profileId?.value,
+        profileId: currentProfileId,
         fromDate: moment(date?.[0]).format("YYYY-MM-DD"),
         toDate: moment(date?.[1]).format("YYYY-MM-DD"),
         marketplaceId: marketplace || "",
@@ -588,10 +682,12 @@ const AdminDashboard = () => {
 
   // Fetch Performance Matrix
   const loadMatrixData = async () => {
+    const pid = currentProfileId;
+    if (!pid) return;
     try {
       setIsMatrixLoading(true);
       const res = await ApiGetPerformanceMatrix({
-        profileId: profileId?.value,
+        profileId: pid,
         fromDate: moment(date?.[0]).format("YYYY-MM-DD"),
         toDate: moment(date?.[1]).format("YYYY-MM-DD"),
         marketplaceId: marketplace || "",
@@ -610,34 +706,61 @@ const AdminDashboard = () => {
   };
 
   // Fetch Smart Insights
-  const loadInsightsData = async () => {
+  const loadInsightsData = async (pageNum = 1) => {
+    const pid = currentProfileId;
+    if (!pid) return;
     try {
+      if (pageNum === 1) {
+        setIsInsightsLoading(true);
+        setInsightsPage(1);
+      } else {
+        setIsInsightsLoadingMore(true);
+      }
       const res = await ApiGetSmartInsights({
-        profileId: profileId?.value,
+        profileId: pid,
         fromDate: moment(date?.[0]).format("YYYY-MM-DD"),
         toDate: moment(date?.[1]).format("YYYY-MM-DD"),
         marketplaceId: marketplace || "",
         performanceMatrix: selectedMatrix,
         productTypes: category === "all" ? "" : (category || ""),
-        productName: searchSku || ""
-        // page and limit removed
+        productName: searchSku || "",
+        page: pageNum,
+        limit: 15,
       });
-      if (res?.isSuccess && res.data) {
-        setInsightsData(res.data);
+      const newItems = res?.data || [];
+      const hasMore = res?.pagination?.hasMore ?? (newItems.length >= 15);
+      setHasMoreInsights(hasMore);
+      setInsightsPage(pageNum);
+      if (pageNum === 1) {
+        setInsightsData(Array.isArray(newItems) ? newItems : []);
+      } else {
+        setInsightsData((prev) => [...prev, ...newItems]);
       }
     } catch {
-      Toast.error(t("Something went wrong loading Smart Insights"));
+      if (pageNum === 1) {
+        setInsightsData([]);
+        Toast.error(t("Something went wrong loading Smart Insights"));
+      }
+    } finally {
+      setIsInsightsLoading(false);
+      setIsInsightsLoadingMore(false);
+    }
+  };
+
+  const loadMoreInsights = () => {
+    if (!isInsightsLoadingMore && hasMoreInsights) {
+      loadInsightsData(insightsPage + 1);
     }
   };
 
 
-  // Load product types only when profileId changes
+  // Load product types only when currentProfileId changes
   useEffect(() => {
-    if (profileId?.value) {
+    if (currentProfileId) {
       loadProductTypes();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profileId?.value]);
+  }, [currentProfileId]);
 
   // Listen for custom filter applies
   useEffect(() => {
@@ -667,19 +790,31 @@ const AdminDashboard = () => {
 
   // Load KPI data with debounce to handle typing in the Search SKU input
   useEffect(() => {
-    if (profileId?.value && date?.length) {
+    if (currentProfileId && date?.length) {
       const timeoutId = setTimeout(() => {
         loadKpiData();
         loadChartData();
-        loadGridData({ page: 1 });
-        setGridPage(1);
-        loadMatrixData();
+        if (dashboardMode === "seller") {
+          loadGridData({ page: 1 });
+          setGridPage(1);
+          loadMatrixData();
+        }
         loadInsightsData();
       }, 350); // debounce API call by 350ms
       return () => clearTimeout(timeoutId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profileId?.value, date, marketplace, selectedMatrix, category, searchSku, selectedAdType]);
+  }, [currentProfileId, date, marketplace, selectedMatrix, category, searchSku, selectedAdType, dashboardMode]);
+
+  useEffect(() => {
+    if (currentProfileId) {
+      setInsightsData([]);
+      setKpiData(null);
+      setGraphData(null);
+      setMatrixData(null);
+      setGridData([]);
+    }
+  }, [currentProfileId]);
 
   // Remove the duplicate useEffect that was causing multiple calls on fieldName/customFilterFlag change
   // The filter changes are now handled explicitly in the customFilterFlag effect above or in applyFilterToGrid
@@ -705,9 +840,10 @@ const AdminDashboard = () => {
     return `(${sign}${valStr})`;
   };
 
-  const allKpiCards = kpiData ? [
+  const sellerKpiCards = kpiData ? [
     { label: "Total Sales", value: CurrencyCode(kpiData.totalSales || 0), delta: kpiData.totalSalesChange, deltaAbs: kpiData.totalSalesChangeAbs, isCurrency: true, green: kpiData.totalSalesChange >= 0, colorTheme: "theme-blue", isPrimary: true, accentColor: "var(--accent-primary)", metricKey: "sales" },
-    { label: "Ad Sales", value: CurrencyCode(kpiData.adSales || 0), delta: kpiData.adSalesChange, deltaAbs: kpiData.adSalesChangeAbs, isCurrency: true, green: kpiData.adSalesChange >= 0, colorTheme: "theme-green", isPrimary: true, accentColor: "var(--accent-primary)", metricKey: "sales" },
+    { label: "Sales", value: CurrencyCode(kpiData.adSales || 0), delta: kpiData.adSalesChange, deltaAbs: kpiData.adSalesChangeAbs, isCurrency: true, green: kpiData.adSalesChange >= 0, colorTheme: "theme-green", isPrimary: true, accentColor: "var(--accent-primary)", metricKey: "sales" },
+    { label: "Organic Sales", value: CurrencyCode(kpiData.organicSales || 0), delta: kpiData.organicSalesChange, deltaAbs: kpiData.organicSalesChangeAbs, isCurrency: true, green: (kpiData.organicSalesChange || 0) >= 0, colorTheme: "theme-teal", isPrimary: false, accentColor: "var(--accent-positive)", metricKey: "sales" },
     { label: "TACoS", value: `${kpiData.tacos}%`, delta: kpiData.tacosChange, deltaAbs: kpiData.tacosChangeAbs, isCurrency: false, green: kpiData.tacosChange <= 0, colorTheme: "theme-purple", accentColor: "var(--accent-warning)", metricKey: "acos" },
     { label: "ACoS", value: `${kpiData.acos}%`, delta: kpiData.acosChange, deltaAbs: kpiData.acosChangeAbs, isCurrency: false, green: kpiData.acosChange <= 0, colorTheme: "theme-orange", accentColor: "var(--accent-negative)", metricKey: "acos" },
     { label: "roas", value: `${kpiData.roas}`, delta: kpiData.roasChange, deltaAbs: kpiData.roasChangeAbs, isCurrency: false, green: kpiData.roasChange >= 0, colorTheme: "theme-yellow", accentColor: "var(--accent-positive)", metricKey: "roas" },
@@ -732,9 +868,21 @@ const AdminDashboard = () => {
     },
   ] : KPI_CARDS_MOCK;
 
+  const adsKpiCards = kpiData ? [
+    { label: "Spend", value: CurrencyCode(kpiData.spend || 0), delta: kpiData.spendChange, deltaAbs: kpiData.spendChangeAbs, isCurrency: true, green: (kpiData.spendChange || 0) <= 0, colorTheme: "theme-orange", isPrimary: true, accentColor: "var(--accent-warning)", metricKey: "spend" },
+    { label: "Ad Sales", value: CurrencyCode(kpiData.adSales || 0), delta: kpiData.adSalesChange, deltaAbs: kpiData.adSalesChangeAbs, isCurrency: true, green: (kpiData.adSalesChange || 0) >= 0, colorTheme: "theme-green", isPrimary: true, accentColor: "var(--accent-primary)", metricKey: "sales" },
+    { label: "ACoS", value: `${kpiData.acos || 0}%`, delta: kpiData.acosChange, deltaAbs: kpiData.acosChangeAbs, isCurrency: false, green: (kpiData.acosChange || 0) <= 0, colorTheme: "theme-orange", accentColor: "var(--accent-negative)", metricKey: "acos" },
+    { label: "roas", value: `${kpiData.roas || 0}`, delta: kpiData.roasChange, deltaAbs: kpiData.roasChangeAbs, isCurrency: false, green: (kpiData.roasChange || 0) >= 0, colorTheme: "theme-yellow", accentColor: "var(--accent-positive)", metricKey: "roas" },
+    { label: "Orders", value: CurrencyFormat(kpiData.adOrders || 0), delta: kpiData.adOrdersChange, deltaAbs: kpiData.adOrdersChangeAbs, isCurrency: false, green: (kpiData.adOrdersChange || 0) >= 0, colorTheme: "theme-blue", accentColor: "var(--accent-primary)", metricKey: "orders" },
+    { label: "Impressions", value: CurrencyFormat(kpiData.impressions || 0), delta: kpiData.impressionsChange, deltaAbs: kpiData.impressionsChangeAbs, isCurrency: false, green: (kpiData.impressionsChange || 0) >= 0, colorTheme: "theme-purple", accentColor: "var(--accent-primary)", metricKey: "impressions" },
+    { label: "Clicks", value: CurrencyFormat(kpiData.clicks || 0), delta: kpiData.clicksChange, deltaAbs: kpiData.clicksChangeAbs, isCurrency: false, green: (kpiData.clicksChange || 0) >= 0, colorTheme: "theme-pink", accentColor: "var(--accent-primary)", metricKey: "clicks" },
+    { label: "Avg CPC", value: CurrencyCode(kpiData.cpc || 0), delta: kpiData.cpcChange, deltaAbs: kpiData.cpcChangeAbs, isCurrency: true, green: (kpiData.cpcChange || 0) <= 0, colorTheme: "theme-teal", accentColor: "var(--accent-warning)", metricKey: "cpc" },
+  ] : KPI_CARDS_MOCK;
+
+  const currentCards = dashboardMode === "ads" ? adsKpiCards : sellerKpiCards;
   const kpiCards = (isSpLoaded && !isSpConnected)
-    ? allKpiCards.filter(card => card.label !== "Total Sales")
-    : allKpiCards;
+    ? currentCards.filter(card => card.label !== "Total Sales" && card.label !== "Organic Sales")
+    : currentCards;
 
   const getInsightIcon = (type) => {
     switch (type?.toLowerCase()) {
@@ -756,36 +904,15 @@ const AdminDashboard = () => {
   const hasViewPermission = PermissionCheck(SYSTEM_PAGES.DASHBOARD, PAGE_ACTIONS.VIEW_ONLY);
 
   useEffect(() => {
-    const getPathByName = (navArray, name) => {
-      for (let item of navArray) {
-        if (item.name === name) return item.path;
-        if (item.children) {
-          const childPath = getPathByName(item.children, name);
-          if (childPath) return childPath;
-        }
-      }
-      return null;
-    };
-
     if (role === ROLES.SUPER_ADMIN) {
       navigate("/admin-dashboard", { replace: true });
-    } else {
-      if (pagePermission && pagePermission.length > 0) {
-        const rootNav = nav?.find((n) => n.path === "/");
-        const isRootAvailable = pagePermission.some((p) => p.pageName === rootNav?.name);
-
-        if (!isRootAvailable || !hasViewPermission) {
-          const firstPermName = pagePermission[0]?.pageName;
-          const firstPath = getPathByName(nav || [], firstPermName);
-          if (firstPath) {
-            navigate(firstPath, { replace: true });
-          } else {
-            navigate("/", { replace: true });
-          }
-        }
+    } else if (pagePermission && pagePermission.length > 0) {
+      const isRootAvailable = pagePermission.some((p) => p.pageName === SYSTEM_PAGES.DASHBOARD || p.pageName === "Dashboard");
+      if (!isRootAvailable || !hasViewPermission) {
+        navigate("/", { replace: true });
       }
     }
-  }, [role, hasViewPermission, pagePermission]);
+  }, [role, hasViewPermission, pagePermission, navigate]);
 
   if (role === ROLES.SUPER_ADMIN || (pagePermission && pagePermission.length > 0 && !hasViewPermission)) return null;
 
@@ -794,7 +921,7 @@ const AdminDashboard = () => {
       {/* ── Standard Header (profile, notifications, learning guide) ─── */}
       <Filter name={"Dashboard"} nameShow={false} dateShow={false} profileShow={true} />
 
-      <div className="middle_container">
+      <div className="middle_container" style={{ paddingBottom: "120px" }}>
 
         {/* ── Filter Bar ───────────────────────────────────────────────── */}
         <div
@@ -813,11 +940,45 @@ const AdminDashboard = () => {
           }}
         >
 
+          {/* ── Mode Switch: Seller vs Ads (Only shown when not vendor / when seller view exists) ── */}
+          {!isVendor && (
+            <div className="dash-mode-switcher inline-flex items-center h-9 p-1 rounded-xl bg-slate-100/90 dark:bg-slate-900/80 border border-slate-200/80 dark:border-white/10 shadow-xs shrink-0">
+              <button
+                type="button"
+                onClick={() => setDashboardMode("seller")}
+                className={`relative flex items-center gap-1.5 h-7 px-3 text-xs font-semibold rounded-lg transition-all duration-150 ${dashboardMode === "seller"
+                  ? "bg-white text-[#2374F2] shadow-xs font-bold dark:bg-[#2374F2] dark:text-white"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+              >
+                <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                  <polyline points="9 22 9 12 15 12 15 22" />
+                </svg>
+                <span>{t("Seller View")}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDashboardMode("ads")}
+                className={`relative flex items-center gap-1.5 h-7 px-3 text-xs font-semibold rounded-lg transition-all duration-150 ${dashboardMode === "ads"
+                  ? "bg-white text-[#2374F2] shadow-xs font-bold dark:bg-[#2374F2] dark:text-white"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                  }`}
+              >
+                <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m3 11 18-5v12L3 14v-3z" />
+                  <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" />
+                </svg>
+                <span>{t("Ads View")}</span>
+              </button>
+            </div>
+          )}
+
           {/* ── Group 1: Date + VS pill ────────────────────────────── */}
           <div className="dash-filter-left-group flex items-center gap-2 flex-wrap">
             {/* DATE */}
             <div className="dash-date-row flex items-center gap-2">
-              <span className="dash-filter-label font-medium text-sm text-slate-700 whitespace-nowrap shrink-0">{t("date")}:</span>
+              <span className="dash-filter-label font-medium text-sm text-slate-700 whitespace-nowrap shrink-0">{t("Date")}:</span>
               <DateRangePicker
                 className="dash-date-picker shrink-0"
                 ranges={predefinedRanges}
@@ -896,10 +1057,10 @@ const AdminDashboard = () => {
         </div>
 
         {/* ── KPI Metric Cards ─────────────────────────────────────────── */}
-        <div id={"dashboard-top-cards"} className="flex flex-wrap gap-3 mb-6 w-full">
+        <div id={"dashboard-top-cards"} className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6 w-full">
           {isKpiLoading ? (
-            Array.from({ length: 4 }).map((_, idx) => (
-              <div key={idx} className="dash-kpi-card-item flex-1 min-w-[200px] h-[135px]">
+            Array.from({ length: 8 }).map((_, idx) => (
+              <div key={idx} className="dash-kpi-card-item h-[135px]">
                 <div className="card glass-card h-full p-5 flex flex-col justify-between animate-pulse">
                   <div className="flex justify-between items-center w-full">
                     <div className="h-4 bg-slate-200 dark:bg-slate-800 rounded w-24"></div>
@@ -935,6 +1096,9 @@ const AdminDashboard = () => {
                   isPrimary={card.isPrimary}
                   accentColor={card.accentColor}
                   index={idx}
+                  metricKey={card.metricKey}
+                  marketplace={activeCountryCode}
+                  currencyCode={currencyCode}
                   style={{ width: "100%", height: "100%" }}
                 />
               </div>
@@ -944,121 +1108,120 @@ const AdminDashboard = () => {
 
         {/* ── Main Chart (Full Width) ────────────────────────────────── */}
         <div className="dash-chart-card" id={"dashboard-chart"}>
-          <DashbordGraph isChartLoading={isGraphLoading} chartData={graphData} />
-        </div>
-
-        {/* ── Top Changes Widget Grid ────────────────────────────────── */}
-        <div className="dash-changes-grid" id={"dashboard-changes-grid"}>
-          <TopChangesWidget
-            title={t("Biggest Changes By Campaigns")}
-            apiEndpoint={`${process.env.REACT_APP_API_BASE}/api/dashboard/getChangesByCampaign`}
-            profileId={profileId?.value}
-            fromDate={moment(date?.[0]).format("YYYY-MM-DD")}
-            toDate={moment(date?.[1]).format("YYYY-MM-DD")}
-            id={"dashboard-changes-by-campaign"}
-          />
-          <TopChangesWidget
-            title={t("Biggest Changes By ASIN (Products)")}
-            apiEndpoint={`${process.env.REACT_APP_API_BASE}/api/dashboard/getChangesByProduct`}
-            profileId={profileId?.value}
-            fromDate={moment(date?.[0]).format("YYYY-MM-DD")}
-            toDate={moment(date?.[1]).format("YYYY-MM-DD")}
-            id={"dashboard-changes-by-asin"}
-          />
-          <TopChangesWidget
-            title={t("Biggest Changes By SP Keywords")}
-            apiEndpoint={`${process.env.REACT_APP_API_BASE}/api/dashboard/getChangesByKeyword`}
-            profileId={profileId?.value}
-            fromDate={moment(date?.[0]).format("YYYY-MM-DD")}
-            toDate={moment(date?.[1]).format("YYYY-MM-DD")}
-            id={"dashboard-changes-by-keyword"}
+          <DashbordGraph
+            isChartLoading={isGraphLoading}
+            chartData={graphData}
+            currencyCode={currencyCode || "INR"}
+            marketplace={activeCountryCode}
           />
         </div>
 
-        {/* ── Performance Matrix (Full Width) ────────────────────────── */}
-        <div id="dash-matrix-section" className="dash-matrix-section dash-performance-matrix">
-          <div className="dash-matrix-header">
-            <div className="section-title">{t("Product Performance Matrix")}</div>
-            {selectedMatrix.length > 0 && (
-              <div className="matrix-filter-status">
-                <span className="matrix-filter-label">
-                  Filtering by:&nbsp;
-                  {selectedMatrix.map((key) => {
-                    const block = PERFORMANCE_MATRIX.find((b) => b.key === key);
-                    return (
-                      <span key={key} className={`matrix-filter-chip chip-${key}`}>
-                        {block?.label}
-                        <button className="chip-remove" onClick={(e) => { e.stopPropagation(); handleMatrixClick(key); }}>
-                          ×
-                        </button>
-                      </span>
-                    );
-                  })}
-                </span>
-                <button className="matrix-clear-btn" onClick={clearMatrixFilter}>
-                  ✕ Clear all
-                </button>
-              </div>
-            )}
+        {/* ── Row 4: Assigned vs. Without Assign Campaigns ── */}
+        <div id="dashboard-campaign-breakdowns" className="w-full mb-5">
+          <AssignedCampaignsWidget
+            profileId={profileId?.value}
+            adType={selectedAdType || "SP"}
+            date={date}
+            currencyCode={currencyCode || "INR"}
+            marketplace={activeCountryCode}
+          />
+        </div>
+
+        {/* ── Row 5: Ad Type Performance (Full Width Table) ─────────── */}
+        <div id="dashboard-ad-type-breakdown" className="w-full mb-5">
+          <AdTypeBreakdownWidget
+            profileId={currentProfileId}
+            date={date}
+            currencyCode={activeCurrencyCode}
+            marketplace={activeCountryCode}
+          />
+        </div>
+
+        {/* ── Row 6: Time-Based Analytics & Recommendations (3 Equal Columns) ── */}
+        <div id="dashboard-time-recommendations" className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5 w-full items-stretch">
+          {/* Col 1: Orders by Day of Week */}
+          <div className="w-full flex flex-col min-h-0">
+            <OrdersByDayWidget
+              profileId={currentProfileId}
+              adType={selectedAdType || "SP"}
+              date={date}
+              currencyCode={activeCurrencyCode}
+              marketplace={activeCountryCode}
+            />
           </div>
 
-          {/* "Showing all" hint when nothing selected */}
-          {selectedMatrix.length === 0 && (
-            <p className="matrix-hint">
-              {t("Showing all products · Click a category to filter")}
-            </p>
-          )}
+          {/* Col 2: Peak Hours */}
+          <div className="w-full flex flex-col min-h-0">
+            <PeakHoursWidget
+              profileId={currentProfileId}
+              adType={selectedAdType || "SP"}
+              date={date}
+              currencyCode={activeCurrencyCode}
+              marketplace={activeCountryCode}
+            />
+          </div>
 
-          <div className="dash-matrix-row">
-            {PERFORMANCE_MATRIX.map((block) => {
-              const isActive = selectedMatrix.includes(block.key);
-              return (
-                <div
-                  key={block.key}
-                  className={`dash-matrix-block ${block.key} ${isActive ? "active" : ""}`}
-                  onClick={() => handleMatrixClick(block.key)}
-                  title={isActive ? `Click to remove ${block.label} filter` : `Click to filter by ${block.label}`}
-                >
-                  <div className={`matrix-check-ring ${isActive ? "checked" : ""}`}>
-                    {isActive ? "✓" : ""}
+          {/* Col 3: Recommendations Hub */}
+          <div className="w-full flex flex-col min-h-0" id="dashboard-recommendations-hub">
+            <DashboardRecommendations
+              profileId={currentProfileId}
+              adType={selectedAdType || "SP"}
+              date={date}
+            />
+          </div>
+        </div>
+
+        {/* ── Row 7: Waste Spend (1/3) & Smart Insights (2/3) ── */}
+        <div id="dashboard-waste-matrix-section" className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-8 w-full items-stretch">
+          {/* Col 1: Waste Spend Monitor */}
+          <div className="w-full lg:col-span-1 flex flex-col min-h-0">
+            <WasteSpendWidget
+              profileId={currentProfileId}
+              adType={selectedAdType || "SP"}
+              date={date}
+              currencyCode={activeCurrencyCode}
+              marketplace={activeCountryCode}
+            />
+          </div>
+
+          {/* Col 2 & 3: Smart Insights (Expanded Width) */}
+          <div className="w-full lg:col-span-2 flex flex-col min-h-0" id="dashboard-smart-insights">
+            <SmartInsightsWidget
+              insightsData={insightsData}
+              loading={isInsightsLoading}
+              loadingMore={isInsightsLoadingMore}
+              hasMore={hasMoreInsights}
+              onLoadMore={loadMoreInsights}
+              onRefresh={() => loadInsightsData(1)}
+            />
+          </div>
+        </div>
+
+        {/* ── Product Performance Matrix & Top Products: Only visible in Seller View ── */}
+        {dashboardMode === "seller" && (
+          <>
+            {/* ── Row 8: Product Performance Matrix (Full Width 4-Block Bar) ── */}
+            <div id="dash-matrix-section" className="w-full">
+              <ProductPerformanceMatrixWidget
+                matrixData={matrixData}
+                loading={isMatrixLoading}
+                selectedMatrix={selectedMatrix}
+                onMatrixClick={handleMatrixClick}
+                onClearFilter={clearMatrixFilter}
+              />
+            </div>
+
+            {/* ── Row 9: Top Products Table (Full Width) ── */}
+            <div id="dashboard-top-products" className="w-full mb-6">
+              <div className="dash-products-section bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-white/10 rounded-2xl shadow-xs p-5 flex flex-col">
+              <div className="dash-products-header flex items-center justify-between" style={{ marginBottom: "12px" }}>
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-950/50 border border-blue-200/60 dark:border-blue-800/40 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                    <FiLayers className="w-4 h-4" />
                   </div>
-
-                  <span className="matrix-label">{t(block.label)}</span>
-
-                  {isMatrixLoading ? (
-                    <div className="h-6 w-16 bg-slate-200/80 dark:bg-slate-700/60 rounded animate-pulse my-1" />
-                  ) : (
-                    <span className="matrix-count">
-                      {(matrixData ? (matrixData[block.key] ?? 0) : 0).toLocaleString()}
-                    </span>
-                  )}
-
-                  <span className="matrix-sub">
-                    {block.icon}
-                    {t(block.sub)}
-                  </span>
-
-                  {isActive && (
-                    <div className="matrix-active-strip">ACTIVE FILTER</div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* ── Main Dashboard Layout (Two Columns) ──────────────────────── */}
-        <div className="dash-main-layout">
-
-          {/* Left Column (Chart, Matrix, Products) */}
-          <div className="dash-left-col" id={"dashboard-top-products"}>
-
-
-            {/* Top Products Table */}
-            <div className="dash-products-section">
-              <div className="dash-products-header flex items-center justify-between" style={{ marginBottom: "10px" }}>
-                <div className="flex items-center flex-wrap" style={{ gap: "10px", flex: 1 }}>
-                  <div className="section-title" style={{ marginBottom: 0 }}>{t("Top Products")}</div>
+                  <h3 className="text-[15px] font-bold text-slate-900 dark:text-white tracking-tight">
+                    {t("Top Products")}
+                  </h3>
                 </div>
 
                 <AppTooltip text={t("Customize Columns")}>
@@ -1113,7 +1276,7 @@ const AdminDashboard = () => {
                   </div>
                 </div>
               )}
-              <div id={"dashboard-product-grid"} className="data_table position-relative glass-grid-container overflow-hidden">
+              <div id={"dashboard-product-grid"} className="data_table position-relative glass-grid-container overflow-hidden flex-1">
                 <AgTable ref={gridRef}
                   tableId="dashboard-top-products-table"
                   customSaveColumnName="Dashboard"
@@ -1136,40 +1299,9 @@ const AdminDashboard = () => {
                 />
               </div>
             </div>
-
-          </div> {/* End Left Column */}
-
-          {/* Right Column (Smart Insights) */}
-          <div id={"dashboard-smart-insights"} className="dash-right-col">
-            <div className="dash-insights-card">
-              <div className="insights-title">
-                {t("Smart Insights")}
-              </div>
-
-              <div className="dash-insights-content">
-                {insightsData.length > 0 ? (
-                  insightsData.map((item, idx) => (
-                    <div
-                      className="dash-insight-item cursor-pointer insight-item-animate"
-                      key={idx}
-                      style={{ "--insight-delay": `${idx * 60}ms` }}
-                      onClick={() => navigate(`/product-list?search=${btoa(item.asin)}`)}
-                    >
-                      {getInsightIcon(item.type)}
-                      <div className="insight-text">
-                        <strong>{t(item.message)}</strong>
-                        <span>{t(item.smallMessage)}</span>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center text-gray-500 p-3 small">{t("No insights available")}</div>
-                )}
-              </div>
-            </div>
           </div>
-
-        </div>
+        </>
+      )}
 
       </div>
 
@@ -1267,5 +1399,3 @@ const AdminDashboard = () => {
     </div>
   );
 };
-
-export default AdminDashboard;

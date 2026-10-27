@@ -4,6 +4,7 @@ require("../../shared/connection");
 
 const cron = require("node-cron");
 const cronJobSchema = require("../../api-server/models/cronJob.model");
+const { cron_logs } = require("../../winston/cronAutomation/logger");
 const { resolveMigratedSchedule } = require("./scheduleRegistry");
 const { enqueueRulesForOccurrence } = require("../producers/rules.producer");
 const { enqueueSyncForOccurrence } = require("../producers/hourlySync.producer");
@@ -40,7 +41,10 @@ function registerSchedule(cronDoc) {
   }
 
   if (!cron.validate(cronDoc.cronExpression)) {
-    console.error(`[ProducerScheduler] Invalid cron expression for ${cronDoc.cronName}: "${cronDoc.cronExpression}"`);
+    cron_logs({
+      message: `[ProducerScheduler] Invalid cron expression for ${cronDoc.cronName}: "${cronDoc.cronExpression}"`,
+      log_type: "error",
+    });
     return;
   }
 
@@ -64,12 +68,18 @@ function registerSchedule(cronDoc) {
         });
       }
     } catch (err) {
-      console.error(`[ProducerScheduler] Error dispatching ${target.task} for occurrence ${scheduledFor.toISOString()}:`, err.message);
+      cron_logs({
+        message: `[ProducerScheduler] Error dispatching ${target.task} for occurrence ${scheduledFor.toISOString()}: ${err.message || err}`,
+        log_type: "error",
+      });
     }
   });
 
   activeCronJobs.set(taskKey, scheduledCron);
-  console.log(`[ProducerScheduler] Scheduled ${target.task} [${cronDoc.cronExpression}] (Mongo cron: "${cronDoc.cronName}")`);
+  cron_logs({
+    message: `[ProducerScheduler] Scheduled ${target.task} [${cronDoc.cronExpression}] (Mongo cron: "${cronDoc.cronName}")`,
+    log_type: "info",
+  });
 }
 
 /**
@@ -107,7 +117,10 @@ async function runStartupLookbackRecovery() {
   const lookbackHours = parseInt(process.env.QUEUE_STARTUP_LOOKBACK_HOURS, 10) || 2;
   const pastOccurrences = getBoundedLookbackHours(lookbackHours);
 
-  console.log(`[ProducerScheduler] Running startup lookback recovery for past ${pastOccurrences.length} hour(s)...`);
+  cron_logs({
+    message: `[ProducerScheduler] Running startup lookback recovery for past ${pastOccurrences.length} hour(s)...`,
+    log_type: "info",
+  });
 
   const syncTasks = [
     "campaign-listing",
@@ -131,7 +144,10 @@ async function runStartupLookbackRecovery() {
           trigger: "scheduled",
         });
       } catch (err) {
-        console.warn(`[ProducerScheduler] Lookback enqueue warning for ${task} (${occurrence.toISOString()}):`, err.message);
+        cron_logs({
+          message: `[ProducerScheduler] Lookback enqueue warning for ${task} (${occurrence.toISOString()}): ${err.message || err}`,
+          log_type: "warn",
+        });
       }
     }
   }
@@ -154,10 +170,16 @@ function setupChangeStream() {
       }
     });
     cronChangeStream.on("error", (err) => {
-      console.warn("[ProducerScheduler] Change stream error, falling back to periodic poll:", err.message);
+      cron_logs({
+        message: `[ProducerScheduler] Change stream error, falling back to periodic poll: ${err.message || err}`,
+        log_type: "warn",
+      });
     });
   } catch (err) {
-    console.warn("[ProducerScheduler] Could not start change stream (requires replica set), polling every 60s instead.");
+    cron_logs({
+      message: "[ProducerScheduler] Could not start change stream (requires replica set), polling every 60s instead.",
+      log_type: "warn",
+    });
     setInterval(() => loadSchedules(), 60000);
   }
 }
@@ -174,12 +196,18 @@ async function startProducerScheduler() {
   setupChangeStream();
   await runStartupLookbackRecovery();
 
-  console.log(`[ProducerScheduler] Producer scheduler running on PID ${process.pid}`);
+  cron_logs({
+    message: `[ProducerScheduler] Producer scheduler running on PID ${process.pid}`,
+    log_type: "info",
+  });
 
   registerGracefulShutdown({
     serviceName: "queue-producer",
     onShutdown: async () => {
-      console.log("[ProducerScheduler] Shutting down producer...");
+      cron_logs({
+        message: "[ProducerScheduler] Shutting down producer...",
+        log_type: "info",
+      });
       for (const [name, job] of activeCronJobs.entries()) {
         job.stop();
       }
@@ -197,7 +225,10 @@ async function startProducerScheduler() {
 
 if (require.main === module) {
   startProducerScheduler().catch((err) => {
-    console.error("[ProducerScheduler] Fatal startup error:", err);
+    cron_logs({
+      message: `[ProducerScheduler] Fatal startup error: ${err?.stack || err?.message || err}`,
+      log_type: "error",
+    });
     process.exit(1);
   });
 }

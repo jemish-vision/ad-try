@@ -115,7 +115,7 @@ const OrderTracking = () => {
     if (selectedDate && Array.isArray(selectedDate) && selectedDate.length >= 2) {
       return [moment(selectedDate[0]).toDate(), moment(selectedDate[1]).toDate()];
     }
-    return [moment().subtract(30, "days").toDate(), new Date()];
+    return [moment().subtract(30, "days").toDate(), moment().subtract(1, "days").toDate()];
   });
 
   useEffect(() => {
