@@ -352,9 +352,17 @@ axios.interceptors.response.use(
     const isServerDown = [502, 503, 504].includes(error?.response?.status);
     const isMaintenanceFlagged = error?.response?.data?.isMaintenanceMode === true;
 
-    const isChatRequest = /\/api\/customer\/(?:chatbot|chatbot-reporting)(?:[/?]|$)/.test(error?.config?.url || "");
+    const reqUrl = error?.config?.url || "";
+    const isChatRequest = /\/api\/customer\/(?:chatbot|chatbot-reporting)(?:[/?]|$)/.test(reqUrl);
+    // Only our OWN backend being unreachable means maintenance. A failing
+    // third-party call (e.g. the login page's ipify / ipgeolocation lookups)
+    // must never flip the app into maintenance mode — otherwise an unrelated
+    // external outage causes a /login <-> /maintenance-mode redirect loop.
+    const apiBase = process.env.REACT_APP_API_BASE || "";
+    const isAbsoluteUrl = /^https?:\/\//i.test(reqUrl);
+    const isAppRequest = !isAbsoluteUrl || (!!apiBase && reqUrl.startsWith(apiBase));
     // A reporting/AI outage belongs in chat; explicit maintenance still redirects.
-    const requiresMaintenance = isMaintenanceFlagged || (!isChatRequest && (isConnectionRefused || isServerDown));
+    const requiresMaintenance = isMaintenanceFlagged || (!isChatRequest && isAppRequest && (isConnectionRefused || isServerDown));
 
     if (requiresMaintenance && !isOwner && !alreadyOnMaintenance) {
       window.location.href = "/maintenance-mode";
