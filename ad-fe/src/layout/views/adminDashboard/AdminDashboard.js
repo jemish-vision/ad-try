@@ -28,8 +28,6 @@ import "./AdminDashboard.css";
 import CurrencyCode from "../../../helper/currencyCode/CurrencyCode";
 import CurrencyFormat from "../../../helper/currencyCode/CurrencyFormat";
 import KPICard from "../../../helper/KPICard";
-import { AdTypeScopeNote } from "../../../helper/filter/AdTypeScopeNote";
-import { isShowingAllAdTypes } from "../../../helper/filter/adTypeAll";
 import { ShadcnDateRangePicker as DateRangePicker } from "../../../components/ui/date-range-picker";
 import { predefinedRanges } from "../../../common/helper/calendarValues/calendarValues";
 import DashbordGraph from "./Dashboard/DashbordGraph";
@@ -162,11 +160,6 @@ export default function AdminDashboard() {
   };
 
   const { profileId, currencyCode, pagePermission, selectedDate, setSelectedDate, selectedAdType } = useContext(ProfileContext);
-  // Under "All" the dashboard aggregates ad performance across SP+SB+SD.
-  const showAllTypes = isShowingAllAdTypes(
-    typeof window !== "undefined" ? window.location.pathname : "",
-    selectedAdType
-  );
 
   const getProfileIdString = (p) => {
     if (!p) return null;
@@ -929,12 +922,6 @@ export default function AdminDashboard() {
       <Filter name={"Dashboard"} nameShow={false} dateShow={false} profileShow={true} />
 
       <div className="middle_container" style={{ paddingBottom: "120px" }}>
-
-        {showAllTypes && (
-          <div style={{ marginBottom: 12 }}>
-            <AdTypeScopeNote selectedAdType={selectedAdType} />
-          </div>
-        )}
 
         {/* ── Filter Bar ───────────────────────────────────────────────── */}
         <div

@@ -56,8 +56,6 @@ const { cron_logs } = require("../../winston/cronAutomation/logger");
 const { write_logs } = require("../../winston/inventory/logger");
 const amazonAxios = require("../helper/amazonAxios");
 const AD_TYPE_COLLECTIONS = require("../helper/adTypeCollections");
-const { distinctCampaignIdsForAdType, productAdsLookupSource, adsModelsForAdType, aggregateCampaignsAcrossAdTypes } = require("../helper/dashboardAdType");
-const { mergeNumericById } = require("../helper/dashboardMerge");
 const { buildInventoryForecastAlertEmail } = require("../../emailTemplate/buildInventoryForecastAlertEmail");
 const { sanitizeQueryObject } = require("../helper/sanitizeQuery");
 
@@ -1312,7 +1310,7 @@ exports.getSalesDashboard = async (req, res) => {
             salesUnitsTimeline
         ] = await Promise.all([
 
-            aggregateCampaignsAcrossAdTypes(adType, campaignSchema, [
+            mainCampaignModel.aggregate([
                 { $match: campaignsMatch(fromDate, toDate) },
                 {
                     $group: {
@@ -1353,7 +1351,7 @@ exports.getSalesDashboard = async (req, res) => {
                 }
             ]),
 
-            aggregateCampaignsAcrossAdTypes(adType, campaignSchema, [
+            mainCampaignModel.aggregate([
                 { $match: campaignsMatch(prevFrom, prevTo) },
                 {
                     $group: {
@@ -1394,7 +1392,7 @@ exports.getSalesDashboard = async (req, res) => {
                 }
             ]),
 
-            aggregateCampaignsAcrossAdTypes(adType, campaignSchema, [
+            mainCampaignModel.aggregate([
                 { $match: campaignsMatch(fromDate, toDate) },
                 {
                     $group: {
@@ -1419,10 +1417,6 @@ exports.getSalesDashboard = async (req, res) => {
             ])
 
         ]);
-
-        // Under "All" the cvr series is merged from multiple ad types, so keep it
-        // in chronological order (the timeline buckets consecutive dates).
-        cvrData.sort((a, b) => String(a._id).localeCompare(String(b._id)));
 
         const ads = curAds[0] || {};
         const pAds = prevAds[0] || {};
@@ -1703,24 +1697,22 @@ exports.getSalesTrendGraph = async (req, res) => {
             ...(hasProductFilter && { asin: { $in: asinList } }),
         };
 
-        // Under "All" the ad metrics come from SP+SB+SD; aggregate each type's
-        // collection and merge by date. The group is purely additive, and the
-        // organic/total series come from non-partitioned collections (below), so
-        // no double counting. For a single type this is one model, unchanged.
-        const adsModels = adsModelsForAdType(adType, hasProductFilter, campaignSchema, productAdsSchema);
-        const adsGroupStage = {
-            $group: {
-                _id: "$reportDate",
-                spend: { $sum: "$spend" },
-                adSales: { $sum: "$sales" },
-                impressions: { $sum: "$impressions" },
-                clicks: { $sum: "$clicks" },
-                adOrders: { $sum: "$orders" },
-            }
-        };
+        const adsModel = hasProductFilter ? mainProductAdsModel : mainCampaignModel;
 
-        const [adsAggPerModel, salesAgg, dailyAgg] = await Promise.all([
-            Promise.all(adsModels.map((m) => m.aggregate([{ $match: matchAds }, adsGroupStage]))),
+        const [adsAgg, salesAgg, dailyAgg] = await Promise.all([
+            adsModel.aggregate([
+                { $match: matchAds },
+                {
+                    $group: {
+                        _id: "$reportDate",
+                        spend: { $sum: "$spend" },
+                        adSales: { $sum: "$sales" },
+                        impressions: { $sum: "$impressions" },
+                        clicks: { $sum: "$clicks" },
+                        adOrders: { $sum: "$orders" },
+                    }
+                }
+            ]),
             businessProductSalesSchema.aggregate([
                 { $match: matchBusiness },
                 {
@@ -1747,9 +1739,6 @@ exports.getSalesTrendGraph = async (req, res) => {
                 }
             ])
         ]);
-
-        // Merge the per-ad-type daily aggregates (additive) into one series.
-        const adsAgg = mergeNumericById((adsAggPerModel || []).flat());
 
         const adsMap = {};
         adsAgg.forEach(d => { adsMap[d._id] = d });
@@ -1926,11 +1915,11 @@ exports.getTopProductsGrid = async (req, res) => {
         const mainCampaignModel = AD_TYPE_COLLECTIONS?.[`${adType}Model`]?.campaignSchema || campaignSchema;
 
         let activeCampaigns = hasActiveCampaigns
-            ? await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId",{ configId, profileId: Number(profileId), status: "ENABLED", reportDate: { $eq: currentDate } })
-            : await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId",{ configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
+            ? await mainCampaignModel.distinct("campaignId", { configId, profileId: Number(profileId), status: "ENABLED", reportDate: { $eq: currentDate } })
+            : await mainCampaignModel.distinct("campaignId", { configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
 
         if (!activeCampaigns || !activeCampaigns.length) {
-            activeCampaigns = await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId",{ configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
+            activeCampaigns = await mainCampaignModel.distinct("campaignId", { configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
         }
 
         const pipeline = [
@@ -1967,10 +1956,9 @@ exports.getTopProductsGrid = async (req, res) => {
 
             {
                 $lookup: {
-                    from: productAdsLookupSource(adType).from,
+                    from: AD_TYPE_COLLECTIONS?.[adType]?.productAds || "product_ads",
                     let: { asin: "$asin" },
                     pipeline: [
-                        ...productAdsLookupSource(adType).prependStages,
                         {
                             $match: {
                                 $expr: { $eq: ["$$asin", "$asins"] },
@@ -2213,11 +2201,11 @@ exports.getProductDecisionMatrix = async (req, res) => {
         const mainCampaignModel = AD_TYPE_COLLECTIONS?.[`${adType}Model`]?.campaignSchema || campaignSchema;
 
         let activeCampaigns = hasActiveCampaigns
-            ? await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId",{ configId, profileId: Number(profileId), status: "ENABLED", reportDate: { $eq: currentDate } })
-            : await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId",{ configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
+            ? await mainCampaignModel.distinct("campaignId", { configId, profileId: Number(profileId), status: "ENABLED", reportDate: { $eq: currentDate } })
+            : await mainCampaignModel.distinct("campaignId", { configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
 
         if (!activeCampaigns || !activeCampaigns.length) {
-            activeCampaigns = await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId",{ configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
+            activeCampaigns = await mainCampaignModel.distinct("campaignId", { configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
         }
 
         const pipeline = [
@@ -2253,10 +2241,9 @@ exports.getProductDecisionMatrix = async (req, res) => {
 
             {
                 $lookup: {
-                    from: productAdsLookupSource(adType).from,
+                    from: AD_TYPE_COLLECTIONS?.[adType]?.productAds || "product_ads",
                     let: { asin: "$asin" },
                     pipeline: [
-                        ...productAdsLookupSource(adType).prependStages,
                         {
                             $match: {
                                 $expr: { $eq: ["$$asin", "$asins"] },
@@ -2392,7 +2379,7 @@ exports.getDashboardInsights = async (req, res) => {
         limit = Math.max(1, Math.min(100, Number(limit) || 15));
         const skip = (page - 1) * limit;
 
-        const cacheKey = `smart_insights:${req.adType || "SP"}:${profileId}:${configId || "all"}:${fromDate}:${toDate}:${marketplaceId || "all"}:${productTypes || "all"}:${productName || "all"}:${page}:${limit}`;
+        const cacheKey = `smart_insights:${profileId}:${configId || "all"}:${fromDate}:${toDate}:${marketplaceId || "all"}:${productTypes || "all"}:${productName || "all"}:${page}:${limit}`;
         try {
             const cached = await getCacheWithLog(cacheKey);
             if (cached) {
@@ -2433,11 +2420,11 @@ exports.getDashboardInsights = async (req, res) => {
         });
 
         let activeCampaigns = hasActiveCampaigns
-            ? await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId",{ configId, profileId: Number(profileId), status: "ENABLED", reportDate: { $eq: currentDate } })
-            : await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId",{ configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
+            ? await mainCampaignModel.distinct("campaignId", { configId, profileId: Number(profileId), status: "ENABLED", reportDate: { $eq: currentDate } })
+            : await mainCampaignModel.distinct("campaignId", { configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
 
         if (!activeCampaigns || !activeCampaigns.length) {
-            activeCampaigns = await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId",{ configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
+            activeCampaigns = await mainCampaignModel.distinct("campaignId", { configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
         }
 
         const pipeline = [
@@ -2469,10 +2456,9 @@ exports.getDashboardInsights = async (req, res) => {
             { $unwind: { path: "$sales", preserveNullAndEmptyArrays: true } },
             {
                 $lookup: {
-                    from: productAdsLookupSource(adType).from,
+                    from: AD_TYPE_COLLECTIONS?.[adType]?.productAds || "product_ads",
                     let: { asin: "$asin" },
                     pipeline: [
-                        ...productAdsLookupSource(adType).prependStages,
                         {
                             $match: {
                                 $expr: { $eq: ["$$asin", "$asins"] },

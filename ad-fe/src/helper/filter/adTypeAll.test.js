@@ -33,8 +33,6 @@ describe("adTypeAll guard", () => {
     expect(getEffectiveAdType("/campaigns", "All")).toBe("All");
     expect(getEffectiveAdType("/targeting", "All")).toBe("All");
     expect(getEffectiveAdType("/recommandation", "All")).toBe("All");
-    expect(getEffectiveAdType("/", "All")).toBe("All");
-    expect(getEffectiveAdType("/dashboard", "All")).toBe("All");
     expect(getEffectiveAdType("/dayparting-stretegy", "All")).toBe("All");
     expect(getEffectiveAdType("/hourly-performance-tracking", "All")).toBe("All");
     // rule-history sub-routes are not list routes
