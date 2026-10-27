@@ -7,9 +7,12 @@ const headers = {
   "Content-Type": "application/json",
 };
 
-const ApiSearchTermCampaign = (profileId, data) => {
+const ApiSearchTermCampaign = (profileId, data, options = {}) => {
   return axios
-    .post(`${searchTermapi}getSearchTermIdData/${profileId}`, data, { headers: { ...headers, "x-skip-loader": true }, skipLoader: true })
+    .post(`${searchTermapi}getSearchTermIdData/${profileId}`, data, {
+      headers: { ...headers, "x-skip-loader": true, ...(options.headers || {}) },
+      skipLoader: true,
+    })
     .then((res) => res.data)
     .catch((res) => res.data);
 };

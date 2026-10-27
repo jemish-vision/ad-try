@@ -122,10 +122,12 @@ function compareRows(field, dir) {
 //   sortField          (body) => field name to sort on          (default body.fieldName || "spend")
 //   sortDir            (body) => "asc" | "desc"                  (default body.sortType === "ASC")
 //   totalRowExtra      static fields to keep on the merged total row (default { isTotalRow: true })
-//   mergeTotalRow      (perTypeTotalRows[], summedTotals) => merged total row.
-//                      When given it fully owns the merged total row (use it for
-//                      endpoints with averaged fields or extra ratios the default
-//                      sum + acos/roas/cpc/ctr cannot reproduce).
+//   mergeTotalRow      (perTypeTotalRows[], summedTotals, perTypeBodies[]) =>
+//                      merged total row. When given it fully owns the merged
+//                      total row (use it for endpoints with averaged fields or
+//                      extra ratios the default sum + acos/roas/cpc/ctr cannot
+//                      reproduce). perTypeBodies lets it read per-type counts for
+//                      weighted averages.
 //   pageNoKey          response key for the current page number  (default "pageNo"; null to omit)
 //   perPageKey         response key for the page size            (default "perPage"; null to omit)
 //   totalPagesKey      response key for the page count            (optional, e.g. "totalPages")
@@ -212,7 +214,8 @@ function withAllAdTypes(handler, config = {}) {
     let mergedTotalRow;
     if (typeof mergeTotalRow === "function") {
       const perTypeTotalRows = subResults.map(({ body }) => (body[totalRowKey] || {}));
-      mergedTotalRow = { ...mergeTotalRow(perTypeTotalRows, summedTotals), ...totalRowExtra };
+      const perTypeBodies = subResults.map(({ body }) => body);
+      mergedTotalRow = { ...mergeTotalRow(perTypeTotalRows, summedTotals, perTypeBodies), ...totalRowExtra };
     } else {
       mergedTotalRow = { ...summedTotals, ...deriveRatios(summedTotals), ...totalRowExtra };
     }

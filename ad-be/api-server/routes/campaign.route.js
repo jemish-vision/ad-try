@@ -43,9 +43,79 @@ const {
 } = require("../controllers/adGroups.controller");
 const { verifyToken } = require("../middleware/user.auth");
 const { AdTypeModels } = require("../middleware/adTypeModel.middleware");
-const { withAllAdTypes } = require("../helper/allAdTypeHandler");
+const { withAllAdTypes, withAllAdTypesChart, round } = require("../helper/allAdTypeHandler");
 const { campaignAssetsUpload } = require("../helper/campaignAssetsUpload");
 const { verifyCronAuth } = require("../middleware/cron.auth");
+
+// Campaigns exist for all three ad types, so "All" merges SP + SB + SD. The KPI
+// total row sums budget + the base metrics; timeInBudget is combined as a
+// campaign-count-weighted average across types.
+const allCampaigns = withAllAdTypes(getCampaigns, {
+  dataKey: "getCampaign",
+  totalKey: "totalRecords",
+  totalRowKey: "totalRow",
+  excludeSD: false,
+  numericTotalFields: ["budget", "impressions", "clicks", "orders", "spend", "sales"],
+  sortField: (body) => (body && body.sortType && body.fieldName) ? body.fieldName : "acos",
+  pageNoKey: "currentPageNo",
+  perPageKey: null,
+  totalPagesKey: "totalPages",
+  mergeTotalRow: (rows, sums, bodies) => {
+    const counts = bodies.map((b) => Number(b.totalRecords) || 0);
+    const totalCount = counts.reduce((a, b) => a + b, 0);
+    const weightedTib = rows.reduce(
+      (s, r, i) => s + (Number(r.timeInBudget) || 0) * (counts[i] || 0),
+      0,
+    );
+    const impressions = sums.impressions || 0;
+    const clicks = sums.clicks || 0;
+    const spend = sums.spend || 0;
+    const sales = sums.sales || 0;
+    const orders = sums.orders || 0;
+    return {
+      action: "Total",
+      name: "Total",
+      budget: round(sums.budget || 0),
+      timeInBudget: totalCount > 0 ? round(weightedTib / totalCount) : 0,
+      impressions: round(impressions),
+      clicks: round(clicks),
+      orders: round(orders),
+      spend: round(spend),
+      sales: round(sales),
+      acos: sales > 0 ? round((spend / sales) * 100) : 0,
+      roas: spend > 0 ? round(sales / spend) : 0,
+      cpc: clicks > 0 ? round(spend / clicks) : 0,
+      ctr: impressions > 0 ? round((clicks / impressions) * 100) : 0,
+    };
+  },
+});
+
+// Campaign performance chart: sum each date's metrics across the ad types.
+// The single-type series carries only cpc/acos/roas (no ctr/conversionRate),
+// so mirror exactly that set.
+const allCampaignChart = withAllAdTypesChart(getCampaignChartData, {
+  dataKey: "data",
+  groupKey: "reportDate",
+  sumFields: ["impressions", "clicks", "orders", "spend", "sales"],
+  excludeSD: false,
+  deriveRatios: (t) => {
+    const clicks = Number(t.clicks) || 0;
+    const spend = Number(t.spend) || 0;
+    const sales = Number(t.sales) || 0;
+    return {
+      cpc: clicks > 0 ? round(spend / clicks) : 0,
+      acos: sales > 0 ? round((spend / sales) * 100) : 0,
+      roas: spend > 0 ? round(sales / spend) : 0,
+    };
+  },
+  mergeExtra: (bodies) => {
+    const ids = [];
+    for (const b of bodies) {
+      if (Array.isArray(b.filteredCampaignIds)) ids.push(...b.filteredCampaignIds);
+    }
+    return { filteredCampaignIds: ids, totalFilteredCampaigns: ids.length };
+  },
+});
 
 // Change history spans all three ad types (legacy untyped records count as SP),
 // so "All" merges SP + SB + SD. Each type runs its own query so the per-type
@@ -80,7 +150,7 @@ router.post("/previewSDCreative", verifyToken, validateRoutePermission(SYSTEM_PA
 
 router.post("/getCampaignDataTable/:id", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY), getCampaignDataTable);
 router.post("/getCampaignIdData/:id", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY), getCampaignDetailsData);
-router.post("/getCampaigns", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, getCampaigns);
+router.post("/getCampaigns", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, allCampaigns);
 router.post("/getKeywordByAdId/:id", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY), getKeywordByAdId);
 router.post("/cronListCampaignsFromAmazon", verifyToken, verifyCronAuth, cronListCampaignsFromAmazon);
 router.post("/listCampaignName", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY), listCampaignName);
@@ -91,7 +161,7 @@ router.post("/getPlacement", verifyToken, validateRoutePermission(SYSTEM_PAGES.C
 
 router.post("/getHistory", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY, [{ pageName: SYSTEM_PAGES.HISTORY, actionType: PAGE_ACTIONS.VIEW_ONLY }]), AdTypeModels, allHistory);
 router.post("/getLatestCampaignHistory", verifyToken, getLatestCampaignHistory);
-router.post("/getCampaignChartData", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, getCampaignChartData);
+router.post("/getCampaignChartData", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, allCampaignChart);
 
 router.post("/saveCampaignNotifySetting", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.UPDATE), saveCampaignNotifySetting);
 router.post("/AIAnalysis", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY), AIAnalysis);

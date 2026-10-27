@@ -16,6 +16,8 @@ import { ApiUpdatePlacementBidApplyInAmazon } from "../../../api-wrapper/placeme
 import ViewCampaign from "./ViewCampaign";
 import moment from "moment-timezone";
 import { ProfileContext } from "../../../helper/usecontext/useContext";
+import { AdTypeScopeNote, AdTypeBadge } from "../../../helper/filter/AdTypeScopeNote";
+import { isShowingAllAdTypes } from "../../../helper/filter/adTypeAll";
 import { handleLoader, Link, Toast, useDispatch } from "../../../helper/links/Link";
 import { ShadcnDateRangePicker as DateRangePicker } from "../../../components/ui/date-range-picker";
 import { predefinedRanges } from "../../../common/helper/calendarValues/calendarValues";
@@ -419,6 +421,11 @@ function Campaign() {
 
   const { t } = useTranslation();
   let { profileId, selectedAdType, selectedDate, setSelectedDate } = useContext(ProfileContext);
+  // Combined SP+SB+SD view active on the /campaigns screen?
+  const showAllTypes = isShowingAllAdTypes(
+    typeof window !== "undefined" ? window.location.pathname : "",
+    selectedAdType
+  );
 
   const dispatch = useDispatch();
   const location = useLocation();
@@ -773,6 +780,24 @@ function Campaign() {
       },
     },
 
+    // ── Ad Type (only under the combined "All" view) ─────────────────────
+    ...(showAllTypes ? [{
+      headerName: t("Type"),
+      field: "adType",
+      title: "Type",
+      maxWidth: 90,
+      sortable: true,
+      resizable: true,
+      suppressMovable: true,
+      exportFormatter: (val) => String(val || "").toUpperCase(),
+      cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      cellRenderer: (params) => {
+        const row = params.data;
+        if (!row || row?.isTotalRow) return null;
+        return <AdTypeBadge type={params.value} />;
+      },
+    }] : []),
+
     // ── Status Column ─────────────────────────────────────────────────────
     {
       headerName: t("Status"),
@@ -1104,7 +1129,7 @@ function Campaign() {
       resizable: true,
       cellRenderer: (params) => <>{params.value ?? "N/A"}</>,
     },
-  ], [isMobile, disablePinning, selectAll, selectedRows, handleToggleAll, handleToggleRow, t, visibleColumns, sharedFilterParams, checkOrderColumns]);
+  ], [isMobile, disablePinning, selectAll, selectedRows, handleToggleAll, handleToggleRow, t, visibleColumns, sharedFilterParams, checkOrderColumns, showAllTypes]);
 
   // ── Detail cell renderer params (placement expansion) ────────────────────
   const detailCellRenderer = useCallback((params) => <PlacementDetailCellRenderer {...params} handleSubmit={async () => await ApiListing(arg)} />, [arg]);
@@ -2175,6 +2200,12 @@ function Campaign() {
             </div>
 
             <Chart chartLoading={chartLoading} isTotalsLoading={loading} chartData={chartData} totalRow={totalRow} id="chart" />
+
+            {showAllTypes && (
+              <div style={{ padding: "0 0 10px 0" }}>
+                <AdTypeScopeNote selectedAdType={selectedAdType} excludedAdTypes={campaignData?.excludedAdTypes} />
+              </div>
+            )}
 
             <div className="glass-grid-container overflow-hidden" id="campaign-data">
               {/* Header Title Row */}

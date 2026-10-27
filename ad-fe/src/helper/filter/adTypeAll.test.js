@@ -15,7 +15,6 @@ describe("adTypeAll guard", () => {
   test("All degrades to SP on routes not yet migrated", () => {
     // Until an endpoint is migrated its route is not in ALL_SUPPORTED_ROUTES,
     // so "All" must degrade to SP rather than silently show SP-labelled data.
-    expect(getEffectiveAdType("/campaigns", "All")).toBe("SP");
     expect(getEffectiveAdType("/orders", "All")).toBe("SP");
     // detail/drilldown routes are never list routes
     expect(getEffectiveAdType("/targeting/detail/123", "All")).toBe("SP");
@@ -31,6 +30,7 @@ describe("adTypeAll guard", () => {
     expect(getEffectiveAdType("/placement", "All")).toBe("All");
     expect(getEffectiveAdType("/products", "All")).toBe("All");
     expect(getEffectiveAdType("/history", "All")).toBe("All");
+    expect(getEffectiveAdType("/campaigns", "All")).toBe("All");
     expect(getEffectiveAdType("/targeting", "All")).toBe("All");
     // the targeting-history drilldown and campaign-scoped targeting are not All-ready
     expect(getEffectiveAdType("/targeting/history/abc", "All")).toBe("SP");
@@ -42,8 +42,9 @@ describe("adTypeAll guard", () => {
     expect(isAllSupportedRoute("/search-term")).toBe(true);
     expect(isAllSupportedRoute("/search-term/")).toBe(true);
     expect(isAllSupportedRoute("/placement")).toBe(true);
-    expect(isAllSupportedRoute("/campaigns")).toBe(false);
-    expect(isAllSupportedRoute("/campaigns/")).toBe(false);
+    expect(isAllSupportedRoute("/campaigns")).toBe(true);
+    expect(isAllSupportedRoute("/campaigns/")).toBe(true);
+    expect(isAllSupportedRoute("/orders")).toBe(false);
     // prefix-sharing siblings are not matched
     expect(isAllSupportedRoute("/search-term-rule")).toBe(false);
     expect(isAllSupportedRoute("/placement-rule")).toBe(false);

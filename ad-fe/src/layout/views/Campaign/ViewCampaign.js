@@ -1097,7 +1097,14 @@ function ViewCampaign(props) {
         sortType: 'DESC',
         ...args?.[0],
       };
-      ApiSearchTermCampaign(effectiveCampaignId, data)
+      // This campaign belongs to one ad type; when opened from the combined
+      // "All" view, pin that type so the per-type search-term collection is
+      // queried (otherwise the request would fall back to SP for SB/SD).
+      const rowAdType = campaignDetails?.adType;
+      const stOptions = ["SP", "SB", "SD"].includes(rowAdType)
+        ? { headers: { adType: rowAdType } }
+        : {};
+      ApiSearchTermCampaign(effectiveCampaignId, data, stOptions)
         .then((res) => {
           if (res?.isSuccess) {
             if (res?.totalRow && res?.getSearchTermData?.length) {
