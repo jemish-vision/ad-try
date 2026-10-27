@@ -27,6 +27,21 @@ const {
 } = require("../controllers/placement.controller");
 const { uploadExcelFile } = require("../helper/excelFileUpload");
 const { AdTypeModels } = require("../middleware/adTypeModel.middleware");
+const { withAllAdTypes } = require("../helper/allAdTypeHandler");
+
+// Placements exist only for SP + SB (Sponsored Display has none), so "All"
+// here merges SP + SB and reports SD as excluded. The single-type default sort
+// is campaignId descending, so the merge re-sorts the same way.
+const allPlacements = withAllAdTypes(getAllPlacements, {
+    dataKey: "getPlacement",
+    totalKey: "totalRecords",
+    totalRowKey: null,
+    excludeSD: true,
+    sortField: (body) => (body && body.sortType && body.fieldName) ? body.fieldName : "campaignId",
+    pageNoKey: "currentPageNo",
+    perPageKey: null,
+    totalPagesKey: "totalPages",
+});
 
 router.post("/updatePlacementBid", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.UPDATE, [{ pageName: SYSTEM_PAGES.PLACEMENT, actionType: PAGE_ACTIONS.UPDATE }]), updatePlacementBid);
 router.post("/saveInDB", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.UPDATE, [{ pageName: SYSTEM_PAGES.PLACEMENT, actionType: PAGE_ACTIONS.UPDATE }]), updatePlacementBidInDB);
@@ -48,7 +63,7 @@ router.post("/ruleHistory", verifyToken, validateRoutePermission(SYSTEM_PAGES.PL
 router.post("/exportBidPlacementRule", verifyToken, validateRoutePermission(SYSTEM_PAGES.PLACEMENT_RULE, PAGE_ACTIONS.UPDATE), exportBidPlacementRule);
 router.post("/importBidPlacementRule", uploadExcelFile, verifyToken, validateRoutePermission(SYSTEM_PAGES.PLACEMENT_RULE, PAGE_ACTIONS.CREATE), importBidPlacementRule);
 
-router.post("/getAllPlacements", verifyToken, validateRoutePermission(SYSTEM_PAGES.PLACEMENT, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, getAllPlacements);
+router.post("/getAllPlacements", verifyToken, validateRoutePermission(SYSTEM_PAGES.PLACEMENT, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, allPlacements);
 
 router.post("/checkRuleBlockCampaign", verifyToken, checkRuleBlockCampaign);
 

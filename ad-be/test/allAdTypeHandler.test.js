@@ -183,6 +183,42 @@ test("All without excludeSD spans all three types", async () => {
   assert.equal(res.body.getSearchTerm[0].adType, "SD");
 });
 
+test("alternate pagination keys (placement-shaped: no total row)", async () => {
+  // Placement responses use currentPageNo/totalPages and carry no KPI row.
+  const placementHandler = (req, res) => {
+    const rows = (DATA[req.adType] || []).map((r) => ({ ...r }));
+    rows.sort(compareRows("spend", "desc"));
+    const perPage = Number(req.body.perPage) || 10;
+    const page = rows.slice(0, perPage);
+    return res.status(200).send({
+      isSuccess: true,
+      getPlacement: page,
+      currentPageNo: 1,
+      totalRecords: rows.length,
+      totalPages: Math.ceil(rows.length / perPage),
+    });
+  };
+  const w = withAllAdTypes(placementHandler, {
+    dataKey: "getPlacement",
+    totalKey: "totalRecords",
+    totalRowKey: null,
+    excludeSD: true,
+    sortField: () => "spend",
+    pageNoKey: "currentPageNo",
+    perPageKey: null,
+    totalPagesKey: "totalPages",
+  });
+  const res = makeRes();
+  await w(makeReq("All", { pageNo: 2, perPage: 2, fieldName: "spend", sortType: "DESC" }), res);
+  assert.equal(res.body.totalRecords, 4);
+  assert.equal(res.body.currentPageNo, 2);
+  assert.equal(res.body.totalPages, 2); // ceil(4 / 2)
+  assert.equal(res.body.perPage, undefined); // perPageKey disabled
+  assert.equal(res.body.totalRow, undefined); // no KPI row for placements
+  assert.deepEqual(res.body.getPlacement.map((r) => r.searchTerm), ["sb-b", "sp-b"]);
+  assert.deepEqual(res.body.excludedAdTypes, ["SD"]);
+});
+
 test("per-type fetch is capped at pageNo*perPage but totals stay whole", async () => {
   // Spy handler records the perPage it was asked for.
   const seen = [];

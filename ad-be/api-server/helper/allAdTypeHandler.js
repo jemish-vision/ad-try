@@ -112,6 +112,9 @@ function compareRows(field, dir) {
 //   sortField          (body) => field name to sort on          (default body.fieldName || "spend")
 //   sortDir            (body) => "asc" | "desc"                  (default body.sortType === "ASC")
 //   totalRowExtra      static fields to keep on the merged total row (default { isTotalRow: true })
+//   pageNoKey          response key for the current page number  (default "pageNo"; null to omit)
+//   perPageKey         response key for the page size            (default "perPage"; null to omit)
+//   totalPagesKey      response key for the page count            (optional, e.g. "totalPages")
 function withAllAdTypes(handler, config = {}) {
   const {
     dataKey,
@@ -124,6 +127,9 @@ function withAllAdTypes(handler, config = {}) {
     sortField = (body) => (body && body.fieldName) || "spend",
     sortDir = (body) => (body && body.sortType === "ASC" ? "asc" : "desc"),
     totalRowExtra = { isTotalRow: true },
+    pageNoKey = "pageNo",
+    perPageKey = "perPage",
+    totalPagesKey = null,
   } = config;
 
   if (!dataKey || !totalKey) {
@@ -196,11 +202,12 @@ function withAllAdTypes(handler, config = {}) {
       ...subResults[0].body,
       [dataKey]: pageRows,
       [totalKey]: total,
-      pageNo: realPageNo,
-      perPage: realPerPage,
       adTypes,
     };
     if (totalRowKey) payload[totalRowKey] = mergedTotalRow;
+    if (pageNoKey) payload[pageNoKey] = realPageNo;
+    if (perPageKey) payload[perPageKey] = realPerPage;
+    if (totalPagesKey) payload[totalPagesKey] = Math.ceil(total / realPerPage) || 0;
     if (excludedAdTypes.length > 0) payload.excludedAdTypes = excludedAdTypes;
 
     return res.status(200).send(payload);

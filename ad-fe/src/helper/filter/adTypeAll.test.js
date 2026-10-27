@@ -25,18 +25,21 @@ describe("adTypeAll guard", () => {
   });
 
   test("All is sent on migrated routes", () => {
-    // Search terms is migrated, so "All" is passed through there.
+    // Migrated screens pass "All" through.
     expect(getEffectiveAdType("/search-term", "All")).toBe("All");
     expect(getEffectiveAdType("/search-term/", "All")).toBe("All");
+    expect(getEffectiveAdType("/placement", "All")).toBe("All");
   });
 
   test("isAllSupportedRoute honors the allowlist (and trailing slashes)", () => {
     expect(isAllSupportedRoute("/search-term")).toBe(true);
     expect(isAllSupportedRoute("/search-term/")).toBe(true);
+    expect(isAllSupportedRoute("/placement")).toBe(true);
     expect(isAllSupportedRoute("/campaigns")).toBe(false);
     expect(isAllSupportedRoute("/campaigns/")).toBe(false);
     // prefix-sharing siblings are not matched
     expect(isAllSupportedRoute("/search-term-rule")).toBe(false);
+    expect(isAllSupportedRoute("/placement-rule")).toBe(false);
   });
 
   test("SD-excluded routes are flagged", () => {

@@ -4,6 +4,8 @@ import AgTable from "../../../common/grid/AgTable";
 import Filter from "../../../helper/filter/Filter";
 import { handleLoader, Toast, useDispatch } from "../../../helper/links/Link";
 import { ProfileContext } from "../../../helper/usecontext/useContext";
+import { AdTypeScopeNote, AdTypeBadge } from "../../../helper/filter/AdTypeScopeNote";
+import { isShowingAllAdTypes } from "../../../helper/filter/adTypeAll";
 import { ApiGetAllPlacements, ApiUpdatePlacementBid, ApiUpdatePlacementBidApplyInAmazon } from "../../../api-wrapper/placement/ApiPlacement";
 import moment from "moment";
 import { ShadcnDateRangePicker as DateRangePicker } from "../../../components/ui/date-range-picker";
@@ -85,6 +87,11 @@ function Placement() {
   ]);
 
   let { profileId, selectedAdType, currencyCode, selectedDate, setSelectedDate } = useContext(ProfileContext);
+  // Combined SP+SB view active on this screen? (Placements have no SD data.)
+  const showAllTypes = isShowingAllAdTypes(
+    typeof window !== "undefined" ? window.location.pathname : "",
+    selectedAdType
+  );
   const dispatch = useDispatch();
   const [searchName, setSearchName] = useState("");
   const [debouncedSearchName, setDebouncedSearchName] = useState("");
@@ -289,6 +296,23 @@ function Placement() {
         return <CampaignNameCell row={row} name={params.value} />;
       },
     },
+    // Ad-type column: present only under the combined "All" view.
+    ...(showAllTypes ? [{
+      headerName: t("Type"),
+      field: "adType",
+      title: "Type",
+      maxWidth: 90,
+      sortable: true,
+      resizable: true,
+      suppressMovable: true,
+      exportFormatter: (val) => String(val || "").toUpperCase(),
+      cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      cellRenderer: (params) => {
+        const row = params.data;
+        if (!row || row?.isTotalRow) return null;
+        return <AdTypeBadge type={params.value} />;
+      },
+    }] : []),
     {
       headerName: t("placement"),
       field: "placement",
@@ -449,7 +473,7 @@ function Placement() {
       headerComponent: AgCustomHeader,
       headerComponentParams: { ...sharedFilterParams, field: "ctr", hasFilter: true },
     },
-  ], [disablePinning, selectedRows, tableData, t, visibleColumns, sharedFilterParams, checkOrderColumns]);
+  ], [disablePinning, selectedRows, tableData, t, visibleColumns, sharedFilterParams, checkOrderColumns, showAllTypes]);
 
   useEffect(() => {
     if (selectedDate && Array.isArray(selectedDate) && selectedDate.length >= 2) {
@@ -1354,6 +1378,12 @@ function Placement() {
 
         {/* Glass Grid Container Wrapper */}
         <div className="data_content data_content_btn m-0" style={{ padding: 0, border: "none", boxShadow: "none" }}>
+          {showAllTypes && (
+            <div style={{ padding: "0 0 10px 0" }}>
+              <AdTypeScopeNote selectedAdType={selectedAdType} excludedAdTypes={placementData?.excludedAdTypes} />
+            </div>
+          )}
+
           {/* Glass Grid Container */}
           <div className="glass-grid-container overflow-hidden" id="placement-data">
             {/* Table actions bar */}
