@@ -25,58 +25,81 @@ const sdPlacement = require("../models/sdPlacement.model");
 const sdProduct = require("../models/sdProduct.model");
 const sdProductAds = require("../models/sdProductAds.model");
 
+// Per-ad-type model bundles, keyed by code, so the "All" path can hand each
+// migrated controller the models for every type at once.
+const MODELS_BY_TYPE = {
+  SP: {
+    adTypeCampaignSchema: campaign,
+    adTypeAdGroupSchema: adGroup,
+    adTypeSearchTermSchema: searchTerm,
+    adTypeTargetingSchema: targeting,
+    adTypePlacementSchema: placement,
+    adTypeProductSchema: product,
+    adTypeProductAdsSchema: productAds,
+  },
+  SB: {
+    adTypeCampaignSchema: sbCampaign,
+    adTypeAdGroupSchema: sbAdgroup,
+    adTypeSearchTermSchema: sbSearchTerm,
+    adTypeTargetingSchema: sbTargeting,
+    adTypePlacementSchema: sbPlacement,
+    adTypeProductSchema: sbProduct,
+    adTypeProductAdsSchema: sbProductAds,
+  },
+  SD: {
+    adTypeCampaignSchema: sdCampaign,
+    adTypeAdGroupSchema: sdAdgroup,
+    adTypeSearchTermSchema: sdSearchTerm,
+    adTypeTargetingSchema: sdTargeting,
+    adTypePlacementSchema: sdPlacement,
+    adTypeProductSchema: sdProduct,
+    adTypeProductAdsSchema: sdProductAds,
+  },
+};
+
 const AdTypeModels = (req, res, next) => {
   const adType = req.adType;
+
+  // "All" = SP + SB + SD. Controllers migrated for "All" read req.isAllAdTypes /
+  // req.adTypes / req.modelsByType and union the collections themselves. req.models
+  // is kept pointing at SP so any not-yet-migrated controller stays functional
+  // (only migrated screens ever send "All" — the frontend guard enforces that).
+  if (adType === "All") {
+    req.adTypes = ["SP", "SB", "SD"];
+    req.isAllAdTypes = true;
+    req.modelsByType = MODELS_BY_TYPE;
+    req.models = MODELS_BY_TYPE.SP;
+    return next();
+  }
+
   let models = {};
   switch (adType) {
     // ================= SP =================
     case "SP":
-      models = {
-        adTypeCampaignSchema: campaign,
-        adTypeAdGroupSchema: adGroup,
-        adTypeSearchTermSchema: searchTerm,
-        adTypeTargetingSchema: targeting,
-        adTypePlacementSchema: placement,
-        adTypeProductSchema: product,
-        adTypeProductAdsSchema: productAds,
-      };
+      models = MODELS_BY_TYPE.SP;
       break;
 
     // ================= SB =================
     case "SB":
-      models = {
-        adTypeCampaignSchema: sbCampaign,
-        adTypeAdGroupSchema: sbAdgroup,
-        adTypeSearchTermSchema: sbSearchTerm,
-        adTypeTargetingSchema: sbTargeting,
-        adTypePlacementSchema: sbPlacement,
-        adTypeProductSchema: sbProduct,
-        adTypeProductAdsSchema: sbProductAds,
-      };
+      models = MODELS_BY_TYPE.SB;
       break;
 
     // ================= SD =================
     case "SD":
-      models = {
-        adTypeCampaignSchema: sdCampaign,
-        adTypeAdGroupSchema: sdAdgroup,
-        adTypeSearchTermSchema: sdSearchTerm,
-        adTypeTargetingSchema: sdTargeting,
-        adTypePlacementSchema: sdPlacement,
-        adTypeProductSchema: sdProduct,
-        adTypeProductAdsSchema: sdProductAds,
-      };
+      models = MODELS_BY_TYPE.SD;
       break;
 
     default:
       return res.status(400).send({
         isSuccess: false,
-        message: "Invalid adtype header. Allowed: SP, SB, SD",
+        message: "Invalid adtype header. Allowed: SP, SB, SD, All",
       });
   }
 
   req.models = models;
+  req.adTypes = [adType];
+  req.isAllAdTypes = false;
   next();
 };
 
-module.exports = { AdTypeModels };
+module.exports = { AdTypeModels, MODELS_BY_TYPE };

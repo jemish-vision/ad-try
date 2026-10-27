@@ -25,36 +25,14 @@ const sdPlacement = require("../models/sdPlacement.model");
 const sdProduct = require("../models/sdProduct.model");
 const sdProductAds = require("../models/sdProductAds.model");
 
+// Collection-name strings come from the side-effect-free names module (single
+// source of truth); this file adds the Mongoose model bundles on top.
+const AD_TYPE_COLLECTION_NAMES = require("./adTypeCollectionNames");
+
 const AD_TYPE_COLLECTIONS = {
-    SP: {
-        campaign: "campaigns",
-        adGroup: "ad_groups",
-        searchTerm: "searchterms",
-        targeting: "targetings",
-        placement: "placements",
-        product: "products",
-        productAds: "product_ads",
-    },
-
-    SB: {
-        campaign: "sbcampaigns",
-        adGroup: "sbadgroups",
-        searchTerm: "sbsearchterms",
-        targeting: "sbtargetings",
-        placement: "sbplacements",
-        product: "sbproducts",
-        productAds: "sbproductads",
-    },
-
-    SD: {
-        campaign: "sdcampaigns",
-        adGroup: "sdadgroups",
-        searchTerm: "sdsearchterms",
-        targeting: "sdtargetings",
-        placement: "sdplacements",
-        product: "sdproducts",
-        productAds: "sdproductads",
-    },
+    SP: { ...AD_TYPE_COLLECTION_NAMES.SP },
+    SB: { ...AD_TYPE_COLLECTION_NAMES.SB },
+    SD: { ...AD_TYPE_COLLECTION_NAMES.SD },
 
     SPModel: {
         campaignSchema: campaign,

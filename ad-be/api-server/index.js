@@ -101,10 +101,14 @@ app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 app.use((req, res, next) => {
-  const adType = req.headers["adtype"];
+  const rawAdType = req.headers["adtype"];
+  // "All" means SP + SB + SD combined. Preserve it verbatim; anything else
+  // unrecognised still falls back to SP (the single default).
+  const normalized = typeof rawAdType === "string" ? rawAdType.trim() : "";
   const validTypes = ["SP", "SB", "SD"];
 
-  if (adType && validTypes.includes(adType.toUpperCase())) req.adType = adType.toUpperCase();
+  if (normalized.toLowerCase() === "all") req.adType = "All";
+  else if (normalized && validTypes.includes(normalized.toUpperCase())) req.adType = normalized.toUpperCase();
   else req.adType = "SP";
 
   next();

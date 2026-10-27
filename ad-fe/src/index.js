@@ -15,6 +15,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import i18n from "./i18n";
 import { PrimeReactProvider } from 'primereact/api';
 import { ROLES } from "./common/constants";
+import { getEffectiveAdType } from "./helper/filter/adTypeAll";
 
 // Prevent ResizeObserver loop errors from throwing in development
 const _ResizeObserver = window.ResizeObserver;
@@ -247,8 +248,14 @@ axios.interceptors.request.use(
       config.headers["Authorization"] = `Bearer ${authToken}`;
     }
 
-    const adType = localStorage.getItem("adType");
-    if (adType) config.headers["adType"] = adType;
+    // A caller may set an explicit per-request adType (e.g. a drilldown or row
+    // action that must act on one entity's own type); respect it. Otherwise send
+    // "All" only on screens that implement the combined view, degrading to SP
+    // elsewhere so no screen silently shows SP-labelled data under "All".
+    if (!config.headers["adType"]) {
+      const adType = getEffectiveAdType(window.location.pathname, localStorage.getItem("adType"));
+      if (adType) config.headers["adType"] = adType;
+    }
 
     const organizationId = localStorage.getItem("organizationId");
     if (organizationId && organizationId !== "null" && organizationId !== "undefined") {

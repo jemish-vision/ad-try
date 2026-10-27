@@ -10,7 +10,10 @@ function ConfigTypeDropdown({ compact = false }) {
     const typeList = useMemo(() => [
         { key: "SP", label: t("Sponsored Products") },
         { key: "SB", label: t("Sponsored Brands") },
-        { key: "SD", label: t("Sponsored Display") }
+        { key: "SD", label: t("Sponsored Display") },
+        // "All" = SP + SB + SD combined. Listed last so SP stays the default
+        // (the seeding effect below picks typeList[0]).
+        { key: "All", label: t("All Ad Types") }
     ], [t]);
 
     useEffect(() => {
