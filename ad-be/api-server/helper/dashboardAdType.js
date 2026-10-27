@@ -44,21 +44,21 @@ function adsModelsForAdType(adType, hasProductFilter, campaignFallback, productA
   });
 }
 
-// Deep-clone a pipeline so concurrent Mongoose aggregates never share stage
-// objects (cheap insurance — these pipelines are plain JSON-serialisable).
-function clonePipeline(pipeline) {
-  return JSON.parse(JSON.stringify(pipeline));
-}
-
 // Run the same aggregation pipeline across every resolved ad type's campaign
 // collection and merge the results by _id, summing numeric fields. Single type →
 // that model's result unchanged. Use only for ADDITIVE groups (sums of
 // spend/sales/clicks/…); never for pre-derived ratios. Handles both a single
 // {_id: null} rollup and a grouped-by-key (e.g. reportDate) result.
+//
+// The pipeline is shared across the per-type aggregates (never JSON-cloned):
+// these are separate, non-discriminator collections, so Mongoose does not mutate
+// the passed pipeline, and a structural clone would corrupt the BSON types it
+// carries (an ObjectId configId / Date would become a plain string and match
+// nothing → zeroed cards). This mirrors the graph path, which also shares.
 async function aggregateCampaignsAcrossAdTypes(adType, fallbackModel, pipeline) {
   const models = campaignModelsForAdType(adType, fallbackModel);
   if (models.length === 1) return models[0].aggregate(pipeline);
-  const perModel = await Promise.all(models.map((m) => m.aggregate(clonePipeline(pipeline))));
+  const perModel = await Promise.all(models.map((m) => m.aggregate(pipeline)));
   return mergeNumericById(perModel.flat());
 }
 
