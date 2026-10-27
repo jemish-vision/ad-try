@@ -30,6 +30,7 @@ const limitedCPCSchema = require("../models/limitedCPC.model");
 const productAdsSchema = require("../models/productAds.model");
 const searchTermReportSchema = require("../models/searchTerm.model");
 const keywordsHourlyPerformanceSchema = require("../models/keywordsHourlyPerformanceSchema.model");
+const orderSchema = require("../models/order.model");
 const SQSMessageSchema = require("../models/sqsMessages.model");
 const processedSQSMessageSchema = require("../models/processedSQSMessage.model");
 const cronJobSchema = require("../models/cronJob.model");
@@ -7637,178 +7638,15 @@ exports.hourlyCampaignTracking = async (req, res) => {
         },
       },
       {
-        $lookup: {
-          from: "orders",
-          let: {
-            reportDate: "$_id.date",
-            startTime: "$_id.startTime",
-            endTime: "$_id.endTime",
-            profileId: Number(profileId),
-          },
-          pipeline: [
-            {
-              $match: {
-                // Indexed pre-filter (served by { profileId, purchaseDate }); the
-                // $expr below still does the exact timezone-aware slot matching.
-                profileId: Number(profileId),
-                purchaseDate: { $gte: ordersRangeStart, $lte: ordersRangeEnd },
-                $expr: {
-                  $and: [
-                    { $ne: ["$orderStatus", "Cancelled"] },
-                    {
-                      $eq: [
-                        {
-                          $dateToString: {
-                            format: "%Y-%m-%d",
-                            date: "$purchaseDate",
-                            timezone: profile?.timezone,
-                          },
-                        },
-                        "$$reportDate",
-                      ],
-                    },
-                    {
-                      $gte: [
-                        {
-                          $dateToString: {
-                            format: "%H:%M",
-                            date: "$purchaseDate",
-                            timezone: profile?.timezone,
-                          },
-                        },
-                        "$$startTime",
-                      ],
-                    },
-                    {
-                      $lt: [
-                        {
-                          $dateToString: {
-                            format: "%H:%M",
-                            date: "$purchaseDate",
-                            timezone: profile?.timezone,
-                          },
-                        },
-                        "$$endTime",
-                      ],
-                    },
-                  ],
-                },
-              },
-            },
-            {
-              $lookup: {
-                from: "transactions",
-                let: { orderId: "$amazonOrderId" },
-                pipeline: [
-                  {
-                    $match: {
-                      $expr: { $eq: ["$amazonOrderId", "$$orderId"] },
-                      transactionType: "Order Payment",
-                    },
-                  },
-                  {
-                    $group: {
-                      _id: "$amazonOrderId",
-                      principal: { $sum: "$principal" },
-                    },
-                  },
-                ],
-                as: "transactionData",
-              },
-            },
-            {
-              $addFields: {
-                principalAmount: {
-                  $cond: [
-                    { $gt: [{ $size: "$transactionData" }, 0] },
-                    {
-                      $ifNull: [
-                        { $arrayElemAt: ["$transactionData.principal", 0] },
-                        0,
-                      ],
-                    },
-                    { $round: [{ $divide: ["$itemPrice", 1.05] }, 2] },
-                  ],
-                },
-              },
-            },
-            {
-              $group: {
-                _id: null,
-                totalOrders: { $sum: 1 },
-                totalSales: { $sum: "$principalAmount" },
-              },
-            },
-          ],
-          as: "orderData",
-        },
-      },
-      {
+        // Ads-side derived metrics only. Orders / organic totals are merged in
+        // below from a single decorrelated orders pass (not a per-bucket lookup).
         $addFields: {
-          totalOrders: {
-            $ifNull: [{ $arrayElemAt: ["$orderData.totalOrders", 0] }, 0],
-          },
-          totalSales: {
-            $ifNull: [{ $arrayElemAt: ["$orderData.totalSales", 0] }, 0],
-          },
-        },
-      },
-      {
-        $addFields: {
-          organicOrders: { $subtract: ["$totalOrders", "$adsOrders"] },
-          organicSales: { $subtract: ["$totalSales", "$adsSales"] },
-        },
-      },
-      {
-        $addFields: {
-          campaignData: {
-            $concatArrays: [
-              "$campaignData",
-              [
-                {
-                  campaignId: null,
-                  campaignName: "Organic Sales",
-                  type: "organic",
-
-                  impressions: 0,
-                  clicks: 0,
-                  spends: 0,
-
-                  sales: "$organicSales",
-                  orders: "$organicOrders",
-
-                  adsSales: 0,
-                  adsOrders: 0,
-
-                  organicSales: "$organicSales",
-                  organicOrders: "$organicOrders",
-
-                  totalSales: "$totalSales",
-                  totalOrders: "$totalOrders",
-
-                  ctr: 0,
-                  cpc: 0,
-                  acos: 0,
-                  roas: 0,
-                },
-              ],
-            ],
-          },
-        },
-      },
-
-      {
-        $addFields: {
-          sales: "$totalSales",
-          orders: "$totalOrders",
           ctr: {
             $round: [
               {
                 $cond: [
                   { $gt: ["$impressions", 0] },
-                  {
-                    $multiply: [{ $divide: ["$clicks", "$impressions"] }, 100],
-                  },
+                  { $multiply: [{ $divide: ["$clicks", "$impressions"] }, 100] },
                   0,
                 ],
               },
@@ -7856,8 +7694,130 @@ exports.hourlyCampaignTracking = async (req, res) => {
       },
     ];
 
-    const hourlyData =
+    const adsRows =
       await keywordsHourlyPerformanceSchema.aggregate(pipeline).allowDiskUse(true);
+
+    // ── Orders / organic totals, decorrelated ──────────────────────────────
+    // The previous version joined `orders` as a correlated $lookup INSIDE every
+    // hourly bucket (up to 24×days ≈ hundreds of executions), and each run
+    // re-scanned the whole order window computing three timezone conversions per
+    // order plus a nested per-order `transactions` lookup — the 20–40s cost.
+    // The per-hour order/sales totals don't depend on the keyword grouping, so
+    // compute them ONCE here (one indexed scan over { profileId, purchaseDate },
+    // grouped by the timezone-local date + hour) and merge in memory below.
+    const ordersByHour = await orderSchema
+      .aggregate([
+        {
+          $match: {
+            profileId: Number(profileId),
+            purchaseDate: { $gte: ordersRangeStart, $lte: ordersRangeEnd },
+            orderStatus: { $ne: "Cancelled" },
+          },
+        },
+        {
+          $addFields: {
+            _locDate: { $dateToString: { format: "%Y-%m-%d", date: "$purchaseDate", timezone: ordersTz } },
+            _locHour: { $dateToString: { format: "%H", date: "$purchaseDate", timezone: ordersTz } },
+          },
+        },
+        // Trim the ±1-day buffer back to the exact requested window (tz-local).
+        { $match: { $expr: { $and: [{ $gte: ["$_locDate", startDate] }, { $lte: ["$_locDate", endDate] }] } } },
+        {
+          $lookup: {
+            from: "transactions",
+            let: { orderId: "$amazonOrderId" },
+            pipeline: [
+              {
+                $match: {
+                  $expr: { $eq: ["$amazonOrderId", "$$orderId"] },
+                  transactionType: "Order Payment",
+                },
+              },
+              { $group: { _id: "$amazonOrderId", principal: { $sum: "$principal" } } },
+            ],
+            as: "transactionData",
+          },
+        },
+        {
+          $addFields: {
+            principalAmount: {
+              $cond: [
+                { $gt: [{ $size: "$transactionData" }, 0] },
+                { $ifNull: [{ $arrayElemAt: ["$transactionData.principal", 0] }, 0] },
+                { $round: [{ $divide: ["$itemPrice", 1.05] }, 2] },
+              ],
+            },
+          },
+        },
+        {
+          $group: {
+            _id: { date: "$_locDate", hour: "$_locHour" },
+            totalOrders: { $sum: 1 },
+            totalSales: { $sum: "$principalAmount" },
+          },
+        },
+      ])
+      .allowDiskUse(true);
+
+    // Key order totals by `${date}|${HH}` for O(1) lookup per hourly slot.
+    const ordersByKey = new Map();
+    for (const o of ordersByHour || []) {
+      ordersByKey.set(`${o?._id?.date}|${o?._id?.hour}`, {
+        totalOrders: o?.totalOrders || 0,
+        totalSales: o?.totalSales || 0,
+      });
+    }
+
+    // Left-join the per-hour order totals onto each ads bucket and derive the
+    // organic split + the trailing "Organic Sales" campaignData entry — exactly
+    // as the old in-pipeline stages did.
+    const hourlyData = (adsRows || []).map((row) => {
+      const hh = parseInt(String(row?._id?.startTime || "").split(":")[0], 10);
+      const hourKey = Number.isNaN(hh) ? "" : String(hh).padStart(2, "0");
+      const tot = ordersByKey.get(`${row?._id?.date}|${hourKey}`) || { totalOrders: 0, totalSales: 0 };
+
+      const adsSales = row.adsSales || 0;
+      const adsOrders = row.adsOrders || 0;
+      const totalOrders = tot.totalOrders;
+      const totalSales = tot.totalSales;
+      const organicOrders = totalOrders - adsOrders;
+      const organicSales = totalSales - adsSales;
+
+      const campaignData = [
+        ...(row.campaignData || []),
+        {
+          campaignId: null,
+          campaignName: "Organic Sales",
+          type: "organic",
+          impressions: 0,
+          clicks: 0,
+          spends: 0,
+          sales: organicSales,
+          orders: organicOrders,
+          adsSales: 0,
+          adsOrders: 0,
+          organicSales,
+          organicOrders,
+          totalSales,
+          totalOrders,
+          ctr: 0,
+          cpc: 0,
+          acos: 0,
+          roas: 0,
+        },
+      ];
+
+      return {
+        ...row,
+        campaignData,
+        totalOrders,
+        totalSales,
+        organicOrders,
+        organicSales,
+        sales: totalSales,
+        orders: totalOrders,
+      };
+    });
 
     return res.status(200).json({
       isSuccess: true,
