@@ -1,4 +1,5 @@
 const { sanitizeQueryObject } = require("../helper/sanitizeQuery");
+const { mergeRecommendationCountsByRule } = require("../helper/recommendationMerge");
 const moment = require("moment");
 const { default: mongoose } = require("mongoose");
 const crypto = require("crypto");
@@ -2725,6 +2726,25 @@ const computeRecommendationCountsWithDedupe = async (params) => {
     return promise;
 };
 
+// Resolve the per-rule counts for a request. Under "All" (req.isAllAdTypes) the
+// counts are computed once per ad type (each rule's count is aggregated against
+// that type's partitioned collections) and merged by rule. A single ad type
+// keeps the existing single-compute path unchanged.
+const computeRecommendationCountsForRequest = async (req) => {
+    const configId = req?.config?.configId;
+    const profileId = req?.body?.profileId;
+    if (req?.isAllAdTypes && req?.modelsByType) {
+        const types = (req.adTypes && req.adTypes.length) ? req.adTypes : ["SP", "SB", "SD"];
+        const perType = await Promise.all(
+            types.map((t) =>
+                computeRecommendationCountsWithDedupe({ configId, profileId, adType: t, models: req.modelsByType[t] })
+            )
+        );
+        return mergeRecommendationCountsByRule(perType);
+    }
+    return computeRecommendationCountsWithDedupe({ configId, profileId, adType: req?.adType, models: req.models });
+};
+
 exports.getRecommendation = async (req, res) => {
     const configId = req?.config?.configId;
     const profileId = req?.body?.profileId;
@@ -2750,7 +2770,7 @@ exports.getRecommendation = async (req, res) => {
         } catch (_) {}
 
         if (!computed) {
-            computed = await computeRecommendationCountsWithDedupe({ configId, profileId, adType, models: req.models });
+            computed = await computeRecommendationCountsForRequest(req);
             try {
                 await setCacheWithLog(cacheKey, JSON.stringify(computed), 180);
             } catch (_) {}
@@ -3449,7 +3469,7 @@ exports.getTotalRecommendationCount = async (req, res) => {
             return res.status(203).send({ isSuccess: false, message: "profileId is required." });
         }
 
-        const computed = await computeRecommendationCountsWithDedupe({ configId, profileId, adType, models: req.models });
+        const computed = await computeRecommendationCountsForRequest(req);
 
         if (!computed.length) {
             return res.status(200).send({

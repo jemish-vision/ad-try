@@ -32,6 +32,7 @@ describe("adTypeAll guard", () => {
     expect(getEffectiveAdType("/history", "All")).toBe("All");
     expect(getEffectiveAdType("/campaigns", "All")).toBe("All");
     expect(getEffectiveAdType("/targeting", "All")).toBe("All");
+    expect(getEffectiveAdType("/recommandation", "All")).toBe("All");
     // the targeting-history drilldown and campaign-scoped targeting are not All-ready
     expect(getEffectiveAdType("/targeting/history/abc", "All")).toBe("SP");
     expect(getEffectiveAdType("/targeting/123", "All")).toBe("SP");

@@ -57,8 +57,11 @@ const ApiDeleteRecommendation = (id, data) => {
         .then(res => res.data).catch(res => res.data)
 }
 
-const ApiApplyRuleRecommendation = (id, data) => {
-    return axios.post(`${api}applyRuleRecommendation/${id}`, data, { headers, timeout: 180000 })
+const ApiApplyRuleRecommendation = (id, data, options = {}) => {
+    return axios.post(`${api}applyRuleRecommendation/${id}`, data, {
+        headers: { ...headers, ...(options.headers || {}) },
+        timeout: 180000,
+    })
         .then(res => res.data).catch(res => res.data)
 }
 

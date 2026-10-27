@@ -1587,12 +1587,27 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
             return base;
         });
 
+        // Under the combined "All" view, items span ad types — surface each
+        // row's type so SP/SB/SD items stay distinguishable.
+        const adTypeColumn = {
+            field: "adType",
+            headerName: "Type",
+            minWidth: 80,
+            width: 85,
+            maxWidth: 100,
+            sortable: true,
+            filter: false,
+            cellStyle: { display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600 },
+            valueFormatter: (p) => String(p.value || "").toUpperCase(),
+        };
+
         const hasActions = actions && actions.length > 0;
         return [
             ...(canUpdate && hasActions ? [checkboxColumn] : []),
+            ...(adType === "All" ? [adTypeColumn] : []),
             ...mappedColumns
         ];
-    }, [gridName, cellRendererMap, canUpdate, getRowId, toggleAll, headerCheckboxEvents, toggleRow, actions]);
+    }, [gridName, cellRendererMap, canUpdate, getRowId, toggleAll, headerCheckboxEvents, toggleRow, actions, adType]);
 
     const defaultColDef = useMemo(() => ({
         flex: 0,
@@ -1644,7 +1659,33 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         setApplyLoading(true);
 
         try {
-            const res = await ApiApplyRuleRecommendation(ruleId, { profileId, items: selectedRows });
+            const applyOne = (items, headerType) =>
+                ApiApplyRuleRecommendation(
+                    ruleId,
+                    { profileId, items },
+                    headerType && ["SP", "SB", "SD"].includes(headerType) ? { headers: { adType: headerType } } : {}
+                );
+
+            let res;
+            if (adType === "All") {
+                // Under the combined view the selected items can span ad types.
+                // The apply endpoint is ad-type-specific (no "All" branch), so
+                // group the items by their own ad type and fan out one call per
+                // type, pinning that type's header.
+                const groups = selectedRows.reduce((acc, row) => {
+                    const t = ["SP", "SB", "SD"].includes(row?.adType) ? row.adType : "SP";
+                    (acc[t] = acc[t] || []).push(row);
+                    return acc;
+                }, {});
+                const entries = Object.entries(groups);
+                const results = await Promise.all(entries.map(([t, items]) => applyOne(items, t)));
+                const okFor = (r) => r?.isSuccess && (r?.data?.isSuccess ?? true);
+                res = results.every(okFor)
+                    ? { isSuccess: true, data: { isSuccess: true, message: `Recommendation applied (${entries.map(([t]) => t).join(", ")})` } }
+                    : (results.find((r) => !okFor(r)) || { isSuccess: false });
+            } else {
+                res = await applyOne(selectedRows, null);
+            }
 
             if (res?.isSuccess && (res?.data?.isSuccess ?? true)) {
                 Toast.success(res?.data?.message || "Recommendation applied successfully");

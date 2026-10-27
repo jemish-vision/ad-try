@@ -2,6 +2,8 @@ import { SYSTEM_PAGES, PAGE_ACTIONS } from "src/common/constants";
 import { useEffect, useState, useContext, useCallback, useMemo } from "react";
 import Filter from "../../../helper/filter/Filter";
 import { ProfileContext } from "../../../helper/usecontext/useContext";
+import { AdTypeScopeNote } from "../../../helper/filter/AdTypeScopeNote";
+import { isShowingAllAdTypes } from "../../../helper/filter/adTypeAll";
 import { useTranslation } from "react-i18next";
 import {
   ApiGetRecommendation,
@@ -434,6 +436,11 @@ function Recommendation() {
   }, []);
 
   const selectedCampaign = useContext(ProfileContext);
+  // Under "All" the rule counts are summed across SP+SB+SD.
+  const showAllTypes = isShowingAllAdTypes(
+    typeof window !== "undefined" ? window.location.pathname : "",
+    selectedCampaign?.selectedAdType
+  );
   const [recommendations, setRecommendations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -610,6 +617,11 @@ function Recommendation() {
         {activeTab === 0 && (
           <div className="data_content data_content_btn m-0" style={{ padding: 0, border: "none", boxShadow: "none" }}>
             <div className="glass-grid-container overflow-hidden" style={{ padding: isMobile ? "16px 20px" : "24px 32px" }}>
+              {showAllTypes && (
+                <div style={{ marginBottom: 16 }}>
+                  <AdTypeScopeNote selectedAdType={selectedCampaign?.selectedAdType} />
+                </div>
+              )}
               {/* Header */}
               <div className="flex justify-between items-center flex-wrap" style={{ marginBottom: 24, gap: 12 }}>
                 <div>

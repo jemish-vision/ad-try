@@ -332,9 +332,106 @@ function withAllAdTypesChart(handler, config = {}) {
   };
 }
 
+// "All" wrapper for a per-rule item list that is sorted by a flag (not a
+// metric) and whose response carries several count fields to sum. Unlike the
+// grid wrapper there is no numeric global sort, so it fetches the FULL item set
+// from each type (via fetchAllBody), concatenates (tagging each row's adType),
+// optionally floats "new" rows first, then paginates in memory and sums the
+// count fields. Used for recommendation per-rule items.
+//
+// config:
+//   dataKey        item array key                      (default "data")
+//   countFields    response count fields to sum         (e.g. ["count","totalRecords","validCount",…])
+//   totalKey       which summed field drives totalPages (default "totalRecords")
+//   pageNoKey      current-page key                     (default "currentPage")
+//   perPageKey     page-size key                        (default "perPage")
+//   totalPagesKey  page-count key                       (default "totalPages")
+//   fetchAllBody   body override making the handler return every item (default {page:0,perPage:0})
+//   newField       boolean row field floated first      (default "isNew"; null to keep order)
+//   excludeSD      true for SP+SB-only features
+//   tagField       row ad-type tag                      (default "adType")
+function withAllAdTypesItemList(handler, config = {}) {
+  const {
+    dataKey = "data",
+    countFields = [],
+    totalKey = "totalRecords",
+    pageNoKey = "currentPage",
+    perPageKey = "perPage",
+    totalPagesKey = "totalPages",
+    fetchAllBody = { page: 0, perPage: 0 },
+    newField = "isNew",
+    excludeSD = false,
+    tagField = "adType",
+  } = config;
+
+  return async function allAdTypeItemListRoute(req, res) {
+    if (req.adType !== "All") {
+      return handler(req, res);
+    }
+
+    const adTypes = resolveAdTypes("All", { excludeSD });
+    const excludedAdTypes = resolveAdTypes("All").filter((t) => !adTypes.includes(t));
+
+    const realPageNo = Math.max(0, Number(req.body && (req.body.page || req.body.pageNo)) || 0);
+    const realPerPage = Math.max(0, Number(req.body && (req.body.perPage || req.body.limit)) || 0);
+
+    const subResults = [];
+    for (const adType of adTypes) {
+      const subReq = buildSubRequest(req, adType, fetchAllBody);
+      const { mockRes, promise } = captureResponse();
+      await handler(subReq, mockRes);
+      const result = await promise;
+      if (!result || result.statusCode !== 200 || !result.body || result.body.isSuccess !== true) {
+        return res
+          .status((result && result.statusCode) || 500)
+          .send((result && result.body) || { isSuccess: false, message: "Something went wrong" });
+      }
+      subResults.push({ adType, body: result.body });
+    }
+
+    let merged = [];
+    for (const { adType, body } of subResults) {
+      const rows = Array.isArray(body[dataKey]) ? body[dataKey] : [];
+      for (const row of rows) {
+        merged.push(row && typeof row === "object" && !Array.isArray(row)
+          ? { ...row, [tagField]: row[tagField] || adType }
+          : row);
+      }
+    }
+    if (newField) {
+      // stable: "new" rows first, original order preserved otherwise
+      merged = merged
+        .map((row, i) => ({ row, i, isNew: !!(row && row[newField]) }))
+        .sort((a, b) => (a.isNew === b.isNew ? a.i - b.i : a.isNew ? -1 : 1))
+        .map((x) => x.row);
+    }
+
+    const totalRecords = subResults.reduce((s, { body }) => s + (Number(body[totalKey]) || 0), 0);
+    const pageRows = (realPageNo > 0 && realPerPage > 0)
+      ? merged.slice((realPageNo - 1) * realPerPage, realPageNo * realPerPage)
+      : merged;
+
+    const payload = { ...subResults[0].body, [dataKey]: pageRows, adTypes };
+    for (const f of countFields) {
+      payload[f] = subResults.reduce((s, { body }) => s + (Number(body[f]) || 0), 0);
+    }
+    if (pageNoKey) payload[pageNoKey] = realPageNo || 1;
+    if (perPageKey) payload[perPageKey] = realPerPage || totalRecords;
+    if (totalPagesKey) {
+      payload[totalPagesKey] = (realPageNo > 0 && realPerPage > 0)
+        ? (Math.ceil(totalRecords / realPerPage) || 1)
+        : 1;
+    }
+    if (excludedAdTypes.length > 0) payload.excludedAdTypes = excludedAdTypes;
+
+    return res.status(200).send(payload);
+  };
+}
+
 module.exports = {
   withAllAdTypes,
   withAllAdTypesChart,
+  withAllAdTypesItemList,
   deriveStandardRatios,
   deriveChartRatios,
   round,
