@@ -110,7 +110,7 @@ export default function AssignedCampaignsWidget({
           </div>
           <div>
             <h3 className="text-[14px] font-bold text-slate-900 dark:text-white tracking-tight">
-              {t("Assigned vs. Without Assign Campaigns")}
+              {t("Rule/Automation Assigned vs. Without Rule/Automation Assign Campaigns")}
             </h3>
             <p className="text-[11.5px] text-slate-400 dark:text-slate-400 font-normal mt-0.5">
               {t("Rule execution and performance attribution for selected date period")} ({dateFromStr} to {dateToStr})

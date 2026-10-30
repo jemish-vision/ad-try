@@ -2,6 +2,7 @@ const { QueueEvents } = require("bullmq");
 const os = require("os");
 const { QUEUES } = require("../queues/queueNames");
 const { getEventsConnection, getBullMQPrefix } = require("../config/bullmq.config");
+const { cron_logs } = require("../../winston/cronAutomation/logger");
 
 let rulesEvents = null;
 let syncEvents = null;
@@ -22,11 +23,17 @@ function setupQueueEventListeners(eventsInstance, queueName) {
   });
 
   eventsInstance.on("failed", ({ jobId, failedReason, prev }) => {
-    console.error(`[QueueEvents][${queueName}] Job failed: ${jobId}, reason: ${failedReason}`);
+    cron_logs({
+      message: `[QueueEvents][${queueName}] Job failed: ${jobId}, reason: ${failedReason} (prev: ${prev})`,
+      log_type: "error",
+    });
   });
 
   eventsInstance.on("stalled", ({ jobId }) => {
-    console.warn(`[QueueEvents][${queueName}] Job stalled: ${jobId}`);
+    cron_logs({
+      message: `[QueueEvents][${queueName}] Job stalled: ${jobId} (Lock expired or worker lost; BullMQ will re-queue)`,
+      log_type: "warn",
+    });
   });
 
   eventsInstance.on("progress", ({ jobId, data }) => {
@@ -34,7 +41,10 @@ function setupQueueEventListeners(eventsInstance, queueName) {
   });
 
   eventsInstance.on("error", (err) => {
-    console.error(`[QueueEvents][${queueName}] Error:`, err);
+    cron_logs({
+      message: `[QueueEvents][${queueName}] Queue error: ${err?.stack || err?.message || err}`,
+      log_type: "error",
+    });
   });
 }
 

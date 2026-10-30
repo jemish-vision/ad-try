@@ -15,6 +15,7 @@ import NotificationPanel from '../notification/NotificationPanel';
 import { ApiSelectAccount, ApiAddToFavorite } from '../../api-wrapper/campaign/ApiCampaign';
 import ConfigTypeDropdown from './ConfigDropDown/ConfigTypeDropdown';
 import ConfigProfileDropdown from './ConfigDropDown/ConfigProfileDropdown';
+import { resolveProfileSelection } from './profileSelection';
 import LanguageSelector from '../../components/LanguageSelector';
 
 import { ApiGetGlobalSettings, ApiUpdateMaintenanceMode } from "../../api-wrapper/globalSettings/ApiGlobalSettings";
@@ -425,7 +426,6 @@ function LayoutHeader({ nameShow = false, name, dateShow = false, profileShow, i
     };
 
     const checkAndSetDefaultProfile = useCallback((list) => {
-        if (!Boolean(list?.length)) return;
         const storedProfileObj = (() => {
             try {
                 return JSON.parse(localStorage.getItem('profile'));
@@ -433,33 +433,24 @@ function LayoutHeader({ nameShow = false, name, dateShow = false, profileShow, i
                 return null;
             }
         })();
-        const hasValidProfile = storedProfileObj && storedProfileObj.profile && storedProfileObj.profile.profileId && list.some(cfg => cfg.profiles?.some(p => String(p.profileId) === String(storedProfileObj.profile.profileId)));
-
-        if (!hasValidProfile) {
-            const arr = [moment(new Date()).startOf('month')?.format("YYYY-MM-DD"), moment(new Date())?.format("YYYY-MM-DD")]
-            setSelectedDate(arr)
-
-            const defaultConfig = list.find(cfg => cfg.profiles?.some(p => p.isFavorite)) ?? list?.[0];
-            const defaultProfile = defaultConfig?.profiles?.find(p => p.isFavorite) ?? defaultConfig?.profiles?.[0];
-
-            if (defaultConfig && defaultProfile) {
-                const sendData = { config: defaultConfig, profile: defaultProfile, currencyCode: defaultProfile?.currencyCode, date: arr }
-                localStorage.setItem('profile', JSON.stringify(sendData))
-                setSelectedConfig({ config: defaultConfig, profile: defaultProfile })
-            }
-        } else if (storedProfileObj?.config && storedProfileObj?.profile) {
-            setSelectedConfig({ config: storedProfileObj.config, profile: storedProfileObj.profile });
+        const selection = resolveProfileSelection(list, storedProfileObj);
+        if (!selection) {
+            localStorage.removeItem('profile');
+            setSelectedConfig(null);
+            setProfileId({ value: null });
+            window.dispatchEvent(new CustomEvent('profileChanged'));
+            return;
         }
-    }, [setSelectedDate, setSelectedConfig]);
+        const dates = storedProfileObj?.date ?? [moment().startOf('month').format('YYYY-MM-DD'), moment().format('YYYY-MM-DD')];
+        const sendData = { ...storedProfileObj, ...selection, currencyCode: selection.profile.currencyCode, date: dates };
+        localStorage.setItem('profile', JSON.stringify(sendData));
+        setSelectedDate(dates);
+        setSelectedConfig(selection);
+        setProfileId({ value: selection.profile.profileId });
+        window.dispatchEvent(new CustomEvent('profileChanged', { detail: selection }));
+    }, [setSelectedDate, setSelectedConfig, setProfileId]);
 
     const profileHandler = useCallback(() => {
-        if (Boolean(profileList?.length)) {
-            setToday(moment(new Date())?.format("YYYY-MM-DD"))
-            setAccountList(profileList)
-            checkAndSetDefaultProfile(profileList);
-            return
-        }
-
         ApiSelectAccount()
             .then((res) => {
                 if (res.isSuccess && res.data) {
@@ -485,6 +476,11 @@ function LayoutHeader({ nameShow = false, name, dateShow = false, profileShow, i
             }).catch(() => { });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [checkAndSetDefaultProfile]);
+
+    useEffect(() => {
+        window.addEventListener('profileAvailabilityChanged', refreshProfileList);
+        return () => window.removeEventListener('profileAvailabilityChanged', refreshProfileList);
+    }, [refreshProfileList]);
 
     const toggleFavorite = useCallback(async (profile, configId, e) => {
         e.stopPropagation();
@@ -591,15 +587,6 @@ function LayoutHeader({ nameShow = false, name, dateShow = false, profileShow, i
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [localStorage.getItem('profile')]);
 
-
-    useEffect(() => {
-        let storeData = JSON.parse(localStorage.getItem('profile'));
-        if (storeData && storeData?.profile?.profileId) {
-            setProfileId(prev => (prev?.value === storeData?.profile?.profileId) ? prev : { value: storeData?.profile?.profileId });
-            setSelectedConfig(prev => (prev?.profile?.profileId === storeData?.profile?.profileId) ? prev : { config: storeData?.config, profile: storeData?.profile });
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [localStorage.getItem('profile')]);
 
     useEffect(() => {
         const getSidebar = () => document.getElementById("sidebar-wrapper") || document.getElementById("owner-sidebar");
@@ -762,28 +749,6 @@ function LayoutHeader({ nameShow = false, name, dateShow = false, profileShow, i
                             <div id="profile-selection" className='select_icon inner_filter last_inner' style={{ visibility: activeProfileShow ? 'visible' : 'hidden' }}>
                                 <ConfigProfileDropdown ConfigList={accountList} toggleFavorite={toggleFavorite} compact={isCompact} />
                             </div>
-                        )
-                    }
-                    {
-                        role !== ROLES.SUPER_ADMIN && !localStorage.getItem("superAdminToken") && (
-                            <AppTooltip text={t("Switch Organization")} side="bottom">
-                                <button
-                                    id="org-switcher"
-                                    onClick={() => window.location.href = "/select-organization?mode=switch"}
-                                    className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white/60 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-700/80 border border-[#C4D7E5] dark:border-slate-700 transition-all shrink-0 ml-1"
-                                    style={{ height: "36px" }}
-                                    title={t("Switch Organization")}
-                                >
-                                    <i className="fa fa-building text-blue-500 dark:text-blue-400" />
-                                    <span className="hidden xl:inline font-bold max-w-[130px] truncate">
-                                        {currentOrgName || "Switch Org"}
-                                    </span>
-                                    <span className="hidden sm:inline xl:hidden font-bold max-w-[80px] truncate">
-                                        {currentOrgName || "Org"}
-                                    </span>
-                                    <i className="fa fa-exchange-alt text-[10px] opacity-60 ml-0.5" />
-                                </button>
-                            </AppTooltip>
                         )
                     }
                     {Boolean(localStorage.getItem("superAdminToken")) && (

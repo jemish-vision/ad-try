@@ -1,6 +1,10 @@
 import React, { forwardRef, useRef, useCallback, useEffect, useState, useContext, useMemo, useImperativeHandle } from "react";
 import { useTranslation } from "react-i18next";
 import { AgGridReact } from "ag-grid-react";
+import { ModuleRegistry, AllCommunityModule } from "ag-grid-community";
+import { AllEnterpriseModule } from "ag-grid-enterprise";
+
+ModuleRegistry.registerModules([AllCommunityModule, AllEnterpriseModule]);
 import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-alpine.css";
 import { ApiListGetColumns, ApiListUpdateColumns } from "../../api-wrapper/columns/ApiColumns";
@@ -114,6 +118,7 @@ const AgTable = forwardRef(function AgTable(
     isLoading = false,
     onRefresh,
     enableCustomizeColumns = true,
+    sideBar = false,
     ...rest
   },
   ref
@@ -672,7 +677,7 @@ const AgTable = forwardRef(function AgTable(
           suppressRowVirtualisation={false}
 
           // Column sidebar
-          sideBar={GRID_SIDEBAR}
+          sideBar={sideBar || false}
 
           {...rest}
         />

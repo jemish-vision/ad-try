@@ -919,18 +919,46 @@ function Sidebar({ open, setOpen }) {
                       </div>
                     </div>
 
-                    <div className="bg-white/90 dark:bg-slate-900/90 rounded-xl p-2.5 border border-gray-200/70 dark:border-slate-700/70 flex items-center justify-between gap-2 shadow-2xs">
-                      <div className="min-w-0 flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs shrink-0">
+                    <div
+                      id="org-switcher"
+                      className={`bg-white/90 dark:bg-slate-900/90 rounded-xl p-2.5 border border-gray-200/70 dark:border-slate-700/70 flex items-center justify-between gap-2 shadow-2xs ${
+                        role !== ROLES.SUPER_ADMIN && !localStorage.getItem("superAdminToken")
+                          ? "group cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50/40 dark:hover:bg-blue-950/20 transition-all"
+                          : ""
+                      }`}
+                      onClick={() => {
+                        if (role !== ROLES.SUPER_ADMIN && !localStorage.getItem("superAdminToken")) {
+                          window.location.href = "/select-organization?mode=switch";
+                        }
+                      }}
+                      title={role !== ROLES.SUPER_ADMIN && !localStorage.getItem("superAdminToken") ? t("Switch Organization") : undefined}
+                    >
+                      <div className="min-w-0 flex items-center gap-2 flex-1">
+                        <div className="w-6 h-6 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs shrink-0 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/80 transition-colors">
                           <i className="fa fa-building" />
                         </div>
                         <span className="font-semibold text-xs text-gray-800 dark:text-gray-200 truncate" title={localStorage.getItem("organizationName") || loginUser?.organization?.organizationName || loginUser?.companyName || t("Organization")}>
                           {localStorage.getItem("organizationName") || loginUser?.organization?.organizationName || loginUser?.companyName || t("Organization")}
                         </span>
                       </div>
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800 shrink-0 uppercase tracking-wider">
-                        {role || localStorage.getItem("role") || t("Member")}
-                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800 shrink-0 uppercase tracking-wider">
+                          {role || localStorage.getItem("role") || t("Member")}
+                        </span>
+                        {role !== ROLES.SUPER_ADMIN && !localStorage.getItem("superAdminToken") && (
+                          <button
+                            type="button"
+                            className="w-6 h-6 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 group-hover:bg-blue-600 group-hover:text-white dark:group-hover:bg-blue-600 dark:group-hover:text-white flex items-center justify-center text-[11px] transition-all border border-slate-200/80 dark:border-slate-700 shrink-0"
+                            title={t("Switch Organization")}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              window.location.href = "/select-organization?mode=switch";
+                            }}
+                          >
+                            <i className="fa fa-exchange-alt" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -939,6 +967,15 @@ function Sidebar({ open, setOpen }) {
                     <DropdownMenuItem className="cursor-pointer py-2 px-3 rounded-md" onClick={() => navigate("/profile")}>
                       {t("View Profile")}
                     </DropdownMenuItem>
+                    {role !== ROLES.SUPER_ADMIN && !localStorage.getItem("superAdminToken") && (
+                      <DropdownMenuItem
+                        className="cursor-pointer py-2 px-3 rounded-md flex items-center gap-2 text-slate-700 dark:text-slate-200"
+                        onClick={() => window.location.href = "/select-organization?mode=switch"}
+                      >
+                        <i className="fa fa-exchange-alt text-xs text-blue-500" />
+                        <span>{t("Switch Organization")}</span>
+                      </DropdownMenuItem>
+                    )}
                     {role === ROLES.ADMIN && (
                       <DropdownMenuItem className="cursor-pointer py-2 px-3 rounded-md" onClick={() => navigate("/purchase-plans")}>
                         {t("Purchase Plans")}

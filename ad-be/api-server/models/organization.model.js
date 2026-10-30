@@ -60,6 +60,23 @@ const organizationSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    isDataDeletionStopped: {
+      type: Boolean,
+      default: false,
+    },
+    dataDeletionStoppedAt: {
+      type: Date,
+      default: null,
+    },
+    dataDeletionStoppedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "user",
+      default: null,
+    },
+    isFavorite: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );

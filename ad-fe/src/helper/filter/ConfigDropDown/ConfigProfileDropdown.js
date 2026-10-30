@@ -6,6 +6,7 @@ import { CheckCircle as CheckCircleOutlined } from "@phosphor-icons/react";
 import React, { useContext, useMemo, useState, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { ProfileContext } from "../../usecontext/useContext";
+import { isProfileAvailable } from "../profileSelection";
 
 function ConfigProfileDropdown({ ConfigList, compact = false, toggleFavorite }) {
     const { t } = useTranslation();
@@ -71,9 +72,7 @@ function ConfigProfileDropdown({ ConfigList, compact = false, toggleFavorite }) 
             const profiles = cfg.profiles.filter(p => {
                 // If ads and seller both are disconnected, do not show in top profile.
                 // If any one of them is active, show.
-                const isAdsActive = p.isAdsActive !== undefined ? p.isAdsActive : (p.isAdsSyncEnabled !== false);
-                const isSpActive = p.isSpActive !== undefined ? p.isSpActive : (p.isSpSyncEnabled === true);
-                if (!isAdsActive && !isSpActive) {
+                if (!isProfileAvailable(p)) {
                     return false;
                 }
 

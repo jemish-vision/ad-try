@@ -41,29 +41,43 @@ async function startSpApiWorker() {
   });
 
   worker.on("active", (job) => {
+    const task = job.data?.task || "UNKNOWN_TASK";
+    const attempt = job.attemptsMade ? job.attemptsMade + 1 : 1;
+    const maxAttempts = job.opts?.attempts || 1;
+    const timeBlock = job.data?.timeBlock || "N/A";
     cron_logs({
-      message: `[SpApiWorker] Started job ${job.id} (${job.data?.task})`,
+      message: `[SpApiWorker] >>> STARTING Job ${job.id} | Task: ${task} [TimeBlock: ${timeBlock}] (Attempt ${attempt}/${maxAttempts})`,
       log_type: "info",
     });
   });
 
-  worker.on("completed", (job) => {
+  worker.on("completed", (job, result) => {
+    const task = job.data?.task || "UNKNOWN_TASK";
+    const duration = job.processedOn ? `${Date.now() - job.processedOn}` : "unknown";
+    let detail = "";
+    if (result?.dryRun) {
+      detail = " (DryRun - Shadow Mode)";
+    }
     cron_logs({
-      message: `[SpApiWorker] Completed job ${job.id} (${job.data?.task})`,
+      message: `[SpApiWorker] <<< COMPLETED Job ${job.id} | Task: ${task} | Duration: ${duration}ms${detail}`,
       log_type: "info",
     });
   });
 
   worker.on("failed", (job, err) => {
+    const task = job?.data?.task || "UNKNOWN_TASK";
+    const attempt = job?.attemptsMade || 0;
+    const maxAttempts = job?.opts?.attempts || 1;
+    const duration = job?.processedOn ? `${Date.now() - job.processedOn}` : "unknown";
     cron_logs({
-      message: `[SpApiWorker] Failed job ${job?.id} (${job?.data?.task}): ${err.message || err}`,
+      message: `[SpApiWorker] !!! FAILED Job ${job?.id} | Task: ${task} | Duration: ${duration}ms | Attempt ${attempt}/${maxAttempts} | Error: ${err?.stack || err?.message || err}`,
       log_type: "error",
     });
   });
 
   worker.on("error", (err) => {
     cron_logs({
-      message: `[SpApiWorker] Worker error: ${err.message || err}`,
+      message: `[SpApiWorker] Worker Error: ${err?.stack || err?.message || err}`,
       log_type: "error",
     });
   });

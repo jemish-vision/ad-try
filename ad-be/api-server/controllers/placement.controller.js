@@ -359,8 +359,16 @@ async function spGenerateReport(
     return createResp.data.status;
   }
 
-  if (existing.status === "STAGED" && existing.importRunId && await getRunManifest(existing.importRunId)) {
-    return "STAGED";
+  if (existing.status === "STAGED") {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const lastActivity = new Date(existing.updatedAt || existing.createdAt);
+    if (lastActivity < twoHoursAgo) {
+      await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+      existing = null;
+    } else {
+      processStagedReportBatches(["placement"]).catch(() => {});
+      return "STAGED";
+    }
   }
 
   // 2️⃣ Poll status
@@ -508,8 +516,16 @@ async function sbGenerateReport(
     return createResp.data.status;
   }
 
-  if (existing.status === "STAGED" && existing.importRunId && await getRunManifest(existing.importRunId)) {
-    return "STAGED";
+  if (existing.status === "STAGED") {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const lastActivity = new Date(existing.updatedAt || existing.createdAt);
+    if (lastActivity < twoHoursAgo) {
+      await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+      existing = null;
+    } else {
+      processStagedReportBatches(["sbPlacement"]).catch(() => {});
+      return "STAGED";
+    }
   }
 
   // 2️⃣ Poll status

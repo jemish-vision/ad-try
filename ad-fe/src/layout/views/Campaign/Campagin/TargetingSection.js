@@ -23,7 +23,7 @@ import TargetingAdjustBidModal from "../../Targeting/Targeting/TargetingAdjustBi
 import AddKeywordsModal from "./AddKeywordsModal";
 import { FiClock } from "react-icons/fi";
 import TargetingHistoryModal from "./TargetingHistoryModal";
-import { TargetingTypeBadge } from "../../../../utility/targetingUtils";
+import { TargetingTypeBadge, getNormalizedTargetingType } from "../../../../utility/targetingUtils";
 
 const TargetingSection = ({ campaignDetails, date, viewPress }) => {
   const { t } = useTranslation();
@@ -81,6 +81,26 @@ const TargetingSection = ({ campaignDetails, date, viewPress }) => {
 
     return false;
   }, [campaignDetails?.targetingType, campaignDetails?.targeting, targetingData]);
+
+  const isSelectedTargetAuto = useMemo(() => {
+    if (isAutoCampaign) return true;
+    if (!selectedTarget) return false;
+    const norm = getNormalizedTargetingType(
+      selectedTarget?.matchType,
+      selectedTarget?.targeting || selectedTarget?.resolvedText || selectedTarget?.keywordText,
+      selectedTarget?.keywordType
+    );
+    if (norm?.isAuto) return true;
+    const matchType = String(selectedTarget?.matchType || selectedTarget?.keywordType || "").toUpperCase();
+    const targetingText = String(selectedTarget?.targeting || selectedTarget?.resolvedText || selectedTarget?.keywordText || "").toLowerCase();
+    return (
+      matchType === "TARGETING_EXPRESSION_PREDEFINED" ||
+      matchType === "PREDEFINED" ||
+      matchType.includes("AUTO") ||
+      targetingText === "(_targeting_auto_)" ||
+      ["close-match", "loose-match", "complements", "substitutes", "similar-product"].includes(targetingText)
+    );
+  }, [isAutoCampaign, selectedTarget]);
 
   // Debounce search
   useEffect(() => {
@@ -820,6 +840,7 @@ const TargetingSection = ({ campaignDetails, date, viewPress }) => {
         setShow={setShowHistoryModal}
         targetId={selectedTarget?.targetId}
         targetText={selectedTarget?.targeting || selectedTarget?.resolvedText || selectedTarget?.keywordText}
+        matchType={isSelectedTargetAuto ? undefined : (selectedTarget?.matchType || selectedTarget?.keywordType)}
         campaignId={campaignDetails?.campaignId || selectedTarget?.campaignId}
         campaignName={campaignDetails?.name || campaignDetails?.campaignName || selectedTarget?.campaignName}
         profileId={profileId?.value}

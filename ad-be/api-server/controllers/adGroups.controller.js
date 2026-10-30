@@ -742,6 +742,17 @@ async function spGenerateReport(
         .lean();
 
       if (existing && existing.status == "COMPLETED") return "COMPLETED";
+      if (existing && existing.status == "STAGED") {
+        const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+        const lastActivity = new Date(existing.updatedAt || existing.createdAt);
+        if (lastActivity < twoHoursAgo) {
+          await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+          existing = null;
+        } else {
+          processStagedReportBatches(["adGroup"]).catch(() => {});
+          return "STAGED";
+        }
+      }
     } else if (!forceRefresh) {
       // 1️⃣ Check pending report
       existing = await reportsSchema
@@ -937,6 +948,17 @@ async function sbGenerateReport(
       .lean();
 
     if (existing && existing.status == "COMPLETED") return "COMPLETED";
+    if (existing && existing.status == "STAGED") {
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      const lastActivity = new Date(existing.updatedAt || existing.createdAt);
+      if (lastActivity < twoHoursAgo) {
+        await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+        existing = null;
+      } else {
+        processStagedReportBatches(["sbAdGroup"]).catch(() => {});
+        return "STAGED";
+      }
+    }
   } else {
     // 1️⃣ Check pending report
     existing = await reportsSchema
@@ -1097,7 +1119,17 @@ async function sdGenerateReport(
       .lean();
 
     if (existing && existing.status == "COMPLETED") return "COMPLETED";
-    if (existing && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) return existing.status;
+    if (existing && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) {
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      const lastActivity = new Date(existing.updatedAt || existing.createdAt);
+      if (lastActivity < twoHoursAgo) {
+        await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+        existing = null;
+      } else {
+        processStagedReportBatches(["sdAdGroup"]).catch(() => {});
+        return existing.status;
+      }
+    }
   } else {
     // Include staged reports so recurring polls do not request the same report again.
     existing = await reportsSchema
@@ -1111,7 +1143,17 @@ async function sdGenerateReport(
       })
       .lean();
     if (existing && existing.status == "COMPLETED") return "COMPLETED";
-    if (existing && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) return existing.status;
+    if (existing && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) {
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      const lastActivity = new Date(existing.updatedAt || existing.createdAt);
+      if (lastActivity < twoHoursAgo) {
+        await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+        existing = null;
+      } else {
+        processStagedReportBatches(["sdAdGroup"]).catch(() => {});
+        return existing.status;
+      }
+    }
   }
 
   if (!existing) {

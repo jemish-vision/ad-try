@@ -108,6 +108,13 @@ const sbTargetingSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    lastImportRunId: {
+      type: String,
+      trim: true,
+    },
+    importSourceVersion: {
+      type: Number,
+    },
   },
   { timestamps: true }
 );

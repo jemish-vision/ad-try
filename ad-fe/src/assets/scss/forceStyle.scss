@@ -1,3 +1,12 @@
 .ag-watermark {
     display: none !important;
 }
+
+.ag-side-bar,
+.ag-side-buttons,
+.ag-tool-panel-wrapper {
+    display: none !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    border: none !important;
+}

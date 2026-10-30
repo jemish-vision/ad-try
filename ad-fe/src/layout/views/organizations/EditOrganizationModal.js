@@ -18,6 +18,7 @@ const EditOrganizationModal = ({ open, setOpen, organization, onSuccess }) => {
     planId: "",
     startDate: "",
     endDate: "",
+    isDataDeletionStopped: false,
   });
 
   useEffect(() => {
@@ -44,6 +45,7 @@ const EditOrganizationModal = ({ open, setOpen, organization, onSuccess }) => {
         planId: organization.planId?._id || organization.planId || "",
         startDate: formatDateForInput(organization.startDate),
         endDate: formatDateForInput(organization.endDate),
+        isDataDeletionStopped: Boolean(organization.isDataDeletionStopped),
       });
     }
   }, [organization, open]);
@@ -80,6 +82,7 @@ const EditOrganizationModal = ({ open, setOpen, organization, onSuccess }) => {
         planId: formData.planId || null,
         startDate: formData.startDate || null,
         endDate: formData.endDate || null,
+        isDataDeletionStopped: Boolean(formData.isDataDeletionStopped),
       };
 
       const res = await ApiUpdateSuperAdminOrganization(payload);
@@ -167,6 +170,27 @@ const EditOrganizationModal = ({ open, setOpen, organization, onSuccess }) => {
               className="w-full h-9"
             />
           </div>
+        </div>
+
+        <div className="p-3.5 rounded-lg border border-amber-300 dark:border-amber-800/60 bg-amber-50/70 dark:bg-amber-950/20 mt-1">
+          <label className="flex items-start gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              name="isDataDeletionStopped"
+              checked={Boolean(formData.isDataDeletionStopped)}
+              onChange={(e) => setFormData((prev) => ({ ...prev, isDataDeletionStopped: e.target.checked }))}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+            />
+            <div className="flex flex-col">
+              <span className="text-xs font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
+                <i className="fa fa-shield text-amber-600 dark:text-amber-400" />
+                {t("Stop Account Data Deletion")}
+              </span>
+              <span className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-snug">
+                {t("When enabled, automated 30-day cleanup is halted. This organization's and accounts' advertising and seller historical data will NOT be deleted.")}
+              </span>
+            </div>
+          </label>
         </div>
 
         <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800 mt-4">

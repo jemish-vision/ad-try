@@ -1072,46 +1072,49 @@ function Targeting() {
       data.query = addTargetingQuery(data);
       delete data.appliedFilters;
 
-      try {
-        const e = await ApiTargetingListing(data, apiOptions);
-        // Discard a stale response if a newer request (ad-type / filter change) started.
-        if (currentFetchId !== fetchIdRef.current) return;
-        if (e?.isSuccess) {
-          const getTotalsRow = () => {
-            const totalRow = e?.totalRow ?? {};
-            return {
-              action: "Total",
-              targeting: "Total",
-              matchType: "",
-              keywordBid: totalRow?.keywordBid,
-              impressions: totalRow?.impressions,
-              topOfSearchImpressionShare: totalRow?.topOfSearchImpressionShare,
-              clicks: totalRow?.clicks,
-              spend: totalRow?.spend,
-              orders: totalRow?.orders,
-              sales: totalRow?.sales,
-              conversionRate: totalRow?.conversionRate,
-              acos: totalRow?.acos,
-              roas: totalRow?.roas,
-              isTotalRow: true,
+      const loadTable = async () => {
+        try {
+          const e = await ApiTargetingListing(data, apiOptions);
+          // Discard a stale response if a newer request (ad-type / filter change) started.
+          if (currentFetchId !== fetchIdRef.current) return;
+          if (e?.isSuccess) {
+            const getTotalsRow = () => {
+              const totalRow = e?.totalRow ?? {};
+              return {
+                action: "Total",
+                targeting: "Total",
+                matchType: "",
+                keywordBid: totalRow?.keywordBid,
+                impressions: totalRow?.impressions,
+                topOfSearchImpressionShare: totalRow?.topOfSearchImpressionShare,
+                clicks: totalRow?.clicks,
+                spend: totalRow?.spend,
+                orders: totalRow?.orders,
+                sales: totalRow?.sales,
+                conversionRate: totalRow?.conversionRate,
+                acos: totalRow?.acos,
+                roas: totalRow?.roas,
+                isTotalRow: true,
+              };
             };
-          };
 
-          setTotalRow(getTotalsRow());
-          setTableData([...e?.getTargeting, ...(e?.getTargeting?.length ? [getTotalsRow()] : [])]);
-          setTargetingData(e);
-        } else {
-          Toast.error(e?.message);
+            setTotalRow(getTotalsRow());
+            setTableData([...e?.getTargeting, ...(e?.getTargeting?.length ? [getTotalsRow()] : [])]);
+            setTargetingData(e);
+          } else {
+            Toast.error(e?.message);
+          }
+        } catch (e) {
+          if (currentFetchId !== fetchIdRef.current) return;
+          lastFetchParamsRef.current = "";
+          Toast.error(t("Something went wrong"));
+        } finally {
+          if (currentFetchId === fetchIdRef.current) setIsTableLoading(false);
         }
-      } catch (e) {
-        if (currentFetchId !== fetchIdRef.current) return;
-        lastFetchParamsRef.current = "";
-        Toast.error(t("Something went wrong"));
-      } finally {
-        if (currentFetchId === fetchIdRef.current) setIsTableLoading(false);
-      }
+      };
 
-      if (!isReload) {
+      const loadChart = async () => {
+        if (isReload) return;
         try {
           const e = await ApiTargetingChartListing(data);
           if (currentFetchId !== fetchIdRef.current) return;
@@ -1123,7 +1126,9 @@ function Targeting() {
         } finally {
           if (currentFetchId === fetchIdRef.current) setChartLoading(false);
         }
-      }
+      };
+
+      await Promise.all([loadTable(), loadChart()]);
     }
   };
 

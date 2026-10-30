@@ -16,6 +16,7 @@ const {
   ProfileInactiveError,
   PermanentJobError,
 } = require("../contracts/errors");
+const { cron_logs } = require("../../winston/cronAutomation/logger");
 
 const LEASE_MS = parseInt(process.env.RULES_PROFILE_LEASE_MS, 10) || 900000; // 15 mins
 const RENEW_INTERVAL_MS = parseInt(process.env.RULES_PROFILE_LEASE_RENEW_MS, 10) || 300000; // 5 mins
@@ -47,9 +48,10 @@ function createRulesProcessor(redisClient) {
       // Lease busy: Reschedule job to delayed without consuming a retry attempt
       const jitterMs = getRandomJitterMs();
       const delayUntil = Date.now() + jitterMs;
-      console.log(
-        `[RulesProcessor] Lease busy for profile ${profileId} (${configId}). Rescheduling job ${job.id} in ${jitterMs}ms.`
-      );
+      cron_logs({
+        message: `[RulesProcessor] Lease busy for profile ${profileId} (${configId}). Rescheduling job ${job.id} in ${jitterMs}ms.`,
+        log_type: "info",
+      });
       await job.moveToDelayed(delayUntil, token);
       throw new DelayedError();
     }
@@ -65,11 +67,20 @@ function createRulesProcessor(redisClient) {
           ttlMs: LEASE_MS,
         });
       } catch (err) {
-        console.warn(`[RulesProcessor] Failed to renew lease for ${profileId}:`, err.message);
+        cron_logs({
+          message: `[RulesProcessor] Failed to renew lease for ${profileId}: ${err?.message || err}`,
+          log_type: "warn",
+        });
       }
     }, RENEW_INTERVAL_MS);
 
     if (renewTimer.unref) renewTimer.unref();
+
+    const startMs = Date.now();
+    cron_logs({
+      message: `[RulesProcessor] Starting rule evaluation for Task: "${task}", Profile: ${profileId} (Config: ${configId}, JobId: ${job.id}, TimeBlock: ${timeBlock || "N/A"})`,
+      log_type: "info",
+    });
 
     try {
       let result = null;
@@ -115,16 +126,30 @@ function createRulesProcessor(redisClient) {
           throw new PermanentJobError(`Unknown rule task "${task}" in job ${job.id}`);
       }
 
+      const durationMs = Date.now() - startMs;
+      cron_logs({
+        message: `[RulesProcessor] Finished rule evaluation for Task: "${task}", Profile: ${profileId} in ${durationMs}ms`,
+        log_type: "info",
+      });
+
       return result;
     } catch (err) {
       if (err instanceof ProfileInactiveError) {
         // Inactive / deactivated profile: successful skip with reason
+        cron_logs({
+          message: `[RulesProcessor] Profile ${profileId} inactive for task "${task}". Skipping: ${err.message}`,
+          log_type: "info",
+        });
         return {
           skipped: true,
           reason: "PROFILE_INACTIVE",
           message: err.message,
         };
       }
+      cron_logs({
+        message: `[RulesProcessor] Error executing "${task}" for Profile: ${profileId} (JobId: ${job.id}): ${err?.stack || err?.message || err}`,
+        log_type: "error",
+      });
       throw err;
     } finally {
       clearInterval(renewTimer);

@@ -54,6 +54,7 @@ export const SYSTEM_PAGES = {
   RULE_BLOCKED_TIME: 'Rule Blocked Time',
   SUPPORT_TICKET: 'Support Ticket',
   PAGES: 'Pages',
+  API_CAPACITY: 'API Capacity & Usage',
 };
 
 export const PAGE_ACTIONS = {
@@ -73,4 +74,5 @@ export const SUPER_ADMIN_BLOCKED_ROUTES = [
   SYSTEM_PAGES.RULE_BLOCKED_TIME,
   SYSTEM_PAGES.SUPPORT_TICKET,
   SYSTEM_PAGES.PAGES,
+  SYSTEM_PAGES.API_CAPACITY,
 ];

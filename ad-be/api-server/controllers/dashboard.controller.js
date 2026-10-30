@@ -1511,7 +1511,7 @@ exports.getTimeBasedAnalytics = async (req, res) => {
 
         const configIdFilter = configId
             ? (mongoose.Types.ObjectId.isValid(configId)
-                ? { $in: [String(configId), new mongoose.Types.ObjectId(configId)] }
+                ? new mongoose.Types.ObjectId(configId)
                 : String(configId))
             : null;
 
@@ -1538,6 +1538,16 @@ exports.getTimeBasedAnalytics = async (req, res) => {
                     $match: campaignMatch,
                 },
                 {
+                    $project: {
+                        reportDate: 1,
+                        orders: 1,
+                        sales: 1,
+                        spend: 1,
+                        clicks: 1,
+                        impressions: 1,
+                    },
+                },
+                {
                     $group: {
                         _id: "$reportDate",
                         orders: { $sum: { $ifNull: ["$orders", 0] } },
@@ -1551,6 +1561,16 @@ exports.getTimeBasedAnalytics = async (req, res) => {
             keywordsHourlyPerformanceSchema.aggregate([
                 {
                     $match: hourlyMatch,
+                },
+                {
+                    $project: {
+                        startTime: 1,
+                        orders: 1,
+                        sales: 1,
+                        spends: 1,
+                        clicks: 1,
+                        impressions: 1,
+                    },
                 },
                 {
                     $group: {
@@ -1758,7 +1778,7 @@ exports.getTimeBasedAnalytics = async (req, res) => {
         };
 
         try {
-            await setCacheWithLog(cacheKey, JSON.stringify(responsePayload), 180);
+            await setCacheWithLog(cacheKey, JSON.stringify(responsePayload), 900);
         } catch (_) {}
 
         return res.status(200).json(responsePayload);

@@ -10,6 +10,7 @@ const profileSchema = require("../models/profiles.model");
 const configHistorySchema = require("../models/configHistory.model");
 const profileBasedPermissionSchema = require("../models/profileBasedPermission.model");
 const userSchema = require("../models/user.model");
+const organizationSchema = require("../models/organization.model");
 
 /* ---- SP Ads Data (Tier 1) ---- */
 const campaignSchema = require("../models/campaign.model");
@@ -105,6 +106,7 @@ exports.cronDeleteExpiredAccountsData = async () => {
     const expiredConfigs = await configSchema.find({
       isActive: false,
       disconnectedAt: { $ne: null, $lte: cutoffDate },
+      isDataDeletionStopped: { $ne: true },
     }).lean();
 
     if (expiredConfigs.length > 0) {
@@ -115,17 +117,41 @@ exports.cronDeleteExpiredAccountsData = async () => {
 
       for (const config of expiredConfigs) {
         const configId = config._id;
+        if (config.organizationId) {
+          const org = await organizationSchema.findById(config.organizationId).lean();
+          if (org?.isDataDeletionStopped) {
+            cron_logs({
+              message: `Skipping Ads cleanup for configId=${configId} (company: ${config.companyName || "N/A"}): Data deletion stopped at organization level (orgId=${org._id}).`,
+              log_type: "info",
+            });
+            continue;
+          }
+        }
 
         try {
           const profiles = await profileSchema.find({ configId }).lean();
-          const profileIds = profiles.map(p => p.profileId);
+          const protectedProfiles = profiles.filter(p => p.isDataDeletionStopped);
+          const unprotectedProfiles = profiles.filter(p => !p.isDataDeletionStopped);
+
+          if (profiles.length > 0 && protectedProfiles.length === profiles.length) {
+            cron_logs({
+              message: `Skipping Ads cleanup for configId=${configId}: All ${profiles.length} profiles have isDataDeletionStopped=true.`,
+              log_type: "info",
+            });
+            continue;
+          }
+
+          const hasProtected = protectedProfiles.length > 0;
+          const unprotectedProfileIds = unprotectedProfiles.map(p => p.profileId);
 
           cron_logs({
-            message: `Cleaning up Ads data for configId=${configId}, profilesCount=${profileIds.length}`,
+            message: `Cleaning up Ads data for configId=${configId}, totalProfiles=${profiles.length}, unprotected=${unprotectedProfiles.length}, protected=${protectedProfiles.length}`,
             log_type: "info",
           });
 
-          const filter = { configId };
+          const filter = hasProtected
+            ? { configId, profileId: { $in: unprotectedProfileIds } }
+            : { configId };
           let totalDeleted = 0;
 
           // Collections related solely to Ads (Tiers 1, 3, 4)
@@ -211,17 +237,25 @@ exports.cronDeleteExpiredAccountsData = async () => {
             }
           }
 
-          // Delete profiles
-          const profileResult = await profileSchema.deleteMany({ configId });
+          // Delete profiles (only unprotected ones if some are protected)
+          const profileDeleteFilter = hasProtected
+            ? { configId, _id: { $in: unprotectedProfiles.map(p => p._id) } }
+            : { configId };
+          const profileResult = await profileSchema.deleteMany(profileDeleteFilter);
           totalDeleted += profileResult.deletedCount;
 
-          // Delete config history
-          const historyResult = await configHistorySchema.deleteMany({ configId });
-          totalDeleted += historyResult.deletedCount;
-
-          // Delete the config itself
-          await configSchema.deleteOne({ _id: configId });
-          totalDeleted += 1;
+          // Only delete config history and config if NO protected profiles remain
+          if (!hasProtected) {
+            const historyResult = await configHistorySchema.deleteMany({ configId });
+            totalDeleted += historyResult.deletedCount;
+            await configSchema.deleteOne({ _id: configId });
+            totalDeleted += 1;
+          } else {
+            cron_logs({
+              message: `Preserved configId=${configId} because ${protectedProfiles.length} protected profile(s) remain.`,
+              log_type: "info",
+            });
+          }
 
           // Send confirmation email
           try {
@@ -261,6 +295,7 @@ exports.cronDeleteExpiredAccountsData = async () => {
     const expiredSellerConfigs = await sellerConfigSchema.find({
       isActive: false,
       disconnectedAt: { $ne: null, $lte: cutoffDate },
+      isDataDeletionStopped: { $ne: true },
     }).lean();
 
     if (expiredSellerConfigs.length > 0) {
@@ -273,6 +308,26 @@ exports.cronDeleteExpiredAccountsData = async () => {
         const sellerConfigId = sellerConfig._id;
         const configId = sellerConfig?.configId;
         const profileId = sellerConfig?.profileId;
+        if (sellerConfig.organizationId) {
+          const org = await organizationSchema.findById(sellerConfig.organizationId).lean();
+          if (org?.isDataDeletionStopped) {
+            cron_logs({
+              message: `Skipping SP-API cleanup for sellerConfigId=${sellerConfigId}: Data deletion stopped at organization level (orgId=${org._id}).`,
+              log_type: "info",
+            });
+            continue;
+          }
+        }
+        if (configId) {
+          const parentConfig = await configSchema.findById(configId).lean();
+          if (parentConfig?.isDataDeletionStopped) {
+            cron_logs({
+              message: `Skipping SP-API cleanup for sellerConfigId=${sellerConfigId}: Data deletion stopped on parent Ads config (configId=${configId}).`,
+              log_type: "info",
+            });
+            continue;
+          }
+        }
 
         try {
           cron_logs({

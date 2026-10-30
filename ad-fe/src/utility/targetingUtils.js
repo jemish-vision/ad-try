@@ -17,29 +17,29 @@ export const getNormalizedTargetingType = (matchType = "", targeting = "", keywo
 
   // 1. Auto Targeting Expressions
   const isAutoTarget =
-    t === "close-match" || lowerM.includes("close-match") ||
-    t === "loose-match" || lowerM.includes("loose-match") ||
-    t === "substitutes" || lowerM.includes("substitutes") ||
-    t === "complements" || lowerM.includes("complements") ||
-    t === "similar-product" || lowerM.includes("similar-product") ||
-    t === "(_targeting_auto_)" || lowerM.startsWith("automatic");
+    t === "close-match" || lowerM.includes("close-match") || lowerM === "keywords_close_match" ||
+    t === "loose-match" || lowerM.includes("loose-match") || lowerM === "keywords_loose_match" ||
+    t === "substitutes" || lowerM.includes("substitutes") || lowerM === "product_substitutes" ||
+    t === "complements" || lowerM.includes("complements") || lowerM === "product_complements" ||
+    t === "similar-product" || lowerM.includes("similar-product") || lowerM === "products_similar_to_advertised_products" ||
+    t === "(_targeting_auto_)" || lowerM.startsWith("automatic") || lowerM === "targeting_expression_predefined";
 
   if (isAutoTarget) {
     let sub = "auto";
     let label = "Auto";
-    if (t === "close-match" || lowerM.includes("close-match")) {
+    if (t === "close-match" || lowerM.includes("close-match") || lowerM === "keywords_close_match") {
       sub = "close-match";
       label = "Close match";
-    } else if (t === "loose-match" || lowerM.includes("loose-match")) {
+    } else if (t === "loose-match" || lowerM.includes("loose-match") || lowerM === "keywords_loose_match") {
       sub = "loose-match";
       label = "Loose match";
-    } else if (t === "substitutes" || lowerM.includes("substitutes")) {
+    } else if (t === "substitutes" || lowerM.includes("substitutes") || lowerM === "product_substitutes") {
       sub = "substitutes";
       label = "Substitutes";
-    } else if (t === "complements" || lowerM.includes("complements")) {
+    } else if (t === "complements" || lowerM.includes("complements") || lowerM === "product_complements") {
       sub = "complements";
       label = "Complements";
-    } else if (t === "similar-product" || lowerM.includes("similar-product")) {
+    } else if (t === "similar-product" || lowerM.includes("similar-product") || lowerM === "products_similar_to_advertised_products") {
       sub = "similar-product";
       label = "Similar";
     }
@@ -82,6 +82,22 @@ export const getNormalizedTargetingType = (matchType = "", targeting = "", keywo
       shortLabel: "Broad",
       isKeyword: true,
       badgeColor: "sky",
+    };
+  }
+  if (
+    t.startsWith("keyword-group=") ||
+    lowerM === "keyword - group" ||
+    lowerM === "group" ||
+    lowerM.startsWith("keywords_related_to_") ||
+    (lowerM === "targeting_expression" && t.startsWith("keyword-group="))
+  ) {
+    return {
+      type: "GROUP",
+      subType: "group",
+      label: "Group",
+      shortLabel: "Group",
+      isKeyword: true,
+      badgeColor: "indigo",
     };
   }
 
@@ -277,7 +293,14 @@ export const formatAmazonChangeType = (row) => {
     return `${entityName}${matchStr}${targeting ? ` - ${targeting}` : ""}`;
   }
 
-  // 4. Campaign Status
+  if (/campaign budget status/i.test(rawType)) return "Campaign budget status";
+
+  // 4a. Campaign Delivery Status
+  if (/delivery status/i.test(rawType)) {
+    return "Campaign delivery status";
+  }
+
+  // 4b. Campaign Status
   if (/campaign status|campaign state|update state|update campaign state|update camapign status/i.test(rawType)) {
     return "Campaign status";
   }
@@ -330,6 +353,74 @@ export const isAdGroupLevelChange = (row) => {
     rawType.includes("adgroup") ||
     rawType.includes("ad group")
   );
+};
+
+
+/**
+ * Returns badge styling and formatted label if value represents a known campaign or delivery status.
+ */
+export const getStatusBadgeProps = (val) => {
+  if (!val || val === "—") return null;
+  const s = String(val).trim().toUpperCase();
+
+  if (s === "IN_BUDGET" || s === "IN BUDGET") {
+    return { label: "In budget", className: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800" };
+  }
+  if (s === "ENABLED" || s === "DELIVERING") {
+    return {
+      label: s === "ENABLED" ? "Enabled" : "Delivering",
+      className: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800",
+    };
+  }
+  if (
+    s === "OUT_OF_BUDGET" ||
+    s === "OUT OF BUDGET" ||
+    s === "CAMPAIGN_OUT_OF_BUDGET" ||
+    s === "PORTFOLIO_OUT_OF_BUDGET"
+  ) {
+    return {
+      label: "Out of budget",
+      className: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800",
+    };
+  }
+  if (s === "PAUSED" || s === "CAMPAIGN_PAUSED") {
+    return {
+      label: "Paused",
+      className: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
+    };
+  }
+  if (s === "ARCHIVED" || s === "CAMPAIGN_ARCHIVED") {
+    return {
+      label: "Archived",
+      className: "bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700",
+    };
+  }
+  if (s === "ENDED" || s === "CAMPAIGN_ENDED" || s === "PORTFOLIO_ENDED") {
+    return {
+      label: "Ended",
+      className: "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800",
+    };
+  }
+  if (s === "SCHEDULED" || s === "PENDING_START_DATE") {
+    return {
+      label: "Scheduled",
+      className: "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/40 dark:text-sky-400 dark:border-sky-800",
+    };
+  }
+  if (s === "INCOMPLETE" || s === "CAMPAIGN_INCOMPLETE") {
+    return {
+      label: "Incomplete",
+      className: "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/40 dark:text-orange-400 dark:border-orange-800",
+    };
+  }
+  if (s === "PAYMENT_FAILURE" || s === "SUSPENDED") {
+    return {
+      label: s === "PAYMENT_FAILURE" ? "Payment Failure" : "Suspended",
+      className: "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-400 dark:border-red-800",
+    };
+  }
+
+  return null;
 };
 
 export default TargetingTypeBadge;

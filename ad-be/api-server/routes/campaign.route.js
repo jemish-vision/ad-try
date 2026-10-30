@@ -36,6 +36,8 @@ const {
   fileUpload,
   previewSDCreative,
   getLatestCampaignHistory,
+  updateCampaignStatus,
+  syncCampaignStatusHistory,
 } = require("../controllers/campaign.controller");
 const {
   getAdGroupsByCampaign,
@@ -155,6 +157,8 @@ router.post("/getKeywordByAdId/:id", verifyToken, validateRoutePermission(SYSTEM
 router.post("/cronListCampaignsFromAmazon", verifyToken, verifyCronAuth, cronListCampaignsFromAmazon);
 router.post("/listCampaignName", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY), listCampaignName);
 
+router.post("/updateCampaignStatus", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.UPDATE), updateCampaignStatus);
+router.post("/syncCampaignStatusHistory", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY), syncCampaignStatusHistory);
 router.post("/addCampaigns", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.CREATE), addCampaigns);
 
 router.post("/getPlacement", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY, [{ pageName: SYSTEM_PAGES.PLACEMENT, actionType: PAGE_ACTIONS.VIEW_ONLY }]), getPlacement);

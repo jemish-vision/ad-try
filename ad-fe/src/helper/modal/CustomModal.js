@@ -106,7 +106,7 @@ function ConfirmationModalInner({
 
     if (!show) return null;
 
-    const maxWidthClass = size === 'sm' ? 'sm:max-w-[380px]' : size === 'lg' ? 'sm:max-w-[700px]' : 'sm:max-w-[460px]';
+    const maxWidthClass = size === 'sm' ? 'sm:max-w-[380px]' : size === 'xl' ? 'sm:max-w-[950px]' : size === 'lg' ? 'sm:max-w-[700px]' : 'sm:max-w-[460px]';
 
     let displayMessage = message;
     if (typeof message === 'string') {

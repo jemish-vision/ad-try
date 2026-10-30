@@ -83,7 +83,7 @@ const verifyExtendedRun = async (manifest, model) => {
     }
   }
   if (supersededMatches === 0 && expectedSpend !== undefined &&
-      Math.abs(exactSpendTotal - Number(expectedSpend)) > 0.05) {
+    Math.abs(exactSpendTotal - Number(expectedSpend)) > 0.05) {
     throw new Error(`[Verification Failure] ${entity} spend mismatch: Mongo ${exactSpendTotal} vs staged ${expectedSpend}`);
   }
   return {
@@ -96,10 +96,10 @@ const verifyExtendedRun = async (manifest, model) => {
 };
 
 /**
- * Verifies that the MongoDB records match the staged row counts and metrics for the import run.
- * Checks exact expected keys and compares aggregate metrics. Rejects partial writes, while explicitly
- * accounting for newer versioned documents if superseded.
- */
+* Verifies that the MongoDB records match the staged row counts and metrics for the import run.
+* Checks exact expected keys and compares aggregate metrics. Rejects partial writes, while explicitly
+* accounting for newer versioned documents if superseded.
+*/
 const verifyImportedRun = async (manifest) => {
   const {
     importRunId,
@@ -269,54 +269,48 @@ const verifyImportedRun = async (manifest) => {
 };
 
 /**
- * Reconciles staged runs across Redis and MongoDB to heal any gaps caused by worker crashes
- * during the final commit window.
- */
+* Reconciles staged runs across Redis and MongoDB to heal any gaps caused by worker crashes
+* during the final commit window.
+*/
 const reconcileStagedRuns = async (entities = ["campaign", "adGroup", "productAd", ...EXTENDED_REPORT_ENTITIES]) => {
   let reconciledCount = 0;
   try {
-    const streamKeys = await redisClient.keys(`${MANIFEST_KEY_PREFIX}*`);
-    const manifestKeys = streamKeys.filter(
-      (k) => !k.endsWith(":batches") && !k.endsWith(":keys")
-    );
+    // Fast targeted reconciliation: query only reports that are currently uncompleted in MongoDB
+    // instead of scanning thousands of historical manifests in Redis.
+    const pendingReports = await reportsSchema.find({
+      status: { $in: ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"] },
+    }).limit(100).lean();
 
-    for (const mKey of manifestKeys) {
-      const importRunId = mKey.replace(MANIFEST_KEY_PREFIX, "");
+    for (const rep of pendingReports) {
+      const importRunId = rep.importRunId;
+      if (!importRunId) continue;
       const manifest = await getRunManifest(importRunId);
       if (!manifest) continue;
 
-      // Case 1: Manifest is COMPLETED, but Mongo reportsSchema is still not COMPLETED
-      if (manifest.status === RUN_STATUS.COMPLETED && manifest.reportId) {
-        const rep = await reportsSchema.findOne({
-          reportId: manifest.reportId,
-          profileId: manifest.profileId,
-          configId: manifest.configId,
-        }).lean();
-
-        if (rep && rep.status !== "COMPLETED") {
-          await reportsSchema.updateOne(
-            { _id: rep._id },
-            {
-              $set: {
-                status: "COMPLETED",
-                importRunId,
-                completedAt: new Date(),
-              },
-            }
-          );
-          reconciledCount++;
-          write_logs({
-            message: `[Reconciliation] Repaired Mongo report ${manifest.reportId} status to COMPLETED for run ${importRunId}.`,
-            log_type: "info",
-          });
-        }
-        if (rep?.cronHistoryId) {
+      // Case 1: Manifest is COMPLETED in Redis, but Mongo reportsSchema is still not COMPLETED
+      if (manifest.status === RUN_STATUS.COMPLETED) {
+        await reportsSchema.updateOne(
+          { _id: rep._id },
+          {
+            $set: {
+              status: "COMPLETED",
+              importRunId,
+              completedAt: new Date(),
+            },
+          }
+        );
+        reconciledCount++;
+        write_logs({
+          message: `[Reconciliation] Repaired Mongo report ${rep.reportId} status to COMPLETED for run ${importRunId}.`,
+          log_type: "info",
+        });
+        if (rep.cronHistoryId) {
           await finalizeReportHistory(rep.cronHistoryId).catch((err) =>
             write_logs({ message: `[Report History Finalize] ${err.message}`, log_type: "warn" }));
         }
       }
 
-      // Case 2: All batches processed in Redis (scard >= expectedBatches), but manifest status was not transitioned to COMPLETED
+      // Case 2: All batches processed in Redis (processedBatches >= expectedBatches), but manifest status was not transitioned to COMPLETED
       if (
         manifest.status === RUN_STATUS.IMPORTING &&
         manifest.expectedBatches > 0 &&
@@ -324,28 +318,19 @@ const reconcileStagedRuns = async (entities = ["campaign", "adGroup", "productAd
       ) {
         try {
           const verifyResult = await verifyImportedRun(manifest);
-          if (manifest.reportId) {
-            await reportsSchema.updateOne(
-              {
-                reportId: manifest.reportId,
-                profileId: manifest.profileId,
-                configId: manifest.configId,
+          await reportsSchema.updateOne(
+            { _id: rep._id },
+            {
+              $set: {
+                status: "COMPLETED",
+                importRunId,
+                verifiedRows: verifyResult.actualCount,
+                completedAt: new Date(),
               },
-              {
-                $set: {
-                  status: "COMPLETED",
-                  importRunId,
-                  verifiedRows: verifyResult.actualCount,
-                  completedAt: new Date(),
-                },
-              }
-            );
-          }
-          const repaired = manifest.reportId && await reportsSchema.findOne({
-            reportId: manifest.reportId, profileId: manifest.profileId, configId: manifest.configId,
-          }).select("cronHistoryId").lean();
-          if (repaired?.cronHistoryId) {
-            await finalizeReportHistory(repaired.cronHistoryId).catch((err) =>
+            }
+          );
+          if (rep.cronHistoryId) {
+            await finalizeReportHistory(rep.cronHistoryId).catch((err) =>
               write_logs({ message: `[Report History Finalize] ${err.message}`, log_type: "warn" }));
           }
 
@@ -379,8 +364,8 @@ const reconcileStagedRuns = async (entities = ["campaign", "adGroup", "productAd
 };
 
 /**
- * Scheduled bulk writer that processes ready report streams from Redis into MongoDB.
- */
+* Scheduled bulk writer that processes ready report streams from Redis into MongoDB.
+*/
 const processStagedReportBatches = async (entities = ["campaign", "adGroup", "productAd", ...EXTENDED_REPORT_ENTITIES], { minIdleTime = 30000 } = {}) => {
   let totalBatchesProcessed = 0;
 
@@ -396,242 +381,372 @@ const processStagedReportBatches = async (entities = ["campaign", "adGroup", "pr
   for (const entity of entities) {
     const streamKey = `${STREAM_KEY_PREFIX}${entity}`;
     await ensureConsumerGroup(streamKey);
+    let pendingCursor = "0";
+    let claimCursor = "0-0";
+    let pendingScanDone = false;
+    let claimScanDone = false;
+    const attemptedMessages = new Set();
+    const skipped = {};
+    const skippedRuns = new Set();
+    const recordSkip = (reason, importRunId) => {
+      skipped[reason] = (skipped[reason] || 0) + 1;
+      // Bound log size even when a stream contains a large blocked backlog.
+      if (skippedRuns.size < 5) skippedRuns.add(importRunId);
+    };
 
     // A report can contain more than ten 500-row batches. Drain all healthy
-    // batches during this invocation; stop if a pass makes no progress so a
-    // failed/pending message cannot spin forever.
+    // batches during this invocation. Finish pending/reclaim scans even when
+    // a page is blocked, and attempt each message only once per invocation.
     for (let pass = 0; pass < 10000; pass++) {
-    const processedBefore = totalBatchesProcessed;
+      let passActivity = 0;
+      let newMessageCount = 0;
 
-    // Read from stream: first auto-claim pending messages from dead workers, then read from consumer PEL or new stream
-    let entries = [];
-    try {
-      // 1. Reclaim pending messages left by previous/crashed consumers via xAutoClaim
-      let claimedMessages = [];
+      // Read from stream: first auto-claim pending messages from dead workers, then read from consumer PEL or new stream
+      let entries = [];
       try {
-        const autoClaimResult = await redisClient.xAutoClaim(
-          streamKey,
-          CONSUMER_GROUP,
-          CONSUMER_ID,
-          minIdleTime,
-          "0-0",
-          { COUNT: 10 }
-        );
-        if (autoClaimResult && autoClaimResult.messages?.length > 0) {
-          claimedMessages = autoClaimResult.messages.filter((m) => m && m.id && m.message);
+        // 1. Reclaim pending messages left by previous/crashed consumers via xAutoClaim
+        let claimedMessages = [];
+        if (!claimScanDone) {
+          try {
+            const autoClaimResult = await redisClient.xAutoClaim(
+              streamKey,
+              CONSUMER_GROUP,
+              CONSUMER_ID,
+              minIdleTime,
+              claimCursor,
+              { COUNT: 10 }
+            );
+            if (autoClaimResult && autoClaimResult.messages?.length > 0) {
+              claimedMessages = autoClaimResult.messages.filter((m) => m && m.id && m.message);
+            }
+            claimCursor = autoClaimResult?.nextId || "0-0";
+            claimScanDone = claimCursor === "0-0";
+          } catch (claimErr) {
+            claimScanDone = true;
+            write_logs({ message: `[xAutoClaim Note] ${claimErr.message}`, log_type: "info" });
+          }
         }
-      } catch (claimErr) {
-        write_logs({ message: `[xAutoClaim Note] ${claimErr.message}`, log_type: "info" });
-      }
 
-      if (claimedMessages.length > 0) {
-        entries = [{ name: streamKey, messages: claimedMessages }];
-      } else {
-        // 2. Check if this consumer itself has pending unacknowledged messages (id: "0")
-        const consumerPending = await redisClient.xReadGroup(
-          CONSUMER_GROUP,
-          CONSUMER_ID,
-          [{ key: streamKey, id: "0" }],
-          { COUNT: 10 }
-        );
-
-        if (consumerPending && consumerPending[0]?.messages?.length > 0) {
-          entries = consumerPending;
-        } else {
-          // 3. Read new incoming messages (id: ">")
-          entries = await redisClient.xReadGroup(
+        let pendingMessages = [];
+        if (!pendingScanDone) {
+          // 2. Check if this consumer itself has pending unacknowledged messages (id: "0")
+          const consumerPending = await redisClient.xReadGroup(
             CONSUMER_GROUP,
             CONSUMER_ID,
-            [{ key: streamKey, id: ">" }],
-            { COUNT: 10, BLOCK: 100 }
+            [{ key: streamKey, id: pendingCursor }],
+            { COUNT: 10 }
           );
-        }
-      }
-    } catch (readErr) {
-      write_logs({
-        message: `[Report Worker Read Error] ${streamKey}: ${readErr.message}`,
-        log_type: "error",
-      });
-      break;
-    }
 
-    if (!entries || entries.length === 0 || !entries[0].messages || entries[0].messages.length === 0) {
-      break;
-    }
-
-    const messages = entries[0].messages;
-
-    for (const msg of messages) {
-      const { id: streamMsgId, message: fields } = msg;
-      const { importRunId, batchId, rowsCount } = fields;
-
-      // 1. Check Run Manifest
-      const manifest = await getRunManifest(importRunId);
-      if (!manifest || manifest.status === RUN_STATUS.VALIDATION_FAILED) {
-        // Abandon invalid or discarded run
-        await redisClient.xAck(streamKey, CONSUMER_GROUP, streamMsgId);
-        await redisClient.xDel(streamKey, streamMsgId);
-        continue;
-      }
-
-      // If run is still actively staging, DO NOT process yet and DO NOT ack (leave in stream)
-      if (manifest.status === RUN_STATUS.STAGING) {
-        continue;
-      }
-
-      // If run is already completed, ack and delete redundant message
-      if (manifest.status === RUN_STATUS.COMPLETED) {
-        await redisClient.xAck(streamKey, CONSUMER_GROUP, streamMsgId);
-        await redisClient.xDel(streamKey, streamMsgId);
-        continue;
-      }
-
-      // Only process runs in eligible states (READY, IMPORTING, WRITE_FAILED)
-      if (!ELIGIBLE_STATUSES.includes(manifest.status)) {
-        continue;
-      }
-
-      // 2. Acquire per-scope lock (config + profile + entity) to prevent overlapping writer races
-      const lockScope = `${manifest.configId}_${manifest.profileId}_${entity}`;
-      const lockToken = await acquireImportLock(lockScope, 60);
-
-      if (!lockToken) {
-        // Another worker is actively importing this profile/entity; leave batch for next cycle
-        continue;
-      }
-
-      // Heartbeat timer to renew lock lease during long bulk writes
-      const lockHeartbeat = setInterval(async () => {
-        try {
-          await renewImportLock(lockScope, lockToken, 60);
-        } catch (_) {}
-      }, 20000);
-
-      try {
-        // Mark manifest as IMPORTING if currently READY
-        if (manifest.status === RUN_STATUS.READY) {
-          await saveRunManifest(importRunId, {
-            status: RUN_STATUS.IMPORTING,
-            importStartedAt: new Date().toISOString(),
-          });
-        }
-
-        // 3. Load Batch Payload from Redis
-        const batchKey = `${BATCH_KEY_PREFIX}${batchId}`;
-        const rawPayload = await redisClient.get(batchKey);
-
-        if (!rawPayload) {
-          throw new Error(`Batch payload ${batchKey} not found in Redis (possible expiration or eviction).`);
-        }
-
-        const rows = JSON.parse(rawPayload);
-        const sourceVersion = manifest.sourceVersion
-          ? Number(manifest.sourceVersion)
-          : (manifest.createdAt ? new Date(manifest.createdAt).getTime() : Date.now());
-
-        // 4. Build deterministic MongoDB upsert operations
-        const bulkOps = rows.map((row) => isExtendedEntity(entity)
-          ? buildExtendedUpsertOp(row, sourceVersion)
-          : buildMongoUpsertOp(row, sourceVersion));
-
-        // 5. Bulk write to MongoDB (fails loudly if any non-duplicate write error occurs)
-        const model = getModelForEntity(entity);
-        await parallelBulkWrite(model, bulkOps);
-
-        // Fencing check: verify lock was not stolen before commit/verification
-        const isLockHeld = await checkImportLock(lockScope, lockToken);
-        if (!isLockHeld) {
-          throw new Error(`Lock fencing failure: lock for ${lockScope} was lost during bulk write.`);
-        }
-
-        // 6. Check if this is the final batch of the run
-        const nextProcessed = (Number(manifest.processedBatches || 0) + 1);
-        const isFinalBatch = nextProcessed >= Number(manifest.expectedBatches);
-
-        if (isFinalBatch) {
-          // Verify complete row count and exact keys in MongoDB before completing run
-          const verifyResult = await verifyImportedRun({
-            ...manifest,
-            sourceVersion,
-          });
-
-          // 1. Mark corresponding reportsSchema document COMPLETED in MongoDB FIRST
-          if (manifest.reportId) {
-            await reportsSchema.updateOne(
-              {
-                reportId: manifest.reportId,
-                profileId: manifest.profileId,
-                configId: manifest.configId,
-              },
-              {
-                $set: {
-                  status: "COMPLETED",
-                  importRunId,
-                  verifiedRows: verifyResult.actualCount,
-                  completedAt: new Date(),
-                },
-              }
-            );
+          pendingMessages = consumerPending?.[0]?.messages || [];
+          if (pendingMessages.length > 0) {
+            pendingCursor = pendingMessages[pendingMessages.length - 1].id;
+          } else {
+            pendingScanDone = true;
           }
-          const completedReport = manifest.reportId && await reportsSchema.findOne({
-            reportId: manifest.reportId, profileId: manifest.profileId, configId: manifest.configId,
-          }).select("cronHistoryId").lean();
-          if (completedReport?.cronHistoryId) {
-            await finalizeReportHistory(completedReport.cronHistoryId).catch((err) =>
-              write_logs({ message: `[Report History Finalize] ${err.message}`, log_type: "warn" }));
-          }
-
-          // 2. Atomically mark manifest COMPLETED, acknowledge stream entry, and clean batch payload
-          await atomicBatchConfirm({
-            streamKey,
-            streamMsgId,
-            batchKey,
-            batchId,
-            importRunId,
-            isFinalBatch: true,
-            finalManifestUpdates: {
-              status: RUN_STATUS.COMPLETED,
-              processedBatches: Number(manifest.expectedBatches),
-              completedAt: new Date().toISOString(),
-              verifiedCount: verifyResult.actualCount,
-            },
-          });
-
-          write_logs({
-            message: `[Report Import Completed] Run ${importRunId} for ${entity} (${manifest.profileId}) successfully verified and marked COMPLETED.`,
-            log_type: "info",
-          });
-        } else {
-          // Atomically increment manifest processedBatches, acknowledge stream entry, and clean batch payload
-          await atomicBatchConfirm({
-            streamKey,
-            streamMsgId,
-            batchKey,
-            batchId,
-            importRunId,
-            isFinalBatch: false,
-          });
         }
-
-        totalBatchesProcessed++;
-      } catch (batchErr) {
+        // Always read new work as well: a STAGING run or a failing pending
+        // batch must not block every later report on the entity stream.
+        const newEntries = await redisClient.xReadGroup(
+          CONSUMER_GROUP,
+          CONSUMER_ID,
+          [{ key: streamKey, id: ">" }],
+          { COUNT: 10, BLOCK: 100 }
+        );
+        newMessageCount = newEntries?.[0]?.messages?.length || 0;
+        const messagesById = new Map();
+        for (const msg of [...claimedMessages, ...pendingMessages, ...(newEntries?.[0]?.messages || [])]) {
+          if (msg?.id && !attemptedMessages.has(msg.id)) messagesById.set(msg.id, msg);
+        }
+        entries = [{ name: streamKey, messages: [...messagesById.values()] }];
+      } catch (readErr) {
         write_logs({
-          message: `[Report Batch Failure] Failed processing batch ${batchId} for ${importRunId}: ${batchErr.message}`,
+          message: `[Report Worker Read Error] ${streamKey}: ${readErr.message}`,
           log_type: "error",
         });
-
-        await saveRunManifest(importRunId, {
-          status: RUN_STATUS.WRITE_FAILED,
-          lastError: batchErr.message,
-        });
-
-        // DO NOT ACKNOWLEDGE: Batch stays in stream PEL for retry!
-      } finally {
-        clearInterval(lockHeartbeat);
-        await releaseImportLock(lockScope, lockToken);
+        break;
       }
+
+      if (!entries || entries.length === 0 || !entries[0].messages || entries[0].messages.length === 0) {
+        if (pendingScanDone && claimScanDone && newMessageCount === 0) break;
+        continue;
+      }
+
+      const messages = entries[0].messages;
+
+      for (const msg of messages) {
+        const { id: streamMsgId, message: fields } = msg;
+        const { importRunId, batchId } = fields;
+        attemptedMessages.add(streamMsgId);
+
+        // 1. Check Run Manifest
+        let manifest = await getRunManifest(importRunId);
+        if (!manifest || manifest.status === RUN_STATUS.VALIDATION_FAILED) {
+          recordSkip(manifest ? "invalidRun" : "missingManifest", importRunId);
+          // Abandon invalid or discarded run
+          await redisClient.xAck(streamKey, CONSUMER_GROUP, streamMsgId);
+          await redisClient.xDel(streamKey, streamMsgId);
+          passActivity++;
+          continue;
+        }
+
+        // If run is still actively staging, DO NOT process yet and DO NOT ack (leave in stream)
+        if (manifest.status === RUN_STATUS.STAGING) {
+          recordSkip("staging", importRunId);
+          continue;
+        }
+
+        // If run is already completed, ack and delete redundant message
+        if (manifest.status === RUN_STATUS.COMPLETED) {
+          await redisClient.xAck(streamKey, CONSUMER_GROUP, streamMsgId);
+          await redisClient.xDel(streamKey, streamMsgId);
+          passActivity++;
+          continue;
+        }
+
+        // If the report was marked FAILED in MongoDB, abandon and clean up stream
+        if (manifest.reportId) {
+          const mongoReport = await reportsSchema.findOne({
+            $or: [
+              { importRunId },
+              { reportId: manifest.reportId, profileId: manifest.profileId, configId: manifest.configId },
+            ],
+          }).select("status").lean();
+
+          if (mongoReport && mongoReport.status === "FAILED") {
+            await redisClient.xAck(streamKey, CONSUMER_GROUP, streamMsgId);
+            await redisClient.xDel(streamKey, streamMsgId);
+            await saveRunManifest(importRunId, {
+              status: RUN_STATUS.VALIDATION_FAILED,
+              lastError: "Report marked FAILED in MongoDB.",
+            });
+            passActivity++;
+            continue;
+          }
+        }
+
+        // Only process runs in eligible states (READY, IMPORTING, WRITE_FAILED)
+        if (!ELIGIBLE_STATUSES.includes(manifest.status)) {
+          recordSkip(`status:${manifest.status}`, importRunId);
+          continue;
+        }
+
+        // 2. Acquire per-scope lock (config + profile + entity) to prevent overlapping writer races
+        const lockScope = `${manifest.configId}_${manifest.profileId}_${entity}`;
+        const lockToken = await acquireImportLock(lockScope, 60);
+
+        if (!lockToken) {
+          recordSkip("lockBusy", importRunId);
+          // Another worker is actively importing this profile/entity; leave batch for next cycle
+          continue;
+        }
+
+        // Heartbeat timer to renew lock lease during long bulk writes
+        const lockHeartbeat = setInterval(async () => {
+          try {
+            await renewImportLock(lockScope, lockToken, 60);
+          } catch (_) {}
+        }, 20000);
+
+        try {
+          // A different writer may have committed another batch while this
+          // invocation was waiting for the scope lock. Use its current count.
+          manifest = await getRunManifest(importRunId);
+          if (manifest?.status === RUN_STATUS.COMPLETED) {
+            await redisClient.xAck(streamKey, CONSUMER_GROUP, streamMsgId);
+            await redisClient.xDel(streamKey, streamMsgId);
+            passActivity++;
+            continue;
+          }
+          if (!manifest || !ELIGIBLE_STATUSES.includes(manifest.status)) {
+            recordSkip(manifest ? `status:${manifest.status}` : "missingManifest", importRunId);
+            continue;
+          }
+
+          // Stream entries can already be held in another writer's memory when
+          // atomicBatchConfirm commits this batch and deletes its payload. Check
+          // the committed marker under the scope lock before loading that payload.
+          const processedBatchesKey = `${MANIFEST_KEY_PREFIX}${importRunId}:batches`;
+          if (await redisClient.sIsMember(processedBatchesKey, batchId)) {
+            await redisClient.xAck(streamKey, CONSUMER_GROUP, streamMsgId);
+            await redisClient.xDel(streamKey, streamMsgId);
+            passActivity++;
+            write_logs({
+              message: `[Report Batch Replay] Skipped already confirmed batch ${batchId} for ${importRunId}.`,
+              log_type: "info",
+            });
+            continue;
+          }
+
+          // Mark manifest as IMPORTING if currently READY
+          if (manifest.status === RUN_STATUS.READY) {
+            await saveRunManifest(importRunId, {
+              status: RUN_STATUS.IMPORTING,
+              importStartedAt: new Date().toISOString(),
+            });
+          }
+
+          // 3. Load Batch Payload from Redis
+          const batchKey = `${BATCH_KEY_PREFIX}${batchId}`;
+          const rawPayload = await redisClient.get(batchKey);
+
+          if (!rawPayload) {
+            throw new Error(`Batch payload ${batchKey} not found in Redis (possible expiration or eviction).`);
+          }
+
+          const rows = JSON.parse(rawPayload);
+          const sourceVersion = manifest.sourceVersion
+            ? Number(manifest.sourceVersion)
+            : (manifest.createdAt ? new Date(manifest.createdAt).getTime() : Date.now());
+
+          // 4. Build deterministic MongoDB upsert operations
+          const bulkOps = rows.map((row) => isExtendedEntity(entity)
+            ? buildExtendedUpsertOp(row, sourceVersion)
+            : buildMongoUpsertOp(row, sourceVersion));
+
+          // 5. Bulk write to MongoDB (fails loudly if any non-duplicate write error occurs)
+          const model = getModelForEntity(entity);
+          await parallelBulkWrite(model, bulkOps);
+
+          // Fencing check: verify lock was not stolen before commit/verification
+          const isLockHeld = await checkImportLock(lockScope, lockToken);
+          if (!isLockHeld) {
+            throw new Error(`Lock fencing failure: lock for ${lockScope} was lost during bulk write.`);
+          }
+
+          // 6. Check if this is the final batch of the run
+          const nextProcessed = (Number(manifest.processedBatches || 0) + 1);
+          const isFinalBatch = nextProcessed >= Number(manifest.expectedBatches);
+
+          if (isFinalBatch) {
+            // Verify complete row count and exact keys in MongoDB before completing run
+            const verifyResult = await verifyImportedRun({
+              ...manifest,
+              sourceVersion,
+            });
+
+            // 1. Mark corresponding reportsSchema document COMPLETED in MongoDB FIRST
+            if (manifest.reportId) {
+              await reportsSchema.updateOne(
+                {
+                  reportId: manifest.reportId,
+                  profileId: manifest.profileId,
+                  configId: manifest.configId,
+                },
+                {
+                  $set: {
+                    status: "COMPLETED",
+                    importRunId,
+                    verifiedRows: verifyResult.actualCount,
+                    completedAt: new Date(),
+                  },
+                }
+              );
+            }
+            const completedReport = manifest.reportId && await reportsSchema.findOne({
+              reportId: manifest.reportId, profileId: manifest.profileId, configId: manifest.configId,
+            }).select("cronHistoryId").lean();
+            if (completedReport?.cronHistoryId) {
+              await finalizeReportHistory(completedReport.cronHistoryId).catch((err) =>
+                write_logs({ message: `[Report History Finalize] ${err.message}`, log_type: "warn" }));
+            }
+
+            // 2. Atomically mark manifest COMPLETED, acknowledge stream entry, and clean batch payload
+            await atomicBatchConfirm({
+              streamKey,
+              streamMsgId,
+              batchKey,
+              batchId,
+              importRunId,
+              isFinalBatch: true,
+              finalManifestUpdates: {
+                status: RUN_STATUS.COMPLETED,
+                processedBatches: Number(manifest.expectedBatches),
+                completedAt: new Date().toISOString(),
+                verifiedCount: verifyResult.actualCount,
+              },
+            });
+
+            write_logs({
+              message: `[Report Import Completed] Run ${importRunId} for ${entity} (${manifest.profileId}) successfully verified and marked COMPLETED.`,
+              log_type: "info",
+            });
+          } else {
+            // Atomically increment manifest processedBatches, acknowledge stream entry, and clean batch payload
+            await atomicBatchConfirm({
+              streamKey,
+              streamMsgId,
+              batchKey,
+              batchId,
+              importRunId,
+              isFinalBatch: false,
+            });
+          }
+
+          totalBatchesProcessed++;
+          passActivity++;
+        } catch (batchErr) {
+          write_logs({
+            message: `[Report Batch Failure] Failed processing batch ${batchId} for ${importRunId}: ${batchErr.message}`,
+            log_type: "error",
+          });
+
+          // Legacy failedAttempts was shared by the entire run. Never let a
+          // different batch consume this batch's retry budget.
+          const attemptsField = `batchAttempts:${batchId}`;
+          const failedAttempts = Number(manifest[attemptsField] || 0) + 1;
+          if (failedAttempts >= 5) {
+            write_logs({
+              message: `[Report Batch Max Retries Exceeded] Batch ${batchId} for run ${importRunId} failed ${failedAttempts} times (${batchErr.message}). Discarding stream entry and marking report FAILED.`,
+              log_type: "error",
+            });
+
+            if (manifest.reportId) {
+              await reportsSchema.updateOne(
+                {
+                  $or: [
+                    { importRunId },
+                    { reportId: manifest.reportId, profileId: manifest.profileId, configId: manifest.configId },
+                  ],
+                },
+                {
+                  $set: {
+                    status: "FAILED",
+                    errorMessage: `Batch writer failed after ${failedAttempts} attempts: ${batchErr.message}`,
+                    failedAt: new Date(),
+                  },
+                }
+              );
+            }
+
+            await saveRunManifest(importRunId, {
+              status: RUN_STATUS.VALIDATION_FAILED,
+              [attemptsField]: failedAttempts,
+              lastError: `Max retries exceeded: ${batchErr.message}`,
+            });
+
+            await redisClient.xAck(streamKey, CONSUMER_GROUP, streamMsgId);
+            await redisClient.xDel(streamKey, streamMsgId);
+            passActivity++;
+          } else {
+            await saveRunManifest(importRunId, {
+              status: RUN_STATUS.WRITE_FAILED,
+              [attemptsField]: failedAttempts,
+              lastFailedBatchId: batchId,
+              lastError: batchErr.message,
+            });
+          }
+        } finally {
+          clearInterval(lockHeartbeat);
+          await releaseImportLock(lockScope, lockToken);
+        }
+      }
+      if (passActivity === 0 && pendingScanDone && claimScanDone && newMessageCount === 0) break;
     }
-    if (totalBatchesProcessed === processedBefore) break;
+    if (skippedRuns.size > 0) {
+      write_logs({
+        message: `[Report Batch Skipped] ${JSON.stringify({ entity, reasons: skipped, sampleRunIds: [...skippedRuns] })}`,
+        log_type: "warn",
+      });
     }
   }
 

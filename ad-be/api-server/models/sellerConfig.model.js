@@ -34,6 +34,11 @@ const sellerConfigSchema = new mongoose.Schema(
         tokenExpire: { type: Number, required: false },
         spTokenExpiresAt: { type: Date, required: false },
         disconnectedAt: { type: Date, default: null },
+        isDataDeletionStopped: { type: Boolean, default: false },
+        dataDeletionStoppedAt: { type: Date, default: null },
+        dataDeletionStoppedBy: { type: mongoose.Schema.Types.ObjectId, ref: "user", default: null },
+        deletionReminder15SentAt: { type: Date, default: null },
+        deletionReminder1SentAt: { type: Date, default: null },
     },
     { timestamps: true }
 );

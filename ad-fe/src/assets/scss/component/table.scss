@@ -396,6 +396,30 @@
         border-color: #2374F1 !important;
       }
     }
+
+    &.fa-shield {
+      color: #f59e0b !important;
+      background-color: rgba(245, 158, 11, 0.08) !important;
+      border: 1px solid rgba(245, 158, 11, 0.20) !important;
+
+      &:hover {
+        background-color: #f59e0b !important;
+        color: #ffffff !important;
+        border-color: #f59e0b !important;
+      }
+
+      &.protected {
+        color: #10b981 !important;
+        background-color: rgba(16, 185, 129, 0.08) !important;
+        border: 1px solid rgba(16, 185, 129, 0.20) !important;
+
+        &:hover {
+          background-color: #10b981 !important;
+          color: #ffffff !important;
+          border-color: #10b981 !important;
+        }
+      }
+    }
   }
 }
 

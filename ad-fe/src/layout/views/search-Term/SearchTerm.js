@@ -265,6 +265,9 @@ function SearchTerm() {
   const [filterToDelete, setFilterToDelete] = useState(null);
   const [pendingCampaignSelections, setPendingCampaignSelections] = useState(null);
   const [campaignsLoading, setCampaignsLoading] = useState(true);
+  // Dedicated loading flag for the search terms grid — independent of the campaigns dropdown loading,
+  // so the grid overlay stays visible until getAllSearchTerms / getSearchTermsProductView resolves.
+  const [isTableLoading, setIsTableLoading] = useState(true);
   const [selectedFilterOption, setSelectedFilterOption] = useState(null);
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [selectedCondition, setSelectedCondition] = useState("");
@@ -766,7 +769,10 @@ function SearchTerm() {
       data.query = addSearchTermQuery(data);
       delete data.appliedFilters;
 
-      setCampaignsLoading(true);
+      if (!isReload) {
+        setTableData([]);
+      }
+      setIsTableLoading(true);
       const apiCall = viewMode === "campaign" ? ApiGetAllSearchTerms : ApiGetSearchTermsProductView;
       let isActive = true;
       try {
@@ -794,7 +800,7 @@ function SearchTerm() {
         Toast.error(t("Something went wrong"));
       } finally {
         if (isActive) {
-          setCampaignsLoading(false);
+          setIsTableLoading(false);
         }
       }
     }
@@ -875,7 +881,6 @@ function SearchTerm() {
   useEffect(() => {
     if (!isFilterReady) return;
     if (profileId?.value && selectedAdType) {
-      setTableData([]);
       setSelectedRows([]);
       setSelectAll(false);
       setSelectedSubRows({});
@@ -951,7 +956,7 @@ function SearchTerm() {
 
 
   const handlePageChange = (page) => {
-    setCampaignsLoading(true);
+    setIsTableLoading(true);
     if (viewMode === "campaign") {
       setCampaignPage(page);
       ApiListing({ pageNo: page, perPage: campaignPerPage });
@@ -962,7 +967,7 @@ function SearchTerm() {
   };
 
   const handlePerRowsChange = async (newPerPage) => {
-    setCampaignsLoading(true);
+    setIsTableLoading(true);
     if (viewMode === "campaign") {
       setCampaignPage(1);
       setCampaignPerPage(newPerPage);
@@ -1929,7 +1934,7 @@ function SearchTerm() {
                     if (isDisabled) return;
                     if (viewMode !== tab.key) {
                       setTableData([]);
-                      setCampaignsLoading(true);
+                      setIsTableLoading(true);
                       setViewMode(tab.key);
                       setSearchName("");
                       setSearchTermSearch("");
@@ -2194,7 +2199,7 @@ function SearchTerm() {
                         ref={gridRef}
                         tableId="searchTerm-main-table"
                         height={viewMode === "campaign" ? "calc(100vh - 380px)" : "calc(100vh - 440px)"}
-                        loading={!profileId?.value || !selectedAdType || !isFilterReady || campaignsLoading}
+                        loading={!profileId?.value || !selectedAdType || !isFilterReady || isTableLoading}
                         onRefresh={refreshGrid}
                         pinnedBottomRowData={viewMode === "campaign" && tableData?.some(r => r?.isTotalRow) ? [tableData.find(r => r?.isTotalRow)] : []}
                         rowData={viewMode === "campaign" ? tableData : displayedSearchTerms}

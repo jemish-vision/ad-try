@@ -175,6 +175,12 @@ const stageReportFileInRedis = async ({
 
         pipeline.resume();
       } catch (err) {
+        console.error(`\n❌ [stageReportFileInRedis Validation Error] Entity: ${entity}, Run: ${importRunId}, Row #${totalRows}: ${err.message}`);
+        console.error(`   Offending Row Data:`, JSON.stringify(value));
+        write_logs({
+          message: `[stageReportFileInRedis Validation Error] ${entity} run ${importRunId} row #${totalRows}: ${err.message}`,
+          log_type: "error",
+        });
         pipeline.destroy(err);
         await saveRunManifest(importRunId, {
           status: RUN_STATUS.VALIDATION_FAILED,

@@ -51,7 +51,7 @@ const ProfileBadge = ({ profile, isDark }) => (
 );
 
 // ── Modal that lists ALL profiles for a config ────────────────────────────────
-const ProfilesModal = ({ show, onHide, profiles = [], companyName, configId, onOpenSyncModal, isDark, onRefreshList }) => {
+export const ProfilesModal = ({ show, onHide, profiles = [], companyName, configId, onOpenSyncModal, isDark, onRefreshList }) => {
   const { t } = useTranslation();
   const [profileSyncRecords, setProfileSyncRecords] = useState([]);
   const [loadingSync, setLoadingSync] = useState(false);
@@ -79,6 +79,7 @@ const ProfilesModal = ({ show, onHide, profiles = [], companyName, configId, onO
   useEffect(() => {
     if (show) {
       setSearchQuery("");
+      setLocalProfileStates({});
       if (configId) {
         loadSyncDetails();
       }
@@ -101,6 +102,7 @@ const ProfilesModal = ({ show, onHide, profiles = [], companyName, configId, onO
           [targetProfileId]: { ...prev[targetProfileId], isAdsSyncEnabled: newStatus }
         }));
         if (typeof onRefreshList === "function") onRefreshList();
+        window.dispatchEvent(new CustomEvent("profileAvailabilityChanged"));
       } else {
         Toast.error(res?.message || "Failed to update sync settings");
       }
@@ -201,7 +203,7 @@ const ProfilesModal = ({ show, onHide, profiles = [], companyName, configId, onO
 
                       const isAdsSyncActive = localProfileStates[targetProfileId]?.isAdsSyncEnabled !== undefined
                         ? localProfileStates[targetProfileId].isAdsSyncEnabled
-                        : p.isAdsSyncEnabled !== false;
+                        : (pRecords.find(r => typeof r.isAdsSyncEnabled === "boolean")?.isAdsSyncEnabled ?? p.isAdsSyncEnabled) !== false;
 
                       return (
                         <tr key={p._id || idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">

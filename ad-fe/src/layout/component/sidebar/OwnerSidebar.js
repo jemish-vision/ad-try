@@ -17,7 +17,7 @@ import {
   Moon, Sun, UserCircle,
   House, Users, Globe, Gear, Package,
   CalendarCheck, Prohibit, BookOpen, Headset, Buildings,
-  ShieldCheck, ChartLineUp, CaretRight, List, SignOut, FileText, X, ClockCountdown, ChatCenteredText,
+  ShieldCheck, ChartLineUp, CaretRight, List, SignOut, FileText, X, ClockCountdown, ChatCenteredText, Gauge,
 } from "@phosphor-icons/react";
 import { ApiDeleteDeviceToken } from "../../../api-wrapper/devices/ApiDeviceToken";
 import { ApiGetProfile } from "../../../api-wrapper/customer/ApiCustomer";
@@ -27,8 +27,8 @@ import { ProfileContext } from "src/helper/usecontext/useContext";
 // Concise nav entries for Super Admin
 const OWNER_NAV = [
   { name: "Dashboard", icon: <House size={17} weight="regular" />, path: "/admin-dashboard" },
-  { name: "Product Performance", icon: <ChartLineUp size={17} weight="regular" />, path: "/product-performance" },
-  { name: "MFN to FBA", icon: <Package size={17} weight="regular" />, path: "/mfn-to-fba" },
+
+
   { name: "Organizations", icon: <Buildings size={17} weight="regular" />, path: "/organizations" },
   { name: "Users", icon: <Users size={17} weight="regular" />, path: "/users" },
   { name: "Pages", icon: <FileText size={17} weight="regular" />, path: "/pages" },
@@ -36,6 +36,7 @@ const OWNER_NAV = [
   { name: "Role", icon: <ShieldCheck size={17} weight="regular" />, path: "/role" },
   { name: "Retention", icon: <ClockCountdown size={17} weight="regular" />, path: "/retention" },
   { name: "Cron Job", icon: <ChartLineUp size={17} weight="regular" />, path: "/cron-job" },
+  { name: "API Capacity & Usage", icon: <Gauge size={17} weight="regular" />, path: "/api-capacity" },
   { name: "Holiday/Special Days", icon: <CalendarCheck size={17} weight="regular" />, path: "/holiday" },
   { name: "Rule Blocked Time", icon: <Prohibit size={17} weight="regular" />, path: "/rule-blocked-time" },
   { name: "Support Ticket", icon: <Headset size={17} weight="regular" />, path: "/support-ticket" },

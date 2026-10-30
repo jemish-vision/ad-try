@@ -133,6 +133,7 @@ const campaignsSchema = new mongoose.Schema(
       lastSyncAt: { type: Date },
     },
     budgetTracking: {
+      isOutOfBudget: { type: Boolean },
       estimatedSpend: { type: Number, default: 0 },
       lastUsagePercentage: { type: Number, default: 0 },
       lastUpdated: { type: Date },

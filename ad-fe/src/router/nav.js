@@ -27,6 +27,7 @@ import {
   Prohibit,
   FileText,
   Infinity as PhosphorInfinity,
+  Gauge,
 } from "@phosphor-icons/react";
 
 const nav = [
@@ -310,6 +311,12 @@ const nav = [
     id: "nav-cron-job",
     icon: <PhosphorInfinity size={18} weight="regular" />,
     path: "/cron-job",
+  },
+  {
+    name: "API Capacity & Usage",
+    id: "nav-api-capacity",
+    icon: <Gauge size={18} weight="regular" />,
+    path: "/api-capacity",
   },
   {
     name: "ASANA Users",

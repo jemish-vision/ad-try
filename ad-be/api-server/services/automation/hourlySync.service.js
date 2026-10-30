@@ -6,12 +6,14 @@ const {
   claimSyncRun,
   markSyncRunCompleted,
   markSyncRunFailed,
+  markSyncRunWaiting,
 } = require("./syncRun.service");
 const { SYNC_TASKS } = require("../../../queue-service/queues/queueNames");
 const {
   DependencyNotReadyError,
   ProfileInactiveError,
   PermanentJobError,
+  ReportImportPendingError,
 } = require("../../../queue-service/contracts/errors");
 
 // Controller delegates
@@ -21,6 +23,71 @@ const { cronListTargetingFromAmazon, cronGenerateTargetingReport } = require("..
 const { cronListProductAdsFromAmazon, cronGenerateAdProductReport } = require("../../controllers/productAds.controller");
 const { cronGeneratePlacementReport } = require("../../controllers/placement.controller");
 const { cronGenerateSearchTermReport } = require("../../controllers/searchTerm.controller");
+
+/** Generate/poll targeting reports and require verified imports before completion. */
+async function runTargetingReportSync({ pastSyncObj, configId, profileId, syncDate, scheduledFor }) {
+  // BullMQ owns polling; do not start the legacy recurring report loop.
+  const result = await cronGenerateTargetingReport(false, false, {
+    ...pastSyncObj,
+    startDate: syncDate,
+    endDate: syncDate,
+    recurring: false,
+    reportRequestedAfter: scheduledFor,
+  });
+
+  if (result === "ERROR") {
+    throw new Error("Targeting report request failed; see cron logs for the Amazon error.");
+  }
+
+  const reportsSchema = require("../../models/report.model");
+  const reportTypes = ["spTargeting", "sbTargeting", "sdTargeting"];
+  const reports = await reportsSchema.find({
+    configId,
+    profileId: Number(profileId),
+    reportName: "Targeting Report",
+    startDate: syncDate,
+    endDate: syncDate,
+    reportTypeId: { $in: reportTypes },
+    $or: [
+      { createdAt: { $gte: new Date(scheduledFor) } },
+      // A request from a prior occurrence may finish during this job.
+      { completedAt: { $gte: new Date(scheduledFor) } },
+      {
+        status: {
+          $in: ["PENDING", "IN_PROGRESS", "PROCESSING", "STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"],
+        },
+        createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      },
+    ],
+  })
+    .sort({ createdAt: -1 })
+    .select("reportTypeId status errorMessage")
+    .lean();
+
+  const latestByType = new Map();
+  for (const report of reports) {
+    if (!latestByType.has(report.reportTypeId)) {
+      latestByType.set(report.reportTypeId, report);
+    }
+  }
+
+  const failedReport = [...latestByType.values()].find(report => report.status === "FAILED");
+  if (failedReport) {
+    throw new Error(
+      `Targeting report import failed (${failedReport.reportTypeId}): ${failedReport.errorMessage || "see utility logs"}`
+    );
+  }
+
+  const allCompleted = reportTypes.every(type => latestByType.get(type)?.status === "COMPLETED");
+  if (!allCompleted) {
+    throw new ReportImportPendingError(
+      "Targeting reports are awaiting verified MongoDB import.",
+      { task: SYNC_TASKS.TARGETING_REPORT, profileId, configId }
+    );
+  }
+
+  return result;
+}
 
 /**
  * Runs a single hourly sync task for exactly one profile and time block.
@@ -138,7 +205,13 @@ async function runHourlySyncForProfile({ task, configId, profileId, timeBlock, s
         result = await cronGenerateAdGroupReport(false, false, pastSyncObj);
         break;
       case SYNC_TASKS.TARGETING_REPORT:
-        result = await cronGenerateTargetingReport(false, false, pastSyncObj);
+        result = await runTargetingReportSync({
+          pastSyncObj,
+          configId,
+          profileId,
+          syncDate,
+          scheduledFor,
+        });
         break;
       case SYNC_TASKS.PRODUCT_ADS_REPORT:
         result = await cronGenerateAdProductReport(false, false, pastSyncObj);
@@ -184,6 +257,10 @@ async function runHourlySyncForProfile({ task, configId, profileId, timeBlock, s
       result,
     };
   } catch (err) {
+    if (err instanceof ReportImportPendingError) {
+      await markSyncRunWaiting(syncRunRecordId, err);
+      throw err;
+    }
     await markSyncRunFailed(syncRunRecordId, err);
     throw err;
   }

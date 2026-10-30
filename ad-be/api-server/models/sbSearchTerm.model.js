@@ -115,6 +115,13 @@ const sbSearchTermReportSchema = new mongoose.Schema(
             trim: true,
             default: 0,
         },
+    lastImportRunId: {
+      type: String,
+      trim: true,
+    },
+    importSourceVersion: {
+      type: Number,
+    },
     },
     {
         timestamps: true,

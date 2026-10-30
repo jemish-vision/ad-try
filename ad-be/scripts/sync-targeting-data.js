@@ -22,10 +22,10 @@ async function syncTargetingData() {
         // };
 
         const pastSyncObj = {
-            profileId: 1406809169199414, // REPLACE WITH ACTUAL PROFILE ID (Number)
-            configId: "6a2fd9dbdec3c6e2d5b466a6", // REPLACE WITH ACTUAL CONFIG ID (String),
-            startDate: "2026-10-01", // YYYY-MM-DD
-            endDate: "2026-10-20",   // YYYY-MM-DD
+            profileId: 2630925322373862, // REPLACE WITH ACTUAL PROFILE ID (Number)
+            configId: "69809498df1b0ea4ae334fc5", // REPLACE WITH ACTUAL CONFIG ID (String),
+            startDate: "2026-10-27", // YYYY-MM-DD
+            endDate: "2026-10-27",   // YYYY-MM-DD
             recurring: true         // Keep this false for manual execution
         };
 

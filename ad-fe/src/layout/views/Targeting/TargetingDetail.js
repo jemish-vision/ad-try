@@ -33,7 +33,7 @@ import {
   SelectValue,
 } from "../../../components/ui/select";
 import { ProfileContext } from "../../../helper/usecontext/useContext";
-import { TargetingTypeBadge } from "../../../utility/targetingUtils";
+import { TargetingTypeBadge, getNormalizedTargetingType } from "../../../utility/targetingUtils";
 import {
   ApiTargetingListing,
   ApiTargetingChartListing,
@@ -101,6 +101,21 @@ export default function TargetingDetail() {
   };
 
   // Targeting details
+  const isAutoTarget = (info) => {
+    if (!info?.matchType && !info?.targeting) return false;
+    const norm = getNormalizedTargetingType(info.matchType, info.targeting);
+    if (norm?.isAuto) return true;
+    const m = String(info.matchType || "").toUpperCase();
+    const t = String(info.targeting || "").toLowerCase();
+    return (
+      m === "TARGETING_EXPRESSION_PREDEFINED" ||
+      m === "PREDEFINED" ||
+      m.includes("AUTO") ||
+      t === "(_targeting_auto_)" ||
+      ["close-match", "loose-match", "complements", "substitutes", "similar-product"].includes(t)
+    );
+  };
+
   const [targetInfo, setTargetInfo] = useState({
     targeting: queryTargeting || "",
     matchType: queryMatchType || "",
@@ -173,7 +188,7 @@ export default function TargetingDetail() {
         ApiGetTargetingHistory({
           profileId: activeProfileId,
           targetId,
-          campaignId: targetInfo.campaignId || queryCampaignId,
+          campaignId: targetInfo.campaignId || queryCampaignId, targetText: targetInfo.targeting, matchType: isAutoTarget(targetInfo) ? undefined : targetInfo.matchType,
           adType: selectedAdType || "SP",
           fromDate: fromDateStr,
           toDate: toDateStr,
@@ -250,7 +265,7 @@ export default function TargetingDetail() {
       const payload = {
         profileId: activeProfileId,
         targetId,
-        campaignId: targetInfo.campaignId || queryCampaignId,
+        campaignId: targetInfo.campaignId || queryCampaignId, targetText: targetInfo.targeting, matchType: isAutoTarget(targetInfo) ? undefined : targetInfo.matchType,
         adType: selectedAdType || "SP",
         fromDate: fromDateStr,
         toDate: toDateStr,
@@ -727,7 +742,7 @@ export default function TargetingDetail() {
                           e.stopPropagation();
                           openCampaignViewInNewTab(
                             {
-                              campaignId: targetInfo.campaignId || queryCampaignId,
+                              campaignId: targetInfo.campaignId || queryCampaignId, targetText: targetInfo.targeting, matchType: isAutoTarget(targetInfo) ? undefined : targetInfo.matchType,
                               name: targetInfo.campaignName,
                             },
                             targetInfo.campaignName,

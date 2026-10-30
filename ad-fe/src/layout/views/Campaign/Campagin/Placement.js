@@ -384,7 +384,8 @@ const Placement = (props) => {
             sortable: true,
             resizable: true,
             hide: checkHide("Budget Type"),
-            cellRenderer: (params) => <>{params.value ?? "N/A"}</>,
+            valueFormatter: (params) => (params.value ? String(params.value).toUpperCase() : "N/A"),
+            cellRenderer: (params) => <>{params.value ? String(params.value).toUpperCase() : "N/A"}</>,
         },
     ], [visibleColumns, placementEdits, currencyCode]);
 

@@ -50,6 +50,7 @@ const profileSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    campaignStatusHistorySyncedAt: { type: Map, of: Date },
     isAdsSyncEnabled: {
       type: Boolean,
       default: false,
@@ -57,7 +58,20 @@ const profileSchema = new mongoose.Schema(
     isSpSyncEnabled: {
       type: Boolean,
       default: false,
-    }
+    },
+    isDataDeletionStopped: {
+      type: Boolean,
+      default: false,
+    },
+    dataDeletionStoppedAt: {
+      type: Date,
+      default: null,
+    },
+    dataDeletionStoppedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "user",
+      default: null,
+    },
   },
 
   { timestamps: true }

@@ -84,6 +84,10 @@ const targetingSchema = new mongoose.Schema(
       trim: true,
       default: 0,
     },
+    cpc: { type: Number, default: 0 },
+    ctr: { type: Number, default: 0 },
+    cvr: { type: Number, default: 0 },
+    conversionRate: { type: Number, default: 0 },
     keywordBid: {
       type: Number,
       trim: true,
@@ -107,6 +111,13 @@ const targetingSchema = new mongoose.Schema(
     timezone: {
       type: String,
       trim: true,
+    },
+    lastImportRunId: {
+      type: String,
+      trim: true,
+    },
+    importSourceVersion: {
+      type: Number,
     },
   },
   { timestamps: true }

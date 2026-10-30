@@ -122,7 +122,8 @@ export function UseContext({ children }) {
       }
       try {
         const profileObj = JSON.parse(localStorage.getItem("profile"));
-        if (profileObj) setstoreDara(profileObj);
+        setstoreDara(profileObj);
+        if (!profileObj) setcurrencyCode(undefined);
       } catch (err) {}
     };
     window.addEventListener("profileChanged", handleProfileChange);

@@ -41,29 +41,51 @@ async function startHourlySyncWorker() {
   });
 
   worker.on("active", (job) => {
+    const task = job.data?.task || "UNKNOWN_TASK";
+    const profile = job.data?.profileId ? ` | Profile: ${job.data.profileId}` : "";
+    const config = job.data?.configId ? ` | Config: ${job.data.configId}` : "";
+    const block = job.data?.timeBlock ? ` | TimeBlock: ${job.data.timeBlock}` : "";
+    const attempt = `(Attempt ${job.attemptsMade + 1}/${job.opts?.attempts || 1})`;
     cron_logs({
-      message: `[HourlySyncWorker] Started job ${job.id} (${job.data?.task})`,
+      message: `[HourlySyncWorker] >>> STARTING Job ${job.id} | Task: ${task}${profile}${config}${block} ${attempt}`,
       log_type: "info",
     });
   });
 
-  worker.on("completed", (job) => {
+  worker.on("completed", (job, result) => {
+    const duration = job.processedOn ? `${Date.now() - job.processedOn}ms` : "N/A";
+    const task = job.data?.task || "UNKNOWN_TASK";
+    const profile = job.data?.profileId ? ` | Profile: ${job.data.profileId}` : "";
+    let detail = "";
+    if (result?.result?.totalBatchesProcessed !== undefined) {
+      detail = ` | Batches Written: ${result.result.totalBatchesProcessed}`;
+    } else if (result?.skipped) {
+      detail = ` | Skipped: ${result.reason || "SKIPPED"}`;
+    } else if (result?.dryRun) {
+      detail = ` | Mode: Shadow (dry-run)`;
+    } else if (result?.state) {
+      detail = ` | State: ${result.state}`;
+    }
     cron_logs({
-      message: `[HourlySyncWorker] Completed job ${job.id} (${job.data?.task})`,
+      message: `[HourlySyncWorker] <<< COMPLETED Job ${job.id} | Task: ${task}${profile} | Duration: ${duration}${detail}`,
       log_type: "info",
     });
   });
 
   worker.on("failed", (job, err) => {
+    const duration = job?.processedOn ? `${Date.now() - job.processedOn}ms` : "N/A";
+    const task = job?.data?.task || "UNKNOWN_TASK";
+    const profile = job?.data?.profileId ? ` | Profile: ${job.data.profileId}` : "";
+    const attempt = `(Attempt ${job?.attemptsMade || 1}/${job?.opts?.attempts || 1})`;
     cron_logs({
-      message: `[HourlySyncWorker] Failed job ${job?.id} (${job?.data?.task}): ${err.message || err}`,
+      message: `[HourlySyncWorker] !!! FAILED Job ${job?.id} | Task: ${task}${profile} | Duration: ${duration} ${attempt} | Error: ${err?.stack || err?.message || err}`,
       log_type: "error",
     });
   });
 
   worker.on("error", (err) => {
     cron_logs({
-      message: `[HourlySyncWorker] Worker error: ${err.message || err}`,
+      message: `[HourlySyncWorker] Worker Error: ${err?.stack || err?.message || err}`,
       log_type: "error",
     });
   });

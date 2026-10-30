@@ -36,6 +36,9 @@ const { cronBrandAnalytics } = require("./brandAnalytics.controller");
 const { cronFetchAPlusContentFromAmazon } = require("./aplusContent.controller");
 const { clearProfileCache, clearActivePlanProfilesCache } = require("../services/redis.service");
 const CRON_JOBS = require("../../worker-service/cronJobs.enum");
+const configSchema = require("../models/config.model");
+const sellerConfigSchema = require("../models/sellerConfig.model");
+const auditLogSchema = require("../models/auditLog.model");
 const { write_logs } = require("../../winston/utility/logger");
 
 const runReportCronByName = async (reportName, pastSyncObj) => {
@@ -669,6 +672,8 @@ exports.getAllOrganizationsForSuperAdmin = async (req, res) => {
         usersList: orgUsersList,
         hasPendingSync: pendingSyncProfiles.length > 0,
         pendingSyncProfiles,
+        isDataDeletionStopped: Boolean(org.isDataDeletionStopped),
+        dataDeletionStoppedAt: org.dataDeletionStoppedAt || null,
       };
     });
 
@@ -818,6 +823,11 @@ exports.updateOrganizationBySuperAdmin = async (req, res) => {
       // When Super Admin sets a future endDate, restore trial access by resetting flags
       ...(isFutureEndDate && { isTrialActive: true, hasUsedTrial: false }),
       ...(organizationName && { organizationName }),
+      ...(req.body.isDataDeletionStopped !== undefined && {
+        isDataDeletionStopped: Boolean(req.body.isDataDeletionStopped),
+        dataDeletionStoppedAt: Boolean(req.body.isDataDeletionStopped) ? new Date() : null,
+        dataDeletionStoppedBy: Boolean(req.body.isDataDeletionStopped) ? req.user?._id : null,
+      }),
     };
 
     const updatedOrg = await organizationSchema
@@ -836,6 +846,18 @@ exports.updateOrganizationBySuperAdmin = async (req, res) => {
 
     if (organizationName && updatedOrg.userId) {
       await userSchema.updateOne({ _id: updatedOrg.userId._id }, { $set: { companyName: organizationName } });
+    }
+
+    if (req.body.isDataDeletionStopped !== undefined) {
+      const isStopped = Boolean(req.body.isDataDeletionStopped);
+      await configSchema.updateMany(
+        { organizationId },
+        { $set: { isDataDeletionStopped: isStopped, dataDeletionStoppedAt: isStopped ? new Date() : null, dataDeletionStoppedBy: req.user?._id || null } }
+      );
+      await sellerConfigSchema.updateMany(
+        { organizationId },
+        { $set: { isDataDeletionStopped: isStopped, dataDeletionStoppedAt: isStopped ? new Date() : null, dataDeletionStoppedBy: req.user?._id || null } }
+      );
     }
 
     return res.status(200).send({
@@ -934,6 +956,389 @@ exports.resetStuckSyncRecords = async () => {
     cron_logs({
       message: `[resetStuckSyncRecords] Error resetting stuck sync records: ${err.message}`,
       log_type: "error",
+    });
+  }
+};
+
+
+exports.getDeletionQueueForSuperAdmin = async (req, res) => {
+  try {
+    const cutoffDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    // Find all disconnected Ads configs (either in retention window or with deletion stopped)
+    const adsConfigs = await configSchema.find({
+      isActive: false,
+      disconnectedAt: { $ne: null },
+      $or: [
+        { disconnectedAt: { $gt: cutoffDate } },
+        { isDataDeletionStopped: true }
+      ]
+    }).populate("organizationId", "organizationName isDataDeletionStopped")
+      .populate("dataDeletionStoppedBy", "fullName email")
+      .lean();
+
+    // Find all disconnected SP seller configs
+    const sellerConfigs = await sellerConfigSchema.find({
+      isActive: false,
+      disconnectedAt: { $ne: null },
+      $or: [
+        { disconnectedAt: { $gt: cutoffDate } },
+        { isDataDeletionStopped: true }
+      ]
+    }).populate("organizationId", "organizationName isDataDeletionStopped")
+      .populate("userId", "fullName email")
+      .populate("dataDeletionStoppedBy", "fullName email")
+      .lean();
+
+    const queue = [];
+
+    for (const c of adsConfigs) {
+      const purgeDate = new Date(c.disconnectedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+      const daysLeft = Math.max(0, Math.ceil((purgeDate - Date.now()) / (1000 * 60 * 60 * 24)));
+
+      const userAccess = await profileBasedPermissionSchema.findOne({ configId: c._id }).populate("userId", "fullName email companyName").lean();
+      const user = userAccess?.userId;
+
+      queue.push({
+        _id: c._id,
+        type: "ads",
+        name: c.companyName || "Unnamed Ads Account",
+        organizationId: c.organizationId?._id || c.organizationId || null,
+        organizationName: c.organizationId?.organizationName || user?.companyName || "N/A",
+        ownerName: user?.fullName || "N/A",
+        ownerEmail: user?.email || "N/A",
+        disconnectedAt: c.disconnectedAt,
+        purgeDate,
+        daysLeft,
+        isDataDeletionStopped: Boolean(c.isDataDeletionStopped || c.organizationId?.isDataDeletionStopped),
+        dataDeletionStoppedAt: c.dataDeletionStoppedAt || null,
+        dataDeletionStoppedBy: c.dataDeletionStoppedBy?.fullName || null,
+        deletionReminder15SentAt: c.deletionReminder15SentAt || null,
+        deletionReminder1SentAt: c.deletionReminder1SentAt || null,
+      });
+    }
+
+    for (const sc of sellerConfigs) {
+      const purgeDate = new Date(sc.disconnectedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+      const daysLeft = Math.max(0, Math.ceil((purgeDate - Date.now()) / (1000 * 60 * 60 * 24)));
+
+      queue.push({
+        _id: sc._id,
+        type: "sp",
+        name: `Seller ${sc.sellerId || `#${sc.profileId || ""}`}`,
+        organizationId: sc.organizationId?._id || sc.organizationId || null,
+        organizationName: sc.organizationId?.organizationName || "N/A",
+        ownerName: sc.userId?.fullName || "N/A",
+        ownerEmail: sc.userId?.email || "N/A",
+        disconnectedAt: sc.disconnectedAt,
+        purgeDate,
+        daysLeft,
+        isDataDeletionStopped: Boolean(sc.isDataDeletionStopped || sc.organizationId?.isDataDeletionStopped),
+        dataDeletionStoppedAt: sc.dataDeletionStoppedAt || null,
+        dataDeletionStoppedBy: sc.dataDeletionStoppedBy?.fullName || null,
+        deletionReminder15SentAt: sc.deletionReminder15SentAt || null,
+        deletionReminder1SentAt: sc.deletionReminder1SentAt || null,
+      });
+    }
+
+    // Sort by daysLeft ascending (most urgent first)
+    queue.sort((a, b) => a.daysLeft - b.daysLeft);
+
+    return res.status(200).send({
+      isSuccess: true,
+      data: queue,
+      totalCount: queue.length,
+      stoppedCount: queue.filter(q => q.isDataDeletionStopped).length,
+      pendingCount: queue.filter(q => !q.isDataDeletionStopped).length,
+    });
+  } catch (error) {
+    write_logs({ message: `[getDeletionQueueForSuperAdmin Error] ${error?.message || error}`, log_type: "error" });
+    return res.status(500).send({
+      isSuccess: false,
+      message: "Failed to fetch account deletion queue",
+      error: error.message,
+    });
+  }
+};
+
+exports.toggleStopDataDeletionBySuperAdmin = async (req, res) => {
+  try {
+    const { organizationId, configId, sellerConfigId, isDataDeletionStopped } = req.body;
+    const shouldStop = Boolean(isDataDeletionStopped);
+    const stoppedAt = shouldStop ? new Date() : null;
+    const stoppedBy = shouldStop ? req.user?._id : null;
+
+    if (!organizationId && !configId && !sellerConfigId) {
+      return res.status(400).send({
+        isSuccess: false,
+        message: "organizationId, configId, or sellerConfigId is required.",
+      });
+    }
+
+    if (organizationId) {
+      await organizationSchema.updateOne(
+        { _id: organizationId },
+        { $set: { isDataDeletionStopped: shouldStop, dataDeletionStoppedAt: stoppedAt, dataDeletionStoppedBy: stoppedBy } }
+      );
+      await configSchema.updateMany(
+        { organizationId },
+        { $set: { isDataDeletionStopped: shouldStop, dataDeletionStoppedAt: stoppedAt, dataDeletionStoppedBy: stoppedBy } }
+      );
+      await sellerConfigSchema.updateMany(
+        { organizationId },
+        { $set: { isDataDeletionStopped: shouldStop, dataDeletionStoppedAt: stoppedAt, dataDeletionStoppedBy: stoppedBy } }
+      );
+    }
+
+    if (configId) {
+      await configSchema.updateOne(
+        { _id: configId },
+        { $set: { isDataDeletionStopped: shouldStop, dataDeletionStoppedAt: stoppedAt, dataDeletionStoppedBy: stoppedBy } }
+      );
+      await sellerConfigSchema.updateMany(
+        { configId },
+        { $set: { isDataDeletionStopped: shouldStop, dataDeletionStoppedAt: stoppedAt, dataDeletionStoppedBy: stoppedBy } }
+      );
+    }
+
+    if (sellerConfigId) {
+      await sellerConfigSchema.updateOne(
+        { _id: sellerConfigId },
+        { $set: { isDataDeletionStopped: shouldStop, dataDeletionStoppedAt: stoppedAt, dataDeletionStoppedBy: stoppedBy } }
+      );
+    }
+
+    await auditLogSchema.create({
+      userId: req.user?._id,
+      event: "DATA_DELETION_PROCESS_TOGGLE",
+      message: `Super Admin ${shouldStop ? "stopped" : "resumed"} account data deletion for target (org: ${organizationId || "N/A"}, config: ${configId || "N/A"}, sellerConfig: ${sellerConfigId || "N/A"})`,
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+      metadata: { organizationId, configId, sellerConfigId, isDataDeletionStopped: shouldStop },
+    }).catch(() => {});
+
+    return res.status(200).send({
+      isSuccess: true,
+      message: shouldStop
+        ? "Account data deletion process has been stopped. Account data is now protected from 30-day cleanup."
+        : "Account data deletion process has been resumed. Normal 30-day cleanup policy will apply.",
+      isDataDeletionStopped: shouldStop,
+    });
+  } catch (error) {
+    write_logs({ message: `[toggleStopDataDeletionBySuperAdmin Error] ${error?.message || error}`, log_type: "error" });
+    return res.status(500).send({
+      isSuccess: false,
+      message: "Failed to update data deletion status",
+      error: error.message,
+    });
+  }
+};
+
+
+exports.getOrgDeletionProfilesForSuperAdmin = async (req, res) => {
+  try {
+    const organizationId = req.query.organizationId || req.body.organizationId;
+    if (!organizationId) {
+      return res.status(400).send({
+        isSuccess: false,
+        message: "organizationId is required.",
+      });
+    }
+
+    const org = await organizationSchema.findById(organizationId).lean();
+    if (!org) {
+      return res.status(404).send({
+        isSuccess: false,
+        message: "Organization not found.",
+      });
+    }
+
+    // 1. Find all configs belonging to this organization
+    const configs = await configSchema.find({ organizationId }).lean();
+    const configIds = configs.map((c) => c._id);
+    const configMap = new Map();
+    configs.forEach((c) => configMap.set(c._id.toString(), c));
+
+    // 2. Find all profiles belonging to these configs
+    const profiles = await profileSchema.find({ configId: { $in: configIds } }).lean();
+
+    // 3. Find all sellerConfigs belonging to this organization or configs
+    const sellerConfigs = await sellerConfigSchema.find({
+      $or: [
+        { organizationId },
+        { configId: { $in: configIds } },
+      ],
+    }).lean();
+
+    const resultProfiles = [];
+
+    // Map Ads profiles (Only those scheduled for deletion or stopped from deletion)
+    for (const p of profiles) {
+      const cfg = configMap.get(p.configId?.toString()) || {};
+      const isConfigDisconnected = !cfg.isActive && Boolean(cfg.disconnectedAt);
+      const isStopped = Boolean(p.isDataDeletionStopped || cfg.isDataDeletionStopped);
+
+      // Only display data that is going to be deleted (or is protected)
+      if (!isConfigDisconnected && !isStopped) continue;
+
+      const purgeDate = cfg.disconnectedAt ? new Date(new Date(cfg.disconnectedAt).getTime() + 30 * 24 * 60 * 60 * 1000) : null;
+      const daysLeft = purgeDate ? Math.max(0, Math.ceil((purgeDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))) : null;
+      const isExpired = purgeDate ? Date.now() > purgeDate.getTime() : false;
+
+      resultProfiles.push({
+        _id: p._id,
+        profileDbId: p._id,
+        profileId: p.profileId,
+        configId: p.configId,
+        type: "ads",
+        typeName: "Amazon Ads",
+        name: p.name || cfg.companyName || `Profile ${p.profileId}`,
+        companyName: cfg.companyName || "-",
+        countryCode: p.countryCode || "-",
+        currencyCode: p.currencyCode || "-",
+        marketplaceStringId: p.marketplaceStringId || "-",
+        timezone: p.timezone || "-",
+        amazonUrl: p.amazonUrl || "-",
+        isActive: Boolean(cfg.isActive && p.isActive),
+        disconnectedAt: cfg.disconnectedAt || null,
+        purgeDate,
+        daysLeft,
+        isExpired,
+        isScheduledForDeletion: isConfigDisconnected,
+        isDataDeletionStopped: isStopped,
+        dataDeletionStoppedAt: p.dataDeletionStoppedAt || cfg.dataDeletionStoppedAt || null,
+      });
+    }
+
+    // Map SP seller configs (Only those scheduled for deletion or stopped from deletion)
+    for (const sc of sellerConfigs) {
+      const isSellerDisconnected = !sc.isActive && Boolean(sc.disconnectedAt);
+      const isStopped = Boolean(sc.isDataDeletionStopped);
+
+      // Only display data that is going to be deleted (or is protected)
+      if (!isSellerDisconnected && !isStopped) continue;
+
+      const purgeDate = sc.disconnectedAt ? new Date(new Date(sc.disconnectedAt).getTime() + 30 * 24 * 60 * 60 * 1000) : null;
+      const daysLeft = purgeDate ? Math.max(0, Math.ceil((purgeDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))) : null;
+      const isExpired = purgeDate ? Date.now() > purgeDate.getTime() : false;
+
+      resultProfiles.push({
+        _id: sc._id,
+        profileDbId: sc._id,
+        sellerConfigId: sc._id,
+        profileId: sc.profileId,
+        sellerId: sc.sellerId,
+        configId: sc.configId,
+        type: "sp",
+        typeName: "Seller Central (SP-API)",
+        name: `Seller ${sc.sellerId || sc.profileId || sc._id}`,
+        companyName: org.organizationName,
+        countryCode: "-",
+        currencyCode: "-",
+        marketplaceStringId: "-",
+        timezone: "-",
+        amazonUrl: "-",
+        isActive: Boolean(sc.isActive),
+        disconnectedAt: sc.disconnectedAt || null,
+        purgeDate,
+        daysLeft,
+        isExpired,
+        isScheduledForDeletion: isSellerDisconnected,
+        isDataDeletionStopped: isStopped,
+        dataDeletionStoppedAt: sc.dataDeletionStoppedAt || null,
+      });
+    }
+
+    // Sort: scheduled for deletion first (or stopped from deletion), then active
+    resultProfiles.sort((a, b) => {
+      if (a.isScheduledForDeletion && !b.isScheduledForDeletion) return -1;
+      if (!a.isScheduledForDeletion && b.isScheduledForDeletion) return 1;
+      if (a.isDataDeletionStopped && !b.isDataDeletionStopped) return -1;
+      if (!a.isDataDeletionStopped && b.isDataDeletionStopped) return 1;
+      return (a.name || "").localeCompare(b.name || "");
+    });
+
+    return res.status(200).send({
+      isSuccess: true,
+      data: {
+        organization: {
+          _id: org._id,
+          organizationName: org.organizationName,
+          isDataDeletionStopped: Boolean(org.isDataDeletionStopped),
+        },
+        profiles: resultProfiles,
+        totalCount: resultProfiles.length,
+        scheduledCount: resultProfiles.filter((p) => p.isScheduledForDeletion && !p.isDataDeletionStopped).length,
+        stoppedCount: resultProfiles.filter((p) => p.isDataDeletionStopped).length,
+      },
+    });
+  } catch (error) {
+    write_logs({ message: `[getOrgDeletionProfilesForSuperAdmin Error] ${error?.message || error}`, log_type: "error" });
+    return res.status(500).send({
+      isSuccess: false,
+      message: "Failed to fetch organization profiles for deletion",
+      error: error.message,
+    });
+  }
+};
+
+exports.toggleProfileDataDeletionBySuperAdmin = async (req, res) => {
+  try {
+    const { organizationId, updates, profileDbId, profileId, configId, sellerConfigId, type, isDataDeletionStopped } = req.body;
+    const stoppedBy = req.user?._id || null;
+    const now = new Date();
+
+    const listToUpdate = Array.isArray(updates) && updates.length > 0
+      ? updates
+      : [{ profileDbId, profileId, configId, sellerConfigId, type, isDataDeletionStopped }];
+
+    for (const item of listToUpdate) {
+      const shouldStop = Boolean(item.isDataDeletionStopped);
+      const stoppedAt = shouldStop ? now : null;
+
+      if (item.type === "sp" || item.sellerConfigId) {
+        const scId = item.sellerConfigId || item.profileDbId || item._id;
+        if (scId) {
+          await sellerConfigSchema.updateOne(
+            { _id: scId },
+            { $set: { isDataDeletionStopped: shouldStop, dataDeletionStoppedAt: stoppedAt, dataDeletionStoppedBy: shouldStop ? stoppedBy : null } }
+          );
+        }
+      } else {
+        // Ads profile
+        if (item.profileDbId || item._id) {
+          await profileSchema.updateOne(
+            { _id: item.profileDbId || item._id },
+            { $set: { isDataDeletionStopped: shouldStop, dataDeletionStoppedAt: stoppedAt, dataDeletionStoppedBy: shouldStop ? stoppedBy : null } }
+          );
+        } else if (item.profileId && item.configId) {
+          await profileSchema.updateOne(
+            { profileId: item.profileId, configId: item.configId },
+            { $set: { isDataDeletionStopped: shouldStop, dataDeletionStoppedAt: stoppedAt, dataDeletionStoppedBy: shouldStop ? stoppedBy : null } }
+          );
+        }
+      }
+    }
+
+    await auditLogSchema.create({
+      userId: req.user?._id,
+      event: "PROFILE_DATA_DELETION_TOGGLE",
+      message: `Super Admin updated data deletion protection for ${listToUpdate.length} profile(s) (orgId: ${organizationId || "N/A"})`,
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+      metadata: { organizationId, updatesCount: listToUpdate.length },
+    }).catch(() => {});
+
+    return res.status(200).send({
+      isSuccess: true,
+      message: "Profile data deletion settings saved successfully.",
+    });
+  } catch (error) {
+    write_logs({ message: `[toggleProfileDataDeletionBySuperAdmin Error] ${error?.message || error}`, log_type: "error" });
+    return res.status(500).send({
+      isSuccess: false,
+      message: "Failed to update profile data deletion status",
+      error: error.message,
     });
   }
 };

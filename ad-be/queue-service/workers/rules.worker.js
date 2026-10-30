@@ -39,29 +39,46 @@ async function startRulesWorker() {
   });
 
   worker.on("active", (job) => {
+    const task = job.data?.task || "UNKNOWN_RULE_TASK";
+    const profile = job.data?.profileId ? ` | Profile: ${job.data.profileId}` : "";
+    const config = job.data?.configId ? ` | Config: ${job.data.configId}` : "";
+    const attempt = `(Attempt ${job.attemptsMade + 1}/${job.opts?.attempts || 1})`;
     cron_logs({
-      message: `[RulesWorker] Started job ${job.id} (${job.data?.task})`,
+      message: `[RulesWorker] >>> STARTING Job ${job.id} | Rule: ${task}${profile}${config} ${attempt}`,
       log_type: "info",
     });
   });
 
-  worker.on("completed", (job) => {
+  worker.on("completed", (job, result) => {
+    const duration = job.processedOn ? `${Date.now() - job.processedOn}ms` : "N/A";
+    const task = job.data?.task || "UNKNOWN_RULE_TASK";
+    const profile = job.data?.profileId ? ` | Profile: ${job.data.profileId}` : "";
+    let detail = "";
+    if (result?.skipped) {
+      detail = ` | Skipped: ${result.reason || "PROFILE_INACTIVE"}`;
+    } else if (result?.executedRules !== undefined || result?.totalActiveRules !== undefined) {
+      detail = ` | Rules: ${result.executedRules ?? result.totalActiveRules ?? 0}`;
+    }
     cron_logs({
-      message: `[RulesWorker] Completed job ${job.id} (${job.data?.task})`,
+      message: `[RulesWorker] <<< COMPLETED Job ${job.id} | Rule: ${task}${profile} | Duration: ${duration}${detail}`,
       log_type: "info",
     });
   });
 
   worker.on("failed", (job, err) => {
+    const duration = job?.processedOn ? `${Date.now() - job.processedOn}ms` : "N/A";
+    const task = job?.data?.task || "UNKNOWN_RULE_TASK";
+    const profile = job?.data?.profileId ? ` | Profile: ${job.data.profileId}` : "";
+    const attempt = `(Attempt ${job?.attemptsMade || 1}/${job?.opts?.attempts || 1})`;
     cron_logs({
-      message: `[RulesWorker] Failed job ${job?.id} (${job?.data?.task}): ${err.message || err}`,
+      message: `[RulesWorker] !!! FAILED Job ${job?.id} | Rule: ${task}${profile} | Duration: ${duration} ${attempt} | Error: ${err?.stack || err?.message || err}`,
       log_type: "error",
     });
   });
 
   worker.on("error", (err) => {
     cron_logs({
-      message: `[RulesWorker] Worker error: ${err.message || err}`,
+      message: `[RulesWorker] Worker Error: ${err?.stack || err?.message || err}`,
       log_type: "error",
     });
   });

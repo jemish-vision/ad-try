@@ -19,7 +19,7 @@ function createSpApiProcessor() {
 
     const startTime = Date.now();
     cron_logs({
-      message: `[SpApiProcessor] Started task "${task}" (jobId: ${job.id}, timeBlock: ${timeBlock})`,
+      message: `[SpApiProcessor] Starting task "${task}" (JobId: ${job.id}, TimeBlock: ${timeBlock || "N/A"})`,
       log_type: "info",
     });
 
@@ -186,7 +186,7 @@ function createSpApiProcessor() {
 
       const durationMs = Date.now() - startTime;
       cron_logs({
-        message: `[SpApiProcessor] Completed task "${task}" in ${durationMs}ms`,
+        message: `[SpApiProcessor] Finished task "${task}" (JobId: ${job.id}) in ${durationMs}ms`,
         log_type: "info",
       });
 
@@ -197,8 +197,9 @@ function createSpApiProcessor() {
         result,
       };
     } catch (err) {
+      const durationMs = Date.now() - startTime;
       cron_logs({
-        message: `[SpApiProcessor] Failed task "${task}": ${err.message}`,
+        message: `[SpApiProcessor] Error executing task "${task}" (JobId: ${job.id}) after ${durationMs}ms: ${err?.stack || err?.message || err}`,
         log_type: "error",
       });
       throw err;

@@ -1,7 +1,10 @@
+const { buildTargetingMetricsPipeline } = require("../helper/targetingMetricsPipeline");
+const { buildFilteredTargetingPipeline, canFilterWithoutCampaignJoin, buildArchivedCampaignPipeline } = require("../helper/filteredTargetingPipeline");
 const { getConditionRows, captureManualSelection, prepareSnapshotBulkUpdates, updateSnapshotHistory } = require("../helpers/ruleConditionSnapshotHelper");
 const { validateCampaignAssignment } = require("../helper/ruleCampaignAssignment");
 const { sanitizeQueryObject } = require("../helper/sanitizeQuery");
 const { getTargetingRuleDate } = require("../helper/targetingRuleDate");
+const { mergeTargetingRecords } = require("../helper/targetingReconciliation.helper");
 const moment = require("moment-timezone");
 const { retryWithBackoff } = require("../helper/retryHelper");
 const crypto = require("crypto");
@@ -212,7 +215,8 @@ exports.cronGenerateTargetingReport = async (generateWeeklyReport = false, gener
                     checkConfigAds,
                     profile.configId,
                     profile.timezone,
-                    recurring
+                    recurring,
+                    pastSyncObj?.reportRequestedAfter
                 );
 
                 cron_logs({
@@ -227,7 +231,8 @@ exports.cronGenerateTargetingReport = async (generateWeeklyReport = false, gener
                     checkConfigAds,
                     profile.configId,
                     profile.timezone,
-                    recurring
+                    recurring,
+                    pastSyncObj?.reportRequestedAfter
                 );
 
                 cron_logs({
@@ -242,7 +247,8 @@ exports.cronGenerateTargetingReport = async (generateWeeklyReport = false, gener
                     checkConfigAds,
                     profile.configId,
                     profile.timezone,
-                    recurring
+                    recurring,
+                    pastSyncObj?.reportRequestedAfter
                 );
 
                 cron_logs({
@@ -299,18 +305,20 @@ exports.cronGenerateTargetingReport = async (generateWeeklyReport = false, gener
             }
         }));
 
-        await Promise.all(reportPromises);
+        const profileResults = await Promise.all(reportPromises);
 
-        return cron_logs({
+        cron_logs({
             message: `[${cronName}] Cron finished successfully for ${getProfileId.length} profile(s).`,
             log_type: "info"
         });
+        if (pastSyncObj && !recurring) return profileResults[0] || "ERROR";
 
     } catch (error) {
-        return cron_logs({
+        cron_logs({
             message: `[Targeting Report] Error during cron execution: ${error.stack || error.message || error}`,
             log_type: "error"
         });
+        if (pastSyncObj?.recurring === false) return "ERROR";
     }
 };
 
@@ -322,7 +330,8 @@ async function spGenerateReport(
     checkConfigAds,
     configId,
     timezone,
-    recurring = false
+    recurring = false,
+    requestedAfter = null
 ) {
     try {
         const getAccount = await getProfile(configId, profileId);
@@ -336,10 +345,34 @@ async function spGenerateReport(
                 configId,
                 reportTypeId: "spTargeting",
                 reportName: "Targeting Report",
-            }).lean();
+                ...(requestedAfter && {
+                    $or: [
+                        { createdAt: { $gte: new Date(requestedAfter) } },
+                        { completedAt: { $gte: new Date(requestedAfter) } },
+                        {
+                            status: { $in: ["PENDING", "IN_PROGRESS", "PROCESSING", "STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"] },
+                            createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+                        },
+                    ],
+                }),
+            }).sort({ createdAt: -1 }).lean();
 
             if (existing && existing.status == "COMPLETED") return "COMPLETED";
-            if (existing && existing.status == "STAGED") return "STAGED";
+            if (existing && requestedAfter && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) {
+                processStagedReportBatches(["targeting"]).catch(() => {});
+                return existing.status;
+            }
+            if (existing && existing.status == "STAGED") {
+                const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+                const lastActivity = new Date(existing.updatedAt || existing.createdAt);
+                if (lastActivity < twoHoursAgo) {
+                    await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+                    existing = null;
+                } else {
+                    processStagedReportBatches(["targeting"]).catch(() => {});
+                    return "STAGED";
+                }
+            }
         } else {
             // 1️⃣ Check recent pending report (created within last 24 hours)
             const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -493,7 +526,8 @@ async function sbGenerateReport(
     checkConfigAds,
     configId,
     timezone,
-    recurring = false
+    recurring = false,
+    requestedAfter = null
 ) {
 
     const getAccount = await getProfile(configId, profileId);
@@ -507,10 +541,34 @@ async function sbGenerateReport(
             configId,
             reportTypeId: "sbTargeting",
             reportName: "Targeting Report",
-        }).lean();
+            ...(requestedAfter && {
+                $or: [
+                    { createdAt: { $gte: new Date(requestedAfter) } },
+                    { completedAt: { $gte: new Date(requestedAfter) } },
+                    {
+                        status: { $in: ["PENDING", "IN_PROGRESS", "PROCESSING", "STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"] },
+                        createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+                    },
+                ],
+            }),
+        }).sort({ createdAt: -1 }).lean();
 
         if (existing && existing.status == "COMPLETED") return "COMPLETED";
-        if (existing && existing.status == "STAGED") return "STAGED";
+        if (existing && requestedAfter && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) {
+            processStagedReportBatches(["sbTargeting"]).catch(() => {});
+            return existing.status;
+        }
+        if (existing && existing.status == "STAGED") {
+            const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+            const lastActivity = new Date(existing.updatedAt || existing.createdAt);
+            if (lastActivity < twoHoursAgo) {
+                await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+                existing = null;
+            } else {
+                processStagedReportBatches(["sbTargeting"]).catch(() => {});
+                return "STAGED";
+            }
+        }
     } else {
         // 1️⃣ Check recent pending report (created within last 24 hours)
         const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -662,7 +720,8 @@ async function sdGenerateReport(
     checkConfigAds,
     configId,
     timezone,
-    recurring = false
+    recurring = false,
+    requestedAfter = null
 ) {
     try {
         const getAccount = await getProfile(configId, profileId);
@@ -676,10 +735,34 @@ async function sdGenerateReport(
                 configId,
                 reportTypeId: "sdTargeting",
                 reportName: "Targeting Report",
-            }).lean();
+                ...(requestedAfter && {
+                    $or: [
+                        { createdAt: { $gte: new Date(requestedAfter) } },
+                        { completedAt: { $gte: new Date(requestedAfter) } },
+                        {
+                            status: { $in: ["PENDING", "IN_PROGRESS", "PROCESSING", "STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"] },
+                            createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+                        },
+                    ],
+                }),
+            }).sort({ createdAt: -1 }).lean();
 
             if (existing && existing.status == "COMPLETED") return "COMPLETED";
-            if (existing && existing.status == "STAGED") return "STAGED";
+            if (existing && requestedAfter && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) {
+                processStagedReportBatches(["sdTargeting"]).catch(() => {});
+                return existing.status;
+            }
+            if (existing && existing.status == "STAGED") {
+                const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+                const lastActivity = new Date(existing.updatedAt || existing.createdAt);
+                if (lastActivity < twoHoursAgo) {
+                    await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+                    existing = null;
+                } else {
+                    processStagedReportBatches(["sdTargeting"]).catch(() => {});
+                    return "STAGED";
+                }
+            }
         } else {
             // 1️⃣ Check recent pending report (created within last 24 hours)
             const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -1137,40 +1220,8 @@ exports.getTargeting = async (req, res) => {
         }
 
         const baseGroupPipeline = [
-            { $match: query },
-            { $sort: { reportDate: 1 } },
-            {
-                $group: {
-                    _id: {
-                        campaignId: "$campaignId",
-                        adGroupId: "$adGroupId",
-                        targetId: "$targetId",
-                        profileId: "$profileId",
-                    },
-                    impressions: { $sum: "$impressions" },
-                    clicks: { $sum: "$clicks" },
-                    orders: { $sum: "$orders" },
-                    spend: { $sum: "$spend" },
-                    sales: { $sum: "$sales" },
-                    topOfSearchImpressionShare: {
-                        $avg: {
-                            $toDouble: { $ifNull: ["$topOfSearchImpressionShare", "0"] }
-                        }
-                    },
-                    targeting: { $first: "$targeting" },
-                    keywordBid: { $last: "$keywordBid" },
-                    reportDate: { $last: "$reportDate" },
-                    status: { $last: "$status" },
-                    keywordType: { $last: "$keywordType" },
-                    matchType: { $last: "$matchType" },
-                    campaignId: { $last: "$campaignId" },
-                    adGroupId: { $last: "$adGroupId" }
-                }
-            },
-            {
-                $addFields: {
-                    targetId: "$_id.targetId",
-                    profileId: "$_id.profileId",
+            ...buildTargetingMetricsPipeline(query),
+            { $addFields: {
                     acos: {
                         $cond: [
                             { $gt: ["$sales", 0] },
@@ -1470,8 +1521,66 @@ exports.targetingPipeline = (query, lastDate, adType = "SP") => {
                 _id: {
                     campaignId: "$campaignId",
                     adGroupId: "$adGroupId",
-                    targetId: "$targetId",
                     profileId: "$profileId",
+                    targetingKey: {
+                        $cond: [
+                            { $and: [{ $ne: ["$targeting", null] }, { $ne: ["$targeting", ""] }] },
+                            { $toLower: { $trim: { input: "$targeting" } } },
+                            "$targetId"
+                        ]
+                    },
+                    keywordType: {
+                        $ifNull: [
+                            "$keywordType",
+                            {
+                                $switch: {
+                                    branches: [
+                                        { case: { $regexMatch: { input: { $ifNull: ["$matchType", ""] }, regex: /exact/i } }, then: "EXACT" },
+                                        { case: { $regexMatch: { input: { $ifNull: ["$matchType", ""] }, regex: /phrase/i } }, then: "PHRASE" },
+                                        { case: { $regexMatch: { input: { $ifNull: ["$matchType", ""] }, regex: /broad/i } }, then: "BROAD" },
+                                    ],
+                                    default: "$matchType"
+                                }
+                            }
+                        ]
+                    },
+                    reportDate: "$reportDate",
+                },
+                impressions: { $max: "$impressions" },
+                clicks: { $max: "$clicks" },
+                orders: { $max: "$orders" },
+                spend: { $max: "$spend" },
+                sales: { $max: "$sales" },
+                topOfSearchImpressionShare: {
+                    $max: {
+                        $toDouble: { $ifNull: ["$topOfSearchImpressionShare", "0"] }
+                    }
+                },
+                realTargetId: {
+                    $max: {
+                        $cond: [
+                            { $regexMatch: { input: { $ifNull: ["$targetId", ""] }, regex: /^R-/i } },
+                            null,
+                            "$targetId"
+                        ]
+                    }
+                },
+                fallbackTargetId: { $last: "$targetId" },
+                targeting: { $first: "$targeting" },
+                keywordBid: { $max: "$keywordBid" },
+                status: { $last: "$status" },
+                matchType: { $last: "$matchType" },
+            }
+        },
+        { $sort: { "_id.reportDate": 1 } },
+        {
+            $group: {
+                _id: {
+                    campaignId: "$_id.campaignId",
+                    adGroupId: "$_id.adGroupId",
+                    profileId: "$_id.profileId",
+                    targetingKey: "$_id.targetingKey",
+                    keywordType: "$_id.keywordType",
                 },
                 impressions: { $sum: "$impressions" },
                 clicks: { $sum: "$clicks" },
@@ -1479,18 +1588,23 @@ exports.targetingPipeline = (query, lastDate, adType = "SP") => {
                 spend: { $sum: "$spend" },
                 sales: { $sum: "$sales" },
                 topOfSearchImpressionShare: {
-                    $avg: {
-                        $toDouble: { $ifNull: ["$topOfSearchImpressionShare", "0"] }
-                    }
+                    $avg: "$topOfSearchImpressionShare"
                 },
+                realTargetId: { $max: "$realTargetId" },
+                fallbackTargetId: { $last: "$fallbackTargetId" },
                 targeting: { $first: "$targeting" },
                 keywordBid: { $last: "$keywordBid" },
-                reportDate: { $last: "$reportDate" },
+                reportDate: { $last: "$_id.reportDate" },
                 status: { $last: "$status" },
-                keywordType: { $last: "$keywordType" },
-                matchType: { $last: "$matchType" },
-                campaignId: { $last: "$campaignId" },
-                adGroupId: { $last: "$adGroupId" }
+                keywordType: { $last: "$_id.keywordType" },
+                matchType: { $last: "$_id.keywordType" },
+                campaignId: { $last: "$_id.campaignId" },
+                adGroupId: { $last: "$_id.adGroupId" }
+            }
+        },
+        {
+            $addFields: {
+                "_id.targetId": { $ifNull: ["$realTargetId", "$fallbackTargetId"] }
             }
         },
         {
@@ -7391,10 +7505,10 @@ exports.getFilteredTargetingIds = async function (req, targetingPipeline) {
             }
         }
 
-        let pipeline = targetingPipeline(query, lastDate, adType);
+        const matchStages = [];
 
         if (Query && Query !== "{}") {
-            pipeline.push({ $match: sanitizeQueryObject(safeJsonParse(Query)) });
+            matchStages.push({ $match: sanitizeQueryObject(safeJsonParse(Query)) });
         }
 
         // Add field filtering
@@ -7406,12 +7520,20 @@ exports.getFilteredTargetingIds = async function (req, targetingPipeline) {
                 const logicalOperator = {
                     [`$${conditions.toLowerCase()}`]: [fieldFilter, extraFieldFilter]
                 };
-                pipeline.push({ $match: logicalOperator });
+                matchStages.push({ $match: logicalOperator });
             } else {
-                pipeline.push({ $match: fieldFilter });
+                matchStages.push({ $match: fieldFilter });
             }
         }
 
+        const legacyPipeline = targetingPipeline(query, lastDate, adType);
+        let archivedCampaignIds;
+        if (canFilterWithoutCampaignJoin(matchStages) && query.profileId === numericProfileId && String(query.configId) === String(resolvedConfigId)) {
+            const campaignModel = req.models.adTypeCampaignSchema || (adType === "SB" ? sbCampaignSchema : adType === "SD" ? sdCampaignSchema : campaignSchema);
+            const archivedCampaigns = await campaignModel.aggregate(buildArchivedCampaignPipeline(numericProfileId, lastDate, legacyPipeline)).allowDiskUse(true);
+            archivedCampaignIds = archivedCampaigns.map(row => row.campaignId);
+        }
+        const pipeline = buildFilteredTargetingPipeline(query, legacyPipeline, matchStages, { archivedCampaignIds });
         // Final projection - ONLY return targetId
         pipeline.push({ $project: { targetId: 1, _id: 0 } });
 
@@ -8492,6 +8614,8 @@ exports.getTargetingHistory = async (req, res) => {
             profileId,
             campaignId,
             targetId,
+            targetText: reqTargetText,
+            matchType: reqMatchType,
             adType = "SP",
             fromDate,
             toDate,
@@ -8507,6 +8631,93 @@ exports.getTargetingHistory = async (req, res) => {
                 message: "targetId or campaignId is required",
             });
         }
+
+        const normalizeMatchType = (mt) => {
+            if (!mt) return "";
+            let s = String(mt).trim().toUpperCase();
+            s = s.replace(/^(KEYWORD|AUTOMATIC|TARGETING|PRODUCT TARGET)\s*[-_:]\s*/i, "");
+            if (
+                s === "TARGETING_EXPRESSION_PREDEFINED" ||
+                s === "PREDEFINED" ||
+                s === "KEYWORDS_CLOSE_MATCH" ||
+                s === "KEYWORDS_LOOSE_MATCH" ||
+                s === "PRODUCT_SUBSTITUTES" ||
+                s === "PRODUCT_COMPLEMENTS" ||
+                s === "PRODUCTS_SIMILAR_TO_ADVERTISED_PRODUCTS" ||
+                s === "CLOSE-MATCH" ||
+                s === "LOOSE-MATCH" ||
+                s === "SUBSTITUTES" ||
+                s === "COMPLEMENTS" ||
+                s === "SIMILAR-PRODUCT"
+            ) {
+                return "PREDEFINED";
+            }
+            if (
+                s === "TARGETING_EXPRESSION" ||
+                s === "EXPRESSION" ||
+                s === "GROUP" ||
+                s === "KEYWORDS_RELATED_TO_YOUR_BRAND" ||
+                s === "KEYWORDS_RELATED_TO_YOUR_PRODUCT_CATEGORY" ||
+                s === "KEYWORDS_RELATED_TO_YOUR_LANDING_PAGES"
+            ) {
+                return "GROUP";
+            }
+            return s;
+        };
+
+        const getMatchTypeVariants = (mt) => {
+            if (!mt) return [];
+            const norm = normalizeMatchType(mt);
+            const variants = new Set([String(mt).trim(), norm, norm.toLowerCase()]);
+            if (norm === "EXACT") {
+                ["EXACT", "exact", "Exact", "Keyword - exact", "KEYWORD - EXACT", "keyword - exact", "KEYWORD_EXACT", "keyword_exact", "Product target - Exact"].forEach((v) => variants.add(v));
+            } else if (norm === "PHRASE") {
+                ["PHRASE", "phrase", "Phrase", "Keyword - phrase", "KEYWORD - PHRASE", "keyword - phrase", "KEYWORD_PHRASE", "keyword_phrase"].forEach((v) => variants.add(v));
+            } else if (norm === "BROAD") {
+                ["BROAD", "broad", "Broad", "Keyword - broad", "KEYWORD - BROAD", "keyword - broad", "KEYWORD_BROAD", "keyword_broad"].forEach((v) => variants.add(v));
+            } else if (norm === "PREDEFINED") {
+                [
+                    "PREDEFINED",
+                    "predefined",
+                    "TARGETING_EXPRESSION_PREDEFINED",
+                    "targeting_expression_predefined",
+                    "Targeting Expression - predefined",
+                    "close-match",
+                    "loose-match",
+                    "substitutes",
+                    "complements",
+                    "similar-product",
+                    "Automatic - close-match",
+                    "Automatic - loose-match",
+                    "Automatic - substitutes",
+                    "Automatic - complements",
+                    "Automatic - similar-product",
+                    "KEYWORDS_CLOSE_MATCH",
+                    "KEYWORDS_LOOSE_MATCH",
+                    "PRODUCT_SUBSTITUTES",
+                    "PRODUCT_COMPLEMENTS",
+                    "PRODUCTS_SIMILAR_TO_ADVERTISED_PRODUCTS",
+                ].forEach((v) => variants.add(v));
+            } else if (norm === "GROUP" || norm === "EXPRESSION") {
+                [
+                    "GROUP",
+                    "group",
+                    "Group",
+                    "Keyword - group",
+                    "KEYWORD - GROUP",
+                    "keyword - group",
+                    "EXPRESSION",
+                    "expression",
+                    "TARGETING_EXPRESSION",
+                    "targeting_expression",
+                    "Targeting Expression",
+                    "KEYWORDS_RELATED_TO_YOUR_BRAND",
+                    "KEYWORDS_RELATED_TO_YOUR_PRODUCT_CATEGORY",
+                    "KEYWORDS_RELATED_TO_YOUR_LANDING_PAGES",
+                ].forEach((v) => variants.add(v));
+            }
+            return Array.from(variants);
+        };
 
         const configId = req.body.configId || req.query?.configId || req?.config?.configId || req?.headers?.["x-config-id"] || req?.headers?.["configid"];
         const resolvedConfigId = configId && mongoose.Types.ObjectId.isValid(configId) ? new mongoose.Types.ObjectId(String(configId)) : null;
@@ -8533,23 +8744,30 @@ exports.getTargetingHistory = async (req, res) => {
 
         // 1. Get current/latest targeting record
         let currentAcos = 0;
-        let targetName = "";
-        let targetMatchType = "";
+        let targetName = reqTargetText ? String(reqTargetText).trim() : "";
+        let targetMatchType = reqMatchType ? String(reqMatchType).trim() : "";
         let targetCampaignName = "";
+        let tRecord = null;
         try {
+            const reqMatchVariants = getMatchTypeVariants(reqMatchType);
             const targetQuery = {
-                ...(possibleTargetIds.length > 0 ? { targetId: { $in: possibleTargetIds } } : {}),
+                ...(possibleTargetIds.length > 0
+                    ? { targetId: { $in: possibleTargetIds } }
+                    : targetName
+                        ? { targeting: targetName }
+                        : {}),
+                ...(reqMatchVariants.length > 0 ? { matchType: { $in: reqMatchVariants } } : {}),
                 ...(campaignId ? { campaignId: { $in: [numCampaignId, strCampaignId].filter(Boolean) } } : {}),
                 ...(numProfileId ? { profileId: numProfileId } : {}),
             };
-            const tRecord = await targetModel
+            tRecord = await targetModel
                 .findOne(targetQuery)
                 .sort({ reportDate: -1, createdAt: -1 })
                 .lean();
 
             if (tRecord) {
-                targetName = tRecord.targeting || tRecord.keywordText || "";
-                targetMatchType = tRecord.matchType || "";
+                targetName = tRecord.targeting || tRecord.keywordText || targetName;
+                targetMatchType = tRecord.matchType || targetMatchType;
                 targetCampaignName = tRecord.campaignName || "";
                 if (tRecord.acos !== undefined && tRecord.acos !== null && !isNaN(Number(tRecord.acos))) {
                     currentAcos = Number(tRecord.acos) || 0;
@@ -8561,27 +8779,119 @@ exports.getTargetingHistory = async (req, res) => {
             // ignore
         }
 
-        // 2. Build indexed filters for parallel queries
+        const normTargetMatchType = normalizeMatchType(targetMatchType);
+        const normReqMatchType = normalizeMatchType(reqMatchType);
+        const isAutoTargeting =
+            normTargetMatchType === "PREDEFINED" ||
+            normReqMatchType === "PREDEFINED" ||
+            ["close-match", "loose-match", "substitutes", "complements", "similar-product", "(_targeting_auto_)"].includes(String(targetName || reqTargetText || "").toLowerCase()) ||
+            String(tRecord?.targetingType || tRecord?.targeting_type || "").toUpperCase() === "AUTO";
+
+        // For auto campaigns / auto targeting, do NOT filter by match type (only manual campaigns filter by match type)
+        const matchTypeVariants = isAutoTargeting ? [] : getMatchTypeVariants(reqMatchType || targetMatchType);
+        const effectiveNormMatchType = isAutoTargeting ? "" : (normReqMatchType || normTargetMatchType);
+
+        // Find all targetIds in targetModel that belong to targetName with this exact matchType (manual only)
+        if (targetName && matchTypeVariants.length > 0) {
+            try {
+                const siblingDocs = await targetModel.find({
+                    targeting: targetName,
+                    matchType: { $in: matchTypeVariants },
+                    ...(campaignId ? { campaignId: { $in: [numCampaignId, strCampaignId].filter(Boolean) } } : {}),
+                    ...(numProfileId ? { profileId: numProfileId } : {}),
+                }, { targetId: 1 }).lean();
+                for (const s of (siblingDocs || [])) {
+                    if (s.targetId) {
+                        const cId = String(s.targetId).replace(/^[TK]-/, "").trim();
+                        possibleTargetIds.push(String(s.targetId), cId, "T-" + cId, "K-" + cId);
+                    }
+                }
+            } catch (err) {
+                // ignore
+            }
+        }
+
+        const possibleTargetIdValues = numTargetId ? [...possibleTargetIds, numTargetId] : possibleTargetIds;
+
+        // 2. Build indexed filters for parallel queries (scoped by targetId AND matchType / targeting type)
         const historyFilter = {
-            targetId: { $in: possibleTargetIds },
+            ...(possibleTargetIdValues.length > 0 ? {
+                $or: [
+                    { targetId: { $in: possibleTargetIdValues } },
+                    { target_id: { $in: possibleTargetIdValues } },
+                ]
+            } : {}),
             ...(campaignId ? { campaignId: { $in: [strCampaignId, numCampaignId].filter(Boolean) } } : {}),
-            ...(numProfileId ? { profileId: numProfileId } : {}),
+            ...(numProfileId ? { profileId: { $in: [numProfileId, String(numProfileId)].filter(Boolean) } } : {}),
         };
+        if (matchTypeVariants.length > 0) {
+            historyFilter.$and = [
+                {
+                    $or: [
+                        { match_type: { $in: matchTypeVariants } },
+                        { matchType: { $in: matchTypeVariants } },
+                        { match_type: { $exists: false } },
+                        { matchType: { $exists: false } },
+                        { match_type: null },
+                        { matchType: null },
+                        { match_type: "" },
+                        { matchType: "" },
+                    ],
+                },
+            ];
+        }
 
         const changeHistoryFilter = {
             ...(resolvedConfigId ? { configId: resolvedConfigId } : {}),
             ...(numProfileId ? { profileId: numProfileId } : {}),
             ...(numCampaignId ? { changeLevel: numCampaignId } : {}),
+            source: { $ne: "AMAZON_SQS" },
+            updatedFrom: { $ne: "Amazon Stream" },
         };
         const orConditions = [];
-        if (possibleTargetIds.length > 0) {
-            orConditions.push({ targetId: { $in: possibleTargetIds } });
+        if (possibleTargetIdValues.length > 0) {
+            const matchTypeGuard =
+                matchTypeVariants.length > 0
+                    ? {
+                        $or: [
+                            { matchType: { $in: matchTypeVariants } },
+                            { matchType: { $exists: false } },
+                            { matchType: null },
+                            { matchType: "" },
+                        ],
+                    }
+                    : {};
+            orConditions.push({ targetId: { $in: possibleTargetIdValues }, ...matchTypeGuard });
             if (numTargetId) {
-                orConditions.push({ changeLevel: numTargetId });
+                orConditions.push({ changeLevel: numTargetId, ...matchTypeGuard });
             }
         }
         if (targetName) {
-            orConditions.push({ targeting: targetName });
+            // Only match by targeting name if targetId matches or is absent AND matchType matches
+            if (matchTypeVariants.length > 0) {
+                orConditions.push({
+                    targeting: targetName,
+                    matchType: { $in: matchTypeVariants },
+                    $or: [
+                        ...(possibleTargetIdValues.length > 0 ? [{ targetId: { $in: possibleTargetIdValues } }] : []),
+                        { targetId: { $exists: false } },
+                        { targetId: null },
+                        { targetId: "" },
+                    ],
+                });
+            } else if (possibleTargetIdValues.length === 0) {
+                orConditions.push({ targeting: targetName });
+            } else {
+                orConditions.push({
+                    targeting: targetName,
+                    $or: [
+                        { targetId: { $in: possibleTargetIdValues } },
+                        { targetId: { $exists: false } },
+                        { targetId: null },
+                        { targetId: "" },
+                    ],
+                });
+            }
         }
         if (orConditions.length > 0) {
             changeHistoryFilter.$or = orConditions;
@@ -8594,17 +8904,22 @@ exports.getTargetingHistory = async (req, res) => {
         };
 
         const targetDailyFilter = {
-            ...(possibleTargetIds.length > 0 || targetName ? {
+            ...(possibleTargetIdValues.length > 0 || targetName ? {
                 $or: [
-                    ...(possibleTargetIds.length > 0 ? [{ targetId: { $in: possibleTargetIds } }] : []),
-                    ...(targetName ? [{ targeting: targetName }] : []),
+                    ...(possibleTargetIdValues.length > 0 ? [{
+                        targetId: { $in: possibleTargetIdValues },
+                        ...(matchTypeVariants.length > 0 ? { matchType: { $in: matchTypeVariants } } : {}),
+                    }] : []),
+                    ...(targetName ? [{
+                        targeting: targetName,
+                        ...(matchTypeVariants.length > 0 ? { matchType: { $in: matchTypeVariants } } : {}),
+                    }] : []),
                 ],
             } : {}),
             ...(campaignId ? { campaignId: { $in: [numCampaignId, strCampaignId].filter(Boolean) } } : {}),
             ...(numProfileId ? { profileId: { $in: [numProfileId, String(numProfileId)].filter(Boolean) } } : {}),
             ...(resolvedConfigId ? { configId: resolvedConfigId } : {}),
         };
-
         // 3. Execute all independent database queries concurrently via Promise.all
         const [profile, historyDocs, manualChanges, ruleActions, dailyStats] = await Promise.all([
             getProfile(configId, profileId).catch(() => null),
@@ -8618,6 +8933,16 @@ exports.getTargetingHistory = async (req, res) => {
 
         // Add entries from targetingHistory
         for (const doc of (historyDocs || [])) {
+            const docCleanTargetId = (doc.targetId || doc.target_id) ? String(doc.targetId || doc.target_id).replace(/^[TK]-/, "").trim() : "";
+            if (!isAutoTargeting && effectiveNormMatchType) {
+                const docNormMatch = normalizeMatchType(doc.match_type || doc.matchType);
+                if (docNormMatch && docNormMatch !== effectiveNormMatchType) {
+                    continue;
+                }
+            }
+            if (cleanTargetId && docCleanTargetId && !possibleTargetIds.includes(docCleanTargetId) && !possibleTargetIds.includes("K-" + docCleanTargetId) && !possibleTargetIds.includes("T-" + docCleanTargetId)) {
+                continue;
+            }
             const date = doc.last_updated_date_time || doc.creation_date_time || doc.createdAt;
             const itemAcos = doc.acos !== undefined && doc.acos !== null && !isNaN(Number(doc.acos)) && Number(doc.acos) > 0 ? Number(doc.acos) : currentAcos;
             const itemOldAcos = doc.oldAcos !== undefined && doc.oldAcos !== null && !isNaN(Number(doc.oldAcos)) ? Number(doc.oldAcos) : itemAcos;
@@ -8660,6 +8985,19 @@ exports.getTargetingHistory = async (req, res) => {
 
         // Add entries from campaignChangeHistory
         for (const mc of (manualChanges || [])) {
+            const mcCleanTargetId = mc.targetId ? String(mc.targetId).replace(/^[TK]-/, "").trim() : "";
+            if (!isAutoTargeting && effectiveNormMatchType) {
+                const mcNormMatch = normalizeMatchType(mc.matchType);
+                if (mcNormMatch && mcNormMatch !== effectiveNormMatchType) {
+                    continue;
+                }
+                if (!mcNormMatch && !mcCleanTargetId) {
+                    continue;
+                }
+            }
+            if (cleanTargetId && mcCleanTargetId && !possibleTargetIds.includes(mcCleanTargetId) && !possibleTargetIds.includes("K-" + mcCleanTargetId) && !possibleTargetIds.includes("T-" + mcCleanTargetId)) {
+                continue;
+            }
             const oldValNum = Number(String(mc.oldValue).replace(/[^0-9.-]/g, ""));
             const newValNum = Number(String(mc.newValue).replace(/[^0-9.-]/g, ""));
             const isOldNum = !isNaN(oldValNum) && mc.oldValue !== "" && mc.oldValue !== null;
@@ -8754,6 +9092,11 @@ exports.getTargetingHistory = async (req, res) => {
                     // Skip redundant Amazon Stream heartbeat snapshots with exact same bid
                     continue;
                 }
+                if ((item.oldBid === null || item.previousValue === "—") && lastBid === null && item.changeSource === "Amazon" && !/^Status:/i.test(item.action)) {
+                    // Initial baseline snapshot from Amazon Stream (not an actual bid change)
+                    lastBid = currentBid;
+                    continue;
+                }
                 if (item.oldBid === null || item.previousValue === "—") {
                     item.oldBid = lastBid;
                     if (lastBid !== null) item.previousValue = lastBid;
@@ -8772,6 +9115,22 @@ exports.getTargetingHistory = async (req, res) => {
         const lookbackNum = Number(acosLookbackDays) > 0 ? Number(acosLookbackDays) : 7;
         const isCustomRange = acosLookbackMode === "custom_range" && customAcosFromDate && customAcosToDate;
 
+        // Deduplicate dailyStats by reportDate so synthetic R- and T- rows on the same day are not double-counted
+        const dailyStatsMap = new Map();
+        for (const stat of (dailyStats || [])) {
+            if (!stat?.reportDate) continue;
+            const prev = dailyStatsMap.get(stat.reportDate);
+            const spendVal = Number(stat.spend) || 0;
+            const salesVal = Number(stat.sales) || 0;
+            if (!prev) {
+                dailyStatsMap.set(stat.reportDate, { reportDate: stat.reportDate, spend: spendVal, sales: salesVal });
+            } else {
+                prev.spend = Math.max(prev.spend, spendVal);
+                prev.sales = Math.max(prev.sales, salesVal);
+            }
+        }
+        const normalizedDailyStats = Array.from(dailyStatsMap.values());
+
         // Calculate date-wise ACOS: spend / sales * 100 for each interval
         for (let i = 0; i < finalItems.length; i++) {
             const item = finalItems[i];
@@ -8783,7 +9142,7 @@ exports.getTargetingHistory = async (req, res) => {
                 endDate = moment(customAcosToDate).format("YYYY-MM-DD");
             } else {
                 const changeDateStr = item.lastChangeDate
-                    ? moment(item.lastChangeDate).format("YYYY-MM-DD")
+                    ? moment(item.lastChangeDate).tz(timezone).format("YYYY-MM-DD")
                     : todayStr;
                 endDate = changeDateStr;
                 startDate = moment(changeDateStr).subtract(lookbackNum, "days").format("YYYY-MM-DD");
@@ -8799,7 +9158,7 @@ exports.getTargetingHistory = async (req, res) => {
             let totalSales = 0;
 
             if (dailyStats && dailyStats.length > 0) {
-                for (const stat of dailyStats) {
+                for (const stat of normalizedDailyStats) {
                     if (stat.reportDate && stat.reportDate >= startDate && stat.reportDate <= endDate) {
                         totalSpend += Number(stat.spend) || 0;
                         totalSales += Number(stat.sales) || 0;
@@ -8842,6 +9201,8 @@ exports.getTargetingHistory = async (req, res) => {
             isSuccess: true,
             message: "Targeting history fetched successfully",
             data: uniqueHistory,
+            dailyStats: normalizedDailyStats,
+            timezone,
             targetInfo: {
                 targeting: targetName,
                 matchType: targetMatchType,
@@ -8903,7 +9264,6 @@ async function reconcileTargetingRRecordsForClauses({ configId, profileId, targe
         }
 
         const bulkOps = [];
-        const deleteIds = [];
         let healedCount = 0;
         let mergedCount = 0;
 
@@ -8916,33 +9276,13 @@ async function reconcileTargetingRRecordsForClauses({ configId, profileId, targe
             const existingTDoc = tDocMap.get(tKey);
 
             if (existingTDoc) {
-                bulkOps.push({
-                    updateOne: {
-                        filter: { _id: existingTDoc._id },
-                        update: {
-                            $set: {
-                                impressions: Math.max(existingTDoc.impressions || 0, rDoc.impressions || 0),
-                                clicks: Math.max(existingTDoc.clicks || 0, rDoc.clicks || 0),
-                                spend: Math.max(existingTDoc.spend || 0, rDoc.spend || 0),
-                                sales: Math.max(existingTDoc.sales || 0, rDoc.sales || 0),
-                                orders: Math.max(existingTDoc.orders || 0, rDoc.orders || 0),
-                                acos: rDoc.acos || existingTDoc.acos || 0,
-                                roas: rDoc.roas || existingTDoc.roas || 0,
-                                cpc: rDoc.cpc || existingTDoc.cpc || 0,
-                                ctr: rDoc.ctr || existingTDoc.ctr || 0,
-                                cvr: rDoc.cvr || existingTDoc.cvr || 0,
-                                conversionRate: rDoc.conversionRate || existingTDoc.conversionRate || 0,
-                                topOfSearchImpressionShare: rDoc.topOfSearchImpressionShare || existingTDoc.topOfSearchImpressionShare,
-                                status: clause.status || existingTDoc.status || rDoc.status,
-                                keywordBid: clause.keywordBid ?? existingTDoc.keywordBid ?? rDoc.keywordBid,
-                                matchType: clause.matchType || existingTDoc.matchType,
-                                keywordType: clause.keywordType || existingTDoc.keywordType,
-                            }
-                        }
-                    }
+                const merged = await mergeTargetingRecords({
+                    model: targetingSchema,
+                    existing: existingTDoc,
+                    temporary: rDoc,
+                    metadata: clause,
                 });
-                deleteIds.push(rDoc._id);
-                mergedCount++;
+                if (merged) mergedCount++;
             } else {
                 bulkOps.push({
                     updateOne: {
@@ -8964,9 +9304,6 @@ async function reconcileTargetingRRecordsForClauses({ configId, profileId, targe
 
         if (bulkOps.length) {
             await targetingSchema.bulkWrite(bulkOps, { ordered: false });
-        }
-        if (deleteIds.length) {
-            await targetingSchema.deleteMany({ _id: { $in: deleteIds } });
         }
 
         if (healedCount > 0 || mergedCount > 0) {
@@ -9041,7 +9378,6 @@ exports.reconcileAllProfileTargetingRRecords = async ({ configId, profileId }) =
         }
 
         const bulkOps = [];
-        const deleteIds = [];
         let healedCount = 0;
         let mergedCount = 0;
 
@@ -9055,33 +9391,13 @@ exports.reconcileAllProfileTargetingRRecords = async ({ configId, profileId }) =
             const existingTDoc = tDocMap.get(tKey);
 
             if (existingTDoc) {
-                bulkOps.push({
-                    updateOne: {
-                        filter: { _id: existingTDoc._id },
-                        update: {
-                            $set: {
-                                impressions: Math.max(existingTDoc.impressions || 0, rDoc.impressions || 0),
-                                clicks: Math.max(existingTDoc.clicks || 0, rDoc.clicks || 0),
-                                spend: Math.max(existingTDoc.spend || 0, rDoc.spend || 0),
-                                sales: Math.max(existingTDoc.sales || 0, rDoc.sales || 0),
-                                orders: Math.max(existingTDoc.orders || 0, rDoc.orders || 0),
-                                acos: rDoc.acos || existingTDoc.acos || 0,
-                                roas: rDoc.roas || existingTDoc.roas || 0,
-                                cpc: rDoc.cpc || existingTDoc.cpc || 0,
-                                ctr: rDoc.ctr || existingTDoc.ctr || 0,
-                                cvr: rDoc.cvr || existingTDoc.cvr || 0,
-                                conversionRate: rDoc.conversionRate || existingTDoc.conversionRate || 0,
-                                topOfSearchImpressionShare: rDoc.topOfSearchImpressionShare || existingTDoc.topOfSearchImpressionShare,
-                                status: genuineTarget.status || existingTDoc.status || rDoc.status,
-                                keywordBid: genuineTarget.keywordBid ?? existingTDoc.keywordBid ?? rDoc.keywordBid,
-                                matchType: genuineTarget.matchType || existingTDoc.matchType,
-                                keywordType: genuineTarget.keywordType || existingTDoc.keywordType,
-                            }
-                        }
-                    }
+                const merged = await mergeTargetingRecords({
+                    model: targetingSchema,
+                    existing: existingTDoc,
+                    temporary: rDoc,
+                    metadata: genuineTarget,
                 });
-                deleteIds.push(rDoc._id);
-                mergedCount++;
+                if (merged) mergedCount++;
             } else {
                 bulkOps.push({
                     updateOne: {
@@ -9103,9 +9419,6 @@ exports.reconcileAllProfileTargetingRRecords = async ({ configId, profileId }) =
 
         if (bulkOps.length) {
             await targetingSchema.bulkWrite(bulkOps, { ordered: false });
-        }
-        if (deleteIds.length) {
-            await targetingSchema.deleteMany({ _id: { $in: deleteIds } });
         }
 
         cron_logs({

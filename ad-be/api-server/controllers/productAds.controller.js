@@ -1089,6 +1089,17 @@ async function spGenerateReport(
     }).lean();
 
     if (existing && existing.status == "COMPLETED") return "COMPLETED";
+    if (existing && existing.status == "STAGED") {
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      const lastActivity = new Date(existing.updatedAt || existing.createdAt);
+      if (lastActivity < twoHoursAgo) {
+        await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+        existing = null;
+      } else {
+        processStagedReportBatches(["productAd"]).catch(() => {});
+        return "STAGED";
+      }
+    }
   } else if (!forceRefresh) {
     // 1️⃣ Check recent pending report (created within last 24 hours)
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);

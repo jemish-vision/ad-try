@@ -22,6 +22,12 @@ const sdCampaignsSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    budgetTracking: {
+      isOutOfBudget: { type: Boolean },
+      estimatedSpend: { type: Number },
+      lastUsagePercentage: { type: Number },
+      lastUpdated: { type: Date },
+    },
     status: {
       type: String,
       trim: true,
@@ -98,7 +104,14 @@ const sdCampaignsSchema = new mongoose.Schema(
       type: Number,
       trim: true,
       default: 0,
-    }
+    },
+    lastImportRunId: {
+      type: String,
+      trim: true,
+    },
+    importSourceVersion: {
+      type: Number,
+    },
   },
   { timestamps: true }
 );

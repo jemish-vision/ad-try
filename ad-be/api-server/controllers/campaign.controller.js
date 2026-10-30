@@ -116,6 +116,8 @@ const {
 } = require("../helper/amazonBrandApi");
 const { logAudit } = require("../helpers/auditHelper");
 const { sanitizeQueryObject } = require("../helper/sanitizeQuery");
+const { syncAmazonCampaignStatusHistory, syncProfileCampaignStatusHistory } = require("../services/amazonHistory.service");
+const { observeCampaignStatus, eventDate, normalizeCampaignAdType } = require("../services/campaignStatusHistory.service");
 
 RegExp.escape = function (string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -124,8 +126,10 @@ RegExp.escape = function (string) {
 // Unified Campaign Status Update in Amazon Advertising
 exports.updateCampaignStatus = async (req, res) => {
   const configId = req?.config?.configId;
+  const userId = req?.user?._id;
   try {
     const { profileId, campaignId, status } = req.body;
+    const adType = req.body.adType || req.adType || req.headers?.adtype || "SP";
 
     if (!profileId || !campaignId || !status) {
       return res.status(203).send({
@@ -152,76 +156,309 @@ exports.updateCampaignStatus = async (req, res) => {
     }
 
     const getAccount = await getProfile(configId, profileId);
-    const updateBodyData = {
+    if (!getAccount) {
+      return res.status(203).send({
+        isSuccess: false,
+        message: "Profile not found.",
+      });
+    }
+
+    const numericCampaignId = parseInt(campaignId);
+    const numericProfileId = Number(profileId) || profileId;
+    const normalizedAdType = normalizeCampaignAdType(adType);
+
+    let endpointUrl = `${getAccount.amazonUrl}/sp/campaigns`;
+    let acceptHeader = "application/vnd.spCampaign.v3+json";
+    let updateBodyData = {
       campaigns: [
         {
-          campaignId: parseInt(campaignId),
+          campaignId: numericCampaignId,
           state: status.toUpperCase(),
         },
       ],
     };
 
-    // const updateOptions = {
-    //   method: "PUT",
-    //   url: `${getAccount.amazonUrl}/sp/campaigns`,
-    //   headers: {
-    //     "Amazon-Advertising-API-ClientId": checkConfigAds.adsClientId,
-    //     "Amazon-Advertising-API-Scope": profileId,
-    //     Authorization: `Bearer ${checkConfigAds.adsAccessToken}`,
-    //     "Content-Type": "application/vnd.spCampaign.v3+json",
-    //   },
-    //   data: updateBodyData,
-    // };
+    if (normalizedAdType === "SB") {
+      endpointUrl = `${getAccount.amazonUrl}/sb/v4/campaigns`;
+      acceptHeader = "application/vnd.sbcampaign.v4+json";
+    } else if (normalizedAdType === "SD") {
+      endpointUrl = `${getAccount.amazonUrl}/sd/campaigns`;
+      acceptHeader = "application/json";
+      updateBodyData = [
+        {
+          campaignId: numericCampaignId,
+          state: status.toLowerCase(),
+        },
+      ];
+    }
 
-    // const response = await axios(updateOptions);
+    const updateOptions = {
+      method: "PUT",
+      url: endpointUrl,
+      headers: {
+        "Amazon-Advertising-API-ClientId": checkConfigAds.adsClientId,
+        "Amazon-Advertising-API-Scope": String(profileId),
+        Authorization: `Bearer ${checkConfigAds.adsAccessToken}`,
+        "Content-Type": acceptHeader,
+        Accept: acceptHeader,
+      },
+      data: updateBodyData,
+      meta: { configId, tokenKey: "adsAccessToken" },
+    };
 
-    // if (response.status === 200) {
-    //   // Update local campaign status
-    //   const currentDate = moment().tz(getAccount.timezone).format("YYYY-MM-DD");
-    //   await campaignsSchema.updateOne(
-    //     {
-    //       configId,
-    //       profileId,
-    //       campaignId: parseInt(campaignId),
-    //       reportDate: currentDate,
-    //     },
-    //     {
-    //       $set: {
-    //         status: status.toUpperCase(),
-    //         updatedAt: new Date(),
-    //       },
-    //     }
-    //   );
+    const adTypeSchema = normalizedAdType === "SB" ? sbCampaignsSchema : normalizedAdType === "SD" ? sdCampaignsSchema : campaignsSchema;
+    const existingCamp = await adTypeSchema.findOne({
+      configId,
+      profileId: numericProfileId,
+      campaignId: numericCampaignId,
+    }).sort({ reportDate: -1, createdAt: -1 }).lean();
 
-    //   write_logs({
-    //     message: `Campaign status updated to ${status.toUpperCase()} - Config ID: ${configId}, Profile: ${profileId}, Campaign: ${campaignId}`,
-    //     log_type: "info",
-    //   });
+    const previousStatus = existingCamp?.status || "—";
 
-    //   return res.status(200).send({
-    //     isSuccess: true,
-    //     message: `Campaign ${status.toLowerCase()} successfully in Amazon Advertising.`,
-    //   });
-    // } else {
-    //   return res.status(203).send({
-    //     isSuccess: false,
-    //     message: `Failed to ${status.toLowerCase()} campaign in Amazon Advertising.`,
-    //     error: response.data,
-    //   });
-    // }
+    const response = await retryWithBackoff(() => amazonAxios(updateOptions));
+
+    const resultBody = response?.data;
+    const results = Array.isArray(resultBody) ? resultBody : resultBody?.campaigns?.success;
+    const errors = Array.isArray(resultBody) ? resultBody.filter(row => !["SUCCESS", "200"].includes(String(row.code).toUpperCase())) : resultBody?.campaigns?.error;
+    const successful = Array.isArray(results) && results.some(row => String(row.campaignId ?? row.campaign?.campaignId) === String(numericCampaignId)
+      && (!Array.isArray(resultBody) || ["SUCCESS", "200"].includes(String(row.code).toUpperCase())));
+    if ([200, 207].includes(response?.status) && successful && !errors?.length) {
+      const currentDate = moment().tz(getAccount.timezone || "UTC").format("YYYY-MM-DD");
+      await adTypeSchema.updateMany(
+        {
+          configId,
+          profileId: numericProfileId,
+          campaignId: numericCampaignId,
+          reportDate: currentDate,
+        },
+        {
+          $set: {
+            status: status.toUpperCase(),
+            updatedAt: new Date(),
+          },
+        }
+      );
+
+      // Record status change in campaignChangeHistory
+      await campaignChangeHistorySchema.create({
+        configId,
+        userId: userId || undefined,
+        profileId: numericProfileId,
+        changeLevel: numericCampaignId,
+        changeType: "Update Campaign Status",
+        oldValue: previousStatus,
+        newValue: status.toUpperCase(),
+        updatedFrom: "AdvertiseIQ UI",
+        source: "MANUAL",
+        type: normalizedAdType,
+        statusHistoryEvent: true,
+      });
+
+      write_logs({
+        message: `Campaign status updated to ${status.toUpperCase()} - Config ID: ${configId}, Profile: ${profileId}, Campaign: ${campaignId}`,
+        log_type: "info",
+      });
+
+      return res.status(200).send({
+        isSuccess: true,
+        message: `Campaign ${status.toLowerCase()} successfully in Amazon Advertising.`,
+      });
+    } else {
+      return res.status(203).send({
+        isSuccess: false,
+        message: `Failed to ${status.toLowerCase()} campaign in Amazon Advertising.`,
+        error: response?.data,
+      });
+    }
   } catch (error) {
     write_logs({
-      message: `Update campaign status error - Config ID: ${configId}, Error: ${error}`,
+      message: `Update campaign status error - Config ID: ${configId}, Error: ${error?.response?.data || error?.message || error}`,
       log_type: "error",
     });
 
     return res.status(203).send({
-      message: `Something went wrong while updating campaign status, please try again!`,
+      message: "Something went wrong while updating campaign status, please try again!",
       isSuccess: false,
-      error: "An internal server error occurred",
+      error: error?.message || "An internal server error occurred",
     });
   }
 };
+
+// Sync Historical Status Changes from Amazon Ads API (POST /history)
+exports.syncCampaignStatusHistory = async (req, res) => {
+  const configId = req?.config?.configId;
+  try {
+    const { profileId, campaignId, fromDate, toDate, adType = "SP" } = req.body;
+
+    if (!profileId) {
+      return res.status(400).send({
+        isSuccess: false,
+        message: "Profile ID is required.",
+      });
+    }
+
+    const checkConfigAds = await getAccessToken(configId);
+    if (!checkConfigAds?.adsAccessToken) {
+      return res.status(203).send({
+        isSuccess: false,
+        message: "Account disconnected. Please reconnect your Amazon account.",
+      });
+    }
+
+    const getAccount = await getProfile(configId, profileId);
+    if (!getAccount) {
+      return res.status(203).send({
+        isSuccess: false,
+        message: "Profile not found.",
+      });
+    }
+
+    const campaignIds = campaignId ? [campaignId] : [];
+    const result = await syncAmazonCampaignStatusHistory({
+      profile: {
+        ...getAccount,
+        configId,
+      },
+      checkConfigAds,
+      campaignIds,
+      fromDate: fromDate ? new Date(fromDate).getTime() : undefined,
+      toDate: toDate ? new Date(toDate).getTime() : undefined,
+      adType,
+    });
+
+    return res.status(200).send({
+      isSuccess: true,
+      message: "Campaign status history synced from Amazon successfully.",
+      data: result,
+    });
+  } catch (error) {
+    write_logs({
+      message: `[syncCampaignStatusHistory Error] Config ID: ${configId}, Error: ${error?.message || error}`,
+      log_type: "error",
+    });
+
+    return res.status(500).send({
+      isSuccess: false,
+      message: error?.message || "Failed to sync campaign status history from Amazon.",
+    });
+  }
+};
+
+async function resolveMatchingCampaignIdsByStatus({
+  adTypeCampaignSchema,
+  configId,
+  profileId,
+  timezone,
+  effectiveStatusFilter,
+}) {
+  if (!effectiveStatusFilter) return null;
+
+  const todayDate = moment().tz(timezone || "UTC").format("YYYY-MM-DD");
+  const effectiveStatusMaxDate = todayDate;
+  const statusReportDateMin = moment(todayDate).subtract(14, "days").format("YYYY-MM-DD");
+  const queryConfigId = mongoose.Types.ObjectId.isValid(configId) ? new mongoose.Types.ObjectId(configId) : configId;
+  const queryProfileId = !isNaN(Number(profileId)) ? Number(profileId) : profileId;
+
+  const latestStatusMap = new Map();
+  try {
+    let aggQuery = adTypeCampaignSchema.aggregate([
+      {
+        $match: {
+          configId: queryConfigId,
+          profileId: queryProfileId,
+          reportDate: { $gte: statusReportDateMin, $lte: effectiveStatusMaxDate },
+        },
+      },
+      {
+        $sort: { reportDate: -1, updatedAt: -1 },
+      },
+      {
+        $group: {
+          _id: "$campaignId",
+          status: { $first: "$status" },
+          campaignStatus: { $first: "$campaignStatus" },
+          isOutOfBudget: { $first: "$isOutOfBudget" },
+          budget: { $first: "$budget" },
+          dailySpend: { $first: { $ifNull: ["$dailySpend", "$spend"] } },
+          timeInBudget: { $first: "$timeInBudget" },
+          budgetTracking: { $first: "$budgetTracking" },
+          latestReportDate: { $first: "$reportDate" },
+        },
+      },
+    ]);
+
+    if (aggQuery && typeof aggQuery.allowDiskUse === "function") {
+      aggQuery = aggQuery.allowDiskUse(true);
+    }
+    const latestStatusDocs = await aggQuery;
+
+    const matchingCampaignIds = [];
+    for (const doc of latestStatusDocs || []) {
+      latestStatusMap.set(doc._id, doc);
+      latestStatusMap.set(String(doc._id), doc);
+      latestStatusMap.set(Number(doc._id), doc);
+
+      const currentStatus = (doc.status || "").toUpperCase();
+      const campaignStatusVal = (doc.campaignStatus || "").toUpperCase();
+      const dailySpend = doc.dailySpend !== undefined && doc.dailySpend !== null ? Number(doc.dailySpend) : null;
+      const budget = Number(doc.budget) || 0;
+      const timeInBudget = doc.timeInBudget !== undefined && doc.timeInBudget !== null ? Number(doc.timeInBudget) : undefined;
+      const estSpend = Number(doc.budgetTracking?.estimatedSpend) || 0;
+      const usagePct = Number(doc.budgetTracking?.lastUsagePercentage) || 0;
+
+      const isDocOob = Boolean(
+        currentStatus === "OUT_OF_BUDGET" ||
+        campaignStatusVal === "OUT_OF_BUDGET" ||
+        doc.isOutOfBudget === true ||
+        (currentStatus === "ENABLED" && budget > 0 && (
+          usagePct >= 100 ||
+          estSpend >= budget ||
+          (dailySpend !== null && dailySpend >= budget) ||
+          (timeInBudget !== undefined && timeInBudget > 0 && timeInBudget < 100 && (
+            (dailySpend !== null && dailySpend >= budget * 0.8) ||
+            (estSpend >= budget * 0.8)
+          ))
+        ))
+      );
+
+      if (effectiveStatusFilter === "OUT_OF_BUDGET" || effectiveStatusFilter === "out_of_budget") {
+        if (isDocOob) {
+          matchingCampaignIds.push(doc._id);
+        }
+      } else if (effectiveStatusFilter === "NOT_ARCHIVED") {
+        if (currentStatus !== "ARCHIVED") {
+          matchingCampaignIds.push(doc._id);
+        }
+      } else if (effectiveStatusFilter === "ENABLED") {
+        if (currentStatus === "ENABLED") {
+          matchingCampaignIds.push(doc._id);
+        }
+      } else if (effectiveStatusFilter === "PAUSED") {
+        if (currentStatus === "PAUSED") {
+          matchingCampaignIds.push(doc._id);
+        }
+      } else if (effectiveStatusFilter === "ARCHIVED") {
+        if (currentStatus === "ARCHIVED") {
+          matchingCampaignIds.push(doc._id);
+        }
+      } else if (currentStatus === String(effectiveStatusFilter).toUpperCase()) {
+        matchingCampaignIds.push(doc._id);
+      }
+    }
+
+    const numericAndStringMatchingIds = matchingCampaignIds.flatMap(id => [id, !isNaN(Number(id)) ? Number(id) : null, String(id)].filter(Boolean));
+    return {
+      matchingCampaignIds: numericAndStringMatchingIds,
+      latestStatusMap,
+    };
+  } catch (err) {
+    write_logs({ message: `[resolveMatchingCampaignIdsByStatus error] ${err?.message || err}`, log_type: "error" });
+    return {
+      matchingCampaignIds: [],
+      latestStatusMap,
+    };
+  }
+}
 
 exports.getCampaigns = async (req, res) => {
   const configId = req?.config?.configId;
@@ -303,8 +540,9 @@ exports.getCampaigns = async (req, res) => {
 
     const todayDate = moment().tz(timezone || "UTC").format("YYYY-MM-DD");
     const yesterdayDate = moment().tz(timezone || "UTC").subtract(1, "days").format("YYYY-MM-DD");
-    const effectiveStatusMaxDate = (toDate && toDate < todayDate) ? toDate : todayDate;
-    const statusReportDateMin = moment(effectiveStatusMaxDate).subtract(14, "days").format("YYYY-MM-DD");
+    // Campaign delivery status must reflect today's current status, not historical status from toDate
+    const effectiveStatusMaxDate = todayDate;
+    const statusReportDateMin = moment(todayDate).subtract(14, "days").format("YYYY-MM-DD");
 
     // Base match stage
     const matchStage = {
@@ -340,99 +578,26 @@ exports.getCampaigns = async (req, res) => {
       delete customFilter.status;
     }
 
-    const latestStatusMap = new Map();
+    let latestStatusMap = new Map();
 
     if (effectiveStatusFilter) {
-      try {
-        const latestStatusDocs = await adTypeCampaignSchema.aggregate([
-          {
-            $match: {
-              configId: queryConfigId,
-              profileId: queryProfileId,
-              reportDate: { $gte: statusReportDateMin, $lte: effectiveStatusMaxDate },
-            },
-          },
-          {
-            $sort: { reportDate: -1, updatedAt: -1 },
-          },
-          {
-            $group: {
-              _id: "$campaignId",
-              status: { $first: "$status" },
-              campaignStatus: { $first: "$campaignStatus" },
-              isOutOfBudget: { $first: "$isOutOfBudget" },
-              budget: { $first: "$budget" },
-              dailySpend: { $first: { $ifNull: ["$dailySpend", "$spend"] } },
-              timeInBudget: { $first: "$timeInBudget" },
-              budgetTracking: { $first: "$budgetTracking" },
-              latestReportDate: { $first: "$reportDate" },
-            },
-          },
-        ]).allowDiskUse(true);
+      const statusRes = await resolveMatchingCampaignIdsByStatus({
+        adTypeCampaignSchema,
+        configId: queryConfigId,
+        profileId: queryProfileId,
+        timezone,
+        effectiveStatusFilter,
+      });
 
-        const matchingCampaignIds = [];
-        for (const doc of latestStatusDocs) {
-          latestStatusMap.set(doc._id, doc);
-          latestStatusMap.set(String(doc._id), doc);
-          latestStatusMap.set(Number(doc._id), doc);
-
-          const currentStatus = (doc.status || "").toUpperCase();
-          const campaignStatusVal = (doc.campaignStatus || "").toUpperCase();
-          const dailySpend = doc.dailySpend !== undefined && doc.dailySpend !== null ? Number(doc.dailySpend) : null;
-          const budget = Number(doc.budget) || 0;
-          const timeInBudget = doc.timeInBudget !== undefined && doc.timeInBudget !== null ? Number(doc.timeInBudget) : undefined;
-          const estSpend = Number(doc.budgetTracking?.estimatedSpend) || 0;
-          const usagePct = Number(doc.budgetTracking?.lastUsagePercentage) || 0;
-
-          const isDocOob = Boolean(
-            currentStatus === "OUT_OF_BUDGET" ||
-            campaignStatusVal === "OUT_OF_BUDGET" ||
-            doc.isOutOfBudget === true ||
-            (currentStatus === "ENABLED" && budget > 0 && (
-              usagePct >= 100 ||
-              estSpend >= budget ||
-              (dailySpend !== null && dailySpend >= budget) ||
-              (timeInBudget !== undefined && timeInBudget > 0 && timeInBudget < 100 && (
-                (dailySpend !== null && dailySpend >= budget * 0.8) ||
-                (estSpend >= budget * 0.8)
-              ))
-            ))
-          );
-
-          if (effectiveStatusFilter === "OUT_OF_BUDGET" || effectiveStatusFilter === "out_of_budget") {
-            if (isDocOob) {
-              matchingCampaignIds.push(doc._id);
-            }
-          } else if (effectiveStatusFilter === "NOT_ARCHIVED") {
-            if (currentStatus !== "ARCHIVED") {
-              matchingCampaignIds.push(doc._id);
-            }
-          } else if (effectiveStatusFilter === "ENABLED") {
-            if (currentStatus === "ENABLED") {
-              matchingCampaignIds.push(doc._id);
-            }
-          } else if (effectiveStatusFilter === "PAUSED") {
-            if (currentStatus === "PAUSED") {
-              matchingCampaignIds.push(doc._id);
-            }
-          } else if (effectiveStatusFilter === "ARCHIVED") {
-            if (currentStatus === "ARCHIVED") {
-              matchingCampaignIds.push(doc._id);
-            }
-          } else if (currentStatus === String(effectiveStatusFilter).toUpperCase()) {
-            matchingCampaignIds.push(doc._id);
-          }
-        }
-
-        const numericAndStringMatchingIds = matchingCampaignIds.flatMap(id => [id, !isNaN(Number(id)) ? Number(id) : null, String(id)].filter(Boolean));
+      if (statusRes) {
+        latestStatusMap = statusRes.latestStatusMap;
+        const numericAndStringMatchingIds = statusRes.matchingCampaignIds;
 
         if (matchStage.$match.campaignId?.$in) {
           matchStage.$match.campaignId.$in = matchStage.$match.campaignId.$in.filter(id => numericAndStringMatchingIds.includes(id));
         } else {
           matchStage.$match.campaignId = { $in: numericAndStringMatchingIds };
         }
-      } catch (err) {
-        write_logs({ message: `[getCampaigns status filtering error] ${err?.message || err}`, log_type: "error" });
       }
     }
 
@@ -1012,9 +1177,9 @@ exports.getCampaigns = async (req, res) => {
     if (missingCampaignIds.length > 0) {
       try {
         const missingList = missingCampaignIds.flatMap(id => [id, !isNaN(Number(id)) ? Number(id) : null, String(id)].filter(Boolean));
-        // First try today or yesterday
-        const targetMaxDate = (toDate && toDate < todayDate) ? toDate : todayDate;
-        const targetYesterdayDate = moment(targetMaxDate).subtract(1, "days").format("YYYY-MM-DD");
+        // First try today or yesterday to get today's current status
+        const targetMaxDate = todayDate;
+        const targetYesterdayDate = yesterdayDate;
         const latestCampaignDocs = await adTypeCampaignSchema.aggregate([
           {
             $match: {
@@ -1102,12 +1267,35 @@ exports.getCampaigns = async (req, res) => {
       const currentTimeInBudget = latest?.timeInBudget !== undefined && latest?.timeInBudget !== null ? Number(latest.timeInBudget) : (campaign.timeInBudget !== undefined && campaign.timeInBudget !== null ? Number(campaign.timeInBudget) : undefined);
       const latestReportDate = latest?.latestReportDate || null;
 
+      const rawStatus = (currentStatus || "").toUpperCase();
+      const dailySpendVal = currentDailySpend !== undefined && currentDailySpend !== null ? Number(currentDailySpend) : null;
+      const budgetVal = currentBudget || 0;
+      const timeInBudgetVal = currentTimeInBudget !== undefined && currentTimeInBudget !== null ? Number(currentTimeInBudget) : undefined;
+      const estSpendVal = Number(latest?.budgetTracking?.estimatedSpend) || 0;
+      const usagePctVal = Number(latest?.budgetTracking?.lastUsagePercentage) || 0;
+
+      const isComputedOob = Boolean(
+        rawStatus === "OUT_OF_BUDGET" ||
+        (currentCampaignStatus || "").toUpperCase() === "OUT_OF_BUDGET" ||
+        currentIsOutOfBudget === true ||
+        (rawStatus === "ENABLED" && budgetVal > 0 && (
+          usagePctVal >= 100 ||
+          estSpendVal >= budgetVal ||
+          (dailySpendVal !== null && dailySpendVal >= budgetVal) ||
+          (timeInBudgetVal !== undefined && timeInBudgetVal > 0 && timeInBudgetVal < 100 && (
+            (dailySpendVal !== null && dailySpendVal >= budgetVal * 0.8) ||
+            (estSpendVal >= budgetVal * 0.8)
+          ))
+        ))
+      );
+
       return {
         ...campaign,
+        budgetType: campaign.budgetType ? String(campaign.budgetType).toUpperCase() : campaign.budgetType,
         status: currentStatus,
         latestStatus: currentStatus,
         campaignStatus: currentCampaignStatus,
-        isOutOfBudget: currentIsOutOfBudget,
+        isOutOfBudget: isComputedOob,
         dailySpend: currentDailySpend,
         latestBudget: currentBudget,
         latestReportDate,
@@ -2507,6 +2695,8 @@ exports.cronListCampaignsFromAmazon = async (pastSyncObj) => {
             dates,
           });
 
+          await syncProfileCampaignStatusHistory({ profile, checkConfigAds });
+
           if (cronjobid) {
             await cronJobHistorySchema.findByIdAndUpdate(
               cronjobid,
@@ -2951,7 +3141,7 @@ async function fetchSBCampaignPage({ configId, profileId, checkConfigAds }) {
       endDate: item.endDate || "",
       costType: item.costType,
       budget: item.budget || "",
-      budgetType: item.budgetType || "",
+      budgetType: item.budgetType ? String(item.budgetType).toUpperCase() : "",
       isMultiAdGroupsEnabled: item.isMultiAdGroupsEnabled,
       productLocation: item.productLocation,
       bidOptimization: item.bidding?.bidOptimization,
@@ -3066,7 +3256,7 @@ async function fetchSDCampaignPage({ configId, profileId, checkConfigAds }) {
       endDate: item.endDate || "",
       costType: item.costType,
       budget: item.budget || "",
-      budgetType: item.budgetType || "",
+      budgetType: item.budgetType ? String(item.budgetType).toUpperCase() : "",
       tactic: item.tactic,
       deliveryProfile: item.deliveryProfile,
     }));
@@ -3100,7 +3290,17 @@ async function spGenerateReport(
       .lean();
 
     if (existing && existing.status == "COMPLETED") return "COMPLETED";
-    if (existing && !["PENDING", "IN_PROGRESS", "PROCESSING"].includes(existing?.status)) {
+    if (existing && existing.status == "STAGED") {
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      const lastActivity = new Date(existing.updatedAt || existing.createdAt);
+      if (lastActivity < twoHoursAgo) {
+        await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+        existing = null;
+      } else {
+        processStagedReportBatches(["campaign"]).catch(() => {});
+        return "STAGED";
+      }
+    } else if (existing && !["PENDING", "IN_PROGRESS", "PROCESSING"].includes(existing?.status)) {
       existing = null;
     }
   }
@@ -3309,7 +3509,17 @@ async function sbGenerateReport(
       .lean();
 
     if (existing && existing.status == "COMPLETED") return "COMPLETED";
-    if (existing && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) return existing.status;
+    if (existing && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) {
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      const lastActivity = new Date(existing.updatedAt || existing.createdAt);
+      if (lastActivity < twoHoursAgo) {
+        await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+        existing = null;
+      } else {
+        processStagedReportBatches(["sbCampaign"]).catch(() => {});
+        return existing.status;
+      }
+    }
     if (existing && !["PENDING", "IN_PROGRESS", "PROCESSING"].includes(existing?.status)) {
       existing = null;
     }
@@ -3326,7 +3536,17 @@ async function sbGenerateReport(
       })
       .lean();
     if (existing && existing.status == "COMPLETED") return "COMPLETED";
-    if (existing && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) return existing.status;
+    if (existing && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) {
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      const lastActivity = new Date(existing.updatedAt || existing.createdAt);
+      if (lastActivity < twoHoursAgo) {
+        await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+        existing = null;
+      } else {
+        processStagedReportBatches(["sbCampaign"]).catch(() => {});
+        return existing.status;
+      }
+    }
   }
 
   if (!existing) {
@@ -3502,7 +3722,17 @@ async function sdGenerateReport(
       .lean();
 
     if (existing && existing.status == "COMPLETED") return "COMPLETED";
-    if (existing && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) return existing.status;
+    if (existing && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) {
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      const lastActivity = new Date(existing.updatedAt || existing.createdAt);
+      if (lastActivity < twoHoursAgo) {
+        await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+        existing = null;
+      } else {
+        processStagedReportBatches(["sdCampaign"]).catch(() => {});
+        return existing.status;
+      }
+    }
     if (existing && !["PENDING", "IN_PROGRESS", "PROCESSING"].includes(existing?.status)) {
       existing = null;
     }
@@ -3519,7 +3749,17 @@ async function sdGenerateReport(
       })
       .lean();
     if (existing && existing.status == "COMPLETED") return "COMPLETED";
-    if (existing && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) return existing.status;
+    if (existing && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) {
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      const lastActivity = new Date(existing.updatedAt || existing.createdAt);
+      if (lastActivity < twoHoursAgo) {
+        await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+        existing = null;
+      } else {
+        processStagedReportBatches(["sdCampaign"]).catch(() => {});
+        return existing.status;
+      }
+    }
   }
 
   if (!existing) {
@@ -5871,7 +6111,8 @@ exports.getHistory = async (req, res) => {
     const configId = new mongoose.Types.ObjectId(req?.config?.configId);
     const adType = req.adType;
 
-    let { pageNo = 1, perPage = 10, fromDate, toDate, profileId, type, searchName, targeting, matchType, placement, source, campaignId, fieldName, sortType, changeType, historyScope, dateOption } = req.body;
+    let { pageNo = 1, perPage = 10, fromDate, toDate, profileId, type, searchName, targeting, matchType, placement, source, campaignId, fieldName, sortType, changeType, historyScope, dateOption, acosLookbackMode = "7", acosLookbackDays = 7, currentAcosFromDate, currentAcosToDate, currentAcosLookbackDays = 7 } = req.body;
+    const isScopedQuery = Boolean(campaignId || targeting || req.body?.targetId);
 
     if (!profileId) {
       return res.status(400).send({
@@ -5929,11 +6170,14 @@ exports.getHistory = async (req, res) => {
     }
 
 
-        const isAllDates = String(dateOption).toLowerCase() === "all" || (!fromDate && !toDate);
+    // Source/display filters must not hide the authoritative event before its
+    // Amazon echo is deduplicated. Keep an independent identity/ad-product query.
+    const historyIdentityFilter = { ...filter, ...(filter.$and ? { $and: [...filter.$and] } : {}) };
+    const isAllDates = String(dateOption).toLowerCase() === "all" || (!fromDate && !toDate);
     if (!isAllDates && fromDate && toDate) {
       filter.createdAt = {
-        $gte: moment(fromDate).tz(timezone).startOf("day").toDate(),
-        $lte: moment(toDate).tz(timezone).endOf("day").toDate(),
+        $gte: moment.tz(fromDate, timezone).startOf("day").toDate(),
+        $lte: moment.tz(toDate, timezone).endOf("day").toDate(),
       };
     }
 
@@ -5952,7 +6196,7 @@ exports.getHistory = async (req, res) => {
           } else if (lower === "campaign") {
             typeBranchConditions.push(
               { updatedFrom: "Campaign" },
-              { changeType: { $regex: /budget|campaign status|camapign status|^update state/i } }
+              { changeType: { $regex: /budget|campaign.*status|camapign status|^update state/i } }
             );
           } else if (lower === "targeting" || lower === "bid") {
             typeBranchConditions.push(
@@ -5965,7 +6209,7 @@ exports.getHistory = async (req, res) => {
               { updatedFrom: "Placement" }
             );
           } else if (lower === "status" || lower === "state") {
-            typeBranchConditions.push({ changeType: { $regex: /status|state/i } });
+            typeBranchConditions.push({ changeType: { $regex: /status|state|delivery/i } });
           } else {
             typeBranchConditions.push({ updatedFrom: t });
           }
@@ -6136,22 +6380,55 @@ exports.getHistory = async (req, res) => {
       filter.targeting = { $regex: new RegExp(`^${escapeRegex(`${targeting}`.trim())}$`, "i") };
     }
 
-    if (matchType && `${matchType}`.trim()) {
-      const escapeRegex = (s) => (RegExp.escape ? RegExp.escape(s) : s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-      const cleanMatch = String(matchType).toLowerCase().replace(/^(keyword|automatic|targeting)\s*[-:]\s*/i, "").trim();
-      const matchRegex = new RegExp(escapeRegex(cleanMatch), "i");
-      const matchTypeCondition = {
-        $or: [
-          { matchType: { $regex: matchRegex } },
-          { matchType: null },
-          { matchType: { $exists: false } },
-          { matchType: "" },
-        ],
-      };
-      if (filter.$and) {
-        filter.$and.push(matchTypeCondition);
+    if (req.body?.targetId) {
+      const requestedTargetId = String(req.body.targetId);
+      const targetIdentity = { $or: [
+        { targetId: { $in: [requestedTargetId, requestedTargetId.replace(/^[TK]-/, "")] } },
+        ...(filter.targeting ? [{
+          $and: [
+            { $or: [{ targetId: { $exists: false } }, { targetId: null }, { targetId: "" }] },
+            { targeting: filter.targeting },
+          ],
+        }] : []),
+      ] };
+      (filter.$and ||= []).push(targetIdentity);
+      (historyIdentityFilter.$and ||= []).push(targetIdentity);
+    }
+
+    const isAutoTargeting =
+      ["close-match", "loose-match", "substitutes", "complements", "similar-product", "(_targeting_auto_)"].includes(String(targeting || "").toLowerCase().trim()) ||
+      String(matchType || "").toUpperCase().includes("PREDEFINED") ||
+      String(matchType || "").toUpperCase().startsWith("AUTOMATIC");
+
+    const isExpressionTargeting =
+      !isAutoTargeting && (
+        String(matchType || "").toUpperCase().includes("EXPRESSION") ||
+        String(matchType || "").toLowerCase().includes("group") ||
+        String(matchType || "").toLowerCase().includes("product target") ||
+        /^(keyword-group|asin|asin-expanded|category)=/i.test(String(targeting || "").trim())
+      );
+
+    if (!isAutoTargeting && matchType && `${matchType}`.trim()) {
+      if (isExpressionTargeting) {
+        // If specific targetId or targeting is provided, identity is already pinned; do not restrict by matchType
+        // because history records for expressions can have matchType: "Keyword - group", "Product target - Exact", null, etc.
+        if (!req.body?.targetId && !(targeting && `${targeting}`.trim())) {
+          const matchTypeCondition = {
+            $or: [
+              { matchType: { $regex: /expression|group|product target/i } },
+              { targeting: { $regex: /^(keyword-group|asin|asin-expanded|category)=/i } },
+            ],
+          };
+          (filter.$and ||= []).push(matchTypeCondition);
+        }
       } else {
-        filter.$and = [matchTypeCondition];
+        const escapeRegex = (s) => s.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+        const cleanMatch = String(matchType).toLowerCase().replace(/^(keyword|automatic|targeting)\s*[-_:]\s*/i, "").trim();
+        const matchRegex = new RegExp(`(^|\\b|_|-)${escapeRegex(cleanMatch)}(\\b|_|-|$)`, "i");
+        const matchTypeCondition = {
+          matchType: { $regex: matchRegex },
+        };
+        (filter.$and ||= []).push(matchTypeCondition);
       }
     }
 
@@ -6268,7 +6545,7 @@ exports.getHistory = async (req, res) => {
     }
 
     // History Scope Classification Filter (Dayparting / Recommendation / Other / All)
-    if (historyScope) {
+    if (historyScope && !isScopedQuery) {
       const rawScopes = Array.isArray(historyScope) ? historyScope : [historyScope];
       const scopes = rawScopes.map((s) => String(s).toLowerCase().trim()).filter(Boolean);
       const isAll = scopes.includes("all") || (scopes.includes("dayparting") && scopes.includes("recommendation") && (scopes.includes("other") || scopes.includes("rule")));
@@ -6292,7 +6569,7 @@ exports.getHistory = async (req, res) => {
                 { updatedFrom: { $ne: "Amazon Stream" } },
                 {
                   changeType: {
-                    $regex: /^Update (Targeting Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$|^Revert/i,
+                    $regex: /^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$|^Revert/i,
                   },
                 },
               ],
@@ -6311,7 +6588,7 @@ exports.getHistory = async (req, res) => {
                   { updatedFrom: "Amazon Stream" },
                   {
                     changeType: {
-                      $not: /^Update (Targeting Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
+                      $not: /^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
                     },
                   },
                 ],
@@ -6330,7 +6607,7 @@ exports.getHistory = async (req, res) => {
       }
     }
 
-    if (source && (Array.isArray(source) ? source.length > 0 : Boolean(source)) && source !== "All") {
+    if (!isScopedQuery && source && (Array.isArray(source) ? source.length > 0 : Boolean(source)) && source !== "All") {
       const sources = Array.isArray(source) ? source : [source];
       const sourceConditions = [];
 
@@ -6351,8 +6628,10 @@ exports.getHistory = async (req, res) => {
         sourceConditions.push(
           { source: "RECOMMENDATION" },
           {
+            source: { $nin: ["AMAZON_SQS", "AMAZON_API", "DAYPARTING"] },
+            updatedFrom: { $ne: "Amazon Stream" },
             changeType: {
-              $regex: /^Update (Targeting Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
+              $regex: /^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
             },
           }
         );
@@ -6374,7 +6653,7 @@ exports.getHistory = async (req, res) => {
             source: { $nin: ["DAYPARTING", "RECOMMENDATION", "AMAZON_SQS", "AMAZON_API"] },
             updatedFrom: { $ne: "Amazon Stream" },
             changeType: {
-              $not: /dayparting|rule|cron|^Update (Targeting Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
+              $not: /dayparting|rule|cron|^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
             },
           }
         );
@@ -6418,7 +6697,7 @@ exports.getHistory = async (req, res) => {
                 {
                   $regexMatch: {
                     input: { $ifNull: ["$changeType", ""] },
-                    regex: "^Update (Targeting Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Camapign Status|Campaign Status)$",
+                    regex: "^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$",
                     options: "i",
                   },
                 },
@@ -6454,7 +6733,7 @@ exports.getHistory = async (req, res) => {
     const hourlyRuleSetLower = new Set(hourlyRuleNames.map((n) => n.toLowerCase()));
 
     const computeTriggerSource = (row) => {
-      const source = row.source;
+      const source = String(row.source || "").toUpperCase();
       const changeType = row.changeType || "";
       const updatedFrom = row.updatedFrom;
 
@@ -6466,9 +6745,11 @@ exports.getHistory = async (req, res) => {
         }
       }
       if (source === "AMAZON_SQS" || source === "AMAZON_API" || updatedFrom === "Amazon Stream") return "Amazon API";
+      if (source === "RULE") return "Rule";
+      if (source === "MANUAL") return "Manual";
       if (
         source === "RECOMMENDATION" ||
-        /^Update (Targeting Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i.test(
+        /^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$|^Revert/i.test(
           changeType
         )
       ) {
@@ -6478,24 +6759,199 @@ exports.getHistory = async (req, res) => {
       return "Manual";
     };
 
-    if (!isSortOnJoinedField) {
-      const [count, rawDocs] = await Promise.all([
-        campaignChangeHistorySchema.countDocuments(filter),
-        campaignChangeHistorySchema
-          .find(filter)
-          .sort({ [sortField]: sortOrder })
-          .skip(skipCount)
-          .limit(limitCount)
-          .lean(),
-      ]);
+    const normalizeVal = (v) => {
+      if (v === null || v === undefined) return "";
+      const s = String(v).trim().replace(/[$%,]/g, "");
+      const num = Number(s);
+      return !isNaN(num) && s !== "" ? num.toFixed(2) : String(v).trim().toLowerCase();
+    };
 
-      totalRecords = count || 0;
+    const normalizeChangeType = (ct) => {
+      if (!ct) return "";
+      const s = String(ct).toLowerCase().trim();
+      if ((s.includes("targeting") || s.includes("target")) && (s.includes("bid") || s.includes("adjust"))) return "targeting_bid";
+      if ((s.includes("targeting") || s.includes("target")) && s.includes("status")) return "targeting_status";
+      if (s.includes("budget")) return "budget";
+      if (s.includes("placement")) return "placement";
+      if (s.includes("status") || s.includes("state")) return "status";
+      return s;
+    };
+
+    const getSourcePriority = (doc) => {
+      const classifiedSource = computeTriggerSource(doc);
+      if (classifiedSource === "Recommendation") return 5;
+      if (classifiedSource === "Dayparting") return 4;
+      if (classifiedSource === "Rule") return 3;
+      const src = String(doc.source || doc.triggerSource || doc.updatedFrom || "").toUpperCase();
+      if (src.includes("RECOMMENDATION")) return 5;
+      if (src.includes("DAYPARTING")) return 4;
+      if (src.includes("RULE")) return 3;
+      if (src.includes("MANUAL") || doc.userId || doc.updatedBy) return 2;
+      return 1;
+    };
+
+    const deduplicateHistoryDocs = (docs) => {
+      if (!Array.isArray(docs) || docs.length <= 1) return docs || [];
+      const deduped = [];
+      const candidateIndices = new Map();
+      for (const doc of docs) {
+        const cId = String(doc.changeLevel || doc.campaignId || "");
+        const tId = doc.targetId ? String(doc.targetId).replace(/^[TK]-/, "").trim() : "";
+        const target = doc.targeting ? String(doc.targeting).toLowerCase().trim() : "";
+        const cType = normalizeChangeType(doc.changeType);
+        const oldV = normalizeVal(doc.oldValue);
+        const newV = normalizeVal(doc.newValue);
+
+        const changeKey = JSON.stringify([cId, cType, oldV, newV]);
+        const candidates = candidateIndices.get(changeKey) || [];
+        const existingIdx = candidates.find((index) => {
+          const ex = deduped[index];
+          const exCId = String(ex.changeLevel || ex.campaignId || "");
+          const exTId = ex.targetId ? String(ex.targetId).replace(/^[TK]-/, "").trim() : "";
+          const exTarget = ex.targeting ? String(ex.targeting).toLowerCase().trim() : "";
+          const exCType = normalizeChangeType(ex.changeType);
+          const exOldV = normalizeVal(ex.oldValue);
+          const exNewV = normalizeVal(ex.newValue);
+
+          const sameCamp = exCId === cId;
+          const sameTarget =
+            tId && exTId ? tId === exTId :
+            (target && exTarget && target === exTarget) ||
+            (!target && !exTarget && !tId && !exTId);
+          const sameAdGroup = !doc.adGroupId || !ex.adGroupId || String(doc.adGroupId) === String(ex.adGroupId);
+          const sameType = exCType === cType;
+          if ((doc.statusHistoryEvent || ex.statusHistoryEvent) && +new Date(doc.createdAt) !== +new Date(ex.createdAt)) return false;
+          const sameChange = exOldV === oldV && exNewV === newV;
+
+          if (!sameCamp || !sameTarget || !sameAdGroup || !sameType || !sameChange) return false;
+
+          const t1 = new Date(ex.createdAt || 0).getTime();
+          const t2 = new Date(doc.createdAt || 0).getTime();
+          if (!isNaN(t1) && !isNaN(t2)) {
+            return Math.abs(t1 - t2) <= 24 * 60 * 60 * 1000;
+          }
+          return false;
+        }) ?? -1;
+
+        if (existingIdx >= 0) {
+          if (getSourcePriority(doc) > getSourcePriority(deduped[existingIdx])) {
+            deduped[existingIdx] = doc;
+          }
+        } else {
+          candidates.push(deduped.length);
+          candidateIndices.set(changeKey, candidates);
+          deduped.push(doc);
+        }
+      }
+      return deduped;
+    };
+
+    // Scope and source use the same classifier as the response labels, making
+    // the three scope sets disjoint even for legacy rows without a source tag.
+    const requestedScopes = (Array.isArray(historyScope) ? historyScope : [historyScope])
+      .filter(Boolean).map(value => String(value).trim().toLowerCase()).map(value => value === "rule" ? "other" : value);
+    const selectedScopes = requestedScopes.filter(value => ["recommendation", "dayparting", "other"].includes(value));
+    const requestedSources = (Array.isArray(source) ? source : [source]).filter(Boolean)
+      .map(value => String(value).trim().toLowerCase()).map(value => value === "amazon sqs" ? "amazon api" : value);
+    const selectedSources = requestedSources.filter(value => ["recommendation", "dayparting", "amazon api", "rule", "manual"].includes(value));
+    const matchesHistoryDisplayFilters = row => {
+      const label = computeTriggerSource(row).toLowerCase();
+      const scope = label === "recommendation" || label === "dayparting" ? label : "other";
+      return (requestedScopes.includes("all") || !selectedScopes.length || selectedScopes.includes(scope))
+        && (requestedSources.includes("all") || !selectedSources.length || selectedSources.includes(label));
+    };
+    if (filter.changeLevel) historyIdentityFilter.changeLevel = filter.changeLevel;
+    if (filter.targeting) historyIdentityFilter.targeting = filter.targeting;
+
+    const sortHistoryRows = (rows) => rows.sort((a, b) => {
+      const value = (row) => sortField.split(".").reduce((obj, key) => obj?.[key], row);
+      const av = value(a), bv = value(b);
+      const result = av == null ? (bv == null ? 0 : -1) : bv == null ? 1 : av < bv ? -1 : av > bv ? 1 : 0;
+      return sortOrder * (result || String(a._id).localeCompare(String(b._id)));
+    });
+
+    if (!isSortOnJoinedField || isScopedQuery) {
+      let count = 0;
+      let rawDocs = [];
+
+      if (isScopedQuery) {
+        rawDocs = await campaignChangeHistorySchema
+          .find(historyIdentityFilter)
+          .sort({ [sortField]: sortOrder })
+          .lean();
+      } else {
+        const [rawCount, pagedDocs] = await Promise.all([
+          campaignChangeHistorySchema.countDocuments(filter),
+          campaignChangeHistorySchema
+            .find(filter)
+            .sort({ [sortField]: sortOrder })
+            .skip(skipCount)
+            .limit(limitCount * 2)
+            .lean(),
+        ]);
+        count = rawCount;
+        rawDocs = pagedDocs;
+      }
+
+      let streamTargetingDocs = [];
+      if (targeting || req.body?.targetId) {
+        try {
+          const reqTargetId = req.body?.targetId;
+          const escapeRegex = (s) => s.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+          const streamFilter = {
+            configId,
+            ...(numericProfileId ? { profileId: numericProfileId } : {}),
+            ...(campaignId ? { campaignId: { $in: [String(campaignId), Number(campaignId)].filter((x) => !isNaN(x) || x) } } : {}),
+            ...(reqTargetId ? { targetId: { $in: [String(reqTargetId), String(reqTargetId).replace(/^[TK]-/, "")] } } : {}),
+            ...(targeting ? { targeting: { $regex: new RegExp(`^${escapeRegex(`${targeting}`.trim())}$`, "i") } } : {}),
+          };
+          const rawStream = await targetingHistorySchema
+            .find(streamFilter)
+            .sort({ last_updated_date_time: -1, createdAt: -1 })
+            .lean();
+          // Merge identity-matched events first; filter only their canonical rows.
+          streamTargetingDocs = (rawStream || []).map((sd) => ({
+            _id: sd._id,
+            configId: sd.configId,
+            profileId: sd.profileId,
+            changeLevel: sd.campaignId,
+            adGroupId: sd.adGroupId,
+            targetId: sd.targetId,
+            targeting: sd.targeting,
+            matchType: sd.match_type || sd.matchType || (isAutoTargeting ? "Auto" : ""),
+            changeType: "Update Targeting Bid",
+            oldValue: sd.oldBid !== null && sd.oldBid !== undefined ? String(sd.oldBid) : "—",
+            newValue: String(sd.bid ?? 0),
+            updatedFrom: "Amazon Stream",
+            source: sd.source || "AMAZON_SQS",
+            createdAt: new Date(sd.last_updated_date_time || sd.creation_date_time || sd.createdAt),
+            type: adType || "SP",
+          })).filter(sift(historyIdentityFilter));
+        } catch (stErr) {
+          // ignore
+        }
+      }
+
+      let allRawDocs = [...(rawDocs || []), ...streamTargetingDocs].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      // Align legacy hourly-rule sources before choosing the authoritative row.
+      if (isScopedQuery) allRawDocs = allRawDocs.map(row => computeTriggerSource(row) === "Dayparting" ? { ...row, source: "DAYPARTING" } : row);
+      const canonicalDocs = deduplicateHistoryDocs(allRawDocs);
+      const dedupedDocs = isScopedQuery ? sortHistoryRows(canonicalDocs.filter(sift(filter)).filter(matchesHistoryDisplayFilters)) : canonicalDocs;
+
+      let effectiveDocs = [];
+      if (isScopedQuery) {
+        totalRecords = dedupedDocs.length;
+        effectiveDocs = isSortOnJoinedField ? dedupedDocs : dedupedDocs.slice(skipCount, skipCount + limitCount);
+      } else {
+        totalRecords = count || dedupedDocs.length;
+        effectiveDocs = dedupedDocs.slice(0, limitCount);
+      }
 
       const uniqueCampaignKeys = [];
       const uniqueAdGroupKeys = [];
       const uniqueUserIds = [];
 
-      for (const d of rawDocs) {
+      for (const d of effectiveDocs) {
         if (d.changeLevel != null && d.changeLevel !== "") {
           const num = Number(d.changeLevel);
           if (!isNaN(num)) {
@@ -6522,7 +6978,7 @@ exports.getHistory = async (req, res) => {
       // Collect targetings and targetIds where matchType is missing
       const uniqueTargetTexts = [];
       const uniqueTargetIds = [];
-      for (const d of rawDocs) {
+      for (const d of effectiveDocs) {
         if (d.targeting && !d.matchType) {
           uniqueTargetTexts.push(d.targeting);
           if (d.targetId) uniqueTargetIds.push(d.targetId);
@@ -6685,7 +7141,7 @@ exports.getHistory = async (req, res) => {
         }
       }
 
-      data = rawDocs.map((row) => {
+      data = effectiveDocs.map((row) => {
         const camp = campMap.get(row.changeLevel) || (!isNaN(Number(row.changeLevel)) ? campMap.get(Number(row.changeLevel)) : null) || null;
         const ag = row.adGroupId ? (agMap.get(row.adGroupId) || (!isNaN(Number(row.adGroupId)) ? agMap.get(Number(row.adGroupId)) : null) || null) : null;
         const updatedEmail = row.userId ? userMap.get(String(row.userId)) || null : null;
@@ -6700,6 +7156,7 @@ exports.getHistory = async (req, res) => {
           updatedBy: updatedEmail,
         };
       });
+      if (isScopedQuery && isSortOnJoinedField) data = sortHistoryRows(data).slice(skipCount, skipCount + limitCount);
     } else {
       const queryProfileId = !isNaN(numericProfileId) ? numericProfileId : profileId;
       const pipeline = [
@@ -6782,12 +7239,224 @@ exports.getHistory = async (req, res) => {
       data = aggData || [];
     }
 
+    // Calculate Old ACOS and Current ACOS for data items
+    let normalizedDailyStats = [];
+    try {
+      const queryProfileId = !isNaN(numericProfileId) ? numericProfileId : profileId;
+      const lookbackNum = Number(acosLookbackDays) > 0 ? Number(acosLookbackDays) : 7;
+      const currLookbackNum = Number(currentAcosLookbackDays) > 0 ? Number(currentAcosLookbackDays) : 7;
+      const todayStr = moment().tz(timezone).format("YYYY-MM-DD");
+
+      let currStartDate = currentAcosFromDate
+        ? moment(currentAcosFromDate).format("YYYY-MM-DD")
+        : fromDate
+          ? moment(fromDate).format("YYYY-MM-DD")
+          : moment(todayStr).subtract(currLookbackNum, "days").format("YYYY-MM-DD");
+      let currEndDate = currentAcosToDate
+        ? moment(currentAcosToDate).format("YYYY-MM-DD")
+        : toDate
+          ? moment(toDate).format("YYYY-MM-DD")
+          : todayStr;
+
+      if (moment(currStartDate).isAfter(moment(currEndDate))) {
+        const tmp = currStartDate;
+        currStartDate = currEndDate;
+        currEndDate = tmp;
+      }
+
+      let targetModel = targetingSchema;
+      let campModel = campaignsSchema;
+      if (adType === "SB") {
+        targetModel = sbTargetingSchema;
+        campModel = sbCampaignsSchema;
+      } else if (adType === "SD") {
+        targetModel = sdTargetingSchema;
+        campModel = sdCampaignsSchema;
+      }
+
+      const targetQueryIds = [];
+      const targetQueryTexts = [];
+      const campaignQueryIds = [];
+
+      if (targeting) targetQueryTexts.push(String(targeting).trim());
+      if (campaignId) campaignQueryIds.push(campaignId, Number(campaignId), String(campaignId));
+
+      for (const row of (data || [])) {
+        if (row.targetId) targetQueryIds.push(String(row.targetId).replace(/^[TK]-/, ""));
+        if (row.targeting) targetQueryTexts.push(String(row.targeting).trim());
+        const rowCampId = row.changeLevel || row.campaignId || row.campaignDetails?.campaignId;
+        if (rowCampId) campaignQueryIds.push(rowCampId, Number(rowCampId), String(rowCampId));
+      }
+
+      const uniqueTargetIds = [...new Set(targetQueryIds.filter(Boolean))];
+      const uniqueTargetTexts = [...new Set(targetQueryTexts.filter(Boolean))];
+      const uniqueCampaignIds = [...new Set(campaignQueryIds.filter((x) => x !== undefined && x !== null && x !== "" && !isNaN(Number(x))))];
+
+      let targetDailyStats = [];
+      if (uniqueTargetIds.length > 0 || uniqueTargetTexts.length > 0) {
+        const orClauses = [];
+        if (uniqueTargetIds.length) {
+          orClauses.push({ targetId: { $in: uniqueTargetIds } });
+          orClauses.push({ targetId: { $in: uniqueTargetIds.map((id) => `T-${id}`) } });
+          orClauses.push({ targetId: { $in: uniqueTargetIds.map((id) => `K-${id}`) } });
+        }
+        if (uniqueTargetTexts.length) {
+          orClauses.push({ targeting: { $in: uniqueTargetTexts } });
+        }
+
+        targetDailyStats = await targetModel.find({
+          configId,
+          profileId: queryProfileId,
+          ...(uniqueCampaignIds.length ? { campaignId: { $in: uniqueCampaignIds } } : {}),
+          $or: orClauses,
+        }, { reportDate: 1, spend: 1, sales: 1, targetId: 1, targeting: 1, matchType: 1, campaignId: 1 }).lean();
+      }
+
+      let campaignDailyStats = [];
+      if (uniqueCampaignIds.length > 0) {
+        campaignDailyStats = await campModel.find({
+          configId,
+          profileId: queryProfileId,
+          campaignId: { $in: uniqueCampaignIds },
+        }, { reportDate: 1, spend: 1, sales: 1, campaignId: 1 }).lean();
+      }
+
+      const dailyStatsMap = new Map();
+      for (const stat of (targetDailyStats || [])) {
+        if (!stat?.reportDate) continue;
+        const key = `target_${stat.campaignId || ""}_${stat.targetId || stat.targeting || ""}_${stat.matchType || ""}_${stat.reportDate}`;
+        const prev = dailyStatsMap.get(key);
+        const spendVal = Number(stat.spend) || 0;
+        const salesVal = Number(stat.sales) || 0;
+        if (!prev) {
+          dailyStatsMap.set(key, {
+            reportDate: stat.reportDate,
+            spend: spendVal,
+            sales: salesVal,
+            targetId: stat.targetId,
+            targeting: stat.targeting,
+            matchType: stat.matchType,
+            campaignId: stat.campaignId,
+            statType: "target",
+          });
+        } else {
+          prev.spend = Math.max(prev.spend, spendVal);
+          prev.sales = Math.max(prev.sales, salesVal);
+        }
+      }
+
+      for (const stat of (campaignDailyStats || [])) {
+        if (!stat?.reportDate) continue;
+        const key = `camp_${stat.campaignId || ""}_${stat.reportDate}`;
+        const prev = dailyStatsMap.get(key);
+        const spendVal = Number(stat.spend) || 0;
+        const salesVal = Number(stat.sales) || 0;
+        if (!prev) {
+          dailyStatsMap.set(key, {
+            reportDate: stat.reportDate,
+            spend: spendVal,
+            sales: salesVal,
+            campaignId: stat.campaignId,
+            statType: "campaign",
+          });
+        } else {
+          prev.spend = Math.max(prev.spend, spendVal);
+          prev.sales = Math.max(prev.sales, salesVal);
+        }
+      }
+
+      normalizedDailyStats = Array.from(dailyStatsMap.values());
+
+      for (const item of (data || [])) {
+        const changeDateStr = item.createdAt
+          ? moment(item.createdAt).tz(timezone).format("YYYY-MM-DD")
+          : todayStr;
+        let oldEndDate = changeDateStr;
+        let oldStartDate = moment(changeDateStr).subtract(lookbackNum, "days").format("YYYY-MM-DD");
+
+        if (moment(oldStartDate).isAfter(moment(oldEndDate))) {
+          const temp = oldStartDate;
+          oldStartDate = oldEndDate;
+          oldEndDate = temp;
+        }
+
+        const itemTargetText = item.targeting ? String(item.targeting).trim().toLowerCase() : "";
+        const itemTargetId = item.targetId ? String(item.targetId).replace(/^[TK]-/, "") : "";
+        const itemCampaignId = String(item.changeLevel || item.campaignId || item.campaignDetails?.campaignId || "");
+        const itemMatchNorm = item.matchType
+          ? String(item.matchType).trim().toUpperCase().replace(/^TARGETING_EXPRESSION_/, "")
+          : "";
+
+        let oldSpend = 0;
+        let oldSales = 0;
+        let currSpend = 0;
+        let currSales = 0;
+
+        for (const stat of normalizedDailyStats) {
+          if (!stat.reportDate) continue;
+
+          let isMatch = false;
+          if (itemTargetText || itemTargetId) {
+            if (stat.statType === "target" || stat.targetId || stat.targeting) {
+              const campMatches = !itemCampaignId || !stat.campaignId || String(stat.campaignId) === itemCampaignId;
+              if (campMatches) {
+                const statText = stat.targeting ? String(stat.targeting).trim().toLowerCase() : "";
+                const statId = stat.targetId ? String(stat.targetId).replace(/^[TK]-/, "") : "";
+                if (itemTargetId && statId && statId === itemTargetId) {
+                  isMatch = true;
+                } else if (itemTargetText && statText === itemTargetText) {
+                  const statMatchNorm = stat.matchType
+                    ? String(stat.matchType).trim().toUpperCase().replace(/^TARGETING_EXPRESSION_/, "")
+                    : "";
+                  if (!itemMatchNorm || !statMatchNorm || itemMatchNorm === statMatchNorm) {
+                    isMatch = true;
+                  }
+                }
+              }
+            }
+          } else if (stat.statType === "campaign" || (!stat.targetId && !stat.targeting)) {
+            if (itemCampaignId && stat.campaignId && String(stat.campaignId) === itemCampaignId) {
+              isMatch = true;
+            }
+          }
+
+          if (!isMatch) continue;
+
+          if (stat.reportDate >= oldStartDate && stat.reportDate <= oldEndDate) {
+            oldSpend += Number(stat.spend) || 0;
+            oldSales += Number(stat.sales) || 0;
+          }
+          if (stat.reportDate >= currStartDate && stat.reportDate <= currEndDate) {
+            currSpend += Number(stat.spend) || 0;
+            currSales += Number(stat.sales) || 0;
+          }
+        }
+
+        const calculatedOldAcos = oldSales > 0 ? Number(((oldSpend / oldSales) * 100).toFixed(2)) : 0;
+        const calculatedCurrAcos = currSales > 0 ? Number(((currSpend / currSales) * 100).toFixed(2)) : 0;
+
+        item.oldAcos = calculatedOldAcos;
+        item.spend = Number(oldSpend.toFixed(2));
+        item.sales = Number(oldSales.toFixed(2));
+        item.dateRange = { startDate: oldStartDate, endDate: oldEndDate };
+
+        item.currentAcos = calculatedCurrAcos;
+        item.currentSpend = Number(currSpend.toFixed(2));
+        item.currentSales = Number(currSales.toFixed(2));
+        item.currentDateRange = { startDate: currStartDate, endDate: currEndDate };
+      }
+    } catch (acosErr) {
+      console.error("Error calculating ACOS in getHistory:", acosErr?.message || acosErr);
+    }
+
     return res.status(200).send({
       isSuccess: true,
       currentPageNo: page,
       totalRecords: totalRecords || 0,
       totalPages: Math.ceil((totalRecords || 0) / limitCount),
       data: data || [],
+      dailyStats: normalizedDailyStats,
+      timezone,
     });
   } catch (error) {
     write_logs({ message: `[getHistory Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
@@ -6842,7 +7511,7 @@ exports.getLatestCampaignHistory = async (req, res) => {
             { source: { $regex: /^recommendation$/i } },
             {
               changeType: {
-                $regex: /^Update (Targeting Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
+                $regex: /^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
               },
             }
           );
@@ -6852,7 +7521,7 @@ exports.getLatestCampaignHistory = async (req, res) => {
           combinedScopeOr.push({
             source: { $not: /^(dayparting|recommendation)$/i },
             changeType: {
-              $not: /dayparting|^Update (Targeting Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
+              $not: /dayparting|^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
             },
           });
         }
@@ -6870,7 +7539,7 @@ exports.getLatestCampaignHistory = async (req, res) => {
         {
           $or: [
             { updatedFrom: "Campaign" },
-            { changeType: { $regex: /budget|campaign status|camapign status|^update state/i } },
+            { changeType: { $regex: /budget|campaign.*status|camapign status|^update state/i } },
           ],
         },
         { targeting: { $in: [null, ""] } },
@@ -7029,13 +7698,80 @@ exports.getLatestCampaignHistory = async (req, res) => {
             .trim();
           const matchKey = `${cid}_${normTarget}_${normMatch}`;
           map[matchKey] = info;
-        } else {
-          const generalKey = `${cid}_${normTarget}`;
-          if (!map[generalKey]) {
-            map[generalKey] = info;
+        }
+
+        const generalKey = `${cid}_${normTarget}`;
+        if (!map[generalKey] || new Date(info.latestCreatedAt) > new Date(map[generalKey].latestCreatedAt)) {
+          map[generalKey] = info;
+        }
+
+        if (r.targetId) {
+          const cleanTId = String(r.targetId).replace(/^[TK]-/, "").trim();
+          if (cleanTId) {
+            const idKey = `${cid}_id_${cleanTId}`;
+            if (!map[idKey] || new Date(info.latestCreatedAt) > new Date(map[idKey].latestCreatedAt)) {
+              map[idKey] = info;
+            }
           }
         }
       }
+    }
+
+    try {
+      const streamTargetingResults = await targetingHistorySchema.aggregate([
+        {
+          $match: {
+            ...(numericProfileId ? { profileId: numericProfileId } : {}),
+            campaignId: { $in: allCampaignIds.map(String) },
+            targeting: { $exists: true, $ne: null, $ne: "" },
+          },
+        },
+        { $sort: { last_updated_date_time: -1, createdAt: -1 } },
+        {
+          $group: {
+            _id: {
+              cid: { $toString: "$campaignId" },
+              targeting: { $toLower: { $trim: { input: "$targeting" } } },
+            },
+            targetId: { $first: "$targetId" },
+            latestCreatedAt: { $first: { $ifNull: ["$last_updated_date_time", "$createdAt"] } },
+            bid: { $first: "$bid" },
+            oldBid: { $first: "$oldBid" },
+            source: { $first: "$source" },
+          },
+        },
+      ]);
+
+      for (const str of (streamTargetingResults || [])) {
+        if (str._id?.targeting) {
+          const cid = str._id.cid;
+          const normTarget = String(str._id.targeting).toLowerCase().trim();
+          const info = {
+            latestCreatedAt: str.latestCreatedAt,
+            changeType: "Update Targeting Bid",
+            updatedFrom: "Amazon Stream",
+            source: str.source || "Amazon Marketing Stream",
+            targeting: str._id.targeting,
+            oldValue: str.oldBid !== null && str.oldBid !== undefined ? str.oldBid : "—",
+            newValue: str.bid,
+          };
+          const generalKey = `${cid}_${normTarget}`;
+          if (!map[generalKey] || new Date(info.latestCreatedAt) > new Date(map[generalKey].latestCreatedAt)) {
+            map[generalKey] = info;
+          }
+          if (str.targetId) {
+            const cleanTId = String(str.targetId).replace(/^[TK]-/, "").trim();
+            if (cleanTId) {
+              const idKey = `${cid}_id_${cleanTId}`;
+              if (!map[idKey] || new Date(info.latestCreatedAt) > new Date(map[idKey].latestCreatedAt)) {
+                map[idKey] = info;
+              }
+            }
+          }
+        }
+      }
+    } catch (streamErr) {
+      // ignore
     }
 
     return res.status(200).send({
@@ -7103,6 +7839,22 @@ async function getFilteredCampaignIds(req) {
     const healthScoreBranches = healthScore.map(hs => ({ case: addCampaignSettingPipelineQuery(hs.conditions, cpSetting), then: hs.scoreName }));
     const performanceScoreBranches = performanceScore.map(hs => ({ case: addCampaignSettingPipelineQuery(hs.conditions, cpSetting), then: hs.scoreName }));
 
+    let effectiveStatusFilter = status;
+    if (!effectiveStatusFilter && customFilter?.$or && Array.isArray(customFilter.$or)) {
+      if (customFilter.$or.some(c => c.status === "OUT_OF_BUDGET" || c.status === "out_of_budget")) {
+        effectiveStatusFilter = "OUT_OF_BUDGET";
+      }
+    }
+    if (customFilter && customFilter.$or && Array.isArray(customFilter.$or)) {
+      if (customFilter.$or.some(c => c.status === "OUT_OF_BUDGET" || c.status === "out_of_budget")) {
+        delete customFilter.$or;
+      }
+    }
+    if (customFilter?.status) {
+      if (!effectiveStatusFilter) effectiveStatusFilter = customFilter.status?.$eq || customFilter.status;
+      delete customFilter.status;
+    }
+
     // Build match stage (EXACTLY same as getCampaigns)
     const matchStage = {
       $match: {
@@ -7122,6 +7874,25 @@ async function getFilteredCampaignIds(req) {
       }
     };
 
+    if (effectiveStatusFilter) {
+      const statusRes = await resolveMatchingCampaignIdsByStatus({
+        adTypeCampaignSchema,
+        configId,
+        profileId,
+        timezone,
+        effectiveStatusFilter,
+      });
+
+      if (statusRes) {
+        const numericAndStringMatchingIds = statusRes.matchingCampaignIds;
+        if (matchStage.$match.campaignId?.$in) {
+          matchStage.$match.campaignId.$in = matchStage.$match.campaignId.$in.filter(id => numericAndStringMatchingIds.includes(id));
+        } else {
+          matchStage.$match.campaignId = { $in: numericAndStringMatchingIds };
+        }
+      }
+    }
+
     // Build pipeline to get ONLY campaign IDs
     const pipeline = [
       matchStage,
@@ -7134,8 +7905,8 @@ async function getFilteredCampaignIds(req) {
       },
       {
         $match: {
-          reportDate: { $lte: toDate || moment().tz(timezone).format("YYYY-MM-DD") },
-          ...(status && { status })
+          reportDate: { $lte: moment().tz(timezone || "UTC").format("YYYY-MM-DD") },
+          ...((status && status !== "OUT_OF_BUDGET" && !effectiveStatusFilter) && { status })
         }
       },
       {
@@ -8092,11 +8863,11 @@ exports.budgetMonitor = async (req, res) => {
         };
 
         const pipeline = await this.campaignPipeline(query, toDate, "SP");
-        pipeline.push({
-          $match: {
-            status: "OUT_OF_BUDGET",
-          },
+        const currentBudgetStatus = await resolveMatchingCampaignIdsByStatus({
+          adTypeCampaignSchema: campaignsSchema, configId: profile.configId,
+          profileId: profile.profileId, timezone: profile.timezone, effectiveStatusFilter: "OUT_OF_BUDGET",
         });
+        pipeline.push({ $match: { campaignId: { $in: currentBudgetStatus.matchingCampaignIds } } });
         const campaigns = await campaignsSchema
           .aggregate(pipeline)
           .allowDiskUse(true);
@@ -8418,49 +9189,24 @@ const updateCampaignHourlyData = async (
 };
 
 async function updateCampaignBudgetUsage(data, profile) {
-  const currentDate = moment(data.usage_updated_timestamp)
-    .tz(profile.timezone)
-    .format("YYYY-MM-DD");
-  const spend = Number(
-    ((data.budget_usage_percentage * data.budget) / 100).toFixed(2),
-  );
-
-  let adTypeSchema = campaignsSchema;
-
-  if (data.advertising_product_type == "sb") {
-    adTypeSchema = sbCampaignsSchema;
-  }
-  if (data.advertising_product_type == "sd") {
-    adTypeSchema = sdCampaignsSchema;
-  }
-
-  const campaign = await adTypeSchema
-    .findOne({
-      configId: profile.configId,
-      profileId: profile.profileId,
-      campaignId: Number(data.budget_scope_id),
-      reportDate: currentDate,
-    })
-    .lean();
-
-  if (!campaign) return false;
-
-  const result = await adTypeSchema
-    .findOneAndUpdate(
-      { _id: campaign._id },
-      {
-        $set: {
-          "budgetTracking.estimatedSpend": spend,
-          "budgetTracking.lastUsagePercentage": data.budget_usage_percentage,
-          "budgetTracking.lastUpdated": new Date(),
-          status:
-            spend > 0.95 * data.budget ? "OUT_OF_BUDGET" : campaign.status,
-        },
-      },
-      { upsert: true },
-    )
-    .lean();
-
+  if (String(data.budget_scope_type || "").toUpperCase() === "PORTFOLIO") return true;
+  const timestamp = eventDate(data.usage_updated_timestamp);
+  const usage = Number(data.budget_usage_percentage), budget = Number(data.budget);
+  if (!Number.isFinite(usage) || usage < 0 || !Number.isFinite(budget) || budget <= 0) throw new Error("Invalid campaign budget-usage event");
+  const adType = normalizeCampaignAdType(data.advertising_product_type);
+  const isOutOfBudget = usage >= 100;
+  await observeCampaignStatus({ configId: profile.configId, profileId: profile.profileId,
+    campaignId: data.budget_scope_id, adType, dimension: "IN_BUDGET",
+    value: isOutOfBudget ? "OUT_OF_BUDGET" : "IN_BUDGET", timestamp });
+  const schema = adType === "SB" ? sbCampaignsSchema : adType === "SD" ? sdCampaignsSchema : campaignsSchema;
+  // Budget availability is not Enabled/Paused or proof that ads are delivering.
+  // Update tracking only; campaign configuration stays owned by campaign sync.
+  await schema.updateMany({ configId: profile.configId, profileId: Number(profile.profileId),
+    campaignId: Number(data.budget_scope_id), reportDate: moment(timestamp).tz(profile.timezone || "UTC").format("YYYY-MM-DD"),
+    $or: [{ "budgetTracking.lastUpdated": { $lte: timestamp } }, { "budgetTracking.lastUpdated": { $exists: false } }],
+  }, { $set: { "budgetTracking.estimatedSpend": Number((usage * budget / 100).toFixed(2)),
+    "budgetTracking.lastUsagePercentage": usage, "budgetTracking.lastUpdated": timestamp,
+    "budgetTracking.isOutOfBudget": isOutOfBudget } });
   return true;
 }
 
@@ -8671,6 +9417,23 @@ async function updateCampaignManagementData(data, profile) {
     }
   }
 
+  const campaignIdentity = parsedData?.campaign_id || parsedData?.campaignId || parsedData?.data?.campaign_id;
+  const streamTimestamp = parsedData?.last_updated_date_time || parsedData?.event_timestamp;
+  const streamType = normalizeCampaignAdType(parsedData?.advertising_product_type || parsedData?.ad_product);
+  if (campaignIdentity && (parsedData?.state || parsedData?.delivery_status || parsedData?.serving_status)) {
+    const timestamp = eventDate(streamTimestamp);
+    const previous = await bidDataSchema.findOne({ configId: profile.configId, profileId: Number(profile.profileId),
+      campaign_id: { $in: [String(campaignIdentity), Number(campaignIdentity)] }, dataset_id: "ads-campaign-management-campaigns",
+    }).sort({ last_updated_date_time: -1, createdAt: -1 }).lean();
+    const common = { configId: profile.configId, profileId: profile.profileId, campaignId: campaignIdentity, adType: streamType };
+    if (previous?.state && previous?.last_updated_date_time && Number.isFinite(+new Date(previous.last_updated_date_time))) {
+      await observeCampaignStatus({ ...common, dimension: "STATE", value: String(previous.state).toUpperCase(), timestamp: previous.last_updated_date_time });
+    }
+    if (parsedData.state) await observeCampaignStatus({ ...common, dimension: "STATE", value: String(parsedData.state).toUpperCase(), timestamp });
+    const delivery = parsedData.delivery_status || parsedData.serving_status;
+    if (delivery) await observeCampaignStatus({ ...common, dimension: "DELIVERY", value: String(delivery).toUpperCase(), timestamp });
+  }
+
   try {
     if (parsedData?.idempotency_id) {
       await new processedSQSMessageSchema({
@@ -8786,34 +9549,7 @@ async function updateCampaignManagementData(data, profile) {
           }
         }
 
-        // Compare status / state safely
-        if (
-          prevParsed?.state &&
-          parsedData?.state &&
-          prevParsed.state !== parsedData.state
-        ) {
-          const existingStateChange = await campaignChangeHistorySchema.findOne({
-            configId: profile.configId,
-            profileId: numericProfileId,
-            changeLevel: numericCampaignId,
-            changeType: "Update State",
-            newValue: parsedData.state,
-            createdAt: { $gte: new Date(Date.now() - 5 * 60 * 1000) },
-          }).lean();
-
-          if (!existingStateChange) {
-            await campaignChangeHistorySchema.create({
-              configId: profile.configId,
-              profileId: numericProfileId,
-              changeLevel: numericCampaignId,
-              changeType: "Update State",
-              oldValue: prevParsed.state,
-              newValue: parsedData.state,
-              updatedFrom: "Amazon Stream",
-              type: "SP",
-            });
-          }
-        }
+        // Status observations were persisted before the message dedup marker above.
 
         // Compare placement adjustments safely
         const oldPlacements = prevParsed?.optimizations?.bid_settings?.bid_adjustments?.placement_bid_adjustments || [];

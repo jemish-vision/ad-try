@@ -485,7 +485,8 @@ function RecomandationRules({ hideFilter = false } = {}) {
                                 el?.conditionOperator,
                                 el?.conditionStringValue,
                                 el?.conditionValue,
-                                el?.conditionValueType
+                                el?.conditionValueType,
+                                el
                             )
                         )}
                     </div>
@@ -687,6 +688,7 @@ function RecomandationRules({ hideFilter = false } = {}) {
         conditionStatus,
         conditionValue,
         conditionValueType,
+        rawCondition,
     ) => {
         const outerStyle = {
             fontSize: "13px",
@@ -702,6 +704,11 @@ function RecomandationRules({ hideFilter = false } = {}) {
                     <li>
                         <span className="badge badge-light-warning text-warning" style={{ fontSize: "12px", padding: "4px 8px" }}>
                             {t("Out of Budget")}
+                            {(() => {
+                                const p = String(rawCondition?.oobPeriod || "").toUpperCase();
+                                const days = { LAST_7_DAYS: 7, LAST_14_DAYS: 14, LAST_30_DAYS: 30 }[p] || (p === "CUSTOM" ? Number(rawCondition?.oobDays) : 0);
+                                return days ? ` · ${t("Last")} ${days} ${t("days")}` : "";
+                            })()}
                         </span>
                     </li>
                 </ul>

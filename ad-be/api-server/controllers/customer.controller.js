@@ -545,123 +545,137 @@ exports.deleteFilter = async (req, res) => {
 exports.getCampaignAndAdGroupAutoSearch = async (req, res) => {
   const configId = req?.config?.configId;
   const adType = req.adType;
-  const { adTypeCampaignSchema } = req.models;
+  const isAll = req.isAllAdTypes || adType === "All";
+  const types = isAll ? (req.adTypes || ["SP", "SB", "SD"]) : [adType || "SP"];
 
   try {
     let { profileId, searchName } = req.body;
 
     const currentDate = moment().format("YYYY-MM-DD");
-    const isSearchActive = !!searchName && searchName.trim() !== "";
+    const isSearchActive = !!searchName && String(searchName).trim() !== "";
+    const cleanSearch = searchName ? String(searchName).trim() : "";
+    const escapeRegex = (s) => (typeof RegExp.escape === "function" ? RegExp.escape(s) : String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const searchRegex = isSearchActive ? new RegExp(escapeRegex(cleanSearch), "i") : null;
 
-    const pipeline = [
-      {
-        $match: {
-          configId,
-          profileId: Number(profileId),
-          reportDate: currentDate,
-          ...(!isSearchActive ? { status: "ENABLED" } : {})
-        }
-      },
-      {
-        $sort: { campaignId: 1, reportDate: -1 }
-      },
-      {
-        $group: {
-          _id: "$campaignId",
-          campaignId: { $first: "$campaignId" },
-          campaign: { $first: "$name" },
-          profileId: { $first: "$profileId" }
-        }
-      },
-      {
-        $lookup: {
-          from: AD_TYPE_COLLECTIONS?.[adType]?.["adGroup"],
-          let: {
-            cId: "$campaignId",
-            pId: "$profileId"
-          },
-          pipeline: [
+    const buildPipelineForType = (typeKey) => {
+      const adGroupCollection = AD_TYPE_COLLECTIONS?.[typeKey]?.["adGroup"] || "ad_groups";
+      return [
+        {
+          $match: {
+            ...(configId && { configId }),
+            profileId: Number(profileId),
+            reportDate: currentDate,
+            ...(!isSearchActive ? { status: "ENABLED" } : {})
+          }
+        },
+        {
+          $sort: { campaignId: 1, reportDate: -1 }
+        },
+        {
+          $group: {
+            _id: "$campaignId",
+            campaignId: { $first: "$campaignId" },
+            campaign: { $first: "$name" },
+            profileId: { $first: "$profileId" }
+          }
+        },
+        {
+          $lookup: {
+            from: adGroupCollection,
+            let: {
+              cId: "$campaignId",
+              pId: "$profileId"
+            },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ["$campaignId", "$$cId"] },
+                      { $eq: ["$profileId", "$$pId"] },
+                      { $eq: ["$reportDate", currentDate] }
+                    ]
+                  }
+                }
+              },
+              {
+                $project: {
+                  _id: 0,
+                  adGroupId: 1,
+                  adGroup: "$name"
+                }
+              }
+            ],
+            as: "adGroups"
+          }
+        },
+        {
+          $project: {
+            data: {
+              $map: {
+                input: "$adGroups",
+                as: "ag",
+                in: {
+                  _id: {
+                    campaignId: "$campaignId",
+                    adGroupId: "$$ag.adGroupId"
+                  },
+                  campaign: "$campaign",
+                  adGroup: "$$ag.adGroup",
+                  campaignId: "$campaignId",
+                  adGroupId: "$$ag.adGroupId",
+                  campaignType: typeKey
+                }
+              }
+            }
+          }
+        },
+        { $unwind: "$data" },
+        { $replaceRoot: { newRoot: "$data" } },
+        ...(isSearchActive
+          ? [
             {
               $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ["$campaignId", "$$cId"] },
-                    { $eq: ["$profileId", "$$pId"] },
-                    { $eq: ["$reportDate", currentDate] }
-                  ]
-                }
-              }
-            },
-            {
-              $project: {
-                _id: 0,
-                adGroupId: 1,
-                adGroup: "$name"
+                $or: [
+                  { campaign: { $regex: searchRegex } },
+                  { adGroup: { $regex: searchRegex } }
+                ]
               }
             }
-          ],
-          as: "adGroups"
-        }
-      },
-      {
-        $project: {
-          data: {
-            $map: {
-              input: "$adGroups",
-              as: "ag",
-              in: {
-                _id: {
-                  campaignId: "$campaignId",
-                  adGroupId: "$$ag.adGroupId"
-                },
-                campaign: "$campaign",
-                adGroup: "$$ag.adGroup",
-                campaignId: "$campaignId",
-                adGroupId: "$$ag.adGroupId"
-              }
-            }
+          ]
+          : []),
+
+        // ✅ PAGINATION
+        {
+          $facet: {
+            metadata: [{ $count: "total" }],
+            data: [{ $skip: 0 }, { $limit: 50 }]
           }
         }
-      },
-      { $unwind: "$data" },
-      { $replaceRoot: { newRoot: "$data" } },
-      ...(isSearchActive
-        ? [
-          {
-            $match: {
-              $or: [
-                {
-                  campaign: {
-                    $regex: new RegExp(
-                      RegExp.escape(`${searchName}`?.trim()),
-                      "i"
-                    )
-                  }
-                },
-                {
-                  adGroup: {
-                    $regex: new RegExp(
-                      RegExp.escape(`${searchName}`?.trim()),
-                      "i"
-                    )
-                  }
-                }
-              ]
-            }
-          }
-        ]
-        : []),
+      ];
+    };
 
-      // ✅ PAGINATION
-      {
-        $facet: {
-          metadata: [{ $count: "total" }],
-          data: [{ $skip: 0 }, { $limit: 50 }]
-        }
-      }
-    ];
+    if (isAll) {
+      const perTypeResults = await Promise.all(
+        types.map(async (typeKey) => {
+          const model = req.modelsByType?.[typeKey]?.adTypeCampaignSchema || AD_TYPE_COLLECTIONS?.[typeKey + "Model"]?.campaignSchema;
+          if (!model) return [];
+          const res = await model.aggregate(buildPipelineForType(typeKey));
+          return res[0]?.data || [];
+        })
+      );
 
-    const result = await adTypeCampaignSchema.aggregate(pipeline);
+      const campaignResult = perTypeResults.flat().slice(0, 50);
+
+      return res.status(200).send({
+        isSuccess: true,
+        result: campaignResult
+      });
+    }
+
+    const { adTypeCampaignSchema } = req.models || {};
+    const model = adTypeCampaignSchema || req.modelsByType?.[adType]?.adTypeCampaignSchema || AD_TYPE_COLLECTIONS?.[adType + "Model"]?.campaignSchema;
+    const result = await model.aggregate(buildPipelineForType(adType));
     const campaignResult = result[0]?.data || [];
 
     return res.status(200).send({
@@ -670,7 +684,7 @@ exports.getCampaignAndAdGroupAutoSearch = async (req, res) => {
     });
 
   } catch (error) {
-      write_logs({ message: `[getCampaignAndAdGroupAutoSearch Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: "[getCampaignAndAdGroupAutoSearch Error] " + (error?.message || error) + " [body] " + JSON.stringify(req?.body), log_type: "error" });
     console.error("Error:", error);
     return res.status(500).send({
       isSuccess: false,
@@ -1257,7 +1271,7 @@ exports.getAllConfigs = async (req, res) => {
             let: { cfgId: "$_id" },
             pipeline: [
               { $match: { $expr: { $and: [{ $eq: ["$configId", "$$cfgId"] }] } } },
-              { $project: { _id: 1, profileId: 1, countryCode: 1, name: 1, type: 1 } }
+              { $project: { _id: 1, profileId: 1, countryCode: 1, name: 1, type: 1, isAdsSyncEnabled: 1, isSpSyncEnabled: 1 } }
             ],
             as: "profiles"
           }
@@ -1331,7 +1345,9 @@ exports.getAllConfigs = async (req, res) => {
                   profileId: 1,
                   countryCode: 1,
                   name: 1,
-                  type: 1
+                  type: 1,
+                  isAdsSyncEnabled: 1,
+                  isSpSyncEnabled: 1
                 }
               }
             ],
@@ -1370,7 +1386,7 @@ exports.getAllConfigs = async (req, res) => {
             let: { cfgId: "$_id" },
             pipeline: [
               { $match: { $expr: { $and: [{ $eq: ["$configId", "$$cfgId"] }] } } },
-              { $project: { _id: 1, profileId: 1, countryCode: 1, name: 1, type: 1 } }
+              { $project: { _id: 1, profileId: 1, countryCode: 1, name: 1, type: 1, isAdsSyncEnabled: 1, isSpSyncEnabled: 1 } }
             ],
             as: "profiles"
           }

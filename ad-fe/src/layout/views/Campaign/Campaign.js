@@ -1128,7 +1128,8 @@ function Campaign() {
       ...(checkOrderColumns("Budget Type")),
       sortable: true,
       resizable: true,
-      cellRenderer: (params) => <>{params.value ?? "N/A"}</>,
+      valueFormatter: (params) => (params.value ? String(params.value).toUpperCase() : "N/A"),
+      cellRenderer: (params) => <>{params.value ? String(params.value).toUpperCase() : "N/A"}</>,
     },
   ], [isMobile, disablePinning, selectAll, selectedRows, handleToggleAll, handleToggleRow, t, visibleColumns, sharedFilterParams, checkOrderColumns, showAllTypes]);
 

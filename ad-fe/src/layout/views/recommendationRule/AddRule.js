@@ -54,7 +54,7 @@ const CONDITION_METRICS = [
 ];
 
 const getConditionMetrics = (grid) => {
-  if (!grid || grid === 'Campaign') {
+  if (!grid || grid === 'Campaign' || grid === 'Targeting' || grid === 'Placement') {
     return [
       ...CONDITION_METRICS,
       { value: 'Out of Budget', label: 'Out of Budget' },
@@ -123,11 +123,21 @@ const PLACEMENT_ACTIONS = ['IncreaseBid', 'DecreaseBid', 'SetBid'];
 // Grids that allow only one action
 const SINGLE_ACTION_GRIDS = ['Campaign', 'Targeting'];
 
+// Out of Budget look-back period options
+const OOB_PERIOD_OPTIONS = [
+  { value: 'LAST_7_DAYS', label: 'Last 7 Days' },
+  { value: 'LAST_14_DAYS', label: 'Last 14 Days' },
+  { value: 'LAST_30_DAYS', label: 'Last 30 Days' },
+  { value: 'CUSTOM', label: 'Custom' },
+];
+
 // Default empty condition
 const emptyCondition = () => ({
   conditionType: '',
   conditionOperator: '',
   conditionValue: '',
+  oobPeriod: '',
+  oobDays: '',
 });
 
 // Default empty action
@@ -254,7 +264,7 @@ function AddRecommendationRule({
   const handleGridNameChange = (val) => {
     setGridName(val);
     setActions([emptyAction()]);
-    if (val && val !== 'Campaign') {
+    if (val && val !== 'Campaign' && val !== 'Targeting' && val !== 'Placement') {
       setConditions((prev) => {
         const filtered = prev.filter(c => c.conditionType !== 'Out of Budget' && c.conditionType !== 'OutOfBudget');
         return filtered.length > 0 ? filtered : [emptyCondition()];
@@ -275,6 +285,11 @@ function AddRecommendationRule({
       if (field === 'conditionType') {
         updated[index].conditionOperator = '';
         updated[index].conditionValue = '';
+        updated[index].oobPeriod = '';
+        updated[index].oobDays = '';
+      }
+      if (field === 'oobPeriod' && value !== 'CUSTOM') {
+        updated[index].oobDays = '';
       }
       return updated;
     });
@@ -396,6 +411,12 @@ function AddRecommendationRule({
         if (!c.conditionOperator) e.conditionOperator = 'Operator is required.';
         if (c.conditionValue === '' || c.conditionValue === null || c.conditionValue === undefined)
           e.conditionValue = 'Value is required.';
+      } else {
+        if (!c.oobPeriod) e.oobPeriod = 'Period is required.';
+        if (c.oobPeriod === 'CUSTOM') {
+          const d = Number(c.oobDays);
+          if (!Number.isInteger(d) || d < 1 || d > 365) e.oobDays = 'Enter days between 1 and 365.';
+        }
       }
       if (Object.keys(e).length) { conditionErrs[i] = e; flag = true; }
     });
@@ -700,10 +721,38 @@ function AddRecommendationRule({
                   </div>
 
                   {isOob ? (
-                    <div className="col-span-1 md:col-span-8 flex items-center h-10 px-3.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-300 text-xs font-semibold gap-2">
-                      <FiInfo size={14} className="text-amber-500 flex-shrink-0" />
-                      <span>{t("Condition met when campaign is out of budget")}</span>
-                    </div>
+                    <>
+                      <div className="col-span-1 md:col-span-3">
+                        <Select
+                          value={condition.oobPeriod || undefined}
+                          onValueChange={(val) => handleConditionChange(index, 'oobPeriod', val || '')}
+                        >
+                          <SelectTrigger className={`w-full ${error?.conditions?.[index]?.oobPeriod ? 'border-red-500' : ''}`}>
+                            <SelectValue placeholder={t("Select period")} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {OOB_PERIOD_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>{t(opt.label)}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {conditionErr(index, 'oobPeriod')}
+                      </div>
+                      {condition.oobPeriod === 'CUSTOM' && (
+                        <div className="col-span-1 md:col-span-2">
+                          <Input
+                            type="number"
+                            min={1}
+                            max={365}
+                            className={`w-full ${error?.conditions?.[index]?.oobDays ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
+                            placeholder={t("Days")}
+                            value={condition.oobDays}
+                            onChange={(e) => handleConditionChange(index, 'oobDays', e.target.value)}
+                          />
+                          {conditionErr(index, 'oobDays')}
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <>
                       <div className="col-span-1 md:col-span-3">
@@ -767,10 +816,18 @@ function AddRecommendationRule({
               <FiInfo className="w-5 h-5 text-sky-500 shrink-0" />
               <div>
                 <p className="text-xs font-bold text-sky-800 dark:text-sky-200">
-                  {t("Note: This condition was only for displaying campaigns that were out of budget. It will not trigger any actions.")}
+                  {gridName === 'Targeting'
+                    ? t("Note: This condition was only for displaying targets whose campaign was out of budget. It will not trigger any actions.")
+                    : gridName === 'Placement'
+                      ? t("Note: This condition was only for displaying placements whose campaign was out of budget. It will not trigger any actions.")
+                      : t("Note: This condition was only for displaying campaigns that were out of budget. It will not trigger any actions.")}
                 </p>
                 <p className="text-[11px] text-sky-600 dark:text-sky-400 mt-0.5">
-                  {t("Actions are hidden and not required when Out of Budget condition is added. The recommendation will display only campaigns whose status is out of budget.")}
+                  {gridName === 'Targeting'
+                    ? t("Actions are hidden and not required when Out of Budget condition is added. The recommendation will display only targets whose campaign status is out of budget.")
+                    : gridName === 'Placement'
+                      ? t("Actions are hidden and not required when Out of Budget condition is added. The recommendation will display only placements whose campaign status is out of budget.")
+                      : t("Actions are hidden and not required when Out of Budget condition is added. The recommendation will display only campaigns whose status is out of budget.")}
                 </p>
               </div>
             </div>

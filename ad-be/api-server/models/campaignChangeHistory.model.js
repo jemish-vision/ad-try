@@ -53,6 +53,7 @@ const campaignChangeHistorySchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    statusHistoryEvent: { type: Boolean },
     source: {
       type: String,
       trim: true,
@@ -68,6 +69,7 @@ campaignChangeHistorySchema.index({ createdAt: 1 }, { expireAfterSeconds: 342144
 campaignChangeHistorySchema.index({ configId: 1, profileId: 1, type: 1, createdAt: -1 });
 campaignChangeHistorySchema.index({ configId: 1, profileId: 1, changeLevel: 1, createdAt: -1 });
 campaignChangeHistorySchema.index({ configId: 1, profileId: 1, source: 1, createdAt: -1 });
+campaignChangeHistorySchema.index({ configId: 1, profileId: 1, changeType: 1 });
 campaignChangeHistorySchema.index({ changeLevel: 1, changeType: 1, newValue: 1 });
 campaignChangeHistorySchema.index({ changeLevel: 1, updatedFrom: 1 });
 

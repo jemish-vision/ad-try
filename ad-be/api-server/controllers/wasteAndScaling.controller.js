@@ -1,4 +1,5 @@
 const moment = require("moment");
+const mongoose = require("mongoose");
 const { write_logs } = require("../../winston/utility/logger");
 const { getCacheWithLog, setCacheWithLog } = require("../services/redis.service");
 
@@ -55,7 +56,7 @@ exports.getWasteAndScalingAlerts = async (req, res) => {
             reportDate: { $gte: fromDate, $lte: toDate },
         };
         if (configId) {
-            baseMatch.configId = configId;
+            baseMatch.configId = mongoose.Types.ObjectId.isValid(configId) ? new mongoose.Types.ObjectId(configId) : String(configId);
         }
 
         // =====================================================================
@@ -68,57 +69,108 @@ exports.getWasteAndScalingAlerts = async (req, res) => {
         let totalZeroOrderClicks = 0;
         let zeroOrderTermsCount = 0;
 
-        if (adTypeSearchTermSchema) {
-            const stMatch = {
-                ...baseMatch,
-                spend: { $gt: 0 },
-                searchTerm: { $exists: true, $ne: null, $ne: "" },
-            };
+        const stMatch = {
+            ...baseMatch,
+            spend: { $gt: 0 },
+            searchTerm: { $exists: true, $ne: null, $ne: "" },
+        };
 
-            const [stAggResult] = await adTypeSearchTermSchema.aggregate([
-                { $match: stMatch },
-                {
-                    $group: {
-                        _id: {
-                            searchTerm: "$searchTerm",
-                            campaignId: "$campaignId",
+        const [stAggResultArray, allCampaignsAgg] = await Promise.all([
+            adTypeSearchTermSchema
+                ? adTypeSearchTermSchema.aggregate([
+                    { $match: stMatch },
+                    {
+                        $project: {
+                            searchTerm: 1,
+                            campaignId: 1,
+                            campaignName: 1,
+                            spend: 1,
+                            clicks: 1,
+                            impressions: 1,
+                            orders: 1,
                         },
-                        searchTerm: { $first: "$searchTerm" },
-                        campaignId: { $first: "$campaignId" },
-                        campaignName: { $first: "$campaignName" },
-                        spend: { $sum: { $ifNull: ["$spend", 0] } },
-                        clicks: { $sum: { $ifNull: ["$clicks", 0] } },
-                        impressions: { $sum: { $ifNull: ["$impressions", 0] } },
-                        orders: { $sum: { $ifNull: ["$orders", 0] } },
                     },
-                },
-                {
-                    $match: {
-                        orders: 0,
-                        clicks: { $gte: 1 },
+                    {
+                        $group: {
+                            _id: {
+                                searchTerm: "$searchTerm",
+                                campaignId: "$campaignId",
+                            },
+                            searchTerm: { $first: "$searchTerm" },
+                            campaignId: { $first: "$campaignId" },
+                            campaignName: { $first: "$campaignName" },
+                            spend: { $sum: { $ifNull: ["$spend", 0] } },
+                            clicks: { $sum: { $ifNull: ["$clicks", 0] } },
+                            impressions: { $sum: { $ifNull: ["$impressions", 0] } },
+                            orders: { $sum: { $ifNull: ["$orders", 0] } },
+                        },
                     },
-                },
-                {
-                    $facet: {
-                        totals: [
-                            {
-                                $group: {
-                                    _id: null,
-                                    totalSpend: { $sum: "$spend" },
-                                    totalClicks: { $sum: "$clicks" },
-                                    count: { $sum: 1 },
+                    {
+                        $match: {
+                            orders: 0,
+                            clicks: { $gte: 1 },
+                        },
+                    },
+                    {
+                        $facet: {
+                            totals: [
+                                {
+                                    $group: {
+                                        _id: null,
+                                        totalSpend: { $sum: "$spend" },
+                                        totalClicks: { $sum: "$clicks" },
+                                        count: { $sum: 1 },
+                                    },
+                                },
+                            ],
+                            topList: [
+                                { $sort: { spend: -1 } },
+                                { $skip: (zeroOrderPage - 1) * zeroOrderLimit },
+                                { $limit: zeroOrderLimit },
+                            ],
+                        },
+                    },
+                ]).allowDiskUse(true)
+                : Promise.resolve([]),
+            adTypeCampaignSchema
+                ? adTypeCampaignSchema.aggregate([
+                    { $match: baseMatch },
+                    {
+                        $group: {
+                            _id: "$campaignId",
+                            campaignId: { $first: "$campaignId" },
+                            campaignName: { $last: "$name" },
+                            status: { $last: "$status" },
+                            budget: { $last: { $ifNull: ["$budget", 0] } },
+                            spend: { $sum: { $ifNull: ["$spend", 0] } },
+                            sales: { $sum: { $ifNull: ["$sales", 0] } },
+                            orders: { $sum: { $ifNull: ["$orders", 0] } },
+                            clicks: { $sum: { $ifNull: ["$clicks", 0] } },
+                            impressions: { $sum: { $ifNull: ["$impressions", 0] } },
+                            timeInBudget: { $last: "$timeInBudget" },
+                            budgetTracking: { $last: "$budgetTracking" },
+                            isOutOfBudgetFlag: {
+                                $max: {
+                                    $cond: [
+                                        {
+                                            $or: [
+                                                { $eq: ["$status", "OUT_OF_BUDGET"] },
+                                                { $eq: ["$isOutOfBudget", true] },
+                                            ],
+                                        },
+                                        1,
+                                        0,
+                                    ],
                                 },
                             },
-                        ],
-                        topList: [
-                            { $sort: { spend: -1 } },
-                            { $skip: (zeroOrderPage - 1) * zeroOrderLimit },
-                            { $limit: zeroOrderLimit },
-                        ],
+                        },
                     },
-                },
-            ]).allowDiskUse(true);
+                ]).allowDiskUse(true)
+                : Promise.resolve([]),
+        ]);
 
+        if (adTypeSearchTermSchema) {
+            const stAggResult = stAggResultArray?.[0];
             const totals = stAggResult?.totals?.[0] || { totalSpend: 0, totalClicks: 0, count: 0 };
             totalZeroOrderSpend = round2(totals.totalSpend);
             totalZeroOrderClicks = totals.totalClicks;
@@ -155,41 +207,7 @@ exports.getWasteAndScalingAlerts = async (req, res) => {
         let totalAccountSales = 0;
         let accountAcos = 0;
 
-        let allCampaignsAgg = [];
         if (adTypeCampaignSchema) {
-            allCampaignsAgg = await adTypeCampaignSchema.aggregate([
-                { $match: baseMatch },
-                {
-                    $group: {
-                        _id: "$campaignId",
-                        campaignId: { $first: "$campaignId" },
-                        campaignName: { $last: "$name" },
-                        status: { $last: "$status" },
-                        budget: { $last: { $ifNull: ["$budget", 0] } },
-                        spend: { $sum: { $ifNull: ["$spend", 0] } },
-                        sales: { $sum: { $ifNull: ["$sales", 0] } },
-                        orders: { $sum: { $ifNull: ["$orders", 0] } },
-                        clicks: { $sum: { $ifNull: ["$clicks", 0] } },
-                        impressions: { $sum: { $ifNull: ["$impressions", 0] } },
-                        timeInBudget: { $last: "$timeInBudget" },
-                        budgetTracking: { $last: "$budgetTracking" },
-                        isOutOfBudgetFlag: {
-                            $max: {
-                                $cond: [
-                                    {
-                                        $or: [
-                                            { $eq: ["$status", "OUT_OF_BUDGET"] },
-                                            { $eq: ["$isOutOfBudget", true] },
-                                        ],
-                                    },
-                                    1,
-                                    0,
-                                ],
-                            },
-                        },
-                    },
-                },
-            ]).allowDiskUse(true);
 
             allCampaignsAgg.forEach((c) => {
                 totalAccountSpend += Number(c.spend) || 0;
@@ -290,7 +308,7 @@ exports.getWasteAndScalingAlerts = async (req, res) => {
         };
 
         try {
-            await setCacheWithLog(cacheKey, JSON.stringify(responsePayload), 180);
+            await setCacheWithLog(cacheKey, JSON.stringify(responsePayload), 600);
         } catch (_) {}
 
         return res.status(200).json(responsePayload);

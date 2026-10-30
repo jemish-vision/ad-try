@@ -151,14 +151,14 @@ exports.listProfiles = async (req, res) => {
         // Filter: If ads and seller both are disconnected, do not show in top profile.
         // If any one of them is active, show in the top profile!
         $match: {
-          $or: [{ isAdsActive: true }, { isSpActive: true }],
-          ...(matchOrgId && {
-            $or: [
+          $and: [
+            { $or: [{ isAdsActive: true }, { isSpActive: true }] },
+            ...(matchOrgId ? [{ $or: [
               { "config.organizationId": matchOrgId },
               { "config.organizationId": null },
               { "config.organizationId": { $exists: false } },
-            ],
-          }),
+            ] }] : []),
+          ],
         },
       },
       { $sort: { "profile.name": 1 } },
@@ -956,6 +956,12 @@ exports.amazonCallback = async (req, res) => {
         sellerConfig.spTokenExpiresAt = tokenExpiresAt;
         sellerConfig.isActive = true;
         sellerConfig.disconnectedAt = null;
+      sellerConfig.deletionReminder15SentAt = null;
+      sellerConfig.deletionReminder1SentAt = null;
+      sellerConfig.isDataDeletionStopped = false;
+        sellerConfig.deletionReminder15SentAt = null;
+        sellerConfig.deletionReminder1SentAt = null;
+        sellerConfig.isDataDeletionStopped = false;
         if (userId) sellerConfig.userId = userId;
         if (organizationId) sellerConfig.organizationId = organizationId;
 
@@ -1064,6 +1070,9 @@ exports.amazonCallback = async (req, res) => {
       config.adsTokenExpiresAt = tokenExpiresAt;
       config.isActive = true;
       config.disconnectedAt = null;
+      config.deletionReminder15SentAt = null;
+      config.deletionReminder1SentAt = null;
+      config.isDataDeletionStopped = false;
       if (organizationId) config.organizationId = organizationId;
       await config.save();
       await seedAccessToken({ kind: "ads", configId: config._id, accessToken: access_token, expiresIn: expires_in });
@@ -1357,6 +1366,9 @@ exports.amazonSPCallback = async (req, res) => {
       config.spTokenExpiresAt = new Date(Date.now() + (expires_in - 300) * 1000);
       config.isActive = true;
       config.disconnectedAt = null;
+      config.deletionReminder15SentAt = null;
+      config.deletionReminder1SentAt = null;
+      config.isDataDeletionStopped = false;
 
       await config.save();
       if (config.configId && config.profileId) {
@@ -1563,6 +1575,9 @@ exports.amazonSPRefreshToken = async (req, res) => {
       sellerConfig.spTokenExpiresAt = new Date(Date.now() + (expires_in - 300) * 1000);
       sellerConfig.isActive = true;
       sellerConfig.disconnectedAt = null;
+      sellerConfig.deletionReminder15SentAt = null;
+      sellerConfig.deletionReminder1SentAt = null;
+      sellerConfig.isDataDeletionStopped = false;
 
       await sellerConfig.save();
       if (sellerConfig.configId && sellerConfig.profileId) {
@@ -1664,6 +1679,9 @@ exports.amazonDisconnect = async (req, res) => {
     /* -------------------- Update Config -------------------- */
     config.isActive = false;
     config.disconnectedAt = new Date();
+    config.deletionReminder15SentAt = null;
+    config.deletionReminder1SentAt = null;
+    config.isDataDeletionStopped = false;
     await config.save();
 
     await auditLogSchema.create({
@@ -1787,6 +1805,9 @@ exports.amazonSPDisconnect = async (req, res) => {
     /* -------------------- Update Config -------------------- */
     config.isActive = false;
     config.disconnectedAt = new Date();
+    config.deletionReminder15SentAt = null;
+    config.deletionReminder1SentAt = null;
+    config.isDataDeletionStopped = false;
     await config.save();
 
     await profileSchema.updateOne(
@@ -2557,7 +2578,7 @@ exports.manageSubscribeAMS = async (req, res) => {
   }
 };
 
-exports.cronDisconnectReminder = async () => {
+exports.cronDisconnectReminder = async (req, res) => {
   cron_logs({
     message: `India Time = ${moment().tz("Asia/Kolkata").format("HH:mm")} Disconnect Reminder`,
     log_type: "info",
@@ -2566,17 +2587,30 @@ exports.cronDisconnectReminder = async () => {
   try {
     const cutoffDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
+    /* ====================================================================
+       1. ADS DISCONNECT REMINDERS (15 Days & 1 Day Prior)
+       ==================================================================== */
     const disconnectedConfigs = await configSchema.find({
       isActive: false,
       disconnectedAt: { $ne: null, $gt: cutoffDate },
+      isDataDeletionStopped: { $ne: true },
     }).lean();
 
-    if (!disconnectedConfigs.length) {
-      return cron_logs({ message: "No disconnected accounts in retention window", log_type: "info" });
-    }
-
+    let adsRemindersSent = 0;
     for (const config of disconnectedConfigs) {
       try {
+        // Skip if data deletion was stopped at organization level
+        if (config.organizationId) {
+          const org = await organizationSchema.findById(config.organizationId).lean();
+          if (org?.isDataDeletionStopped) {
+            cron_logs({
+              message: `Ads reminder skipped for configId=${config._id}: Deletion stopped at organization level.`,
+              log_type: "info",
+            });
+            continue;
+          }
+        }
+
         const userAccess = await profileBasedPermissionSchema.findOne({ configId: config._id }).lean();
         if (!userAccess) continue;
 
@@ -2587,27 +2621,51 @@ exports.cronDisconnectReminder = async () => {
         const purgeDate = new Date(config.disconnectedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
         const daysLeft = Math.ceil((purgeDate - Date.now()) / (1000 * 60 * 60 * 24));
 
-        if (daysLeft <= 0) continue; // Will be handled by purge cron
+        if (daysLeft <= 0) continue; // Handled by purge cron
+
+        // Determine if 15-day or 1-day reminder should be sent
+        const shouldSend15 = (daysLeft <= 15 && daysLeft > 1 && !config.deletionReminder15SentAt);
+        const shouldSend1 = (daysLeft <= 1 && daysLeft > 0 && !config.deletionReminder1SentAt);
+
+        if (!shouldSend15 && !shouldSend1) continue;
 
         // Find profile names
         const profiles = await profileSchema.find({ configId: config._id }).lean();
         const profileNames = profiles.map(p => p.name).filter(Boolean).join(", ");
+        const formattedPurgeDate = purgeDate.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+        const baseUrl = process?.env?.BASE_URL || "";
+        const supportEmail = process?.env?.SUPPORT_EMAIL || "support@advertiseiq.com";
+
+        let subject;
+        let updateField = {};
+
+        if (shouldSend1) {
+          subject = `🚨 Final Warning: Your AdvertiseIQ Ads data will be permanently deleted tomorrow (1 day left)`;
+          updateField = { deletionReminder1SentAt: new Date() };
+        } else {
+          subject = `⚠️ Important: Your AdvertiseIQ Ads data will be permanently deleted in ${daysLeft} days`;
+          updateField = { deletionReminder15SentAt: new Date() };
+        }
 
         await sendEmailHelper(
           user.email,
-          `⚠️ Your Ads data will be deleted in ${daysLeft} days — AdvertiseIQ`,
+          subject,
           buildDisconnectReminderEmail({
             userName: user.fullName,
             profileNames: profileNames || "Your linked Ads profiles",
             daysLeft,
-            purgeDate: purgeDate.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }),
-            signInUrl: process?.env?.BASE_URL,
+            purgeDate: formattedPurgeDate,
+            signInUrl: baseUrl,
+            supportEmail,
             type: "ads",
           })
         );
 
+        await configSchema.updateOne({ _id: config._id }, { $set: updateField });
+        adsRemindersSent++;
+
         cron_logs({
-          message: `Ads reminder sent to ${user.email} — ${daysLeft} days left for configId=${config._id}`,
+          message: `Ads reminder (${shouldSend1 ? "1-day final" : "15-day"}) sent to ${user.email} — ${daysLeft} days left for configId=${config._id}`,
           log_type: "info",
         });
 
@@ -2619,15 +2677,44 @@ exports.cronDisconnectReminder = async () => {
       }
     }
 
-    /* -------------------- 2. SP DISCONNECT REMINDERS -------------------- */
+    /* ====================================================================
+       2. SP DISCONNECT REMINDERS (15 Days & 1 Day Prior)
+       ==================================================================== */
     const disconnectedSellerConfigs = await sellerConfigSchema.find({
       isActive: false,
       disconnectedAt: { $ne: null, $gt: cutoffDate },
+      isDataDeletionStopped: { $ne: true },
     }).lean();
 
+    let spRemindersSent = 0;
     for (const sellerConfig of disconnectedSellerConfigs) {
       try {
-        const userAccess = await profileBasedPermissionSchema.findOne({ configId: sellerConfig.configId, profileId: sellerConfig.profileId }).lean();
+        if (sellerConfig.organizationId) {
+          const org = await organizationSchema.findById(sellerConfig.organizationId).lean();
+          if (org?.isDataDeletionStopped) {
+            cron_logs({
+              message: `SP reminder skipped for sellerConfigId=${sellerConfig._id}: Deletion stopped at organization level.`,
+              log_type: "info",
+            });
+            continue;
+          }
+        }
+
+        if (sellerConfig.configId) {
+          const parentConfig = await configSchema.findById(sellerConfig.configId).lean();
+          if (parentConfig?.isDataDeletionStopped) {
+            cron_logs({
+              message: `SP reminder skipped for sellerConfigId=${sellerConfig._id}: Deletion stopped on parent Ads config.`,
+              log_type: "info",
+            });
+            continue;
+          }
+        }
+
+        const userAccess = await profileBasedPermissionSchema.findOne({
+          configId: sellerConfig.configId,
+          profileId: sellerConfig.profileId
+        }).lean() || await profileBasedPermissionSchema.findOne({ configId: sellerConfig.configId }).lean();
         if (!userAccess) continue;
 
         const user = await userSchema.findById(userAccess.userId).lean();
@@ -2638,24 +2725,47 @@ exports.cronDisconnectReminder = async () => {
 
         if (daysLeft <= 0) continue;
 
+        const shouldSend15 = (daysLeft <= 15 && daysLeft > 1 && !sellerConfig.deletionReminder15SentAt);
+        const shouldSend1 = (daysLeft <= 1 && daysLeft > 0 && !sellerConfig.deletionReminder1SentAt);
+
+        if (!shouldSend15 && !shouldSend1) continue;
+
         const profiles = await profileSchema.find({ configId: sellerConfig?.configId, profileId: sellerConfig.profileId }).lean();
         const profileNames = profiles.map(p => p.name).filter(Boolean).join(", ");
+        const formattedPurgeDate = purgeDate.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+        const baseUrl = process?.env?.BASE_URL || "";
+        const supportEmail = process?.env?.SUPPORT_EMAIL || "support@advertiseiq.com";
+
+        let subject;
+        let updateField = {};
+
+        if (shouldSend1) {
+          subject = `🚨 Final Warning: Your AdvertiseIQ SP-API seller data will be permanently deleted tomorrow (1 day left)`;
+          updateField = { deletionReminder1SentAt: new Date() };
+        } else {
+          subject = `⚠️ Important: Your AdvertiseIQ SP-API seller data will be permanently deleted in ${daysLeft} days`;
+          updateField = { deletionReminder15SentAt: new Date() };
+        }
 
         await sendEmailHelper(
           user.email,
-          `⚠️ Your SP-API seller data will be deleted in ${daysLeft} days — AdvertiseIQ`,
+          subject,
           buildDisconnectReminderEmail({
             userName: user.fullName,
             profileNames: profileNames || "Your linked Seller profiles",
             daysLeft,
-            purgeDate: purgeDate.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }),
-            signInUrl: process?.env?.BASE_URL,
+            purgeDate: formattedPurgeDate,
+            signInUrl: baseUrl,
+            supportEmail,
             type: "sp",
           })
         );
 
+        await sellerConfigSchema.updateOne({ _id: sellerConfig._id }, { $set: updateField });
+        spRemindersSent++;
+
         cron_logs({
-          message: `SP reminder sent to ${user.email} — ${daysLeft} days left for sellerConfigId=${sellerConfig._id}`,
+          message: `SP reminder (${shouldSend1 ? "1-day final" : "15-day"}) sent to ${user.email} — ${daysLeft} days left for sellerConfigId=${sellerConfig._id}`,
           log_type: "info",
         });
 
@@ -2667,10 +2777,29 @@ exports.cronDisconnectReminder = async () => {
       }
     }
 
-    cron_logs({ message: "Disconnect Reminder check completed", log_type: "info" });
+    cron_logs({
+      message: `Disconnect Reminder check completed. Sent ${adsRemindersSent} Ads reminders and ${spRemindersSent} SP reminders.`,
+      log_type: "info"
+    });
+
+    if (res && typeof res.status === "function") {
+      return res.status(200).json({
+        isSuccess: true,
+        message: "Disconnect reminders checked and processed successfully.",
+        adsRemindersSent,
+        spRemindersSent,
+      });
+    }
 
   } catch (error) {
     cron_logs({ message: `Disconnect Reminder Main Error: ${error.message}`, log_type: "error" });
+    if (res && typeof res.status === "function") {
+      return res.status(500).json({
+        isSuccess: false,
+        message: "Failed to process disconnect reminders",
+        error: error.message,
+      });
+    }
   }
 };
 

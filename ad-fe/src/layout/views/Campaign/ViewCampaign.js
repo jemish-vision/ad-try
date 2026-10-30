@@ -37,7 +37,7 @@ import { useNavigate } from "react-router-dom";
 import Breadcrumb from "../../../common/components/Breadcrumb";
 import { FiClock, FiUser } from "react-icons/fi";
 import openCampaignViewInNewTab from "../../../utility/campaignNavigation";
-import { formatAmazonChangeType, isAdGroupLevelChange } from "../../../utility/targetingUtils";
+import { formatAmazonChangeType, isAdGroupLevelChange, getStatusBadgeProps } from "../../../utility/targetingUtils";
 
 function ViewCampaign(props) {
   const { t } = useTranslation();
@@ -852,6 +852,16 @@ function ViewCampaign(props) {
             </div>
           );
         }
+        const statusBadge = getStatusBadgeProps(val);
+        if (statusBadge) {
+          return (
+            <div className="flex items-center h-full">
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${statusBadge.className}`} title={t(statusBadge.label)}>
+                {t(statusBadge.label)}
+              </span>
+            </div>
+          );
+        }
         const formatted = !isNaN(Number(val)) ? CurrencyFormat(val) : val;
         return (
           <div className="flex items-center h-full">
@@ -877,6 +887,16 @@ function ViewCampaign(props) {
           return (
             <div className="flex items-center h-full">
               <span className="text-slate-400">—</span>
+            </div>
+          );
+        }
+        const statusBadge = getStatusBadgeProps(val);
+        if (statusBadge) {
+          return (
+            <div className="flex items-center h-full">
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${statusBadge.className}`} title={t(statusBadge.label)}>
+                {t(statusBadge.label)}
+              </span>
             </div>
           );
         }
@@ -1411,10 +1431,10 @@ function ViewCampaign(props) {
               </div>
               <div className="flex items-center">
                 <span className="font-semibold mr-1.5 text-slate-700 dark:text-slate-300">{t("Budget")}:</span>
-                <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-white border border-slate-300 dark:border-slate-700 shadow-xs capitalize">
+                <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-white border border-slate-300 dark:border-slate-700 shadow-xs uppercase">
                   {CurrencyCode(campaignData?.[0]?.budget ?? effectiveCampaignDetails?.budget ?? 0)}
                   {(campaignData?.[0]?.budgetType || effectiveCampaignDetails?.budgetType)
-                    ? ` - ${campaignData?.[0]?.budgetType || effectiveCampaignDetails?.budgetType}`
+                    ? ` - ${String(campaignData?.[0]?.budgetType || effectiveCampaignDetails?.budgetType).toUpperCase()}`
                     : ""}
                 </span>
               </div>

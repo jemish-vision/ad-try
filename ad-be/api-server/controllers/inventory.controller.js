@@ -2,6 +2,7 @@
 const mongoose = require("mongoose");
 const moment = require("moment-timezone");
 const { retryWithBackoff } = require("../helper/retryHelper");
+const { getCacheWithLog, setCacheWithLog } = require("../services/redis.service");
 
 const pLimit = require("p-limit").default;
 const limit = pLimit(Number(process.env.PROCESS_LIMIT));
@@ -687,6 +688,7 @@ const processReportFileStream = async (
 
 const buildInventoryBasePipeline = (req) => {
     const configId = req?.config?.configId;
+    const configObjectId = configId && mongoose.Types.ObjectId.isValid(configId) ? new mongoose.Types.ObjectId(configId) : configId;
     let {
         profileId,
         fulfillmentType,
@@ -985,6 +987,9 @@ exports.getInventoryGraph = async (req, res) => {
 
 exports.listInventory = async (req, res) => {
     const configId = req?.config?.configId;
+    const configObjectId = configId && mongoose.Types.ObjectId.isValid(configId)
+        ? new mongoose.Types.ObjectId(configId)
+        : configId;
 
     try {
         let {
@@ -2355,6 +2360,7 @@ exports.getProductDecisionMatrix = async (req, res) => {
 exports.getDashboardInsights = async (req, res) => {
 
     const configId = req?.config?.configId;
+    const configObjectId = configId && mongoose.Types.ObjectId.isValid(configId) ? new mongoose.Types.ObjectId(configId) : configId;
 
     try {
 
@@ -2380,6 +2386,10 @@ exports.getDashboardInsights = async (req, res) => {
         limit = Math.max(1, Math.min(100, Number(limit) || 15));
         const skip = (page - 1) * limit;
 
+        const currentDate = moment().format("YYYY-MM-DD");
+        toDate = toDate || moment().format("YYYY-MM-DD");
+        fromDate = fromDate || moment().subtract(7, "days").format("YYYY-MM-DD");
+
         const cacheKey = `smart_insights:${req.adType || "SP"}:${profileId}:${configId || "all"}:${fromDate}:${toDate}:${marketplaceId || "all"}:${productTypes || "all"}:${productName || "all"}:${page}:${limit}`;
         try {
             const cached = await getCacheWithLog(cacheKey);
@@ -2388,16 +2398,12 @@ exports.getDashboardInsights = async (req, res) => {
             }
         } catch (_) {}
 
-        const currentDate = moment().format("YYYY-MM-DD");
-        toDate = toDate || moment().format("YYYY-MM-DD");
-        fromDate = fromDate || moment().subtract(7, "days").format("YYYY-MM-DD");
-
         const diffDays = Math.max(moment(toDate).diff(moment(fromDate), "days"), 1);
 
         const CLICK_THRESHOLD = 10 * diffDays;
 
         const matchListing = {
-            configId,
+            configId: configObjectId,
             profileId: Number(profileId),
             ...(marketplaceId && { marketplaceId }),
             ...(productTypes && { productType: { $in: [productTypes] } }),
@@ -2413,201 +2419,215 @@ exports.getDashboardInsights = async (req, res) => {
         const adType = req.adType || "SP";
         const mainCampaignModel = AD_TYPE_COLLECTIONS?.[`${adType}Model`]?.campaignSchema || campaignSchema;
 
-        const hasActiveCampaigns = await campaignSchema.exists({
-            configId,
-            profileId: Number(profileId),
-            status: "ENABLED",
-            reportDate: { $gte: moment().subtract(2, "days").format("YYYY-MM-DD") }
-        });
+        // Fetch matched listings first (indexed by configId, profileId)
+        const listings = await productListingSchema.find(matchListing)
+            .select("asin sku itemName productType")
+            .lean();
 
-        let activeCampaigns = hasActiveCampaigns
-            ? await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId",{ configId, profileId: Number(profileId), status: "ENABLED", reportDate: { $eq: currentDate } })
-            : await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId",{ configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
-
-        if (!activeCampaigns || !activeCampaigns.length) {
-            activeCampaigns = await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId",{ configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
+        if (!listings || !listings.length) {
+            const emptyPayload = {
+                isSuccess: true,
+                data: [],
+                pagination: {
+                    page,
+                    limit,
+                    total: 0,
+                    hasMore: false
+                }
+            };
+            try {
+                await setCacheWithLog(cacheKey, JSON.stringify(emptyPayload), 600);
+            } catch (_) {}
+            return res.status(200).send(emptyPayload);
         }
 
-        const pipeline = [
-            { $match: matchListing },
+        const listingAsins = listings.map(l => l.asin).filter(Boolean);
+
+        // Fetch active campaigns, sales, and inventory in parallel
+        const activeCampaignsPromise = (async () => {
+            let active = await distinctCampaignIdsForAdType(adType, mainCampaignModel, "campaignId", {
+                configId: configObjectId,
+                profileId: Number(profileId),
+                status: "ENABLED",
+                reportDate: { $gte: moment().subtract(2, "days").format("YYYY-MM-DD") }
+            });
+            if (!active || !active.length) {
+                active = await distinctCampaignIdsForAdType(adType, mainCampaignModel, "campaignId", {
+                    configId: configObjectId,
+                    profileId: Number(profileId),
+                    reportDate: { $gte: fromDate, $lte: toDate }
+                });
+            }
+            return active || [];
+        })();
+
+        const salesPromise = businessProductSalesSchema.aggregate([
             {
-                $lookup: {
-                    from: "businessproductsales",
-                    let: { asin: "$asin" },
-                    pipeline: [
-                        {
-                            $match: {
-                                $expr: { $eq: ["$asin", "$$asin"] },
-                                configId,
-                                profileId: Number(profileId),
-                                reportDate: { $gte: fromDate, $lte: toDate }
-                            }
-                        },
-                        {
-                            $group: {
-                                _id: "$asin",
-                                revenue: { $sum: "$sales" },
-                                orders: { $sum: "$orders" }
-                            }
-                        }
-                    ],
-                    as: "sales"
-                }
-            },
-            { $unwind: { path: "$sales", preserveNullAndEmptyArrays: true } },
-            ...productAdsLookupStages({
-                adType,
-                innerPipeline: [
-                    {
-                        $match: {
-                            $expr: { $eq: ["$$asin", "$asins"] },
-                            configId,
-                            profileId: Number(profileId),
-                            campaignId: { $in: activeCampaigns },
-                            reportDate: { $gte: fromDate, $lte: toDate }
-                        }
-                    },
-                    {
-                        $group: {
-                            _id: null,
-                            adSales: { $sum: "$sales" },
-                            spend: { $sum: "$spend" },
-                            clicks: { $sum: "$clicks" },
-                            adOrders: { $sum: "$orders" }
-                        }
-                    }
-                ],
-                sumFields: ["adSales", "spend", "clicks", "adOrders"]
-            }),
-            {
-                $lookup: {
-                    from: "inventories",
-                    let: { asin: "$asin" },
-                    pipeline: [
-                        { $match: { $expr: { $eq: ["$asin", "$$asin"] } } },
-                        {
-                            $group: {
-                                _id: "$asin",
-                                currentStock: { $sum: "$currentStock" },
-                                inboundStock: { $sum: "$inboundStock" },
-                                reservedStock: { $sum: "$reservedStock" }
-                            }
-                        }
-                    ],
-                    as: "inv"
-                }
-            },
-            { $unwind: { path: "$inv", preserveNullAndEmptyArrays: true } },
-            {
-                $addFields: {
-                    spend: { $ifNull: ["$ads.spend", 0] },
-                    clicks: { $ifNull: ["$ads.clicks", 0] },
-                    acos: { $cond: [{ $gt: ["$ads.adSales", 0] }, { $multiply: [{ $divide: ["$ads.spend", "$ads.adSales"] }, 100] }, 0] },
-                    roas: { $cond: [{ $gt: ["$ads.spend", 0] }, { $divide: ["$ads.adSales", "$ads.spend"] }, 0] },
-                    cvr: { $cond: [{ $gt: ["$ads.clicks", 0] }, { $multiply: [{ $divide: ["$ads.adOrders", "$ads.clicks"] }, 100] }, 0] },
-                    adSales: { $ifNull: ["$ads.adSales", 0] },
-                    stockDays: {
-                        $let: {
-                            vars: {
-                                totalStock: {
-                                    $subtract: [
-                                        { $add: [{ $ifNull: ["$inv.currentStock", 0] }, { $ifNull: ["$inv.inboundStock", 0] }] },
-                                        { $ifNull: ["$inv.reservedStock", 0] }
-                                    ]
-                                },
-                                spd: { $divide: [{ $ifNull: ["$sales.orders", 0] }, diffDays] }
-                            },
-                            in: { $cond: [{ $gt: ["$$spd", 0] }, { $divide: ["$$totalStock", "$$spd"] }, 30] }
-                        }
-                    }
+                $match: {
+                    configId: configObjectId,
+                    profileId: Number(profileId),
+                    asin: { $in: listingAsins },
+                    reportDate: { $gte: fromDate, $lte: toDate }
                 }
             },
             {
-                $addFields: {
-                    roasValue: { $round: ["$roas", 1] },
-                    acosValue: { $round: ["$acos", 0] },
-                    cvrValue: { $round: ["$cvr", 1] },
-                    clicksValue: { $round: ["$clicks", 0] },
-                    stockDaysValue: { $round: ["$stockDays", 0] }
-                }
-            },
-            {
-                $addFields: {
-                    type: {
-                        $switch: {
-                            branches: [
-                                { case: { $gt: ["$roas", 4] }, then: "scale" },
-                                { case: { $gt: ["$acos", 50] }, then: "stop" },
-                                { case: { $and: [{ $gt: ["$clicks", CLICK_THRESHOLD] }, { $lt: ["$cvr", 5] }] }, then: "fix" },
-                                { case: { $lt: ["$stockDays", 5] }, then: "optimize" }
-                            ],
-                            default: null
-                        }
-                    }
-                }
-            },
-            { $match: { type: { $ne: null } } },
-            { $group: { _id: "$asin", doc: { $first: "$$ROOT" } } },
-            { $replaceRoot: { newRoot: "$doc" } },
-            {
-                $facet: {
-                    metadata: [{ $count: "total" }],
-                    data: [
-                        { $skip: skip },
-                        { $limit: limit },
-                        {
-                            $project: {
-                                _id: 0,
-                                asin: 1,
-                                type: 1,
-                                message: {
-                                    $switch: {
-                                        branches: [
-                                            { case: { $eq: ["$type", "scale"] }, then: { $concat: ["Increase budget to scale sales for ", { $ifNull: ["$sku", ""] }] } },
-                                            { case: { $eq: ["$type", "stop"] }, then: { $concat: ["Reduce bids or pause ads for ", { $ifNull: ["$sku", ""] }] } },
-                                            { case: { $eq: ["$type", "fix"] }, then: { $concat: ["Improve listing quality for ", { $ifNull: ["$sku", ""] }] } },
-                                            { case: { $eq: ["$type", "optimize"] }, then: { $concat: ["Reduce ad spend to avoid stock-out for ", { $ifNull: ["$sku", ""] }] } }
-                                        ],
-                                        default: ""
-                                    }
-                                },
-                                smallMessage: {
-                                    $switch: {
-                                        branches: [
-                                            {
-                                                case: { $eq: ["$type", "scale"] },
-                                                then: { $concat: ["(ROAS ", { $toString: "$roasValue" }, ")"] }
-                                            },
-                                            {
-                                                case: { $eq: ["$type", "stop"] },
-                                                then: { $concat: ["(ACOS ", { $toString: "$acosValue" }, "%)"] }
-                                            },
-                                            {
-                                                case: { $eq: ["$type", "fix"] },
-                                                then: { $concat: ["(High clicks ", { $toString: "$clicksValue" }, ", Low CVR ", { $toString: "$cvrValue" }, "%)"] }
-                                            },
-                                            {
-                                                case: { $eq: ["$type", "optimize"] },
-                                                then: { $concat: ["(Only ", { $toString: "$stockDaysValue" }, " days stock left)"] }
-                                            }
-                                        ],
-                                        default: ""
-                                    }
-                                }
-                            }
-                        }
-                    ]
+                $group: {
+                    _id: "$asin",
+                    revenue: { $sum: "$sales" },
+                    orders: { $sum: "$orders" }
                 }
             }
-        ];
+        ]);
 
-        const [aggRes] = await productListingSchema.aggregate(pipeline).allowDiskUse(true);
-        const total = aggRes?.metadata?.[0]?.total || 0;
-        const insights = aggRes?.data || [];
+        const invPromise = inventorySchema.aggregate([
+            {
+                $match: {
+                    configId: configObjectId,
+                    profileId: Number(profileId),
+                    asin: { $in: listingAsins }
+                }
+            },
+            {
+                $group: {
+                    _id: "$asin",
+                    currentStock: { $sum: "$currentStock" },
+                    inboundStock: { $sum: "$inboundStock" },
+                    reservedStock: { $sum: "$reservedStock" }
+                }
+            }
+        ]);
+
+        const [activeCampaigns, salesList, invList] = await Promise.all([
+            activeCampaignsPromise,
+            salesPromise,
+            invPromise
+        ]);
+
+        // Fetch product ads across ad type collections
+        const adsModels = adsModelsForAdType(adType);
+        const adsPromises = adsModels.map(m => m.aggregate([
+            {
+                $match: {
+                    configId: configObjectId,
+                    profileId: Number(profileId),
+                    asins: { $in: listingAsins },
+                    ...(activeCampaigns && activeCampaigns.length > 0 && { campaignId: { $in: activeCampaigns } }),
+                    reportDate: { $gte: fromDate, $lte: toDate }
+                }
+            },
+            {
+                $group: {
+                    _id: "$asins",
+                    adSales: { $sum: "$sales" },
+                    spend: { $sum: "$spend" },
+                    clicks: { $sum: "$clicks" },
+                    adOrders: { $sum: "$orders" }
+                }
+            }
+        ]));
+
+        const adsResultsList = await Promise.all(adsPromises);
+
+        const salesMap = new Map();
+        for (const s of salesList || []) {
+            if (s._id) salesMap.set(s._id, s);
+        }
+
+        const adsMap = new Map();
+        for (const chunk of adsResultsList || []) {
+            for (const a of chunk || []) {
+                if (!a._id) continue;
+                const existing = adsMap.get(a._id) || { adSales: 0, spend: 0, clicks: 0, adOrders: 0 };
+                existing.adSales += (a.adSales || 0);
+                existing.spend += (a.spend || 0);
+                existing.clicks += (a.clicks || 0);
+                existing.adOrders += (a.adOrders || 0);
+                adsMap.set(a._id, existing);
+            }
+        }
+
+        const invMap = new Map();
+        for (const inv of invList || []) {
+            if (inv._id) invMap.set(inv._id, inv);
+        }
+
+        const insights = [];
+        const seenAsins = new Set();
+
+        for (const item of listings) {
+            const asin = item.asin;
+            if (!asin || seenAsins.has(asin)) continue;
+
+            const ads = adsMap.get(asin);
+            if (!ads) continue; // requireAds: only include listings with ads activity
+
+            const sales = salesMap.get(asin) || { revenue: 0, orders: 0 };
+            const inv = invMap.get(asin) || { currentStock: 0, inboundStock: 0, reservedStock: 0 };
+
+            const spend = ads.spend || 0;
+            const clicks = ads.clicks || 0;
+            const adSales = ads.adSales || 0;
+            const adOrders = ads.adOrders || 0;
+            const acos = adSales > 0 ? (spend / adSales) * 100 : 0;
+            const roas = spend > 0 ? adSales / spend : 0;
+            const cvr = clicks > 0 ? (adOrders / clicks) * 100 : 0;
+
+            const totalStock = (inv.currentStock || 0) + (inv.inboundStock || 0) - (inv.reservedStock || 0);
+            const spd = (sales.orders || 0) / diffDays;
+            const stockDays = spd > 0 ? totalStock / spd : 30;
+
+            const roasValue = Math.round(roas * 10) / 10;
+            const acosValue = Math.round(acos);
+            const cvrValue = Math.round(cvr * 10) / 10;
+            const clicksValue = Math.round(clicks);
+            const stockDaysValue = Math.round(stockDays);
+
+            let type = null;
+            if (roas > 4) {
+                type = "scale";
+            } else if (acos > 50) {
+                type = "stop";
+            } else if (clicks > CLICK_THRESHOLD && cvr < 5) {
+                type = "fix";
+            } else if (stockDays < 5) {
+                type = "optimize";
+            }
+
+            if (!type) continue;
+            seenAsins.add(asin);
+
+            let message = "";
+            let smallMessage = "";
+            const skuStr = item.sku || "";
+
+            if (type === "scale") {
+                message = `Increase budget to scale sales for ${skuStr}`;
+                smallMessage = `(ROAS ${roasValue})`;
+            } else if (type === "stop") {
+                message = `Reduce bids or pause ads for ${skuStr}`;
+                smallMessage = `(ACOS ${acosValue}%)`;
+            } else if (type === "fix") {
+                message = `Improve listing quality for ${skuStr}`;
+                smallMessage = `(High clicks ${clicksValue}, Low CVR ${cvrValue}%)`;
+            } else if (type === "optimize") {
+                message = `Reduce ad spend to avoid stock-out for ${skuStr}`;
+                smallMessage = `(Only ${stockDaysValue} days stock left)`;
+            }
+
+            insights.push({
+                asin,
+                type,
+                message,
+                smallMessage
+            });
+        }
+
+        const total = insights.length;
+        const pagedData = insights.slice(skip, skip + limit);
 
         const responsePayload = {
             isSuccess: true,
-            data: insights,
+            data: pagedData,
             pagination: {
                 page,
                 limit,
@@ -2617,7 +2637,7 @@ exports.getDashboardInsights = async (req, res) => {
         };
 
         try {
-            await setCacheWithLog(cacheKey, JSON.stringify(responsePayload), 180);
+            await setCacheWithLog(cacheKey, JSON.stringify(responsePayload), 600);
         } catch (_) {}
 
         return res.status(200).send(responsePayload);

@@ -122,6 +122,8 @@ export const RecommendationRuleTemplates = [
           conditionType: "Out of Budget",
           conditionOperator: "",
           conditionValue: "",
+          oobPeriod: "LAST_7_DAYS",
+          oobDays: "",
         },
       ],
       actions: [],

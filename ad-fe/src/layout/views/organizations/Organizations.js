@@ -4,7 +4,11 @@ import Filter from "../../../helper/filter/Filter";
 import AgTable from "../../../common/grid/AgTable";
 import { Input } from "../../../components/ui/input";
 import { MdOutlineClose } from "react-icons/md";
-import { ApiGetSuperAdminOrganizations } from "../../../api-wrapper/ApiOrganization";
+
+import { ApiGetSuperAdminOrganizations, ApiToggleStopDataDeletion } from "../../../api-wrapper/ApiOrganization";
+import DeletionQueueModal from "./DeletionQueueModal";
+import OrgProfilesDeletionModal from "./OrgProfilesDeletionModal";
+import Toast from "../../../common/helper/toast/Toast";
 import EditOrganizationModal from "./EditOrganizationModal";
 import OrganizationUsersModal from "./OrganizationUsersModal";
 import PendingSyncProfilesModal from "./PendingSyncProfilesModal";
@@ -30,6 +34,33 @@ const Organizations = () => {
   const [openSyncModal, setOpenSyncModal] = useState(false);
   const [selectedOrgForSync, setSelectedOrgForSync] = useState(null);
   const [loadingGrid, setLoadingGrid] = useState(false);
+  const [openDeletionQueueModal, setOpenDeletionQueueModal] = useState(false);
+  const [openOrgDeletionModal, setOpenOrgDeletionModal] = useState(false);
+  const [selectedOrgForDeletion, setSelectedOrgForDeletion] = useState(null);
+
+  const handleToggleStopDeletion = async (row) => {
+    const newStatus = !row.isDataDeletionStopped;
+    const confirmMsg = newStatus
+      ? t(`Are you sure you want to STOP the data deletion process for organization "${row.organizationName}"? Historical data for this organization and its accounts will NOT be deleted.`)
+      : t(`Are you sure you want to RESUME the automated 30-day data deletion process for organization "${row.organizationName}"?`);
+
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      const res = await ApiToggleStopDataDeletion({
+        organizationId: row._id,
+        isDataDeletionStopped: newStatus,
+      });
+      if (res && res.isSuccess) {
+        Toast.success(res.message);
+        fetchOrganizations();
+      } else {
+        Toast.error(res?.message || t("Failed to update deletion status"));
+      }
+    } catch {
+      Toast.error(t("Something went wrong"));
+    }
+  };
 
   const fetchOrganizations = async (skip = false) => {
     setLoadingGrid(true);
@@ -115,6 +146,15 @@ const Organizations = () => {
                 }}
               />
             </AppTooltip>
+            <AppTooltip text={t("Stop Data Deletion - Select Profiles to Keep / Delete")}>
+              <i
+                className={`fa fa-shield cursor-pointer ${row.isDataDeletionStopped ? "protected text-emerald-600 font-bold" : ""}`}
+                onClick={() => {
+                  setSelectedOrgForDeletion(row);
+                  setOpenOrgDeletionModal(true);
+                }}
+              />
+            </AppTooltip>
             {row.hasPendingSync && (
               <AppTooltip text={t("Pending Sync Setup Requests - Play Cron")}>
                 <i
@@ -145,6 +185,12 @@ const Organizations = () => {
         return (
           <div className="flex items-center gap-2 font-bold py-1 text-slate-800 dark:text-slate-100">
             <span>{row.organizationName}</span>
+            {row.isDataDeletionStopped && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 whitespace-nowrap flex items-center gap-1">
+                <i className="fa fa-shield text-[9px]" />
+                {t("Deletion Stopped")}
+              </span>
+            )}
             {row.isTrialActive && (
               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 whitespace-nowrap">
                 {t("Trial")}
@@ -281,6 +327,14 @@ const Organizations = () => {
             </div>
 
             <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setOpenDeletionQueueModal(true)}
+                className="px-3 py-1.5 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/50 border border-amber-300 dark:border-amber-800/60 font-bold transition-all flex items-center gap-1.5 shadow-2xs text-xs cursor-pointer"
+              >
+                <i className="fa fa-clock-o text-amber-600 dark:text-amber-400" />
+                <span>{t("Deletion Queue")}</span>
+              </button>
               <div id="orgs-search" className="relative flex items-center w-full sm:w-[240px]">
                 <Input
                   type="text"
@@ -336,6 +390,17 @@ const Organizations = () => {
         setOpen={setOpenSyncModal}
         organization={selectedOrgForSync}
         onSuccess={fetchOrganizations}
+      />
+      <DeletionQueueModal
+        open={openDeletionQueueModal}
+        setOpen={setOpenDeletionQueueModal}
+        onStatusChange={fetchOrganizations}
+      />
+      <OrgProfilesDeletionModal
+        open={openOrgDeletionModal}
+        setOpen={setOpenOrgDeletionModal}
+        organization={selectedOrgForDeletion}
+        onStatusChange={fetchOrganizations}
       />
     </>
   );

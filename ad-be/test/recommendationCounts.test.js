@@ -7,7 +7,7 @@ const moment = require('moment-timezone');
 const mongoose = require('mongoose');
 const configId = '69809498df1b0ea4ae334fc5';
 const profileId = 123;
-function fixture({ campaigns = [{ campaignId: 1, status: 'ENABLED' }], adGroups = [{ adGroupId: 2, status: 'ENABLED' }], targets = [{ campaignId: 1, adGroupId: 2, targetId: 3 }], candidates = [{ _id: { campaignId: 1, adGroupId: 2, targetId: 3 } }], statuses = [], ruleCount = 1, historyWrite, auditWrite } = {}) {
+function fixture({ campaigns = [{ campaignId: 1, status: 'ENABLED' }], adGroups = [{ adGroupId: 2, status: 'ENABLED' }], targets = [{ campaignId: 1, adGroupId: 2, targetId: 3 }], candidates = [{ _id: { campaignId: 1, adGroupId: 2, targetId: 3 } }], placements = [], placementCandidates = [], statuses = [], ruleCount = 1, historyWrite, auditWrite } = {}) {
     let queries = [];
     let aggregateCount = 0;
     let consumed = 0;
@@ -17,8 +17,10 @@ function fixture({ campaigns = [{ campaignId: 1, status: 'ENABLED' }], adGroups 
     const auditBatches = [];
     const pipelines = [];
     let rules = Array.from({ length: ruleCount }, (_, i) => ({ _id: new mongoose.Types.ObjectId(), configId: new mongoose.Types.ObjectId(configId), profileId, gridName: 'Targeting', reportDate: 'LAST_7_DAYS', timezone: 'Asia/Kolkata', ruleName: 'rule' + i }));
-    const find = (kind, rows) => (filter) => { queries.push({ kind, filter }); return { lean: async () => typeof rows === 'function' ? rows() : rows }; };
-    const models = { adTypeCampaignSchema: { find: find('campaign', campaigns) }, adTypeAdGroupSchema: { find: find('adGroup', adGroups) }, adTypeTargetingSchema: { find: find('target', targets), aggregate(pipeline) {
+    const find = (kind, rows) => (filter) => { queries.push({ kind, filter }); const res = { sort: () => res, lean: async () => typeof rows === 'function' ? rows() : rows }; return res; };
+    const models = {
+        adTypeCampaignSchema: { find: find('campaign', campaigns) }, adTypeAdGroupSchema: { find: find('adGroup', adGroups) }, adTypeTargetingSchema: {
+            find: find('target', targets), aggregate(pipeline) {
                 aggregateCount++;
                 pipelines.push(pipeline);
                 assert.ok(pipeline[0].$match.configId instanceof mongoose.Types.ObjectId);
@@ -28,16 +30,46 @@ function fixture({ campaigns = [{ campaignId: 1, status: 'ENABLED' }], adGroups 
                     cursor({ batchSize }) {
                         assert.ok(batchSize > 0);
                         return {
-                            async *[Symbol.asyncIterator]() { for (const row of candidates) {
-                                consumed++;
-                                yield row;
-                            } },
+                            async *[Symbol.asyncIterator]() {
+                                for (const row of candidates) {
+                                    consumed++;
+                                    yield row;
+                                }
+                            },
                             async close() { closed++; }
                         };
                     }
                 };
                 return query;
-            } } };
+            }
+        },
+        adTypePlacementSchema: {
+            find: find('placement', placements), aggregate(pipeline) {
+                aggregateCount++;
+                pipelines.push(pipeline);
+                const query = {
+                    allowDiskUse() { return this; },
+                    then(resolve, reject) {
+                        if (pipeline[pipeline.length - 1]?.$count) {
+                            return Promise.resolve([{ count: placementCandidates.length }]).then(resolve, reject);
+                        }
+                        return Promise.resolve(placementCandidates).then(resolve, reject);
+                    },
+                    cursor({ batchSize }) {
+                        return {
+                            async *[Symbol.asyncIterator]() {
+                                for (const row of placementCandidates) {
+                                    yield row;
+                                }
+                            },
+                            async close() { }
+                        };
+                    }
+                };
+                return query;
+            }
+        }
+    };
     const mockedRequire = name => {
         if (name === 'mongoose')
             return mongoose;
@@ -50,24 +82,28 @@ function fixture({ campaigns = [{ campaignId: 1, status: 'ENABLED' }], adGroups 
         if (name === '../models/recomandationRules.model')
             return { find: find('rule', () => rules), findOne: () => ({ lean: async () => rules[0] }) };
         if (name === '../models/recommandationCampaignByRule.model')
-            return { bulkWrite: async (ops) => {
+            return {
+                bulkWrite: async (ops) => {
                     historyWrites.push(ops);
                     if (historyWrite)
                         await historyWrite(ops);
                     return { modifiedCount: ops.length };
-                } };
+                }
+            };
         if (name === '../helpers/auditHelper')
-            return { logAudit: async () => { }, logAuditBatch: async (entries) => {
+            return {
+                logAudit: async () => { }, logAuditBatch: async (entries) => {
                     auditBatches.push(entries);
                     if (auditWrite)
                         await auditWrite(entries);
-                } };
+                }
+            };
         if (name === '../models/recommandationStatus.model')
             return { find: find('status', statuses), exists: async () => false, bulkWrite: async (ops) => { writes.push(ops); return { modifiedCount: 0 }; } };
         if (name === '../helper/sanitizeQuery')
             return require('../api-server/helper/sanitizeQuery');
         if (name === '../helper/adTypeCollections')
-            return { SP: { campaign: 'campaigns', adGroup: 'ad_groups', targeting: 'targetings' } };
+            return { SP: { campaign: 'campaigns', adGroup: 'ad_groups', targeting: 'targetings', placement: 'placements' } };
         if (name.includes('logger'))
             return { recommendation_logs: () => { } };
         if (name.includes('redis'))
@@ -275,8 +311,12 @@ test('large deletion streams 1201 rows through sequential 500/500/201 batches', 
 test('failed batch stops later reads and audits and closes the deletion cursor', async () => {
     const candidates = Array.from({ length: 1201 }, (_, i) => ({ _id: { campaignId: 1, adGroupId: 2, targetId: i + 1 }, campaignId: 1, adGroupId: 2, targetId: i + 1 }));
     let calls = 0;
-    const f = fixture({ candidates, targets: candidates.map(c => ({ ...c._id, status: 'ENABLED' })), historyWrite: async () => { if (++calls === 2)
-            throw new Error('batch failed'); } });
+    const f = fixture({
+        candidates, targets: candidates.map(c => ({ ...c._id, status: 'ENABLED' })), historyWrite: async () => {
+            if (++calls === 2)
+                throw new Error('batch failed');
+        }
+    });
     assert.equal((await f.call('deleteRecommendation')).isSuccess, false);
     assert.equal(f.historyWrites.length, 2);
     assert.equal(f.auditBatches.length, 1);
@@ -372,3 +412,196 @@ test('getRecommendationData partitions less_than_one and valid items and respect
     assert.equal(resRaw.totalRecords, 3);
     assert.equal(resRaw.data.length, 3);
 });
+
+test('out of budget condition helper and pipeline integration', async () => {
+    const f = fixture();
+    const { hasOutOfBudgetCondition, getOutOfBudgetAggregationCondition, recommendationPipeline } = f.api;
+
+    // Helper detection
+    assert.equal(hasOutOfBudgetCondition({ conditions: [{ conditionType: 'Out of Budget' }] }), true);
+    assert.equal(hasOutOfBudgetCondition({ conditions: [{ conditionType: 'OutOfBudget' }] }), true);
+    assert.equal(hasOutOfBudgetCondition({ conditions: [{ conditionType: 'Spend', conditionOperator: 'GREATER_THAN', conditionValue: 10 }] }), false);
+    assert.equal(hasOutOfBudgetCondition({}), false);
+
+    // OOB aggregation condition exists and includes out_of_budget statuses
+    const oobCond = getOutOfBudgetAggregationCondition();
+    assert.ok(Array.isArray(oobCond.$or));
+    assert.ok(oobCond.$or.some(c => c.$eq && c.$eq[1] === 'OUT_OF_BUDGET'));
+
+    // Pipeline generation for standard rule vs OOB rule
+    const standardRule = { gridName: 'Campaign', conditions: [{ conditionType: 'Spend', conditionOperator: 'GREATER_THAN', conditionValue: 10 }] };
+    const oobRule = { gridName: 'Campaign', conditions: [{ conditionType: 'Out of Budget' }], actions: [] };
+
+    const standardPipeline = recommendationPipeline({}, '2026-10-16', standardRule, 'SP');
+    const oobPipeline = recommendationPipeline({}, '2026-10-16', oobRule, 'SP');
+
+    // Standard pipeline matches ENABLED campaign
+    assert.ok(standardPipeline.some(stage => stage.$match && stage.$match['campaign.status'] === 'ENABLED'));
+
+    // OOB pipeline does not require ENABLED, matches unarchived + getOutOfBudgetAggregationCondition
+    assert.ok(!oobPipeline.some(stage => stage.$match && stage.$match['campaign.status'] === 'ENABLED'));
+    assert.ok(oobPipeline.some(stage => stage.$match && stage.$match.$and && stage.$match.$and.some(a => a.$expr)));
+
+    // LatestStatus lookup joins campaign up to current date
+    const latestStatusLookup = oobPipeline.find(stage => stage.$lookup && stage.$lookup.as === 'latestStatus');
+    assert.ok(latestStatusLookup);
+    assert.ok(latestStatusLookup.$lookup.let && latestStatusLookup.$lookup.let.currDate);
+
+    // Multi-condition: OOB + ACOS >= 30: ACOS is filtered by date filter aggregate, OOB checks current date
+    const combinedRule = {
+        gridName: 'Campaign',
+        reportDate: 'LAST_7_DAYS',
+        conditions: [
+            { conditionType: 'Out of Budget', conditionOperator: '', conditionValue: '' },
+            { conditionType: 'ACOS', conditionOperator: 'GREATER_THAN_OR_EQUAL_TO', conditionValue: '30' }
+        ],
+        actions: []
+    };
+    const combinedPipeline = recommendationPipeline({ reportDate: { $gte: '2026-10-09', $lte: '2026-10-16' } }, '2026-10-16', combinedRule, 'SP', { currentDate: '2026-10-26' });
+    // First stage matches the report date range (date filter)
+    assert.deepEqual(combinedPipeline[0].$match.reportDate, { $gte: '2026-10-09', $lte: '2026-10-16' });
+    // Intermediate stage matches ACOS >= 30 derived from date filter
+    assert.ok(combinedPipeline.some(stage => stage.$match && stage.$match.acos && stage.$match.acos.$gte === 30));
+    // Out of budget checks latest status of current date (2026-10-26)
+    const combinedLookup = combinedPipeline.find(stage => stage.$lookup && stage.$lookup.as === 'latestStatus');
+    assert.equal(combinedLookup.$lookup.let.currDate, '2026-10-26');
+
+    // applyRuleRecommendation handles empty actions safely
+    f.setRules([oobRule]);
+    f.request.params.ruleId = String(oobRule._id || new mongoose.Types.ObjectId());
+    f.setRules([{ ...oobRule, _id: f.request.params.ruleId, isActive: true, isDeleted: false }]);
+    const applyRes = await f.call('applyRuleRecommendation');
+    assert.equal(applyRes.isSuccess, true);
+    assert.equal(applyRes.message, 'No actions configured for this recommendation.');
+    assert.equal(Array.isArray(applyRes.data), true);
+    assert.equal(applyRes.data.length, 0);
+});
+
+test('targeting rule with out of budget condition filters to out of budget campaigns', async () => {
+    const oobCamp = { campaignId: 10, name: 'OOB Campaign', status: 'ENABLED', campaignStatus: 'OUT_OF_BUDGET', budget: 50, dailySpend: 55 };
+    const inBudgetCamp = { campaignId: 20, name: 'Normal Campaign', status: 'ENABLED', campaignStatus: 'ENABLED', budget: 100, dailySpend: 20 };
+    const adGroups = [
+        { adGroupId: 101, campaignId: 10, status: 'ENABLED', name: 'Group 1' },
+        { adGroupId: 201, campaignId: 20, status: 'ENABLED', name: 'Group 2' },
+    ];
+    const targets = [
+        { campaignId: 10, adGroupId: 101, targetId: 1001, status: 'ENABLED', targeting: 'shoes', matchType: 'EXACT', keywordBid: 1.5 },
+        { campaignId: 20, adGroupId: 201, targetId: 2001, status: 'ENABLED', targeting: 'boots', matchType: 'EXACT', keywordBid: 2.0 },
+    ];
+    const candidates = [
+        { _id: { campaignId: 10, adGroupId: 101, targetId: 1001 }, targeting: 'shoes', matchType: 'EXACT', spend: 40, sales: 100, acos: 40 },
+        { _id: { campaignId: 20, adGroupId: 201, targetId: 2001 }, targeting: 'boots', matchType: 'EXACT', spend: 35, sales: 100, acos: 35 },
+    ];
+
+    const targetingOobRule = {
+        _id: new mongoose.Types.ObjectId(),
+        configId: new mongoose.Types.ObjectId(configId),
+        profileId,
+        gridName: 'Targeting',
+        reportDate: 'LAST_7_DAYS',
+        timezone: 'Asia/Kolkata',
+        ruleName: 'Targeting OOB and High ACOS',
+        conditions: [
+            { conditionType: 'Out of Budget' },
+            { conditionType: 'ACOS', conditionOperator: 'GREATER_THAN', conditionValue: '30' },
+        ],
+        actions: [],
+    };
+
+    const f = fixture({
+        campaigns: [oobCamp, inBudgetCamp],
+        adGroups,
+        targets,
+        candidates,
+    });
+    f.setRules([targetingOobRule]);
+    f.request.params.ruleId = String(targetingOobRule._id);
+
+    // 1. Total counts evaluate only the OOB campaign's target
+    const countRes = await f.call('getTotalRecommendationCount');
+    assert.equal(countRes.isSuccess, true);
+    assert.equal(countRes.totalRules, 1);
+    assert.equal(countRes.rules[0].count, 1);
+
+    // 2. Recommendation details return the target from the OOB campaign
+    const detailRes = await f.call('getRecommendationData');
+    assert.equal(detailRes.isSuccess, true);
+    assert.equal(detailRes.totalRecords, 1);
+    assert.equal(detailRes.data[0].campaignId, 10);
+    assert.equal(detailRes.data[0].campaignName, 'OOB Campaign');
+    assert.equal(detailRes.data[0].campaignStatus, 'OUT_OF_BUDGET');
+    assert.equal(detailRes.data[0].isOutOfBudget, true);
+    assert.equal(detailRes.data[0].targeting, 'shoes');
+    assert.equal(detailRes.data[0].acos, 40);
+    assert.equal(detailRes.data[0].status, 'ENABLED');
+});
+
+test('placement rule with out of budget condition filters to out of budget campaigns', async () => {
+    const oobCamp = { campaignId: 10, name: 'OOB Campaign', status: 'ENABLED', campaignStatus: 'OUT_OF_BUDGET', budget: 50, dailySpend: 55 };
+    const inBudgetCamp = { campaignId: 20, name: 'Normal Campaign', status: 'ENABLED', campaignStatus: 'ENABLED', budget: 100, dailySpend: 20 };
+
+    const placementCandidates = [
+        {
+            _id: { campaignId: 10, placement: 'Top of Search', profileId },
+            campaignId: 10,
+            placement: 'Top of Search',
+            profileId,
+            campaignName: 'OOB Campaign',
+            campaignStatus: 'OUT_OF_BUDGET',
+            isOutOfBudget: true,
+            status: 'OUT_OF_BUDGET',
+            spend: 50,
+            sales: 100,
+            acos: 50,
+            placementBid: 20,
+            isNew: true,
+        },
+    ];
+
+    const placementOobRule = {
+        _id: new mongoose.Types.ObjectId(),
+        configId: new mongoose.Types.ObjectId(configId),
+        profileId,
+        gridName: 'Placement',
+        reportDate: 'LAST_7_DAYS',
+        timezone: 'Asia/Kolkata',
+        ruleName: 'Placement OOB and High ACOS',
+        conditions: [
+            { conditionType: 'Out of Budget' },
+            { conditionType: 'ACOS', conditionOperator: 'GREATER_THAN', conditionValue: '30' },
+        ],
+        actions: [],
+    };
+
+    const f = fixture({
+        campaigns: [oobCamp, inBudgetCamp],
+        placementCandidates,
+    });
+    f.setRules([placementOobRule]);
+    f.request.params.ruleId = String(placementOobRule._id);
+
+    // 1. Total counts evaluate only the OOB campaign's placement
+    const countRes = await f.call('getTotalRecommendationCount');
+    assert.equal(countRes.isSuccess, true);
+    assert.equal(countRes.totalRules, 1);
+    assert.equal(countRes.rules[0].count, 1);
+
+    // 2. Pipeline generation includes OOB condition and placement grouping
+    const { recommendationPipeline } = f.api;
+    const pipeline = recommendationPipeline({}, '2026-10-16', placementOobRule, 'SP', { currentDate: '2026-10-26' });
+    const matchStage = pipeline.find(stage => stage.$match && stage.$match.$and && stage.$match.$and.some(a => a.$expr));
+    assert.ok(matchStage, 'Should contain Out of Budget match stage');
+    assert.equal(pipeline[1].$group._id.placement, '$placement');
+
+    // 3. Recommendation details return the placement from the OOB campaign
+    const detailRes = await f.call('getRecommendationData');
+    assert.equal(detailRes.isSuccess, true);
+    assert.equal(detailRes.totalRecords, 1);
+    assert.equal(detailRes.data[0].campaignId, 10);
+    assert.equal(detailRes.data[0].campaignName, 'OOB Campaign');
+    assert.equal(detailRes.data[0].campaignStatus, 'OUT_OF_BUDGET');
+    assert.equal(detailRes.data[0].isOutOfBudget, true);
+    assert.equal(detailRes.data[0].placement, 'Top of Search');
+    assert.equal(detailRes.data[0].acos, 50);
+});
+

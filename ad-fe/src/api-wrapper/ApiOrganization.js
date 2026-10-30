@@ -56,6 +56,21 @@ export const ApiUpdateOrganization = (data) => {
     .catch((err) => err.response?.data || { isSuccess: false, message: "Network error" });
 };
 
+export const ApiGetDeletionQueue = (skip = false) => {
+  const reqHeaders = skip ? { ...getHeaders(), "x-skip-loader": true } : getHeaders();
+  return axios
+    .get(`${apiOrg}superAdmin/getDeletionQueue`, { headers: reqHeaders, skipLoader: skip })
+    .then((res) => res.data)
+    .catch((err) => err.response?.data || { isSuccess: false, message: "Network error" });
+};
+
+export const ApiToggleStopDataDeletion = (data) => {
+  return axios
+    .post(`${apiOrg}superAdmin/toggleStopDataDeletion`, data, { headers: getHeaders() })
+    .then((res) => res.data)
+    .catch((err) => err.response?.data || { isSuccess: false, message: "Network error" });
+};
+
 export const ApiExecuteProfileSyncCron = (data) => {
   return axios
     .post(`${apiOrg}superAdmin/executeProfileSyncCron`, data, { headers: getHeaders() })
@@ -63,3 +78,22 @@ export const ApiExecuteProfileSyncCron = (data) => {
     .catch((err) => err.response?.data || { isSuccess: false, message: "Network error" });
 };
 
+
+export const ApiGetOrgDeletionProfiles = (organizationId, skip = false) => {
+  const reqHeaders = skip ? { ...getHeaders(), "x-skip-loader": true } : getHeaders();
+  return axios
+    .get(`${apiOrg}superAdmin/getOrgDeletionProfiles`, {
+      params: { organizationId },
+      headers: reqHeaders,
+      skipLoader: skip,
+    })
+    .then((res) => res.data)
+    .catch((err) => err.response?.data || { isSuccess: false, message: "Network error" });
+};
+
+export const ApiToggleProfileDataDeletion = (data) => {
+  return axios
+    .post(`${apiOrg}superAdmin/toggleProfileDataDeletion`, data, { headers: getHeaders() })
+    .then((res) => res.data)
+    .catch((err) => err.response?.data || { isSuccess: false, message: "Network error" });
+};

@@ -70,7 +70,7 @@ function App() {
       const allowedNames = pagePermission.map(p => p.pageName);
 
       // Always allow basic pages
-      const alwaysAllow = ["User Guide", "Profile", "Purchase Plans", "Update Subscription", "Plans", "Warehouse Details", "Warehouse Inventory", "Product Performance", "MFN to FBA"];
+      const alwaysAllow = ["User Guide", "Profile", "Purchase Plans", "Update Subscription", "Plans", "Warehouse Details", "Warehouse Inventory", "Product Performance", "MFN to FBA", "API Capacity & Usage"];
 
       // Find current route config
       const currentRoute = routes.find(r =>
@@ -79,7 +79,7 @@ function App() {
 
       if (currentRoute && currentRoute.name) {
         // 1. Check connection status restriction
-        if (!isConnected && !alwaysAllow.includes(currentRoute.name)) {
+        if (!isConnected && role !== ROLES.SUPER_ADMIN && !alwaysAllow.includes(currentRoute.name)) {
           return <Navigate to="/" replace />;
         }
 

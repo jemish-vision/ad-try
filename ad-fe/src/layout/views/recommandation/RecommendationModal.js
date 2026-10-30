@@ -142,8 +142,21 @@ export const getTargetHistoryKey = (cid, targeting, matchType) => {
     if (!cid || !targeting) return null;
     const cleanCid = String(cid);
     const cleanTarget = String(targeting).toLowerCase().trim();
-    if (matchType) {
-        const cleanMatch = String(matchType).toLowerCase().replace(/^(keyword|automatic|targeting)\s*[-:]\s*/i, "").trim();
+    const isAuto =
+        ["close-match", "loose-match", "complements", "substitutes", "similar-product", "(_targeting_auto_)"].includes(cleanTarget) ||
+        String(matchType || "").toUpperCase().includes("PREDEFINED") ||
+        String(matchType || "").toUpperCase().startsWith("AUTOMATIC");
+
+    if (!isAuto && matchType) {
+        let cleanMatch = String(matchType).toLowerCase().replace(/^(keyword|automatic|targeting|product target)\s*[-:]\s*/i, "").trim();
+        if (
+            cleanTarget.startsWith("keyword-group=") ||
+            cleanMatch === "group" ||
+            cleanMatch === "targeting_expression" ||
+            cleanMatch.startsWith("keywords_related_to_")
+        ) {
+            cleanMatch = "group";
+        }
         return `${cleanCid}_${cleanTarget}_${cleanMatch}`;
     }
     return `${cleanCid}_${cleanTarget}`;
@@ -162,6 +175,7 @@ export const getPlacementHistoryKey = (cid, placement) => {
 
 export const getUpdatedNumericValue = (item, actions = [], gridName = "") => {
     if (!item) return null;
+    if (!actions || !actions.length) return null;
 
     // 1. Campaign: budget column
     if (gridName === "Campaign" || (!gridName && item?.budget != null && !item?.targeting && !item?.placement)) {
@@ -763,9 +777,14 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
             const targeting = item?.targeting || item?.keywordText || item?.keyword || item?.targetName || item?.searchTerm;
             const matchType = item?.matchType || item?.targetType;
             if (targeting) {
-                if (matchType) {
-                    const matchKey = getTargetHistoryKey(cid, targeting, matchType);
-                    return latestHistoryMap[matchKey] || null;
+                const rawTargetId = item?.targetId || item?._id?.targetId;
+                const cleanTId = rawTargetId ? String(rawTargetId).replace(/^[TK]-/, "").trim() : "";
+                if (cleanTId && latestHistoryMap[`${cid}_id_${cleanTId}`]) {
+                    return latestHistoryMap[`${cid}_id_${cleanTId}`];
+                }
+                const matchKey = getTargetHistoryKey(cid, targeting, matchType);
+                if (matchKey && latestHistoryMap[matchKey]) {
+                    return latestHistoryMap[matchKey];
                 }
                 const targetKey = `${cid}_${String(targeting).toLowerCase().trim()}`;
                 return latestHistoryMap[targetKey] || null;
@@ -1449,17 +1468,29 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                     historyInfo = historyMap[`${cid}_placement`] || null;
                 }
             } else if (targeting) {
-                if (matchType) {
-                    const matchKey = getTargetHistoryKey(cid, targeting, matchType);
-                    historyInfo = historyMap[matchKey] || null;
+                const rawTargetId = data?.targetId || data?._id?.targetId;
+                const cleanTId = rawTargetId ? String(rawTargetId).replace(/^[TK]-/, "").trim() : "";
+                if (cleanTId && historyMap[`${cid}_id_${cleanTId}`]) {
+                    historyInfo = historyMap[`${cid}_id_${cleanTId}`];
                 } else {
-                    const targetKey = `${cid}_${String(targeting).toLowerCase().trim()}`;
-                    historyInfo = historyMap[targetKey] || null;
+                    const matchKey = getTargetHistoryKey(cid, targeting, matchType);
+                    if (matchKey && historyMap[matchKey]) {
+                        historyInfo = historyMap[matchKey];
+                    }
+                    if (!historyInfo) {
+                        const targetKey = `${cid}_${String(targeting).toLowerCase().trim()}`;
+                        historyInfo = historyMap[targetKey] || null;
+                    }
                 }
             } else {
                 historyInfo = historyMap[String(cid)] || historyMap[Number(cid)] || null;
             }
             const latestDate = historyInfo?.latestCreatedAt;
+
+            const isAuto =
+                ["close-match", "loose-match", "complements", "substitutes", "similar-product", "(_targeting_auto_)"].includes(String(targeting || "").toLowerCase().trim()) ||
+                String(matchType || "").toUpperCase().includes("PREDEFINED") ||
+                String(matchType || "").toUpperCase().startsWith("AUTOMATIC");
 
             const handleHistoryClick = (e) => {
                 e.stopPropagation();
@@ -1471,8 +1502,9 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                     profileId: data?.profileId || data?.profileSendID || profileId || snapshot?.profileId,
                     adType: data?.adType || adType || "SP",
                     gridName: gridName,
+                    targetId: data?.targetId || data?._id?.targetId,
                     targeting: targeting,
-                    matchType: matchType,
+                    matchType: isAuto ? undefined : matchType,
                     placement: data?.placement,
                     ruleName: rule?.ruleName || snapshot?.ruleName,
                     actions: actions,
@@ -1886,11 +1918,10 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                     id="recommendation-select-all-total-btn"
                                     onClick={handleSelectAllPagesToggle}
                                     disabled={selectAllLoading}
-                                    className={`inline-flex items-center gap-2 px-3 py-1 rounded-xl text-xs font-semibold border transition-all duration-150 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-wait ${
-                                        isAllTotalSelected
+                                    className={`inline-flex items-center gap-2 px-3 py-1 rounded-xl text-xs font-semibold border transition-all duration-150 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-wait ${isAllTotalSelected
                                             ? "bg-sky-500 text-white border-sky-600 dark:bg-sky-600 dark:border-sky-500 hover:bg-sky-600"
                                             : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200/90 dark:border-white/10 hover:border-sky-500/50 hover:bg-sky-50/50 dark:hover:bg-white/5"
-                                    }`}
+                                        }`}
                                     title={isAllTotalSelected ? t("Deselect all records") : t("Select all {{count}} records", { count: totalCount })}
                                 >
                                     {selectAllLoading ? (
@@ -1909,11 +1940,10 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                                 : t("Select All")}
                                     </span>
                                     <span
-                                        className={`px-1.5 py-0.5 rounded-full text-[11px] font-bold ${
-                                            isAllTotalSelected
+                                        className={`px-1.5 py-0.5 rounded-full text-[11px] font-bold ${isAllTotalSelected
                                                 ? "bg-white/25 text-white"
                                                 : "bg-sky-500/10 text-sky-600 dark:bg-sky-500/20 dark:text-[#38bdf8]"
-                                        }`}
+                                            }`}
                                     >
                                         {selectedRows.length > 0 && isAllTotalSelected
                                             ? `${selectedRows.length} / ${totalCount}`
@@ -1969,10 +1999,10 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                                 {outsideHistoryScopes.includes("all") || INDIVIDUAL_SCOPES.every((s) => outsideHistoryScopes.includes(s))
                                                     ? t("All History")
                                                     : outsideHistoryScopes.length === 0
-                                                    ? t("Select History")
-                                                    : outsideHistoryScopes.length === 1
-                                                    ? scopeOptions.find((o) => o.value === outsideHistoryScopes[0])?.label || t("History")
-                                                    : t("{{count}} Selected", { count: outsideHistoryScopes.filter((s) => s !== "all").length })}
+                                                        ? t("Select History")
+                                                        : outsideHistoryScopes.length === 1
+                                                            ? scopeOptions.find((o) => o.value === outsideHistoryScopes[0])?.label || t("History")
+                                                            : t("{{count}} Selected", { count: outsideHistoryScopes.filter((s) => s !== "all").length })}
                                             </span>
                                         </div>
                                         <FiChevronDown size={14} className="shrink-0 opacity-70" />
@@ -1983,11 +2013,10 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                         {/* All History option */}
                                         <div
                                             onClick={() => toggleScope("all")}
-                                            className={`flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
-                                                outsideHistoryScopes.includes("all") || INDIVIDUAL_SCOPES.every((s) => outsideHistoryScopes.includes(s))
+                                            className={`flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${outsideHistoryScopes.includes("all") || INDIVIDUAL_SCOPES.every((s) => outsideHistoryScopes.includes(s))
                                                     ? "bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300"
                                                     : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-                                            }`}
+                                                }`}
                                         >
                                             <span>{t("All History")}</span>
                                             <StyledCheckbox
@@ -2004,11 +2033,10 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                                 <div
                                                     key={scopeVal}
                                                     onClick={() => toggleScope(scopeVal)}
-                                                    className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
-                                                        isChecked
+                                                    className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors ${isChecked
                                                             ? "bg-sky-50/50 dark:bg-sky-950/20 text-sky-700 dark:text-sky-300"
                                                             : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-                                                    }`}
+                                                        }`}
                                                 >
                                                     <span>{opt?.label}</span>
                                                     <StyledCheckbox
@@ -2037,14 +2065,14 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                             {historyFilter === "all"
                                                 ? t("All Campaigns")
                                                 : historyFilter === "less_than_one"
-                                                ? t("Show Data Less Than 1")
-                                                : historyFilter === "unchanged"
-                                                ? t("Unchanged Campaigns (No History)")
-                                                : historyFilter === "before_days"
-                                                ? t("Changed Before")
-                                                : historyFilter === "exact_days"
-                                                ? t("Exact Match")
-                                                : t("Filter")}
+                                                    ? t("Show Data Less Than 1")
+                                                    : historyFilter === "unchanged"
+                                                        ? t("Unchanged Campaigns (No History)")
+                                                        : historyFilter === "before_days"
+                                                            ? t("Changed Before")
+                                                            : historyFilter === "exact_days"
+                                                                ? t("Exact Match")
+                                                                : t("Filter")}
                                         </SelectValue>
                                     </div>
                                 </SelectTrigger>

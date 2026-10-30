@@ -56,6 +56,7 @@ const Packages = lazy(() => import("../layout/views/packages/Packages"));
 const Retention = lazy(() => import("../layout/views/retention/Retention"));
 const SupportTicket = lazy(() => import("../layout/views/supportTicket/SupportTicket"));
 const UnansweredQuestions = lazy(() => import("../layout/views/unansweredQuestions/UnansweredQuestions"));
+const ApiCapacity = lazy(() => import("../layout/views/apiCapacity/ApiCapacity"));
 const AuthSupportChat = lazy(() => import("../layout/views/supportTicket/AuthSupportChat"));
 const RuleBlockedTime = lazy(() => import("../layout/views/ruleBlockedTime/RuleBlockedTime"));
 const DealsDashboard = lazy(() => import("../layout/views/deals-dashboard/DealsDashboard"));
@@ -435,6 +436,12 @@ const PagesRoutes = [
     component: <UnansweredQuestions />,
     exact: true,
     name: "Chatbot Gaps",
+  },
+  {
+    path: "/api-capacity",
+    component: <ApiCapacity />,
+    exact: true,
+    name: "API Capacity & Usage",
   },
   {
     path: "/support-ticket/:ticketId?",

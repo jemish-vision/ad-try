@@ -7,7 +7,14 @@ import { ProfileContext } from "../../../helper/usecontext/useContext";
 import moment from "moment-timezone";
 import { handleLoader, Toast, useDispatch } from "../../../helper/links/Link";
 import { ShadcnDateRangePicker as DateRangePicker } from "../../../components/ui/date-range-picker";
-import { predefinedRanges } from "../../../common/helper/calendarValues/calendarValues";
+import { predefinedRanges, getCompletedDaysRange } from "../../../common/helper/calendarValues/calendarValues";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../../components/ui/select";
 import { ApiHistory } from "../../../api-wrapper/campaign/ApiCampaign";
 import { AdTypeScopeNote, AdTypeBadge } from "../../../helper/filter/AdTypeScopeNote";
 import { isShowingAllAdTypes } from "../../../helper/filter/adTypeAll";
@@ -25,13 +32,18 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "../..
 import { Input } from "src/components/ui/input";
 import { MultiSelect } from "../../../components/ui/multi-select";
 import openCampaignViewInNewTab, { CampaignNameCell } from "../../../utility/campaignNavigation";
-import { formatAmazonChangeType, isAdGroupLevelChange } from "../../../utility/targetingUtils";
+import { formatAmazonChangeType, isAdGroupLevelChange, getStatusBadgeProps } from "../../../utility/targetingUtils";
 
+
+const STORAGE_KEY_OLD_ACOS_PERIOD = "main_history_old_acos_period";
+const STORAGE_KEY_OLD_ACOS_CUSTOM_DAYS = "main_history_old_acos_custom_days";
+const STORAGE_KEY_CURRENT_ACOS_DATE = "main_history_current_acos_date";
 
 const TYPE_OPTIONS = [
   { value: "Campaign", label: "Budget" },
   { value: "Targeting", label: "Bid" },
   { value: "Placement", label: "Bid Adjustment" },
+  { value: "Status", label: "Status" },
 ];
 
 const SOURCE_OPTIONS = [
@@ -416,7 +428,83 @@ function History(props) {
     }
   }, [selectedDate]);
   const [tableData, setTableData] = useState([]);
+  const [dailyStats, setDailyStats] = useState(null);
+  const [profileTimezone, setProfileTimezone] = useState("UTC");
   const [loadingGrid, setLoadingGrid] = useState(false);
+
+  // Old ACoS Lookback Period states
+  const [acosPeriod, setAcosPeriod] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_OLD_ACOS_PERIOD);
+      if (saved && ["7", "14", "30", "custom_days"].includes(saved)) {
+        return saved;
+      }
+    } catch (e) {
+      // ignore
+    }
+    return "7";
+  });
+
+  const [customDays, setCustomDays] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem(STORAGE_KEY_OLD_ACOS_CUSTOM_DAYS));
+      if (!isNaN(saved) && saved >= 1 && saved <= 365) {
+        return saved;
+      }
+    } catch (e) {
+      // ignore
+    }
+    return 7;
+  });
+
+  // Current ACoS Date Range state
+  const [currentAcosDate, setCurrentAcosDate] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY_CURRENT_ACOS_DATE));
+      if (Array.isArray(saved) && saved.length >= 2 && saved[0] && saved[1]) {
+        const d0 = new Date(saved[0]);
+        const d1 = new Date(saved[1]);
+        if (!isNaN(d0.getTime()) && !isNaN(d1.getTime())) {
+          return [d0, d1];
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    return getCompletedDaysRange(7);
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_OLD_ACOS_PERIOD, acosPeriod);
+    } catch (e) {
+      // ignore
+    }
+  }, [acosPeriod]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_OLD_ACOS_CUSTOM_DAYS, String(customDays));
+    } catch (e) {
+      // ignore
+    }
+  }, [customDays]);
+
+  useEffect(() => {
+    try {
+      if (Array.isArray(currentAcosDate) && currentAcosDate.length >= 2 && currentAcosDate[0] && currentAcosDate[1]) {
+        localStorage.setItem(
+          STORAGE_KEY_CURRENT_ACOS_DATE,
+          JSON.stringify([
+            moment(currentAcosDate[0]).format("YYYY-MM-DD"),
+            moment(currentAcosDate[1]).format("YYYY-MM-DD"),
+          ])
+        );
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [currentAcosDate]);
   const [searchName, setSearchName] = useState("");
   const [debouncedSearchName, setDebouncedSearchName] = useState("");
   const [targetingSearch, setTargetingSearch] = useState("");
@@ -619,10 +707,20 @@ function History(props) {
       wrapText: true,
       cellRenderer: (params) => {
         const val = params.value;
-        if (val === undefined || val === null) {
+        if (val === undefined || val === null || val === "" || val === "—") {
           return (
             <div className="flex items-center h-full">
               <span style={{ color: isDark ? "#94a3b8" : "#64748b" }}>—</span>
+            </div>
+          );
+        }
+        const statusBadge = getStatusBadgeProps(val);
+        if (statusBadge) {
+          return (
+            <div className="flex items-center h-full">
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${statusBadge.className}`} title={t(statusBadge.label)}>
+                {t(statusBadge.label)}
+              </span>
             </div>
           );
         }
@@ -646,10 +744,20 @@ function History(props) {
       wrapText: true,
       cellRenderer: (params) => {
         const val = params.value;
-        if (val === undefined || val === null) {
+        if (val === undefined || val === null || val === "" || val === "—") {
           return (
             <div className="flex items-center h-full">
               <span style={{ color: isDark ? "#94a3b8" : "#64748b" }}>—</span>
+            </div>
+          );
+        }
+        const statusBadge = getStatusBadgeProps(val);
+        if (statusBadge) {
+          return (
+            <div className="flex items-center h-full">
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${statusBadge.className}`} title={t(statusBadge.label)}>
+                {t(statusBadge.label)}
+              </span>
             </div>
           );
         }
@@ -658,6 +766,92 @@ function History(props) {
           <div className="flex items-center h-full">
             <span className="font-semibold text-success truncate" style={{ fontSize: "12px" }} title={formatted}>
               {formatted}
+            </span>
+          </div>
+        );
+      },
+    },
+    {
+      headerName: t("Old ACoS", "Old ACoS"),
+      field: "oldAcos",
+      colId: "oldAcos",
+      title: "Old ACoS",
+      order: 4.1,
+      width: 145,
+      sortable: true,
+      resizable: true,
+      wrapText: true,
+      cellRenderer: (params) => {
+        const row = params.data;
+        const val = row?.oldAcos !== undefined && row?.oldAcos !== null ? Number(row.oldAcos) : null;
+        if (val === null || isNaN(val)) {
+          return (
+            <div className="flex items-center h-full">
+              <span style={{ color: isDark ? "#94a3b8" : "#64748b" }}>—</span>
+            </div>
+          );
+        }
+        const badgeClass =
+          val === 0
+            ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700"
+            : val <= 30
+            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60"
+            : val <= 50
+            ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border-amber-200 dark:border-amber-800/60"
+            : "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border-rose-200 dark:border-rose-800/60";
+        const tooltipText = row?.dateRange
+          ? `Spend: ${CurrencyFormat(row.spend ?? 0)} | Sales: ${CurrencyFormat(row.sales ?? 0)} (${row.dateRange.startDate} to ${row.dateRange.endDate})`
+          : t("ACoS prior to change");
+        return (
+          <div className="flex items-center h-full">
+            <span
+              className={`inline-block px-2.5 py-0.5 rounded-md font-semibold text-xs border ${badgeClass}`}
+              title={tooltipText}
+            >
+              {val.toFixed(2)}%
+            </span>
+          </div>
+        );
+      },
+    },
+    {
+      headerName: t("Current ACoS", "Current ACoS"),
+      field: "currentAcos",
+      colId: "currentAcos",
+      title: "Current ACoS",
+      order: 4.2,
+      width: 155,
+      sortable: true,
+      resizable: true,
+      wrapText: true,
+      cellRenderer: (params) => {
+        const row = params.data;
+        const val = row?.currentAcos !== undefined && row?.currentAcos !== null ? Number(row.currentAcos) : null;
+        if (val === null || isNaN(val)) {
+          return (
+            <div className="flex items-center h-full">
+              <span style={{ color: isDark ? "#94a3b8" : "#64748b" }}>—</span>
+            </div>
+          );
+        }
+        const badgeClass =
+          val === 0
+            ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700"
+            : val <= 30
+            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60"
+            : val <= 50
+            ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border-amber-200 dark:border-amber-800/60"
+            : "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border-rose-200 dark:border-rose-800/60";
+        const tooltipText = row?.currentDateRange
+          ? `Spend: ${CurrencyFormat(row.currentSpend ?? 0)} | Sales: ${CurrencyFormat(row.currentSales ?? 0)} (${row.currentDateRange.startDate} to ${row.currentDateRange.endDate})`
+          : t("Current ACoS for selected date range");
+        return (
+          <div className="flex items-center h-full">
+            <span
+              className={`inline-block px-2.5 py-0.5 rounded-md font-semibold text-xs border ${badgeClass}`}
+              title={tooltipText}
+            >
+              {val.toFixed(2)}%
             </span>
           </div>
         );
@@ -842,8 +1036,121 @@ function History(props) {
     HistoryList({ fieldName: colId, ...(sort && { sortType: sort === "asc" ? "ASC" : "DESC" }), ...arg });
   };
 
+  // Recalculate Old ACoS and Current ACoS in memory whenever lookback days or current ACoS dates change (0ms latency)
+  const computedTableData = useMemo(() => {
+    if (!Array.isArray(tableData) || !tableData.length) return [];
+    if (!Array.isArray(dailyStats)) return tableData;
+
+    const lookbackNum =
+      acosPeriod === "custom_days"
+        ? Math.max(1, Number(customDays) || 7)
+        : Number(acosPeriod) || 7;
+
+    const tz = profileTimezone || "UTC";
+    const todayStr = moment().tz(tz).format("YYYY-MM-DD");
+
+    let currStartDate = currentAcosDate?.[0]
+      ? moment(currentAcosDate[0]).format("YYYY-MM-DD")
+      : moment(todayStr).subtract(7, "days").format("YYYY-MM-DD");
+    let currEndDate = currentAcosDate?.[1]
+      ? moment(currentAcosDate[1]).format("YYYY-MM-DD")
+      : todayStr;
+
+    if (moment(currStartDate).isAfter(moment(currEndDate))) {
+      const tmp = currStartDate;
+      currStartDate = currEndDate;
+      currEndDate = tmp;
+    }
+
+    return tableData.map((item) => {
+      const changeDateStr = item.createdAt
+        ? moment(item.createdAt).tz(tz).format("YYYY-MM-DD")
+        : todayStr;
+      let oldEndDate = changeDateStr;
+      let oldStartDate = moment(changeDateStr).subtract(lookbackNum, "days").format("YYYY-MM-DD");
+
+      if (moment(oldStartDate).isAfter(moment(oldEndDate))) {
+        const temp = oldStartDate;
+        oldStartDate = oldEndDate;
+        oldEndDate = temp;
+      }
+
+      const itemTargetText = item.targeting ? String(item.targeting).trim().toLowerCase() : "";
+      const itemTargetId = item.targetId ? String(item.targetId).replace(/^[TK]-/, "") : "";
+      const itemCampaignId = String(item.changeLevel || item.campaignId || item.campaignDetails?.campaignId || "");
+      const itemMatchNorm = item.matchType
+        ? String(item.matchType).trim().toUpperCase().replace(/^TARGETING_EXPRESSION_/, "")
+        : "";
+
+      let oldSpend = 0;
+      let oldSales = 0;
+      let currSpend = 0;
+      let currSales = 0;
+
+      for (let i = 0; i < dailyStats.length; i++) {
+        const stat = dailyStats[i];
+        if (!stat?.reportDate) continue;
+
+        let isMatch = false;
+        if (itemTargetText || itemTargetId) {
+          if (stat.statType === "target" || stat.targetId || stat.targeting) {
+            const campMatches = !itemCampaignId || !stat.campaignId || String(stat.campaignId) === itemCampaignId;
+            if (campMatches) {
+              const statText = stat.targeting ? String(stat.targeting).trim().toLowerCase() : "";
+              const statId = stat.targetId ? String(stat.targetId).replace(/^[TK]-/, "") : "";
+              if (itemTargetId && statId && statId === itemTargetId) {
+                isMatch = true;
+              } else if (itemTargetText && statText === itemTargetText) {
+                const statMatchNorm = stat.matchType
+                  ? String(stat.matchType).trim().toUpperCase().replace(/^TARGETING_EXPRESSION_/, "")
+                  : "";
+                if (!itemMatchNorm || !statMatchNorm || itemMatchNorm === statMatchNorm) {
+                  isMatch = true;
+                }
+              }
+            }
+          }
+        } else if (stat.statType === "campaign" || (!stat.targetId && !stat.targeting)) {
+          if (itemCampaignId && stat.campaignId && String(stat.campaignId) === itemCampaignId) {
+            isMatch = true;
+          }
+        }
+
+        if (!isMatch) continue;
+
+        if (stat.reportDate >= oldStartDate && stat.reportDate <= oldEndDate) {
+          oldSpend += Number(stat.spend) || 0;
+          oldSales += Number(stat.sales) || 0;
+        }
+        if (stat.reportDate >= currStartDate && stat.reportDate <= currEndDate) {
+          currSpend += Number(stat.spend) || 0;
+          currSales += Number(stat.sales) || 0;
+        }
+      }
+
+      const calculatedOldAcos = oldSales > 0 ? Number(((oldSpend / oldSales) * 100).toFixed(2)) : 0;
+      const calculatedCurrAcos = currSales > 0 ? Number(((currSpend / currSales) * 100).toFixed(2)) : 0;
+
+      return {
+        ...item,
+        oldAcos: calculatedOldAcos,
+        spend: Number(oldSpend.toFixed(2)),
+        sales: Number(oldSales.toFixed(2)),
+        dateRange: { startDate: oldStartDate, endDate: oldEndDate },
+        currentAcos: calculatedCurrAcos,
+        currentSpend: Number(currSpend.toFixed(2)),
+        currentSales: Number(currSales.toFixed(2)),
+        currentDateRange: { startDate: currStartDate, endDate: currEndDate },
+      };
+    });
+  }, [tableData, dailyStats, acosPeriod, customDays, currentAcosDate, profileTimezone]);
+
   const HistoryList = async (argOverride) => {
     if (!profileId?.value || !selectedAdType) return;
+    const lookbackDays =
+      acosPeriod === "custom_days"
+        ? Math.max(1, Number(customDays) || 7)
+        : Number(acosPeriod) || 7;
     const data = {
       fromDate: moment(date?.[0]).format("YYYY-MM-DD"),
       toDate: moment(date?.[1]).format("YYYY-MM-DD"),
@@ -854,6 +1161,10 @@ function History(props) {
       targeting: argOverride?.hasOwnProperty("targeting") ? argOverride.targeting : debouncedTargetingSearch,
       fieldName: "createdAt",
       sortType: "DESC",
+      acosLookbackMode: acosPeriod,
+      acosLookbackDays: lookbackDays,
+      currentAcosFromDate: currentAcosDate?.[0] ? moment(currentAcosDate[0]).format("YYYY-MM-DD") : undefined,
+      currentAcosToDate: currentAcosDate?.[1] ? moment(currentAcosDate[1]).format("YYYY-MM-DD") : undefined,
       ...(Boolean(campaignId) && {
         campaignId: parseFloat(
           Buffer.from(campaignId, "base64").toString("utf8")
@@ -866,7 +1177,11 @@ function History(props) {
       const e = await ApiHistory(data);
       if (e?.isSuccess) {
         dispatch(handleLoader(false));
-        setTableData(e.data);
+        setTableData(e.data || []);
+        setDailyStats(Array.isArray(e?.dailyStats) ? e.dailyStats : null);
+        if (e?.timezone) {
+          setProfileTimezone(e.timezone);
+        }
         setHistoryData(e);
       } else {
         Toast.error(e?.message);
@@ -964,10 +1279,104 @@ function History(props) {
           <div className="data_content data_content_btn glass-grid-container h-maxContent">
             {/* Card header / filter bar */}
             <div className="camapgin_btn flex flex-wrap justify-between items-center gap-3 pt-4 pb-2 px-6 w-full max-w-full box-border relative z-30">
-              <div className={`flex items-center ${isMobile ? "w-full justify-between" : ""}`}>
+              <div className="flex flex-wrap items-center justify-between gap-3 w-full">
                 <CardTitle className="m-0 flex items-center cron-title-bar" style={{ fontSize: 14, color: isDark ? "#cbd5e1e0" : "#0F172A" }}>
                   {t("History")}
                 </CardTitle>
+
+                {/* ACoS Calculation Controls (Old ACoS Lookback Days & Current ACoS Date Selection) */}
+                <div className="flex flex-wrap items-center gap-2.5">
+                  {/* Old ACoS Lookback Selector */}
+                  <div
+                    className="flex items-center gap-2 px-2.5 py-1 rounded-xl border shadow-sm"
+                    style={{
+                      backgroundColor: isDark ? "rgba(30, 41, 59, 0.7)" : "#f8fafc",
+                      borderColor: isDark ? "#334155" : "#e2e8f0",
+                    }}
+                  >
+                    <span
+                      className="text-[11px] font-bold uppercase tracking-wider whitespace-nowrap"
+                      style={{ color: isDark ? "#94a3b8" : "#475569" }}
+                    >
+                      {t("Old ACoS")}:
+                    </span>
+                    <div style={{ width: "135px" }}>
+                      <Select value={acosPeriod} onValueChange={(val) => setAcosPeriod(val)}>
+                        <SelectTrigger className="h-8 w-full text-xs font-medium bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700 rounded-lg shadow-none">
+                          <SelectValue placeholder={t("Last 7 Days")} />
+                        </SelectTrigger>
+                        <SelectContent className="z-[99999] min-w-[135px] bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700 shadow-lg">
+                          <SelectItem value="7" className="text-xs py-1.5 cursor-pointer">
+                            {t("Last 7 Days")}
+                          </SelectItem>
+                          <SelectItem value="14" className="text-xs py-1.5 cursor-pointer">
+                            {t("Last 14 Days")}
+                          </SelectItem>
+                          <SelectItem value="30" className="text-xs py-1.5 cursor-pointer">
+                            {t("Last 30 Days")}
+                          </SelectItem>
+                          <SelectItem value="custom_days" className="text-xs py-1.5 cursor-pointer">
+                            {t("Custom Days")}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {acosPeriod === "custom_days" && (
+                      <div className="flex items-center gap-1 bg-white dark:bg-[#1e293b] px-2 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700 h-8">
+                        <input
+                          type="number"
+                          min="1"
+                          max="365"
+                          value={customDays}
+                          onChange={(e) => {
+                            const val = Math.min(365, Math.max(1, Number(e.target.value) || 1));
+                            setCustomDays(val);
+                          }}
+                          className="w-11 h-6 text-center text-xs font-bold bg-transparent text-slate-800 dark:text-slate-100 focus:outline-none"
+                          title={t("Enter number of lookback days for Old ACoS")}
+                        />
+                        <span className="text-[11px] font-semibold text-slate-400">
+                          {t("days")}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Current ACoS Date Range Selector */}
+                  <div
+                    className="flex items-center gap-2 px-2.5 py-1 rounded-xl border shadow-sm"
+                    style={{
+                      backgroundColor: isDark ? "rgba(30, 41, 59, 0.7)" : "#f8fafc",
+                      borderColor: isDark ? "#334155" : "#e2e8f0",
+                    }}
+                  >
+                    <span
+                      className="text-[11px] font-bold uppercase tracking-wider whitespace-nowrap"
+                      style={{ color: isDark ? "#94a3b8" : "#475569" }}
+                    >
+                      {t("Current ACoS")}:
+                    </span>
+                    <div className="w-[220px] min-w-0">
+                      <DateRangePicker
+                        syncGlobalDate={false}
+                        className="w-full !max-w-full [&_button]:!h-8 [&_button]:!text-xs [&_button]:!px-2.5 [&_button]:!rounded-lg"
+                        ranges={predefinedRanges}
+                        value={currentAcosDate}
+                        placeholder={t("Select Current ACoS Date")}
+                        onChange={(val) => {
+                          if (val && Array.isArray(val) && val.length >= 2) {
+                            setCurrentAcosDate(val);
+                          }
+                        }}
+                        placement="bottomEnd"
+                        format="yyyy-MM-dd"
+                        cleanable={false}
+                        style={{ height: "32px", borderRadius: "8px", width: "100%" }}
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 w-full max-w-full min-w-0 mt-2 box-border">
@@ -1129,7 +1538,7 @@ function History(props) {
                     tableId="history-main-table"
                     height={"70vh"}
                     rowHeight={52}
-                    rowData={tableData}
+                    rowData={computedTableData}
                     columnDefs={columns}
                     totalRecords={historyData?.totalRecords ?? 0}
                     perPage={perPage}

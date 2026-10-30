@@ -15,6 +15,17 @@ const conditionSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: null,
     },
+    // Out of Budget only: look-back period ("LAST_7_DAYS" | "LAST_14_DAYS" | "LAST_30_DAYS" | "CUSTOM")
+    oobPeriod: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    // Out of Budget only: number of days the campaign must have been continuously out of budget
+    oobDays: {
+      type: Number,
+      default: null,
+    },
   },
   { _id: false }
 );

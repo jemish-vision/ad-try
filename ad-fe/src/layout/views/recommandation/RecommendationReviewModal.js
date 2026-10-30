@@ -24,7 +24,12 @@ const getTargetHistoryKey = (cid, targeting, matchType) => {
     if (!cid || !targeting) return null;
     const cleanCid = String(cid);
     const cleanTarget = String(targeting).toLowerCase().trim();
-    if (matchType) {
+    const isAuto =
+        ["close-match", "loose-match", "complements", "substitutes", "similar-product", "(_targeting_auto_)"].includes(cleanTarget) ||
+        String(matchType || "").toUpperCase().includes("PREDEFINED") ||
+        String(matchType || "").toUpperCase().startsWith("AUTOMATIC");
+
+    if (!isAuto && matchType) {
         const cleanMatch = String(matchType).toLowerCase().replace(/^(keyword|automatic|targeting)\s*[-:]\s*/i, "").trim();
         return `${cleanCid}_${cleanTarget}_${cleanMatch}`;
     }
@@ -371,12 +376,19 @@ const RecommendationReviewModal = ({
                                                 historyInfo = latestHistoryMap[`${cid}_placement`] || null;
                                             }
                                         } else if (targeting) {
-                                            if (matchType) {
-                                                const matchKey = getTargetHistoryKey(cid, targeting, matchType);
-                                                historyInfo = latestHistoryMap[matchKey] || null;
+                                            const rawTargetId = item?.targetId || item?._id?.targetId;
+                                            const cleanTId = rawTargetId ? String(rawTargetId).replace(/^[TK]-/, "").trim() : "";
+                                            if (cleanTId && latestHistoryMap[`${cid}_id_${cleanTId}`]) {
+                                                historyInfo = latestHistoryMap[`${cid}_id_${cleanTId}`];
                                             } else {
-                                                const targetKey = `${cid}_${String(targeting).toLowerCase().trim()}`;
-                                                historyInfo = latestHistoryMap[targetKey] || null;
+                                                const matchKey = getTargetHistoryKey(cid, targeting, matchType);
+                                                if (matchKey && latestHistoryMap[matchKey]) {
+                                                    historyInfo = latestHistoryMap[matchKey];
+                                                }
+                                                if (!historyInfo) {
+                                                    const targetKey = `${cid}_${String(targeting).toLowerCase().trim()}`;
+                                                    historyInfo = latestHistoryMap[targetKey] || null;
+                                                }
                                             }
                                         } else {
                                             historyInfo = latestHistoryMap[String(cid)] || latestHistoryMap[Number(cid)] || null;

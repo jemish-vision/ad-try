@@ -43,6 +43,14 @@ class RateLimitError extends Error {
   }
 }
 
+class ReportImportPendingError extends Error {
+  constructor(message, details = {}) {
+    super(message);
+    this.name = "ReportImportPendingError";
+    this.details = details;
+  }
+}
+
 class TransientAmazonError extends Error {
   constructor(message, details = {}) {
     super(message);
@@ -57,6 +65,7 @@ module.exports = {
   InvalidJobPayloadError,
   ProfileInactiveError,
   DependencyNotReadyError,
+  ReportImportPendingError,
   RateLimitError,
   TransientAmazonError,
 };

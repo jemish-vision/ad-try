@@ -35,6 +35,7 @@ async function enqueueSyncForOccurrence({ task, scheduledFor, trigger = "schedul
     const { hourlySyncQueue } = getQueues();
     const job = await hourlySyncQueue.add(task, data, {
       jobId,
+      priority: 1,
       removeOnComplete: { age: 3600 },
       removeOnFail: { age: 86400 },
       attempts: 2,

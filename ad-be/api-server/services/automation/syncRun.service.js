@@ -168,12 +168,19 @@ async function markSyncRunFailed(recordId, error) {
   );
 }
 
+async function markSyncRunWaiting(recordId, error) {
+  return SyncRun.findByIdAndUpdate(recordId, {
+    $set: { state: "WAITING", lastError: { message: error.message }, completedAt: null },
+  }, { new: true });
+}
+
 module.exports = {
   checkPrerequisiteStatus,
   claimSyncRun,
   recordProviderReportId,
   markSyncRunCompleted,
   markSyncRunFailed,
+  markSyncRunWaiting,
   SYNC_PREREQUISITES,
   PrerequisiteNotMetError,
 };

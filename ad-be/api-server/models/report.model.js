@@ -39,6 +39,8 @@ const reportsSchema = new mongoose.Schema(
     },
     importRunId: { type: String },
     verifiedRows: { type: Number },
+    errorMessage: { type: String },
+    failedAt: { type: Date },
     completedAt: { type: Date },
     cronHistoryId: { type: mongoose.Schema.Types.ObjectId, ref: "cronJobHistory" },
   },
