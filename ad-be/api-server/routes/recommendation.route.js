@@ -3,7 +3,7 @@ const { SYSTEM_PAGES, PAGE_ACTIONS } = require("../constants/permissions");
 const express = require("express");
 const router = express.Router();
 const { verifyToken } = require("../middleware/user.auth");
-const { runRecommendationSnapshot, getRules, getRuleById, updateRules, addRules, statusChange, deleteRule, getRecommendation, getRecommendationData, deleteRecommendation, applyRuleRecommendation, cronRecommendationSnapshot, getTotalRecommendationCount, exportRecommandationRule, importRecommandationRule } = require("../controllers/recommendation.controller");
+const { runRecommendationSnapshot, getRules, getRuleById, updateRules, addRules, statusChange, deleteRule, getRecommendation, getRecommendationData, deleteRecommendation, applyRuleRecommendation, cronRecommendationSnapshot, getTotalRecommendationCount, exportRecommandationRule, importRecommandationRule, bulkUpdateRuleDateFilter } = require("../controllers/recommendation.controller");
 const { AdTypeModels } = require("../middleware/adTypeModel.middleware");
 const { withAllAdTypesItemList } = require("../helper/allAdTypeHandler");
 const { uploadExcelFile } = require("../helper/excelFileUpload");
@@ -28,6 +28,7 @@ router.post("/cronRecommendationSnapshot", verifyToken, verifyCronAuth, cronReco
 router.post("/getRules", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.VIEW_ONLY), getRules);
 router.post("/getRuleById/:id", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.VIEW_ONLY), getRuleById);
 router.post("/updateRules/:id", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.UPDATE), updateRules);
+router.post("/bulkUpdateRuleDateFilter", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.UPDATE), bulkUpdateRuleDateFilter);
 router.post("/addRules", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.CREATE), addRules);
 router.post("/statusChange", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.UPDATE), statusChange);
 router.post("/deleteRule/:id", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.REMOVE), deleteRule);

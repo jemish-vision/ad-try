@@ -78,11 +78,22 @@ const RequestSyncModal = ({ show, onHide, rowData }) => {
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
       >
-        <DialogHeader className="modal-header border-b p-4 shrink-0 flex justify-between items-center">
+        <DialogHeader className="modal-header border-b p-4 shrink-0 flex flex-row justify-between items-center pr-10">
           <DialogTitle className="modal-title text-base font-semibold flex items-center gap-2">
             <i className="fa fa-refresh text-sky-500" />
             {t("Synchronization Details & Execution")}
           </DialogTitle>
+          <button
+            type="button"
+            id="request-sync-refresh-btn"
+            onClick={fetchSyncRequests}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-200/90 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:border-sky-500/50 hover:bg-sky-50/50 dark:hover:bg-white/5 transition-all duration-150 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
+            title={t("Refresh data")}
+          >
+            <i className={`fa fa-refresh text-slate-500 dark:text-slate-400 ${loading ? "fa-spin text-sky-500" : ""}`} />
+            <span>{t("Refresh")}</span>
+          </button>
         </DialogHeader>
 
         <div className="flex-1 flex flex-col overflow-hidden p-4 space-y-4">

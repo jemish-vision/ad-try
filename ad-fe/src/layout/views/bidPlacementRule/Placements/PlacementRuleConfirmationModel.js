@@ -6,6 +6,7 @@ import { tableStyles } from "../../../../helper/table/TableStyle";
 import { ApiRuleEffectedPlacements } from "../../../../api-wrapper/placementRule/ApiPlacementRule";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../../components/ui/dialog";
 import { Button } from "../../../../components/ui/button";
+import { FiRefreshCw } from "react-icons/fi";
 
 const AD_TABS = [
     { key: "All", label: "All" },
@@ -331,18 +332,31 @@ function PlacementRuleConfirmationModel({
                     {/* Body */}
                     <div className="px-6 py-4 flex flex-col gap-3">
                         {/* Tabs */}
-                        <div className="campaign-type-tabs">
-                            {AD_TABS.map(({ key, label }) => (
-                                <button
-                                    key={key}
-                                    type="button"
-                                    className={`tab-btn${activeTab === key ? " active" : ""}`}
-                                    onClick={() => setActiveTab(key)}
-                                >
-                                    {t(label)}
-                                    <span className="tab-badge">{tabCount(key)}</span>
-                                </button>
-                            ))}
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="campaign-type-tabs">
+                                {AD_TABS.map(({ key, label }) => (
+                                    <button
+                                        key={key}
+                                        type="button"
+                                        className={`tab-btn${activeTab === key ? " active" : ""}`}
+                                        onClick={() => setActiveTab(key)}
+                                    >
+                                        {t(label)}
+                                        <span className="tab-badge">{tabCount(key)}</span>
+                                    </button>
+                                ))}
+                            </div>
+                            <button
+                                type="button"
+                                id="placement-rule-confirm-refresh-btn"
+                                onClick={fetchData}
+                                disabled={loading}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-200/90 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:border-sky-500/50 hover:bg-sky-50/50 dark:hover:bg-white/5 transition-all duration-150 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-wait"
+                                title={t("Refresh data")}
+                            >
+                                <FiRefreshCw className={`text-slate-500 dark:text-slate-400 ${loading ? "animate-spin text-sky-500" : ""}`} size={12} />
+                                <span>{t("Refresh")}</span>
+                            </button>
                         </div>
 
                         {/* Info row */}

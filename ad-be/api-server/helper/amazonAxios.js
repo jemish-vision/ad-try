@@ -84,6 +84,9 @@ amazonAxios.interceptors.request.use(
                 }
             }
 
+            // Recheck after token preparation and any local wait; recursive
+            // 401/429 retries pass through this interceptor before every send.
+            if (config.meta?.beforeRequest) await config.meta.beforeRequest();
             return config;
         } catch (err) {
             write_logs({

@@ -4,12 +4,13 @@ import { AgGridReact } from "ag-grid-react";
 import { ModuleRegistry, AllCommunityModule } from "ag-grid-community";
 import { AllEnterpriseModule } from "ag-grid-enterprise";
 
-ModuleRegistry.registerModules([AllCommunityModule, AllEnterpriseModule]);
 import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-alpine.css";
 import { ApiListGetColumns, ApiListUpdateColumns } from "../../api-wrapper/columns/ApiColumns";
 import { ProfileContext } from "../../helper/usecontext/useContext";
 import CustomizeColumns from "../../helper/modal/CustomizeColumns";
+
+ModuleRegistry.registerModules([AllCommunityModule, AllEnterpriseModule]);
 
 const DEFAULT_PAGE_SIZES = [10, 25, 50, 100];
 

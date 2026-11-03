@@ -13,7 +13,7 @@ import moment from "moment";
 import { Link } from "react-router-dom";
 import CurrencyFormat from "../../../../helper/currencyCode/CurrencyFormat";
 import DataTable from "react-data-table-component";
-import { FiCalendar, FiArrowRight, FiActivity, FiArrowUpRight, FiArrowDownRight, FiTrendingUp, FiCheckCircle } from "react-icons/fi";
+import { FiCalendar, FiArrowRight, FiActivity, FiArrowUpRight, FiArrowDownRight, FiTrendingUp, FiCheckCircle, FiRefreshCw } from "react-icons/fi";
 import { CampaignNameCell } from "../../../../utility/campaignNavigation";
 
 
@@ -373,6 +373,7 @@ const CampaignComparision = ({ show, onClose, campaginIds, date }) => {
                     </div>
 
                     {/* Segmented Controller / Tabs */}
+                    <div className="flex items-center justify-between flex-wrap gap-2 shrink-0">
                     <div className="flex bg-slate-100 dark:bg-white/5 p-1 rounded-xl w-fit shrink-0">
                         {[
                             { label: "Campaign Breakdown", id: 0 },
@@ -391,6 +392,18 @@ const CampaignComparision = ({ show, onClose, campaginIds, date }) => {
                             </button>
                         ))}
                     </div>
+                    <button
+                        type="button"
+                        id="campaign-comparison-refresh-btn"
+                        onClick={fetchCampaignData}
+                        disabled={loading}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-200/90 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:border-sky-500/50 hover:bg-sky-50/50 dark:hover:bg-white/5 transition-all duration-150 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
+                        title={t("Refresh data")}
+                    >
+                        <FiRefreshCw className={`text-slate-500 dark:text-slate-400 ${loading ? "animate-spin text-sky-500" : ""}`} size={12} />
+                        <span>{t("Refresh")}</span>
+                    </button>
+                </div>
 
                     {/* Table View Component */}
                     <div className="flex-1 overflow-y-auto border border-slate-100 dark:border-white/5 rounded-2xl bg-white dark:bg-transparent shadow-sm">

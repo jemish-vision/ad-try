@@ -46,6 +46,7 @@ async function executeBatchUpdate({
     accept,
     buildPayload,
     parseResponse,
+    beforeRequest,
     logPrefix = "AmazonBatch"
 }) {
     if (!Array.isArray(items) || items.length === 0) {
@@ -81,11 +82,14 @@ async function executeBatchUpdate({
             url: endpointUrl,
             headers,
             data: buildPayload(chunk),
-            meta: { configId, tokenKey: "adsAccessToken" }
+            meta: { configId, tokenKey: "adsAccessToken", ...(beforeRequest && { beforeRequest }) }
         };
 
         try {
-            const response = await retryWithBackoff(() => amazonAxios(options));
+            const response = await retryWithBackoff(async () => {
+                if (beforeRequest) await beforeRequest();
+                return amazonAxios(options);
+            });
 
             cron_logs({
                 message: `[${logPrefix}] Chunk ${chunkIndex + 1}/${chunks.length} status: ${response?.status}`,
@@ -131,12 +135,13 @@ async function executeBatchUpdate({
 // SPONSORED PRODUCTS BATCH UPDATES
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function batchUpdateSPKeywords({ profile, checkConfigAds, configId, items, batchSize = 100 }) {
+async function batchUpdateSPKeywords({ profile, checkConfigAds, configId, items, batchSize = 100, beforeRequest }) {
     return executeBatchUpdate({
         profile,
         checkConfigAds,
         configId,
         items,
+        beforeRequest,
         idKey: "keywordId",
         batchSize,
         endpointUrl: `${profile.amazonUrl}/sp/keywords`,
@@ -162,12 +167,13 @@ async function batchUpdateSPKeywords({ profile, checkConfigAds, configId, items,
     });
 }
 
-async function batchUpdateSPTargets({ profile, checkConfigAds, configId, items, batchSize = 100 }) {
+async function batchUpdateSPTargets({ profile, checkConfigAds, configId, items, batchSize = 100, beforeRequest }) {
     return executeBatchUpdate({
         profile,
         checkConfigAds,
         configId,
         items,
+        beforeRequest,
         idKey: "targetId",
         batchSize,
         endpointUrl: `${profile.amazonUrl}/sp/targets`,
@@ -193,12 +199,13 @@ async function batchUpdateSPTargets({ profile, checkConfigAds, configId, items, 
     });
 }
 
-async function batchUpdateSPCampaigns({ profile, checkConfigAds, configId, items, batchSize = 100 }) {
+async function batchUpdateSPCampaigns({ profile, checkConfigAds, configId, items, batchSize = 100, beforeRequest }) {
     return executeBatchUpdate({
         profile,
         checkConfigAds,
         configId,
         items,
+        beforeRequest,
         idKey: "campaignId",
         batchSize,
         endpointUrl: `${profile.amazonUrl}/sp/campaigns`,
@@ -232,12 +239,13 @@ async function batchUpdateSPCampaigns({ profile, checkConfigAds, configId, items
     });
 }
 
-async function batchUpdateSPAdGroups({ profile, checkConfigAds, configId, items, batchSize = 100 }) {
+async function batchUpdateSPAdGroups({ profile, checkConfigAds, configId, items, batchSize = 100, beforeRequest }) {
     return executeBatchUpdate({
         profile,
         checkConfigAds,
         configId,
         items,
+        beforeRequest,
         idKey: "adGroupId",
         batchSize,
         endpointUrl: `${profile.amazonUrl}/sp/adGroups`,
@@ -267,12 +275,13 @@ async function batchUpdateSPAdGroups({ profile, checkConfigAds, configId, items,
 // SPONSORED BRANDS BATCH UPDATES
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function batchUpdateSBKeywords({ profile, checkConfigAds, configId, items, batchSize = 100 }) {
+async function batchUpdateSBKeywords({ profile, checkConfigAds, configId, items, batchSize = 100, beforeRequest }) {
     return executeBatchUpdate({
         profile,
         checkConfigAds,
         configId,
         items,
+        beforeRequest,
         idKey: "keywordId",
         batchSize,
         endpointUrl: `${profile.amazonUrl}/sb/keywords`,
@@ -305,12 +314,13 @@ async function batchUpdateSBKeywords({ profile, checkConfigAds, configId, items,
     });
 }
 
-async function batchUpdateSBTargets({ profile, checkConfigAds, configId, items, batchSize = 100 }) {
+async function batchUpdateSBTargets({ profile, checkConfigAds, configId, items, batchSize = 100, beforeRequest }) {
     return executeBatchUpdate({
         profile,
         checkConfigAds,
         configId,
         items,
+        beforeRequest,
         idKey: "targetId",
         batchSize,
         endpointUrl: `${profile.amazonUrl}/sb/targets`,
@@ -337,12 +347,13 @@ async function batchUpdateSBTargets({ profile, checkConfigAds, configId, items, 
     });
 }
 
-async function batchUpdateSBCampaigns({ profile, checkConfigAds, configId, items, batchSize = 100 }) {
+async function batchUpdateSBCampaigns({ profile, checkConfigAds, configId, items, batchSize = 100, beforeRequest }) {
     return executeBatchUpdate({
         profile,
         checkConfigAds,
         configId,
         items,
+        beforeRequest,
         idKey: "campaignId",
         batchSize,
         endpointUrl: `${profile.amazonUrl}/sb/v4/campaigns`,
@@ -371,12 +382,13 @@ async function batchUpdateSBCampaigns({ profile, checkConfigAds, configId, items
     });
 }
 
-async function batchUpdateSBAdGroups({ profile, checkConfigAds, configId, items, batchSize = 100 }) {
+async function batchUpdateSBAdGroups({ profile, checkConfigAds, configId, items, batchSize = 100, beforeRequest }) {
     return executeBatchUpdate({
         profile,
         checkConfigAds,
         configId,
         items,
+        beforeRequest,
         idKey: "adGroupId",
         batchSize,
         endpointUrl: `${profile.amazonUrl}/sb/v4/adGroups`,
@@ -405,12 +417,13 @@ async function batchUpdateSBAdGroups({ profile, checkConfigAds, configId, items,
 // SPONSORED DISPLAY BATCH UPDATES
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function batchUpdateSDTargets({ profile, checkConfigAds, configId, items, batchSize = 100 }) {
+async function batchUpdateSDTargets({ profile, checkConfigAds, configId, items, batchSize = 100, beforeRequest }) {
     return executeBatchUpdate({
         profile,
         checkConfigAds,
         configId,
         items,
+        beforeRequest,
         idKey: "targetId",
         batchSize,
         endpointUrl: `${profile.amazonUrl}/sd/targets`,
@@ -441,12 +454,13 @@ async function batchUpdateSDTargets({ profile, checkConfigAds, configId, items, 
     });
 }
 
-async function batchUpdateSDCampaigns({ profile, checkConfigAds, configId, items, batchSize = 100 }) {
+async function batchUpdateSDCampaigns({ profile, checkConfigAds, configId, items, batchSize = 100, beforeRequest }) {
     return executeBatchUpdate({
         profile,
         checkConfigAds,
         configId,
         items,
+        beforeRequest,
         idKey: "campaignId",
         batchSize,
         endpointUrl: `${profile.amazonUrl}/sd/campaigns`,
@@ -477,12 +491,13 @@ async function batchUpdateSDCampaigns({ profile, checkConfigAds, configId, items
     });
 }
 
-async function batchUpdateSDAdGroups({ profile, checkConfigAds, configId, items, batchSize = 100 }) {
+async function batchUpdateSDAdGroups({ profile, checkConfigAds, configId, items, batchSize = 100, beforeRequest }) {
     return executeBatchUpdate({
         profile,
         checkConfigAds,
         configId,
         items,
+        beforeRequest,
         idKey: "adGroupId",
         batchSize,
         endpointUrl: `${profile.amazonUrl}/sd/adGroups`,

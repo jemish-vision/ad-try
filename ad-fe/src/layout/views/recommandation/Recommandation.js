@@ -18,7 +18,8 @@ import AddRule from "../recommendationRule/AddRule";
 import RecommendationRules from "../recommendationRule/RecommendationRules";
 import { PermissionCheck } from "../../../helper/permission/PermissionCheck";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Sparkles, Sliders } from "lucide-react";
+import { Sparkles, Sliders, RefreshCw } from "lucide-react";
+import { FiInfo } from "react-icons/fi";
 
 // ─── Action label mapping for display ─────────────────────────────────────────
 const ACTION_LABEL_MAP = {
@@ -491,17 +492,7 @@ function Recommendation() {
     }
   }, [fetchRecommendations, activeTab]);
 
-  // Track whether a recommendation was actually viewed (modal was opened for a real item)
-  const [viewedRuleId, setViewedRuleId] = useState(null);
 
-  useEffect(() => {
-    // When modal CLOSES after a genuine view → refresh list + sidebar so cleared newCount is reflected
-    if (!showModal && viewedRuleId) {
-      fetchRecommendations();
-      selectedCampaign?.setRefreshSideBar((selectedCampaign?.refreshSideBar ?? 0) + 1);
-      setViewedRuleId(null);
-    }
-  }, [showModal]);
 
   // Fetch detailed data for a recommendation
   const fetchRecommendationData = async (recommendation) => {
@@ -525,7 +516,6 @@ function Recommendation() {
           perPage: res.perPage || 25,
           totalPages: res.totalPages || 1,
         });
-        setViewedRuleId(recommendation._id); // ← mark that a real view happened
         setShowModal(true);
       } else {
         Toast.error(res?.message || "Failed to load recommendation data");
@@ -623,7 +613,7 @@ function Recommendation() {
                 </div>
               )}
               {/* Header */}
-              <div className="flex justify-between items-center flex-wrap" style={{ marginBottom: 24, gap: 12 }}>
+              <div className="flex justify-between items-center flex-wrap" style={{ marginBottom: 16, gap: 12 }}>
                 <div>
                   <h2 id="recommandation-header" style={{
                     margin: 0,
@@ -642,17 +632,42 @@ function Recommendation() {
                     {t("Actionable insights based on your campaign performance")}
                   </p>
                 </div>
-                {PermissionCheck(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.CREATE) && (
+                <div className="flex items-center gap-2">
                   <button
-                    className="customize-button m-0 gap-0"
+                    id="recommendation-page-refresh-btn"
+                    className="customize-button m-0 gap-1.5 flex items-center"
                     style={{ height: "36px", whiteSpace: "nowrap" }}
-                    onClick={() => {
-                      setaddModalFlag(true);
-                    }}
+                    onClick={() => fetchRecommendations()}
+                    disabled={loading}
+                    title={t("Refresh recommendations")}
                   >
-                    {isMobile ? t("Add") : t("Add Recommendation")}
+                    <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+                    <span>{t("Refresh")}</span>
                   </button>
-                )}
+                  {PermissionCheck(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.CREATE) && (
+                    <button
+                      className="customize-button m-0 gap-0"
+                      style={{ height: "36px", whiteSpace: "nowrap" }}
+                      onClick={() => {
+                        setaddModalFlag(true);
+                      }}
+                    >
+                      {isMobile ? t("Add") : t("Add Recommendation")}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Informational Note */}
+              <div
+                className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl border border-sky-500/20 bg-sky-500/5 text-slate-700 dark:text-slate-200 text-xs shadow-sm"
+                style={{ marginBottom: 20 }}
+              >
+                <FiInfo className="text-sky-500 flex-shrink-0" size={16} />
+                <span>
+                  <strong className="font-semibold text-slate-800 dark:text-slate-100">{t("Note")}:</strong>{" "}
+                  {t("Recommendations are not refreshed automatically when closing the review modal. Please use the Refresh button above to update recommendations manually.")}
+                </span>
               </div>
 
               {/* Loading State */}

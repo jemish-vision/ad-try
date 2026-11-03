@@ -6,6 +6,7 @@ import {
     DialogTitle,
 } from "../../../../components/ui/dialog";
 import { Button } from "../../../../components/ui/button";
+import { FiRefreshCw } from "react-icons/fi";
 import moment from "moment";
 
 import AgTable from "../../../../common/grid/AgTable";
@@ -419,18 +420,31 @@ function ShipmentDetailsModal({ show, handleClose, shipmentId, profileId, isDark
                     }}
                 >
                     <DialogTitle className="flex flex-col" style={{ gap: 6 }}>
-                        <div className="flex items-center flex-wrap" style={{ gap: 14 }}>
-                            <span style={{ fontSize: 20, fontWeight: 800, color: isDark ? "rgba(255, 255, 255, 0.92)" : "#1e293b", fontFamily: "'Outfit', sans-serif" }}>
-                                Shipment Summary
-                            </span>
-                            {details?.shipmentStatus && <StatusBadge status={details.shipmentStatus} isDark={isDark} />}
-                            {details?.shipmentStatus === "CLOSED" && totalMissing > 0 && (
-                                <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: isDark ? "rgba(239, 68, 68, 0.15)" : "#fee2e2", borderRadius: 20, padding: "4px 12px", border: isDark ? "1px solid rgba(239, 68, 68, 0.3)" : "1px solid #fecaca" }}>
-                                    <span style={{ fontSize: 11, fontWeight: 700, color: isDark ? "#f87171" : "#b91c1c" }}>
-                                        ⚠️ {totalMissing} Missing Unit{totalMissing !== 1 ? 's' : ''}
-                                    </span>
-                                </div>
-                            )}
+                        <div className="flex items-center justify-between flex-wrap gap-2 w-full pr-8">
+                            <div className="flex items-center flex-wrap" style={{ gap: 14 }}>
+                                <span style={{ fontSize: 20, fontWeight: 800, color: isDark ? "rgba(255, 255, 255, 0.92)" : "#1e293b", fontFamily: "'Outfit', sans-serif" }}>
+                                    Shipment Summary
+                                </span>
+                                {details?.shipmentStatus && <StatusBadge status={details.shipmentStatus} isDark={isDark} />}
+                                {details?.shipmentStatus === "CLOSED" && totalMissing > 0 && (
+                                    <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: isDark ? "rgba(239, 68, 68, 0.15)" : "#fee2e2", borderRadius: 20, padding: "4px 12px", border: isDark ? "1px solid rgba(239, 68, 68, 0.3)" : "1px solid #fecaca" }}>
+                                        <span style={{ fontSize: 11, fontWeight: 700, color: isDark ? "#f87171" : "#b91c1c" }}>
+                                            ⚠️ {totalMissing} Missing Unit{totalMissing !== 1 ? 's' : ''}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                            <button
+                                type="button"
+                                id="shipment-details-refresh-btn"
+                                onClick={fetchShipmentDetails}
+                                disabled={loading}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-200/90 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:border-sky-500/50 hover:bg-sky-50/50 dark:hover:bg-white/5 transition-all duration-150 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
+                                title="Refresh Shipment Details"
+                            >
+                                <FiRefreshCw className={`text-slate-500 dark:text-slate-400 ${loading ? "animate-spin text-sky-500" : ""}`} size={12} />
+                                <span>Refresh</span>
+                            </button>
                         </div>
                         <div style={{ fontSize: 14, fontWeight: 600, color: "var(--accent-primary)" }}>
                             {details?.shipmentName || "--"}

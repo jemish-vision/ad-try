@@ -91,7 +91,7 @@ const calculateProposedValue = (item, actions, gridName) => {
         const actionVal = parseFloat(action.actionValue || 0);
         let diff = actionVal;
         if (action.actionValueType === "Percentage") {
-            diff = (curr * actionVal) / 100;
+            diff = curr === 0 ? actionVal : (curr * actionVal) / 100;
         }
 
         let next = curr;

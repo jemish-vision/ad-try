@@ -42,6 +42,7 @@ const sdSearchTermSchema = require("../models/sdSearchTerm.model");
 const sbCampaignSchema = require("../models/sbCampaign.model");
 const sdCampaignSchema = require("../models/sdCampaign.model");
 const { write_logs } = require("../../winston/searchTerm/logger");
+const { getCacheWithLog, setCacheWithLog, deletePatternWithLog } = require("../services/redis.service");
 
 const {
     getProfile,
@@ -5364,13 +5365,28 @@ exports.getKeywordAnalysisData = async (req, res) => {
         const sortingField = fieldName || "targeting";
         const sortingOrder = sortType?.toUpperCase() === "DESC" ? -1 : 1;
 
-        const lastSearchTermDoc = await targetingSchema.findOne({ configId, profileId: Number(profileId) }, { reportDate: 1 }).sort({ reportDate: -1 }).lean();
+        // Check Redis cache for instant sub-20ms response
+        const cacheKey = `kw_analysis:${profileId}_${fromDate}_${toDate}_${searchTermPageNo}_${searchTermPerPage}_${sortingField}_${sortingOrder}_${(campaignStatus || []).slice().sort().join(",")}_${targeting || "all"}`;
+        try {
+            const cached = await getCacheWithLog(cacheKey);
+            if (cached) {
+                return res.status(200).send(JSON.parse(cached));
+            }
+        } catch (_) { }
+
+        const configIdObj = configId && mongoose.Types.ObjectId.isValid(configId) ? new mongoose.Types.ObjectId(configId) : null;
+        const configQuery = configIdObj ? { $in: [configId, configIdObj] } : configId;
+
+        const lastSearchTermDoc = await targetingSchema.findOne({
+            ...(configQuery ? { configId: configQuery } : {}),
+            profileId: Number(profileId)
+        }, { reportDate: 1 }).sort({ reportDate: -1 }).lean();
         const lastDate = lastSearchTermDoc?.reportDate ?? (toDate || moment().tz(profile.timezone).format("YYYY-MM-DD"));
 
         const basePipeline = [
             {
                 $match: {
-                    configId,
+                    ...(configQuery ? { configId: configQuery } : {}),
                     profileId: Number(profileId),
                     reportDate: { $gte: fromDate, $lte: toDate },
                     keywordType: { $nin: ["TARGETING_EXPRESSION_PREDEFINED", "TARGETING_EXPRESSION"] },
@@ -5390,8 +5406,6 @@ exports.getKeywordAnalysisData = async (req, res) => {
                     spend: { $sum: "$spend" },
                     sales: { $sum: "$sales" },
                     orders: { $sum: "$orders" },
-                    targeting: { $last: "$targeting" },
-                    keywordType: { $last: "$keywordType" },
                     isTargetEnabledToday: { $max: { $cond: [{ $and: [{ $eq: ["$reportDate", lastDate] }, { $eq: ["$status", "ENABLED"] }] }, 1, 0] } }
                 }
             },
@@ -5400,7 +5414,19 @@ exports.getKeywordAnalysisData = async (req, res) => {
                     from: "campaigns",
                     let: { cId: "$campaignId", campaignStatuses: campaignStatus },
                     pipeline: [
-                        { $match: { $expr: { $and: [{ $eq: ["$campaignId", "$$cId"] }, { $eq: ["$reportDate", lastDate] }, ...(campaignStatus?.length ? [{ $in: ["$status", "$$campaignStatuses"] }] : [])] } } },
+                        {
+                            $match: {
+                                ...(configQuery ? { configId: configQuery } : {}),
+                                profileId: Number(profileId),
+                                reportDate: lastDate,
+                                $expr: {
+                                    $and: [
+                                        { $eq: ["$campaignId", "$$cId"] },
+                                        ...(campaignStatus?.length ? [{ $in: ["$status", "$$campaignStatuses"] }] : [])
+                                    ]
+                                }
+                            }
+                        },
                         { $project: { _id: 0, campaignId: 1, campaignName: "$name", status: "$status" } }
                     ],
                     as: "activeCampaign"
@@ -5544,14 +5570,20 @@ exports.getKeywordAnalysisData = async (req, res) => {
         const getKeywordAnalysisData = result?.[0]?.data || [];
         const totalCount = result?.[0]?.totalCount?.[0]?.count || 0;
 
-        return res.status(200).send({
+        const responsePayload = {
             isSuccess: true,
             getKeywordAnalysisData,
             totalKeywordAnalysisData: totalCount,
             searchTermCurrentPageNo: searchTermPageNo,
             searchTermTotalPages: Math.ceil(totalCount / searchTermPerPage),
             message: "Get keyword analysis data successfully."
-        });
+        };
+
+        try {
+            await setCacheWithLog(cacheKey, JSON.stringify(responsePayload), 600);
+        } catch (_) { }
+
+        return res.status(200).send(responsePayload);
     } catch (error) {
         write_logs({ message: `[getKeywordAnalysisData Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
         return res.status(203).send({

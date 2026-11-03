@@ -15,7 +15,7 @@ import CurrencyCode from "../../../helper/currencyCode/CurrencyCode";
 import { Toast } from "../../../helper/links/Link";
 import moment from "moment-timezone";
 import { openCampaignViewInNewTab } from "../../../utility/campaignNavigation";
-import { FiClock, FiFilter, FiX, FiCalendar, FiInfo, FiSearch, FiChevronDown } from "react-icons/fi";
+import { FiClock, FiFilter, FiX, FiCalendar, FiInfo, FiSearch, FiChevronDown, FiRefreshCw } from "react-icons/fi";
 import { Popover, PopoverTrigger, PopoverContent } from "../../../components/ui/popover";
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "../../../components/ui/tooltip";
 import CampaignHistoryModal from "./CampaignHistoryModal";
@@ -965,6 +965,12 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         }
     }, [snapshot, internalRule, profileId, perPage, dateRange, historyFilter, t]);
 
+    const handleRefreshModal = useCallback(async () => {
+        lastFetchedKeyRef.current = "";
+        allFetchedDataRef.current = null;
+        await fetchData(currentPage, perPage, dateRange, historyFilter);
+    }, [fetchData, currentPage, perPage, dateRange, historyFilter]);
+
     const handleDateChange = useCallback(async (value) => {
         setDateRange(value);
         allFetchedDataRef.current = null;
@@ -1329,7 +1335,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
             const actionVal = parseFloat(action.actionValue || 0);
             let diff = actionVal;
             if (action.actionValueType === "Percentage") {
-                diff = (currBid * actionVal) / 100;
+                diff = currBid === 0 ? actionVal : (currBid * actionVal) / 100;
             }
 
             let newBid = currBid;
@@ -1955,6 +1961,18 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
 
                         {/* Filter controls right where red box is */}
                         <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                                type="button"
+                                id="recommendation-modal-refresh-btn"
+                                onClick={handleRefreshModal}
+                                disabled={dateLoading}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-200/90 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:border-sky-500/50 hover:bg-sky-50/50 dark:hover:bg-white/5 transition-all duration-150 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-wait"
+                                title={t("Refresh recommendations")}
+                            >
+                                <FiRefreshCw className={`text-slate-500 dark:text-slate-400 ${dateLoading ? "animate-spin" : ""}`} size={12} />
+                                <span>{t("Refresh")}</span>
+                            </button>
+
                             {/* Campaign Search Filter */}
                             <div className="relative min-w-[200px] max-w-[260px]">
                                 <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />

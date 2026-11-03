@@ -24,8 +24,8 @@ async function syncTargetingData() {
         const pastSyncObj = {
             profileId: 2630925322373862, // REPLACE WITH ACTUAL PROFILE ID (Number)
             configId: "69809498df1b0ea4ae334fc5", // REPLACE WITH ACTUAL CONFIG ID (String),
-            startDate: "2026-10-27", // YYYY-MM-DD
-            endDate: "2026-10-27",   // YYYY-MM-DD
+            startDate: "2026-10-30", // YYYY-MM-DD
+            endDate: "2026-10-30",   // YYYY-MM-DD
             recurring: true         // Keep this false for manual execution
         };
 
@@ -34,12 +34,12 @@ async function syncTargetingData() {
 
         // 1. List Targeting
         console.log("--> Executing: cronListTargetingFromAmazon");
-        // await cronListTargetingFromAmazon(pastSyncObj);
+        await cronListTargetingFromAmazon(pastSyncObj);
         console.log("--> Completed: cronListTargetingFromAmazon\n");
 
         // 2. Generate Targeting Report
         console.log("--> Executing: cronGenerateTargetingReport");
-        await cronGenerateTargetingReport(false, false, pastSyncObj);
+        // await cronGenerateTargetingReport(false, false, pastSyncObj);
         console.log("--> Completed: cronGenerateTargetingReport\n");
 
         console.log("Sync script finished successfully!");

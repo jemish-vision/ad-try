@@ -7,7 +7,7 @@ import CurrencyFormat from "../../../../helper/currencyCode/CurrencyFormat";
 import { ApiRuleEffectedTargeting } from "../../../../api-wrapper/targeting/ApiTargeting";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "../../../../components/ui/dialog";
 import { Button } from "../../../../components/ui/button";
-import { FiPlay, FiAlertCircle, FiCalendar, FiZap } from "react-icons/fi";
+import { FiPlay, FiAlertCircle, FiCalendar, FiZap, FiRefreshCw } from "react-icons/fi";
 
 import { getConditionSummary, rowIdentity, consumeShiftWheel, forwardTableProp } from "./targetingRulePreview";
 
@@ -84,38 +84,39 @@ function TargetingRuleConfirmationModel({
         setShowModal(false);
     };
 
+    const fetchData = () => {
+        if (!ruleId) return;
+        setLoading(true);
+        setFetchError(false);
+        setSelectionError(false);
+        ApiRuleEffectedTargeting(ruleId)
+            .then((res) => {
+                if (res?.isSuccess) {
+                    setLoadedRuleId(ruleId);
+                    setRawData({
+                        SP: (res.data?.SP || []).map(r => ({ ...r, isSelected: false })),
+                        SB: (res.data?.SB || []).map(r => ({ ...r, isSelected: false })),
+                        SD: (res.data?.SD || []).map(r => ({ ...r, isSelected: false })),
+                    });
+                } else {
+                    setFetchError(true);
+                }
+            })
+            .catch((err) => {
+                setFetchError(true);
+                console.error(err);
+            })
+            .finally(() => {
+                setLoading(false);
+            });
+    };
+
     useEffect(() => {
-        let isCurrent = true;
         if (showModal && ruleId) {
-            setLoading(true);
-            setFetchError(false);
-            setSelectionError(false);
             setActiveTab("All");
             setRawData({ SP: [], SB: [], SD: [] });
-            ApiRuleEffectedTargeting(ruleId)
-                .then((res) => {
-                    if (!isCurrent) return;
-                    if (res?.isSuccess) {
-                        setLoadedRuleId(ruleId);
-                        setRawData({
-                            SP: (res.data?.SP || []).map(r => ({ ...r, isSelected: false })),
-                            SB: (res.data?.SB || []).map(r => ({ ...r, isSelected: false })),
-                            SD: (res.data?.SD || []).map(r => ({ ...r, isSelected: false })),
-                        });
-                    } else {
-                        setFetchError(true);
-                    }
-                })
-                .catch((err) => {
-                    if (isCurrent) { setFetchError(true); console.error(err); }
-                })
-                .finally(() => {
-                    if (isCurrent) setLoading(false);
-                });
+            fetchData();
         }
-        return () => {
-            isCurrent = false;
-        };
     }, [showModal, ruleId]);
 
     useEffect(() => {
@@ -592,6 +593,17 @@ function TargetingRuleConfirmationModel({
 
                         {/* Info / Counter badge */}
                         <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                id="targeting-rule-confirm-refresh-btn"
+                                onClick={fetchData}
+                                disabled={loading}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-200/90 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:border-sky-500/50 hover:bg-sky-50/50 dark:hover:bg-white/5 transition-all duration-150 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-wait"
+                                title={t("Refresh data")}
+                            >
+                                <FiRefreshCw className={`text-slate-500 dark:text-slate-400 ${loading ? "animate-spin text-sky-500" : ""}`} size={12} />
+                                <span>{t("Refresh")}</span>
+                            </button>
                             <span className="text-xs text-slate-500 dark:text-slate-400">
                                 {t("Report period:")} {t(conditionSummary.dateLabel)}
                             </span>

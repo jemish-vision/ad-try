@@ -206,11 +206,14 @@ function BudgetHistory() {
       cellRenderer: (params) => {
         const row = params.data;
         if (!row) return null;
-        const count = row.affectedCampaigns?.length || 0;
-
-        if (!count) {
+        const campaigns = Array.isArray(row.affectedCampaigns) ? row.affectedCampaigns : [];
+        if (!campaigns.length) {
           return <span className="text-gray-500 small">{t("No Campaigns")}</span>;
         }
+
+        const uniqueCampaignIds = new Set(campaigns.map((c) => c.campaignId || c._id).filter(Boolean));
+        const uniqueCount = uniqueCampaignIds.size;
+        const totalEvents = campaigns.length;
 
         return (
           <div className="flex items-center h-full">
@@ -219,9 +222,15 @@ function BudgetHistory() {
               role="button"
               className="badge inline-flex items-center px-2 py-1 font-bold rounded-md text-[11px] cursor-pointer bg-sky-50 text-sky-600 border border-sky-200 hover:bg-sky-600 hover:text-white dark:bg-sky-500/15 dark:text-sky-400 dark:border-sky-500/30 dark:hover:bg-sky-500 dark:hover:text-white transition-colors"
               onClick={() => setShowHistoryModal({ show: true, data: row?.affectedCampaigns, id: row?._id, ruleId: row?.ruleId })}
+              title={totalEvents > uniqueCount ? `${uniqueCount} ${t("distinct campaigns touched across")} ${totalEvents} ${t("events")}` : undefined}
             >
               <FiTarget size={12} className="mr-1" />
-              {count} {count === 1 ? t("Campaign", "Campaign") : t("Campaigns", "Campaigns")}
+              {uniqueCount} {uniqueCount === 1 ? t("Campaign", "Campaign") : t("Campaigns", "Campaigns")}
+              {totalEvents > uniqueCount && (
+                <span className="ml-1 opacity-75 font-normal">
+                  ({totalEvents} {t("events")})
+                </span>
+              )}
             </span>
           </div>
         );

@@ -76,6 +76,7 @@ const {
 const { stageReportFileInRedis } = require("../services/reportFileStager.service");
 const { processStagedReportBatches } = require("../services/reportBatchWriter.service");
 const { linkReportHistory } = require("../services/reportHistoryCompletion.service");
+const { getCacheWithLog, setCacheWithLog, deletePatternWithLog } = require("../services/redis.service");
 
 const { write_logs: ams_write_logs } = require("../../winston/ams/logger");
 const { cron_logs } = require("../../winston/cronAutomation/logger");
@@ -6771,6 +6772,8 @@ exports.getHistory = async (req, res) => {
       const s = String(ct).toLowerCase().trim();
       if ((s.includes("targeting") || s.includes("target")) && (s.includes("bid") || s.includes("adjust"))) return "targeting_bid";
       if ((s.includes("targeting") || s.includes("target")) && s.includes("status")) return "targeting_status";
+      if (s.includes("campaign") && s.includes("budget") && s.includes("status")) return "campaign_budget_status";
+      if (s.includes("campaign") && s.includes("delivery") && s.includes("status")) return "campaign_delivery_status";
       if (s.includes("budget")) return "budget";
       if (s.includes("placement")) return "placement";
       if (s.includes("status") || s.includes("state")) return "status";
@@ -6792,9 +6795,36 @@ exports.getHistory = async (req, res) => {
 
     const deduplicateHistoryDocs = (docs) => {
       if (!Array.isArray(docs) || docs.length <= 1) return docs || [];
+      // History API and SQS describe the same transition with slightly different
+      // source timestamps. Pair only these two sources, once per observation.
+      // Keep the API's timestamp, same-source repeats, and any intervening reversal.
+      const suppressed = new Set();
+      const statusBuckets = new Map();
+      for (const row of docs) {
+        if (!row.statusHistoryEvent) continue;
+        const src = String(row.source || "").toUpperCase();
+        if (!["AMAZON_API", "AMAZON_SQS"].includes(src)) continue;
+        const key = JSON.stringify([String(row.configId), String(row.profileId), String(row.changeLevel), row.type || "SP", normalizeChangeType(row.changeType)]);
+        const bucket = statusBuckets.get(key) || [];
+        bucket.push(row); statusBuckets.set(key, bucket);
+      }
+      for (const bucket of statusBuckets.values()) {
+        const streams = bucket.filter(row => row.source === "AMAZON_SQS");
+        const sameTransition = (a, b) => normalizeVal(a.oldValue) === normalizeVal(b.oldValue) && normalizeVal(a.newValue) === normalizeVal(b.newValue);
+        const time = row => +new Date(row.createdAt);
+        for (const api of bucket.filter(row => row.source === "AMAZON_API").sort((a, b) => time(a) - time(b))) {
+          const stream = streams.filter(row => !suppressed.has(row) && sameTransition(api, row)
+            && Number.isFinite(time(api)) && Number.isFinite(time(row)) && Math.abs(time(api) - time(row)) <= 5000
+            && !bucket.some(other => other !== api && other !== row && !sameTransition(api, other)
+              && time(other) >= Math.min(time(api), time(row)) && time(other) <= Math.max(time(api), time(row))))
+            .sort((a, b) => Math.abs(time(api) - time(a)) - Math.abs(time(api) - time(b)))[0];
+          if (stream) suppressed.add(stream);
+        }
+      }
       const deduped = [];
       const candidateIndices = new Map();
       for (const doc of docs) {
+        if (suppressed.has(doc)) continue;
         const cId = String(doc.changeLevel || doc.campaignId || "");
         const tId = doc.targetId ? String(doc.targetId).replace(/^[TK]-/, "").trim() : "";
         const target = doc.targeting ? String(doc.targeting).toLowerCase().trim() : "";
@@ -6870,28 +6900,15 @@ exports.getHistory = async (req, res) => {
       return sortOrder * (result || String(a._id).localeCompare(String(b._id)));
     });
 
-    if (!isSortOnJoinedField || isScopedQuery) {
-      let count = 0;
-      let rawDocs = [];
-
-      if (isScopedQuery) {
-        rawDocs = await campaignChangeHistorySchema
-          .find(historyIdentityFilter)
-          .sort({ [sortField]: sortOrder })
-          .lean();
-      } else {
-        const [rawCount, pagedDocs] = await Promise.all([
-          campaignChangeHistorySchema.countDocuments(filter),
-          campaignChangeHistorySchema
-            .find(filter)
-            .sort({ [sortField]: sortOrder })
-            .skip(skipCount)
-            .limit(limitCount * 2)
-            .lean(),
-        ]);
-        count = rawCount;
-        rawDocs = pagedDocs;
-      }
+    {
+      // Canonicalize the complete result before count/sort/pagination on both
+      // the profile History page and campaign-specific history.
+      const identityQuery = { ...historyIdentityFilter };
+      if (!isScopedQuery && filter.createdAt) identityQuery.createdAt = {
+        $gte: new Date(+filter.createdAt.$gte - 86400000),
+        $lte: new Date(+filter.createdAt.$lte + 86400000),
+      };
+      const rawDocs = await campaignChangeHistorySchema.find(identityQuery).sort({ createdAt: -1 }).lean();
 
       let streamTargetingDocs = [];
       if (targeting || req.body?.targetId) {
@@ -6934,18 +6951,12 @@ exports.getHistory = async (req, res) => {
 
       let allRawDocs = [...(rawDocs || []), ...streamTargetingDocs].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       // Align legacy hourly-rule sources before choosing the authoritative row.
-      if (isScopedQuery) allRawDocs = allRawDocs.map(row => computeTriggerSource(row) === "Dayparting" ? { ...row, source: "DAYPARTING" } : row);
+      allRawDocs = allRawDocs.map(row => computeTriggerSource(row) === "Dayparting" ? { ...row, source: "DAYPARTING" } : row);
       const canonicalDocs = deduplicateHistoryDocs(allRawDocs);
-      const dedupedDocs = isScopedQuery ? sortHistoryRows(canonicalDocs.filter(sift(filter)).filter(matchesHistoryDisplayFilters)) : canonicalDocs;
+      const dedupedDocs = sortHistoryRows(canonicalDocs.filter(sift(filter)).filter(matchesHistoryDisplayFilters));
 
-      let effectiveDocs = [];
-      if (isScopedQuery) {
-        totalRecords = dedupedDocs.length;
-        effectiveDocs = isSortOnJoinedField ? dedupedDocs : dedupedDocs.slice(skipCount, skipCount + limitCount);
-      } else {
-        totalRecords = count || dedupedDocs.length;
-        effectiveDocs = dedupedDocs.slice(0, limitCount);
-      }
+      totalRecords = dedupedDocs.length;
+      const effectiveDocs = isSortOnJoinedField ? dedupedDocs : dedupedDocs.slice(skipCount, skipCount + limitCount);
 
       const uniqueCampaignKeys = [];
       const uniqueAdGroupKeys = [];
@@ -7156,87 +7167,7 @@ exports.getHistory = async (req, res) => {
           updatedBy: updatedEmail,
         };
       });
-      if (isScopedQuery && isSortOnJoinedField) data = sortHistoryRows(data).slice(skipCount, skipCount + limitCount);
-    } else {
-      const queryProfileId = !isNaN(numericProfileId) ? numericProfileId : profileId;
-      const pipeline = [
-        { $match: filter },
-        {
-          $lookup: {
-            from: AD_TYPE_COLLECTIONS?.[adType]?.["campaign"] || "campaigns",
-            let: { campaignKey: "$changeLevel", cfg: "$configId", pid: "$profileId" },
-            pipeline: [
-              {
-                $match: {
-                  $expr: {
-                    $and: [
-                      { $eq: ["$configId", "$$cfg"] },
-                      { $eq: ["$profileId", "$$pid"] },
-                      { $eq: ["$campaignId", "$$campaignKey"] },
-                    ],
-                  },
-                },
-              },
-              { $sort: { reportDate: -1, createdAt: -1 } },
-              { $limit: 1 },
-            ],
-            as: "campaignDetails",
-          },
-        },
-        {
-          $lookup: {
-            from: AD_TYPE_COLLECTIONS?.[adType]?.["adGroup"] || "ad_groups",
-            let: { agKey: "$adGroupId", cfg: "$configId", pid: "$profileId" },
-            pipeline: [
-              {
-                $match: {
-                  $expr: {
-                    $and: [
-                      { $ne: ["$$agKey", null] },
-                      { $eq: ["$configId", "$$cfg"] },
-                      { $eq: ["$profileId", "$$pid"] },
-                      { $eq: ["$adGroupId", "$$agKey"] },
-                    ],
-                  },
-                },
-              },
-              { $sort: { reportDate: -1, createdAt: -1 } },
-              { $limit: 1 },
-              { $project: { _id: 0, name: 1, adGroupId: 1 } },
-            ],
-            as: "adGroupDetails",
-          },
-        },
-        {
-          $addFields: {
-            campaignDetails: { $arrayElemAt: ["$campaignDetails", 0] },
-            adGroupDetails: { $arrayElemAt: ["$adGroupDetails", 0] },
-            triggerSource: triggerSourceSwitch,
-          },
-        },
-        {
-          $lookup: {
-            from: "users",
-            let: { uid: "$userId" },
-            pipeline: [
-              { $match: { $expr: { $eq: ["$_id", "$$uid"] } } },
-              { $project: { _id: 0, email: 1 } },
-            ],
-            as: "user",
-          },
-        },
-        { $addFields: { updatedBy: { $arrayElemAt: ["$user.email", 0] } } },
-        { $sort: { [sortField]: sortOrder } },
-        { $skip: skipCount },
-        { $limit: limitCount },
-      ];
-
-      const [count, aggData] = await Promise.all([
-        campaignChangeHistorySchema.countDocuments(filter),
-        campaignChangeHistorySchema.aggregate(pipeline),
-      ]);
-      totalRecords = count || 0;
-      data = aggData || [];
+      if (isSortOnJoinedField) data = sortHistoryRows(data).slice(skipCount, skipCount + limitCount);
     }
 
     // Calculate Old ACOS and Current ACOS for data items
@@ -7485,8 +7416,22 @@ exports.getLatestCampaignHistory = async (req, res) => {
       ...(isNaN(Number(id)) ? [] : [Number(id)]),
     ]);
 
+    // Check Redis cache for instant sub-10ms response
+    const sortedCids = [...new Set(campaignIds.map(String))].sort().join("_");
+    const scopeStr = historyScope ? (Array.isArray(historyScope) ? historyScope.slice().sort().join(",") : String(historyScope)) : "all";
+    const cacheKey = `latest_camp_history:${configId || "all"}_${numericProfileId}_${sortedCids}_${scopeStr}`;
+    try {
+      const cachedData = await getCacheWithLog(cacheKey);
+      if (cachedData) {
+        return res.status(200).send({ isSuccess: true, data: JSON.parse(cachedData) });
+      }
+    } catch (cacheErr) {
+      // ignore
+    }
+
+    const configIdObj = configId && mongoose.Types.ObjectId.isValid(configId) ? new mongoose.Types.ObjectId(configId) : null;
     const baseMatch = {
-      configId,
+      ...(configIdObj ? { configId: { $in: [configId, configIdObj] } } : (configId ? { configId } : {})),
       profileId: numericProfileId,
       changeLevel: { $in: allCampaignIds },
     };
@@ -7536,6 +7481,7 @@ exports.getLatestCampaignHistory = async (req, res) => {
     const campaignMatch = {
       $and: [
         baseMatch,
+        { updatedFrom: { $in: ["Campaign", "Amazon Ads History API"] } },
         {
           $or: [
             { updatedFrom: "Campaign" },
@@ -7547,56 +7493,13 @@ exports.getLatestCampaignHistory = async (req, res) => {
       ],
     };
 
-    const results = await campaignChangeHistorySchema.aggregate([
-      {
-        $match: campaignMatch,
-      },
-      { $sort: { createdAt: -1 } },
-      {
-        $group: {
-          _id: { $toString: "$changeLevel" },
-          latestCreatedAt: { $first: "$createdAt" },
-          changeType: { $first: "$changeType" },
-          updatedFrom: { $first: "$updatedFrom" },
-          targeting: { $first: "$targeting" },
-          oldValue: { $first: "$oldValue" },
-          newValue: { $first: "$newValue" },
-        },
-      },
-    ]);
-
     // 2. Placement-level records (Top of Search, Product pages, Rest of Search)
     const placementMatch = {
       $and: [
         baseMatch,
-        {
-          $or: [
-            { updatedFrom: "Placement" },
-            { changeType: { $regex: /placement|top of search|product page|rest of search/i } },
-          ],
-        },
+        { updatedFrom: "Placement" },
       ],
     };
-
-    const placementResults = await campaignChangeHistorySchema.aggregate([
-      {
-        $match: placementMatch,
-      },
-      { $sort: { createdAt: -1 } },
-      {
-        $group: {
-          _id: {
-            cid: { $toString: "$changeLevel" },
-            changeType: "$changeType",
-          },
-          latestCreatedAt: { $first: "$createdAt" },
-          changeType: { $first: "$changeType" },
-          updatedFrom: { $first: "$updatedFrom" },
-          oldValue: { $first: "$oldValue" },
-          newValue: { $first: "$newValue" },
-        },
-      },
-    ]);
 
     // 3. Targeting & Search Term records (grouped by Campaign + Targeting + MatchType)
     const targetingMatch = {
@@ -7606,37 +7509,93 @@ exports.getLatestCampaignHistory = async (req, res) => {
       ],
     };
 
-    const targetingResults = await campaignChangeHistorySchema.aggregate([
-      {
-        $match: targetingMatch,
-      },
-      { $sort: { createdAt: -1 } },
-      {
-        $group: {
-          _id: {
-            cid: { $toString: "$changeLevel" },
-            targeting: { $toLower: { $trim: { input: "$targeting" } } },
-            matchType: {
-              $cond: [
-                { $and: [{ $ne: ["$matchType", null] }, { $ne: ["$matchType", ""] }] },
-                { $toLower: { $trim: { input: "$matchType" } } },
-                null,
-              ],
-            },
+    // Execute all 4 queries concurrently in parallel
+    const [results, placementResults, targetingResults, streamTargetingResults] = await Promise.all([
+      campaignChangeHistorySchema.aggregate([
+        { $match: campaignMatch },
+        { $sort: { createdAt: -1 } },
+        {
+          $group: {
+            _id: { $toString: "$changeLevel" },
+            latestCreatedAt: { $first: "$createdAt" },
+            changeType: { $first: "$changeType" },
+            updatedFrom: { $first: "$updatedFrom" },
+            targeting: { $first: "$targeting" },
+            oldValue: { $first: "$oldValue" },
+            newValue: { $first: "$newValue" },
           },
-          latestCreatedAt: { $first: "$createdAt" },
-          changeType: { $first: "$changeType" },
-          updatedFrom: { $first: "$updatedFrom" },
-          targeting: { $first: "$targeting" },
-          matchType: { $first: "$matchType" },
-          oldValue: { $first: "$oldValue" },
-          newValue: { $first: "$newValue" },
         },
-      },
+      ]).catch(() => []),
+      campaignChangeHistorySchema.aggregate([
+        { $match: placementMatch },
+        { $sort: { createdAt: -1 } },
+        {
+          $group: {
+            _id: {
+              cid: { $toString: "$changeLevel" },
+              changeType: "$changeType",
+            },
+            latestCreatedAt: { $first: "$createdAt" },
+            changeType: { $first: "$changeType" },
+            updatedFrom: { $first: "$updatedFrom" },
+            oldValue: { $first: "$oldValue" },
+            newValue: { $first: "$newValue" },
+          },
+        },
+      ]).catch(() => []),
+      campaignChangeHistorySchema.aggregate([
+        { $match: targetingMatch },
+        { $sort: { createdAt: -1 } },
+        {
+          $group: {
+            _id: {
+              cid: { $toString: "$changeLevel" },
+              targeting: { $toLower: { $trim: { input: "$targeting" } } },
+              matchType: {
+                $cond: [
+                  { $and: [{ $ne: ["$matchType", null] }, { $ne: ["$matchType", ""] }] },
+                  { $toLower: { $trim: { input: "$matchType" } } },
+                  null,
+                ],
+              },
+            },
+            latestCreatedAt: { $first: "$createdAt" },
+            changeType: { $first: "$changeType" },
+            updatedFrom: { $first: "$updatedFrom" },
+            targeting: { $first: "$targeting" },
+            matchType: { $first: "$matchType" },
+            oldValue: { $first: "$oldValue" },
+            newValue: { $first: "$newValue" },
+          },
+        },
+      ]).catch(() => []),
+      targetingHistorySchema.aggregate([
+        {
+          $match: {
+            ...(numericProfileId ? { profileId: numericProfileId } : {}),
+            campaignId: { $in: allCampaignIds.map(String) },
+            targeting: { $exists: true, $ne: null, $ne: "" },
+          },
+        },
+        { $sort: { last_updated_date_time: -1, createdAt: -1 } },
+        {
+          $group: {
+            _id: {
+              cid: { $toString: "$campaignId" },
+              targeting: { $toLower: { $trim: { input: "$targeting" } } },
+            },
+            targetId: { $first: "$targetId" },
+            latestCreatedAt: { $first: { $ifNull: ["$last_updated_date_time", "$createdAt"] } },
+            bid: { $first: "$bid" },
+            oldBid: { $first: "$oldBid" },
+            source: { $first: "$source" },
+          },
+        },
+      ]).catch(() => []),
     ]);
 
     const map = {};
-    for (const r of results) {
+    for (const r of (results || [])) {
       map[r._id] = {
         latestCreatedAt: r.latestCreatedAt,
         changeType: r.changeType,
@@ -7647,7 +7606,7 @@ exports.getLatestCampaignHistory = async (req, res) => {
       };
     }
 
-    for (const r of placementResults) {
+    for (const r of (placementResults || [])) {
       const cid = r._id?.cid;
       const cType = String(r.changeType || "").toLowerCase();
       let normPlacement = null;
@@ -7675,7 +7634,7 @@ exports.getLatestCampaignHistory = async (req, res) => {
       }
     }
 
-    for (const r of targetingResults) {
+    for (const r of (targetingResults || [])) {
       if (r._id?.targeting) {
         const cid = r._id.cid;
         const normTarget = String(r._id.targeting).toLowerCase().trim();
@@ -7717,60 +7676,38 @@ exports.getLatestCampaignHistory = async (req, res) => {
       }
     }
 
-    try {
-      const streamTargetingResults = await targetingHistorySchema.aggregate([
-        {
-          $match: {
-            ...(numericProfileId ? { profileId: numericProfileId } : {}),
-            campaignId: { $in: allCampaignIds.map(String) },
-            targeting: { $exists: true, $ne: null, $ne: "" },
-          },
-        },
-        { $sort: { last_updated_date_time: -1, createdAt: -1 } },
-        {
-          $group: {
-            _id: {
-              cid: { $toString: "$campaignId" },
-              targeting: { $toLower: { $trim: { input: "$targeting" } } },
-            },
-            targetId: { $first: "$targetId" },
-            latestCreatedAt: { $first: { $ifNull: ["$last_updated_date_time", "$createdAt"] } },
-            bid: { $first: "$bid" },
-            oldBid: { $first: "$oldBid" },
-            source: { $first: "$source" },
-          },
-        },
-      ]);
-
-      for (const str of (streamTargetingResults || [])) {
-        if (str._id?.targeting) {
-          const cid = str._id.cid;
-          const normTarget = String(str._id.targeting).toLowerCase().trim();
-          const info = {
-            latestCreatedAt: str.latestCreatedAt,
-            changeType: "Update Targeting Bid",
-            updatedFrom: "Amazon Stream",
-            source: str.source || "Amazon Marketing Stream",
-            targeting: str._id.targeting,
-            oldValue: str.oldBid !== null && str.oldBid !== undefined ? str.oldBid : "—",
-            newValue: str.bid,
-          };
-          const generalKey = `${cid}_${normTarget}`;
-          if (!map[generalKey] || new Date(info.latestCreatedAt) > new Date(map[generalKey].latestCreatedAt)) {
-            map[generalKey] = info;
-          }
-          if (str.targetId) {
-            const cleanTId = String(str.targetId).replace(/^[TK]-/, "").trim();
-            if (cleanTId) {
-              const idKey = `${cid}_id_${cleanTId}`;
-              if (!map[idKey] || new Date(info.latestCreatedAt) > new Date(map[idKey].latestCreatedAt)) {
-                map[idKey] = info;
-              }
+    for (const str of (streamTargetingResults || [])) {
+      if (str._id?.targeting) {
+        const cid = str._id.cid;
+        const normTarget = String(str._id.targeting).toLowerCase().trim();
+        const info = {
+          latestCreatedAt: str.latestCreatedAt,
+          changeType: "Update Targeting Bid",
+          updatedFrom: "Amazon Stream",
+          source: str.source || "Amazon Marketing Stream",
+          targeting: str._id.targeting,
+          oldValue: str.oldBid !== null && str.oldBid !== undefined ? str.oldBid : "—",
+          newValue: str.bid,
+        };
+        const generalKey = `${cid}_${normTarget}`;
+        if (!map[generalKey] || new Date(info.latestCreatedAt) > new Date(map[generalKey].latestCreatedAt)) {
+          map[generalKey] = info;
+        }
+        if (str.targetId) {
+          const cleanTId = String(str.targetId).replace(/^[TK]-/, "").trim();
+          if (cleanTId) {
+            const idKey = `${cid}_id_${cleanTId}`;
+            if (!map[idKey] || new Date(info.latestCreatedAt) > new Date(map[idKey].latestCreatedAt)) {
+              map[idKey] = info;
             }
           }
         }
       }
-    } catch (streamErr) {
+    }
+
+    try {
+      await setCacheWithLog(cacheKey, JSON.stringify(map), 600);
+    } catch (setErr) {
       // ignore
     }
 

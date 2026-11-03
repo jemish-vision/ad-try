@@ -186,6 +186,14 @@ placementSchema.index({
   reportDate: 1,
 });
 
+placementSchema.index({
+  configId: 1,
+  profileId: 1,
+  placement: 1,
+  reportDate: 1,
+  campaignId: 1,
+});
+
 // 4️⃣ Campaign-level rules
 placementSchema.index({
   configId: 1,

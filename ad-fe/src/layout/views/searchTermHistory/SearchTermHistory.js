@@ -206,11 +206,14 @@ function SearchTermHistory() {
       cellRenderer: (params) => {
         const row = params.data;
         if (!row) return null;
-        const count = row.affectedSearchTerms?.length || 0;
-
-        if (!count) {
+        const terms = Array.isArray(row.affectedSearchTerms) ? row.affectedSearchTerms : [];
+        if (!terms.length) {
           return <span className="text-gray-500 small">{t("No Search Terms")}</span>;
         }
+
+        const uniqueTermIds = new Set(terms.map((s) => s.searchTerm || s.targetId || s._id).filter(Boolean));
+        const uniqueCount = uniqueTermIds.size;
+        const totalEvents = terms.length;
 
         return (
           <div className="flex items-center h-full">
@@ -220,9 +223,15 @@ function SearchTermHistory() {
               variant="outline"
               className="badge preserve-color cursor-pointer transition-colors text-sky-600 bg-sky-50 border-sky-200 hover:bg-sky-600 hover:text-white dark:bg-sky-500/10 dark:text-sky-400 dark:border-sky-500/20 dark:hover:bg-sky-500 dark:hover:text-white font-bold px-2 py-1 text-[11px]"
               onClick={() => setShowHistoryModal({ show: true, data: row?.affectedSearchTerms })}
+              title={totalEvents > uniqueCount ? `${uniqueCount} ${t("distinct terms touched across")} ${totalEvents} ${t("events")}` : undefined}
             >
               <FiSearch size={12} className="mr-1 text-sky-600 group-hover:text-white transition-colors" />
-              {count} {count === 1 ? t("Search Term", "Search Term") : t("Search Terms", "Search Terms")}
+              {uniqueCount} {uniqueCount === 1 ? t("Search Term", "Search Term") : t("Search Terms", "Search Terms")}
+              {totalEvents > uniqueCount && (
+                <span className="ml-1 opacity-75 font-normal">
+                  ({totalEvents} {t("events")})
+                </span>
+              )}
             </Badge>
           </div>
         );

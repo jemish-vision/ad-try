@@ -43,7 +43,7 @@ const ApiGetRecommendation = (data) => {
 }
 
 const ApiGetTotalRecommendationCount = (data) => {
-    return axios.post(`${api}getTotalRecommendationCount`, data, { headers })
+    return axios.post(`${api}getTotalRecommendationCount`, data, { headers: { ...headers, 'x-skip-loader': true }, skipLoader: true })
         .then(res => res.data).catch(res => res.data)
 }
 
@@ -64,6 +64,11 @@ const ApiApplyRuleRecommendation = (id, data, options = {}) => {
     })
         .then(res => res.data).catch(res => res.data)
 }
+
+const ApiBulkUpdateRuleDateFilter = (data) => {
+    return axios.post(`${api}bulkUpdateRuleDateFilter`, data, { headers })
+        .then(res => res.data).catch(res => res.data);
+};
 
 const ApiExportRecommandationRule = (data) => {
     return axios.post(`${api}exportRecommandationRule`, data, { headers, responseType: "blob" })
@@ -96,6 +101,7 @@ export {
 
     ApiApplyRuleRecommendation,
 
+    ApiBulkUpdateRuleDateFilter,
     ApiExportRecommandationRule,
     ApiImportRecommandationRule,
     ApiGetRecommendationsHub,

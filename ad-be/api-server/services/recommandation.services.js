@@ -245,7 +245,11 @@ const CampaignSBBudget = async (profile, checkConfigAds, rule, item, budget) => 
         },
         { $set: { budget } },
         { upsert: true, new: true }
-      ).lean()
+      ).lean();
+      await sbCampaignsSchema.updateMany(
+        { configId: profile?.configId, profileId: profile?.profileId, campaignId: item?.campaignId },
+        { $set: { budget } }
+      ).catch(() => {});
 
       return { isSuccess: true, message: "Campaign Budget Updated Successfully" }
     }
@@ -339,7 +343,11 @@ const CampaignSDBudget = async (profile, checkConfigAds, rule, item, budget) => 
         },
         { $set: { budget } },
         { upsert: true, new: true }
-      ).lean()
+      ).lean();
+      await sdCampaignsSchema.updateMany(
+        { configId: profile?.configId, profileId: profile?.profileId, campaignId: item?.campaignId },
+        { $set: { budget } }
+      ).catch(() => {});
 
       return { isSuccess: true, message: "Campaign Budget Updated Successfully" }
     }
@@ -534,9 +542,13 @@ const CampaignSBStatus = async (profile, checkConfigAds, rule, item, status) => 
           campaignId: item?.campaignId,
           reportDate: currentDate,
         },
-        { $set: { status } },
+        { $set: { status, state: status } },
         { upsert: true, new: true }
-      ).lean()
+      ).lean();
+      await sbCampaignsSchema.updateMany(
+        { configId: profile?.configId, profileId: profile?.profileId, campaignId: item?.campaignId },
+        { $set: { status, state: status } }
+      ).catch(() => {});
 
       return { isSuccess: true, message: "Campaign Status Updated Successfully" }
     }
@@ -628,9 +640,13 @@ const CampaignSDStatus = async (profile, checkConfigAds, rule, item, status) => 
           campaignId: item?.campaignId,
           reportDate: currentDate,
         },
-        { $set: { status } },
+        { $set: { status, state: status } },
         { upsert: true, new: true }
-      ).lean()
+      ).lean();
+      await sdCampaignsSchema.updateMany(
+        { configId: profile?.configId, profileId: profile?.profileId, campaignId: item?.campaignId },
+        { $set: { status, state: status } }
+      ).catch(() => {});
 
       return { isSuccess: true, message: "Campaign Status Updated Successfully" }
     }
@@ -848,9 +864,13 @@ const PlacementSBBid = async (profile, checkConfigAds, rule, item, newBid) => {
           placement: item?.placement,
           reportDate: currentDate,
         },
-        { $set: { placementModifier: newBid } },
+        { $set: { placementModifier: newBid, percentage: newBid } },
         { upsert: true, new: true }
       ).lean();
+      await sbPlacementSchema.updateMany(
+        { configId: profile?.configId, profileId: profile?.profileId, campaignId: item?.campaignId, placement: item?.placement },
+        { $set: { placementModifier: newBid, percentage: newBid } }
+      ).catch(() => {});
 
       return { isSuccess: true, message: "Placement Bid Updated Successfully" };
     } else {
@@ -1091,6 +1111,10 @@ const TargetingSBBid = async (profile, checkConfigAds, rule, item, newBid) => {
         { $set: { keywordBid: newBid } },
         { upsert: true, new: true }
       ).lean();
+      await sbTargetingSchema.updateMany(
+        { configId: rule?.configId, profileId: rule?.profileId, $or: [{ targetId: item?.targetId }, { targeting: item?.targeting, campaignId: item?.campaignId }] },
+        { $set: { keywordBid: newBid } }
+      ).catch(() => {});
 
       return { isSuccess: true, message: "Targeting Bid Updated Successfully" };
     } else {

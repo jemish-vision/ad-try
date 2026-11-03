@@ -57,6 +57,7 @@ async function processBatchUpdates({
     dbModel = null,
     buildDbUpdate = null,
     batchSize = null,
+    beforeRequest,
 }) {
     if (!Array.isArray(updates) || updates.length === 0) {
         return {
@@ -73,37 +74,37 @@ async function processBatchUpdates({
     let result;
     switch (entityType) {
         case "SP_KEYWORDS":
-            result = await batchUpdateSPKeywords({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize });
+            result = await batchUpdateSPKeywords({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize, beforeRequest });
             break;
         case "SP_TARGETS":
-            result = await batchUpdateSPTargets({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize });
+            result = await batchUpdateSPTargets({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize, beforeRequest });
             break;
         case "SP_CAMPAIGNS":
-            result = await batchUpdateSPCampaigns({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize });
+            result = await batchUpdateSPCampaigns({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize, beforeRequest });
             break;
         case "SP_ADGROUPS":
-            result = await batchUpdateSPAdGroups({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize });
+            result = await batchUpdateSPAdGroups({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize, beforeRequest });
             break;
         case "SB_KEYWORDS":
-            result = await batchUpdateSBKeywords({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize });
+            result = await batchUpdateSBKeywords({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize, beforeRequest });
             break;
         case "SB_TARGETS":
-            result = await batchUpdateSBTargets({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize });
+            result = await batchUpdateSBTargets({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize, beforeRequest });
             break;
         case "SB_CAMPAIGNS":
-            result = await batchUpdateSBCampaigns({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize });
+            result = await batchUpdateSBCampaigns({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize, beforeRequest });
             break;
         case "SB_ADGROUPS":
-            result = await batchUpdateSBAdGroups({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize });
+            result = await batchUpdateSBAdGroups({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize, beforeRequest });
             break;
         case "SD_TARGETS":
-            result = await batchUpdateSDTargets({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize });
+            result = await batchUpdateSDTargets({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize, beforeRequest });
             break;
         case "SD_CAMPAIGNS":
-            result = await batchUpdateSDCampaigns({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize });
+            result = await batchUpdateSDCampaigns({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize, beforeRequest });
             break;
         case "SD_ADGROUPS":
-            result = await batchUpdateSDAdGroups({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize });
+            result = await batchUpdateSDAdGroups({ profile, checkConfigAds, configId, items: updates, batchSize: effectiveBatchSize, beforeRequest });
             break;
         default:
             throw new Error(`Unsupported entityType: ${entityType}`);

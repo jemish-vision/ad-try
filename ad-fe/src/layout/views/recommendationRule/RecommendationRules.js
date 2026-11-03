@@ -7,7 +7,8 @@ import { Button } from "../../../components/ui/button";
 import { Switch } from "../../../components/ui/switch";
 import AddRule from "./AddRule";
 import RecommendationCampaignModal from "./RecommendationCampaignModal";
-import { ApiDeleteRule, ApiGetRules, ApiStatusChange, ApiExportRecommandationRule, ApiImportRecommandationRule, ApiUpdateRules } from "../../../api-wrapper/recommendation/ApiRecommendation";
+import { ApiDeleteRule, ApiGetRules, ApiStatusChange, ApiExportRecommandationRule, ApiImportRecommandationRule, ApiUpdateRules, ApiBulkUpdateRuleDateFilter } from "../../../api-wrapper/recommendation/ApiRecommendation";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { ProfileContext } from "../../../helper/usecontext/useContext";
 import { handleLoader, Toast, useDispatch, useNavigate } from "../../../helper/links/Link";
 import moment from "moment";
@@ -224,6 +225,44 @@ function RecomandationRules({ hideFilter = false } = {}) {
 
         } catch (err) {
             Toast.error(err.message || "Something went wrong during import");
+        }
+    };
+
+    const [bulkDateFilter, setBulkDateFilter] = useState("");
+    const [bulkApplyLoading, setBulkApplyLoading] = useState(false);
+
+    const handleBulkApplyDateFilter = async () => {
+        if (!selectedRows.length) {
+            Toast.error(t("Please select at least one recommendation rule"));
+            return;
+        }
+        if (!bulkDateFilter) {
+            Toast.error(t("Please select a date filter"));
+            return;
+        }
+
+        setBulkApplyLoading(true);
+        try {
+            const res = await ApiBulkUpdateRuleDateFilter({
+                ruleIds: selectedRows,
+                reportDate: bulkDateFilter,
+                profileId: selectedCampagin?.profileSendID,
+            });
+
+            if (res?.isSuccess) {
+                Toast.success(res?.message || t("Date filter updated successfully"));
+                setSelectedRows([]);
+                setSelectAll(false);
+                setBulkDateFilter("");
+                getRule(arg);
+            } else {
+                Toast.error(res?.message || t("Failed to update date filter"));
+            }
+        } catch (err) {
+            console.error("Bulk date filter update error:", err);
+            Toast.error(t("Failed to update date filter"));
+        } finally {
+            setBulkApplyLoading(false);
         }
     };
 
@@ -755,13 +794,46 @@ function RecomandationRules({ hideFilter = false } = {}) {
             <div className="middle_container budget_container budget-rules">
                 <div className="data_content data_content_btn glass-grid-container h-maxContent" style={{ marginTop: "12px" }}>
                     <div className="camapgin_btn flex flex-wrap justify-between items-center gap-3 pt-4 pb-2 px-6">
-                        <div className="flex items-center">
+                        <div className="flex items-center gap-3 flex-wrap">
                             <h5 className="m-0 flex items-center cron-title-bar" style={{ fontSize: 14, color: isDark ? "#cbd5e1e0" : "#0F172A" }}>
                                 {t("Recommendation")}
                             </h5>
                         </div>
 
                         <div className={`flex flex-wrap items-center gap-2 ${isMobile ? "w-full justify-start" : "justify-end"}`}>
+                            {selectedRows.length > 0 && PermissionCheck(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.UPDATE) && (
+                                <div className="flex items-center gap-2 flex-wrap mr-1">
+                                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                                        {t("Selected")}: <span className="text-sky-600 dark:text-[#38bdf8] font-bold">{selectedRows.length}</span>
+                                    </span>
+                                    <div className="w-[195px]">
+                                        <Select
+                                            value={bulkDateFilter}
+                                            onValueChange={(val) => setBulkDateFilter(val)}
+                                        >
+                                            <SelectTrigger className="h-[34px] text-xs bg-white dark:bg-slate-900 border-slate-200 dark:border-white/10">
+                                                <SelectValue placeholder={t("Bulk Update Date Filter")} />
+                                            </SelectTrigger>
+                                            <SelectContent className="z-[99999]">
+                                                {DATE_FILTER_OPTION.map((opt) => (
+                                                    <SelectItem key={opt.value} value={opt.value}>
+                                                        {opt.label}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <Button
+                                        type="button"
+                                        className="customize-button m-0 h-[34px] px-3 text-xs"
+                                        disabled={!bulkDateFilter || bulkApplyLoading}
+                                        onClick={handleBulkApplyDateFilter}
+                                    >
+                                        {bulkApplyLoading ? t("Applying...") : t("Apply")}
+                                    </Button>
+                                </div>
+                            )}
+
                             <div className="flex items-center gap-2">
                                 {PermissionCheck(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.CREATE) && (
                                     <Button

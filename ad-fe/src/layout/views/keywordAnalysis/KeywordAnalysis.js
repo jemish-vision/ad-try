@@ -341,7 +341,6 @@ const KEYWORD_ANALYSIS_COLUMNS = [
       };
 
       const res = await ApiKeywordAnalysis(payload);
-
       // Discard a stale response if a newer request (ad-type / filter change) started.
       if (currentFetchId !== fetchIdRef.current) return;
 
@@ -361,11 +360,14 @@ const KEYWORD_ANALYSIS_COLUMNS = [
     lastFetchParamsRef.current = "";
   }, [profileId?.value]);
 
-  // Re-fetch on filter change
+  // Re-fetch on filter change (debounced 50ms to prevent duplicate calls during mount & date sync)
   useEffect(() => {
     if (!profileId?.value) return;
     setSelectedRows([]);
-    fetchGrid(1);
+    const timer = setTimeout(() => {
+      fetchGrid(1);
+    }, 50);
+    return () => clearTimeout(timer);
   }, [profileId?.value, selectedAdType, debouncedSearch, dateRange, campaignStatus]);
 
   const handleGridSort = (e) => {

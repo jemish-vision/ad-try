@@ -17,7 +17,7 @@ function fixture({ campaigns = [{ campaignId: 1, status: 'ENABLED' }], adGroups 
     const auditBatches = [];
     const pipelines = [];
     let rules = Array.from({ length: ruleCount }, (_, i) => ({ _id: new mongoose.Types.ObjectId(), configId: new mongoose.Types.ObjectId(configId), profileId, gridName: 'Targeting', reportDate: 'LAST_7_DAYS', timezone: 'Asia/Kolkata', ruleName: 'rule' + i }));
-    const find = (kind, rows) => (filter) => { queries.push({ kind, filter }); const res = { sort: () => res, lean: async () => typeof rows === 'function' ? rows() : rows }; return res; };
+    const find = (kind, rows) => (filter) => { queries.push({ kind, filter }); const res = { sort: () => res, lean: async () => typeof rows === 'function' ? rows(filter) : rows }; return res; };
     const models = {
         adTypeCampaignSchema: { find: find('campaign', campaigns) }, adTypeAdGroupSchema: { find: find('adGroup', adGroups) }, adTypeTargetingSchema: {
             find: find('target', targets), aggregate(pipeline) {
@@ -172,6 +172,28 @@ test('missing profile and no active rules keep their response contracts', async 
     assert.equal((await f.call('getRecommendation')).data.length, 0);
 });
 test('detail handler reads fresh data each time without a memory or Redis cache', async () => { const candidates = [{ _id: { campaignId: 1, adGroupId: 2, targetId: 3 }, isNew: true }]; const targets = [{ campaignId: 1, adGroupId: 2, targetId: 3 }]; const f = fixture({ candidates, targets }); const first = await f.call('getRecommendationData'); assert.equal(first.isSuccess, true); assert.equal(first.totalRecords, 1); candidates.push({ _id: { campaignId: 1, adGroupId: 2, targetId: 4 }, isNew: true }); targets.push({ campaignId: 1, adGroupId: 2, targetId: 4 }); const second = await f.call('getRecommendationData'); assert.equal(second.totalRecords, 2); assert.equal(f.aggregateCount, 2); });
+test('missing date-scoped targets hydrate through the merged latest-target resolver', async () => {
+    const latest = { campaignId: 1, adGroupId: 2, targetId: 3, status: 'ENABLED', targeting: 'boots', matchType: 'EXACT', keywordBid: 9, reportDate: '2026-10-15' };
+    const f = fixture({ targets: filter => filter.reportDate ? [] : [latest] });
+    const result = await f.call('getRecommendationData');
+    assert.equal(result.isSuccess, true);
+    assert.equal(result.data[0].targeting, 'boots');
+    assert.equal(result.data[0].targetingBid, 9);
+    const fallback = f.queries.filter(q => q.kind === 'target' && q.filter.$or);
+    assert.equal(fallback.length, 1);
+    assert.equal(fallback[0].filter.$or[0].targetId, 3);
+});
+test('streamed dismissal resolves missing targets and excludes a paused latest target', async () => {
+    const latest = { campaignId: 1, adGroupId: 2, targetId: 3, status: 'ENABLED', targeting: 'boots', matchType: 'EXACT', reportDate: '2026-10-15' };
+    const active = fixture({ targets: filter => filter.reportDate ? [] : [latest] });
+    assert.equal((await active.call('deleteRecommendation')).isSuccess, true);
+    assert.equal(active.historyWrites[0][0].updateOne.filter.targetId, 3);
+    assert.equal(active.closed, 1);
+    const paused = fixture({ targets: filter => filter.reportDate ? [] : [{ ...latest, status: 'PAUSED' }] });
+    const result = await paused.call('getRecommendationData');
+    assert.equal(result.isSuccess, true);
+    assert.equal(result.data.length, 0);
+});
 test('targeting detail preserves metrics and hydrates current bid, match type and names', async () => {
     const f = fixture({ candidates: [{ _id: { campaignId: 1, adGroupId: 2, targetId: 3 }, campaignId: 1, adGroupId: 2, profileId, spend: 45, acos: 12.5, targeting: 'shoe', targetingBid: 1 }], campaigns: [{ campaignId: 1, status: 'ENABLED', name: 'Campaign' }], adGroups: [{ adGroupId: 2, status: 'ENABLED', name: 'Group' }], targets: [{ campaignId: 1, adGroupId: 2, targetId: 3, status: 'ENABLED', keywordBid: 9, matchType: 'EXACT', keywordType: 'KEYWORD' }], statuses: [{ campaignId: 1, adGroupId: 2, targetId: 3 }] });
     const result = await f.call('getRecommendationData');

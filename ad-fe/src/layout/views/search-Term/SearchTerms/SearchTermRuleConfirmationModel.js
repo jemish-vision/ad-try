@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../../co
 import { Input } from "../../../../components/ui/input";
 import { getSuggestedCampaignNames } from "../../../../utility/campaignNameSuggestion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../components/ui/select";
-import { FiAlertCircle, FiSettings, FiCheckCircle } from 'react-icons/fi';
+import { FiAlertCircle, FiSettings, FiCheckCircle, FiRefreshCw } from 'react-icons/fi';
 import { ProfileContext } from "../../../../helper/usecontext/useContext";
 import { ApiGetRuleSettings } from "../../../../api-wrapper/ApiAdsConfig";
 
@@ -642,7 +642,8 @@ function SearchTermRuleConfirmationModel({
                     </DialogHeader>
 
                     {/* Tabs area */}
-                    <div className="flex flex-wrap items-center gap-2 mb-4 border-b border-slate-100 dark:border-white/10 pb-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-4 border-b border-slate-100 dark:border-white/10 pb-4">
+                        <div className="flex flex-wrap items-center gap-2">
                         {AD_TABS.map(({ key, label }) => {
                             const active = activeTab === key;
                             return (
@@ -663,6 +664,18 @@ function SearchTermRuleConfirmationModel({
                                 </button>
                             );
                         })}
+                        </div>
+                        <button
+                            type="button"
+                            id="search-term-rule-confirm-refresh-btn"
+                            onClick={fetchData}
+                            disabled={loading}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-200/90 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:border-sky-500/50 hover:bg-sky-50/50 dark:hover:bg-white/5 transition-all duration-150 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-wait"
+                            title={t("Refresh data")}
+                        >
+                            <FiRefreshCw className={`text-slate-500 dark:text-slate-400 ${loading ? "animate-spin text-sky-500" : ""}`} size={12} />
+                            <span>{t("Refresh")}</span>
+                        </button>
                     </div>
 
                     <div className="flex justify-between items-center text-xs text-slate-500 dark:text-slate-400 mb-2 font-sans font-medium">

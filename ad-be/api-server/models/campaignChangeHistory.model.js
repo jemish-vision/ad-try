@@ -68,6 +68,11 @@ campaignChangeHistorySchema.index({ createdAt: 1 }, { expireAfterSeconds: 342144
 // Compound indexes for fast history querying, sorting, and stream lookup
 campaignChangeHistorySchema.index({ configId: 1, profileId: 1, type: 1, createdAt: -1 });
 campaignChangeHistorySchema.index({ configId: 1, profileId: 1, changeLevel: 1, createdAt: -1 });
+campaignChangeHistorySchema.index({ profileId: 1, changeLevel: 1, createdAt: -1 });
+campaignChangeHistorySchema.index({ configId: 1, profileId: 1, updatedFrom: 1, changeLevel: 1, createdAt: -1 });
+campaignChangeHistorySchema.index({ profileId: 1, updatedFrom: 1, changeLevel: 1, createdAt: -1 });
+campaignChangeHistorySchema.index({ configId: 1, profileId: 1, changeLevel: 1, targeting: 1, createdAt: -1 });
+campaignChangeHistorySchema.index({ profileId: 1, changeLevel: 1, targeting: 1, createdAt: -1 });
 campaignChangeHistorySchema.index({ configId: 1, profileId: 1, source: 1, createdAt: -1 });
 campaignChangeHistorySchema.index({ configId: 1, profileId: 1, changeType: 1 });
 campaignChangeHistorySchema.index({ changeLevel: 1, changeType: 1, newValue: 1 });

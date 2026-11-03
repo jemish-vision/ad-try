@@ -212,11 +212,14 @@ function BidPlacementRuleHistory() {
       cellRenderer: (params) => {
         const row = params.data;
         if (!row) return null;
-        const count = row.affectedPlacements?.length || 0;
-
-        if (!count) {
+        const placements = Array.isArray(row.affectedPlacements) ? row.affectedPlacements : [];
+        if (!placements.length) {
           return <span className="text-gray-500 small">{t("No Placements")}</span>;
         }
+
+        const uniquePlacementIds = new Set(placements.map((p) => (p.placement ? `${p.campaignId}_${p.placement}` : p._id)).filter(Boolean));
+        const uniqueCount = uniquePlacementIds.size;
+        const totalEvents = placements.length;
 
         return (
           <div className="flex items-center h-full">
@@ -225,9 +228,15 @@ function BidPlacementRuleHistory() {
               role="button"
               className="badge inline-flex items-center px-2 py-1 font-bold rounded-md text-[11px] cursor-pointer bg-sky-50 text-sky-600 border border-sky-200 hover:bg-sky-600 hover:text-white dark:bg-sky-500/15 dark:text-sky-400 dark:border-sky-500/30 dark:hover:bg-sky-500 dark:hover:text-white transition-colors"
               onClick={() => setShowHistoryModal({ show: true, data: row?.affectedPlacements, id: row?._id, ruleId: row?.ruleId })}
+              title={totalEvents > uniqueCount ? `${uniqueCount} ${t("distinct placements touched across")} ${totalEvents} ${t("events")}` : undefined}
             >
               <FiSliders size={12} className="mr-1" />
-              {count} {count === 1 ? t("Placement", "Placement") : t("Placements", "Placements")}
+              {uniqueCount} {uniqueCount === 1 ? t("Placement", "Placement") : t("Placements", "Placements")}
+              {totalEvents > uniqueCount && (
+                <span className="ml-1 opacity-75 font-normal">
+                  ({totalEvents} {t("events")})
+                </span>
+              )}
             </span>
           </div>
         );

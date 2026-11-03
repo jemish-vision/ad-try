@@ -210,3 +210,47 @@ test('genuine repeated campaign transitions are not collapsed by 24-hour generic
   const result=await run('all',{targeting:undefined,targetId:undefined,type:'Status'},{history:rows,stream:[]});
   assert.equal(result.totalRecords,3);
 });
+
+const budgetStatus = (id, source, seconds, oldValue = 'IN_BUDGET', newValue = 'OUT_OF_BUDGET') => ({
+  configId, profileId, changeLevel: campaignId, type: 'SP', _id: id, source,
+  updatedFrom: source === 'AMAZON_API' ? 'Amazon Ads History API' : 'Amazon Stream',
+  changeType: 'Update Campaign Budget Status', statusHistoryEvent: true, oldValue, newValue,
+  createdAt: new Date(Date.UTC(2026, 10, 2, 7, 0, seconds)),
+});
+for (const scoped of [false, true]) test(`status echoes merge before pagination (${scoped ? 'campaign' : 'main History'})`, async () => {
+  const rows = [budgetStatus('api1', 'AMAZON_API', 1), budgetStatus('stream1', 'AMAZON_SQS', 0),
+    budgetStatus('api2', 'AMAZON_API', 31), budgetStatus('stream2', 'AMAZON_SQS', 30)].map((row, i) => ({...row, changeLevel: campaignId + (i > 1 ? 1 : 0)}));
+  const extra = {campaignId: scoped ? campaignId : undefined, targetId: undefined, targeting: undefined, perPage: 1};
+  const fixture = {history: rows, stream: []};
+  const first = await run('all', extra, fixture);
+  assert.equal(first.totalRecords, scoped ? 1 : 2);
+  assert.equal(first.data.length, 1);
+  assert.equal(first.data[0]._id, scoped ? 'api1' : 'api2');
+  if (!scoped) {
+    const second = await run('all', {...extra, pageNo: 2}, fixture);
+    assert.equal(second.data[0]._id, 'api1');
+    assert.equal((await run('all', {...extra, fieldName: 'updatedBy'}, fixture)).totalRecords, 2);
+  }
+});
+test('nearby repeats from the same source remain distinct', async () => {
+  const rows = [budgetStatus('one', 'AMAZON_SQS', 0), budgetStatus('two', 'AMAZON_SQS', 1)];
+  assert.equal((await run('all', {targetId: undefined, targeting: undefined}, {history: rows, stream: []})).totalRecords, 2);
+});
+test('rapid budget reversal and second depletion survive one-to-one source pairing', async () => {
+  const rows = [budgetStatus('api-a', 'AMAZON_API', 1), budgetStatus('sqs-a', 'AMAZON_SQS', 0),
+    budgetStatus('api-b', 'AMAZON_API', 3, 'OUT_OF_BUDGET', 'IN_BUDGET'), budgetStatus('sqs-b', 'AMAZON_SQS', 2, 'OUT_OF_BUDGET', 'IN_BUDGET'),
+    budgetStatus('api-c', 'AMAZON_API', 5), budgetStatus('sqs-c', 'AMAZON_SQS', 4)];
+  const result = await run('all', {targetId: undefined, targeting: undefined}, {history: rows, stream: []});
+  assert.equal(result.totalRecords, 3);
+  assert.deepEqual(Array.from(result.data, r => r._id), ['api-c','api-b','api-a']);
+});
+test('opposing transition prevents matching a later real event to an earlier source event', async () => {
+  const rows = [budgetStatus('earlier', 'AMAZON_SQS', 0), budgetStatus('reverse', 'AMAZON_SQS', 1, 'OUT_OF_BUDGET','IN_BUDGET'), budgetStatus('later', 'AMAZON_API', 2)];
+  assert.equal((await run('all', {targetId: undefined, targeting: undefined}, {history: rows, stream: []})).totalRecords, 3);
+});
+test('status source match is bounded and keeps distinct delivery and campaign state dimensions', async () => {
+  const rows = [budgetStatus('early', 'AMAZON_SQS', 0), budgetStatus('late', 'AMAZON_API', 10),
+    {...budgetStatus('state', 'AMAZON_API', 0), changeType: 'Update Campaign Status', oldValue:'ENABLED',newValue:'PAUSED'},
+    {...budgetStatus('delivery', 'AMAZON_SQS', 0), changeType: 'Update Campaign Delivery Status',oldValue:'ENABLED',newValue:'PAUSED'}];
+  assert.equal((await run('all', {targetId: undefined, targeting: undefined}, {history: rows, stream: []})).totalRecords, 4);
+});

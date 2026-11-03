@@ -77,6 +77,9 @@ const { isDuplicateTargetingRule, checkDuplicateTargetingRule } = require("../he
 
 const amazonAxios = require("../helper/amazonAxios");
 const { processBatchUpdates } = require("../services/amazonBatchService");
+const { runWithRuleSlot } = require("../services/automation/ruleSlotExecution.service");
+const { resolveHourlyTargetingBaseline } = require("../helpers/hourlyTargetingBaseline");
+const { settleTargetingItems } = require("../helpers/settleTargetingItems");
 const AD_TYPE_COLLECTIONS = require("../helper/adTypeCollections");
 const { resolveTargeting } = require("../helper/findTargeting");
 const { logAudit } = require("../helpers/auditHelper");
@@ -85,6 +88,7 @@ const { sendNotificationToUser } = require("../helper/sendNotification");
 const { stageReportFileInRedis } = require("../services/reportFileStager.service");
 const { processStagedReportBatches } = require("../services/reportBatchWriter.service");
 const { linkReportHistory } = require("../services/reportHistoryCompletion.service");
+const { deletePatternWithLog } = require("../services/redis.service");
 
 const sendMinBidClampedNotification = async ({
     profile,
@@ -2320,6 +2324,11 @@ exports.adjustBid = async (req, res) => {
             ? `Bid adjusted successfully (bids falling below ${marketMin.toFixed(2)} were enforced to the minimum value).`
             : "Bid adjusted successfully.";
 
+        try {
+            await deletePatternWithLog(`kw_analysis:${profileId}_*`);
+            await deletePatternWithLog(`latest_camp_history:*_${profileId}_*`);
+        } catch (_) {}
+
         return res.status(200).send({
             isSuccess: true,
             message: message,
@@ -2747,6 +2756,11 @@ exports.changeStatus = async (req, res) => {
                 message: "Failed to update status on Amazon. Check API/credentials or item status.",
             });
         }
+
+        try {
+            await deletePatternWithLog(`kw_analysis:${profileId}_*`);
+            await deletePatternWithLog(`latest_camp_history:*_${profileId}_*`);
+        } catch (_) {}
 
         if (allSuccessIds.length < totalRequested) {
             return res.status(200).send({
@@ -4857,7 +4871,36 @@ exports.manualRunTargetingRule = async (req, res) => {
     }
 }
 
-const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDate, currentTime, data, isManual = false) => {
+// A 207 response may contain rejected items. Confirm the requested entity, not just HTTP status.
+const assertTargetingUpdateConfirmed = (response, options) => {
+    if (![200, 207].includes(response?.status)) throw new Error("Amazon targeting update was not confirmed");
+    const payload = options.data;
+    const request = Array.isArray(payload) ? payload[0] : Object.values(payload || {}).find(Array.isArray)?.[0];
+    const idKey = ["targetId", "keywordId", "adGroupId", "campaignId"].find(key => request?.[key] !== undefined);
+    if (!idKey) throw new Error("Amazon targeting update has no entity identity");
+    const id = String(request[idKey]);
+    const data = response.data;
+    const explicitSuccess = item => String(item?.[idKey]) === id && !item?.error && !item?.errorDetails &&
+        (item?.code === undefined || item.code === "SUCCESS" || item.code === 200);
+    if (Array.isArray(data)) {
+        if (data.length === 1 && explicitSuccess(data[0])) return;
+    } else {
+        const groups = [data, ...Object.values(data || {}).filter(value => value && typeof value === "object")];
+        for (const group of groups) {
+            if ((group.error || group.errors || []).length) continue;
+            if (Array.isArray(group.success) && group.success.some(explicitSuccess)) return;
+        }
+    }
+    throw new Error("Amazon rejected or did not confirm the requested targeting update");
+};
+
+const recordTargetingExecutionChange = async (execution, input) => {
+    const record = await recordRuleExecutionChange(input);
+    if (execution.assertActive && !record) throw new Error("Targeting lifecycle persistence failed after update; recovery required");
+    return record;
+};
+
+const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDate, currentTime, data, isManual = false, execution = {}) => {
     let targetingList = []
     if (Array.isArray(data)) {
         // if (!data?.length) return true
@@ -4871,7 +4914,7 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
         log_type: "info",
     });
 
-    const campaignIds = targetingList.map(t => t.campaignId).filter((id, index, arr) => arr.indexOf(id) === index);
+    const campaignIds = [...new Set(targetingList.map(t => t.campaignId).filter(id => !Number.isNaN(id)))];
     const { lowStockCampaigns } = await checkCampaignProductAvailability(rule.configId, rule.profileId, campaignIds, currentDate);
 
     const lowStockIds = new Set(lowStockCampaigns.map(c => c.campaignId));
@@ -4922,7 +4965,7 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
             $set: {
                 conditionSnapshot: rule.conditionSnapshot,
                 ruleName: rule.ruleName,
-                status: "COMPLETED",
+                status: isManual ? "COMPLETED" : "RUNNING",
                 remark: remark
             }
         },
@@ -4974,7 +5017,7 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
                     status = actionType.actionName.toUpperCase();
                     if (status) {
                         if (existingActive && String(existingActive.newValue) === String(status) && String(targeting.status).toUpperCase() === String(status)) {
-                            await recordRuleExecutionChange({
+                            await recordTargetingExecutionChange(execution, {
                                 conditionSnapshot: targeting.conditionSnapshot,
                                 configId: rule.configId,
                                 profileId: rule.profileId,
@@ -5015,7 +5058,9 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
 
                 if (["Increase", "Decrease", "SetBid"].includes(actionType.actionName)) {
                     let actionValue = actionType.actionValue;
-                    const baseline = existingActive ? (parseFloat(existingActive.oldValue) || parseFloat(targeting.keywordBid)) : parseFloat(targeting.keywordBid);
+                    const baseline = rule.isHourlyBid && !isManual
+                        ? await resolveHourlyTargetingBaseline({ rule, type: "SP", targeting, existingActive })
+                        : (existingActive ? (parseFloat(existingActive.oldValue) || parseFloat(targeting.keywordBid)) : parseFloat(targeting.keywordBid));
                     let calculatedBid = baseline;
 
                     if (actionType.actionValueType == "Percentage") {
@@ -5058,7 +5103,7 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
                     }
 
                     if (existingActive && Number(existingActive.newValue) === calculatedBid && (Number(targeting.keywordBid) === calculatedBid || isDayparting)) {
-                        await recordRuleExecutionChange({
+                        await recordTargetingExecutionChange(execution, {
                             conditionSnapshot: targeting.conditionSnapshot,
                             configId: rule.configId,
                             profileId: rule.profileId,
@@ -5109,7 +5154,7 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
                 }
 
                 const context = {
-                    targeting, existingActive, oldValue: existingActive ? (["Enabled", "Paused", "CampaignEnabled", "CampaignPaused", "AdGroupEnabled", "AdGroupPaused"].includes(actionType.actionName) ? existingActive.oldValue : parseFloat(existingActive.oldValue)) : (["Enabled", "Paused", "CampaignEnabled", "CampaignPaused", "AdGroupEnabled", "AdGroupPaused"].includes(actionType.actionName) ? oldStatus : targeting.keywordBid),
+                    targeting, oldValue: existingActive ? (["Enabled", "Paused", "CampaignEnabled", "CampaignPaused", "AdGroupEnabled", "AdGroupPaused"].includes(actionType.actionName) ? existingActive.oldValue : parseFloat(existingActive.oldValue)) : (["Enabled", "Paused", "CampaignEnabled", "CampaignPaused", "AdGroupEnabled", "AdGroupPaused"].includes(actionType.actionName) ? oldStatus : targeting.keywordBid),
                     newValue: ["Enabled", "Paused", "CampaignEnabled", "CampaignPaused", "AdGroupEnabled", "AdGroupPaused"].includes(actionType.actionName) ? status : Number(keywordBid),
                     changed, status, keywordBid, isCampaign, isAdGroup, actionType, oldStatus, keywordBidUpdatedFrom,
                     isDayparting, runPrefix
@@ -5152,7 +5197,7 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
             if (!ctx) return;
             const { targeting, oldValue, newValue, changed, status, keywordBid, isCampaign, isAdGroup, actionType, keywordBidUpdatedFrom, isDayparting, runPrefix } = ctx;
 
-            await recordRuleExecutionChange({
+            await recordTargetingExecutionChange(execution, {
                 conditionSnapshot: targeting.conditionSnapshot,
                 configId: rule.configId,
                 profileId: rule.profileId,
@@ -5295,64 +5340,86 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
             }
         };
 
+        const flushSuccessfulUpdates = async () => {
+            if (bulkTargetingOps.length) { await targetingSchema.bulkWrite(bulkTargetingOps); bulkTargetingOps.length = 0; }
+            if (bulkCampaignOps.length) { await campaignSchema.bulkWrite(bulkCampaignOps); bulkCampaignOps.length = 0; }
+            if (bulkAdGroupOps.length) { await adGroupsSchema.bulkWrite(bulkAdGroupOps); bulkAdGroupOps.length = 0; }
+        };
+
         if (stagedSPTargets.length > 0) {
-            const { successfulItems } = await processBatchUpdates({
+            const { successfulItems, failedCount, failedItems } = await processBatchUpdates({
                 updates: stagedSPTargets,
                 entityType: "SP_TARGETS",
                 profile,
                 checkConfigAds,
-                configId: rule.configId
+                configId: rule.configId,
+                beforeRequest: execution.assertActive
             });
+            await execution.assertActive?.();
             for (const item of successfulItems) {
                 await handleSuccessItem(item);
             }
+            if (failedCount || failedItems?.length) {
+                await flushSuccessfulUpdates();
+                throw new Error("SP targeting rule has unconfirmed or failed updates; recovery required");
+            }
         }
         if (stagedSPKeywords.length > 0) {
-            const { successfulItems } = await processBatchUpdates({
+            const { successfulItems, failedCount, failedItems } = await processBatchUpdates({
                 updates: stagedSPKeywords,
                 entityType: "SP_KEYWORDS",
                 profile,
                 checkConfigAds,
-                configId: rule.configId
+                configId: rule.configId,
+                beforeRequest: execution.assertActive
             });
+            await execution.assertActive?.();
             for (const item of successfulItems) {
                 await handleSuccessItem(item);
             }
+            if (failedCount || failedItems?.length) {
+                await flushSuccessfulUpdates();
+                throw new Error("SP targeting rule has unconfirmed or failed updates; recovery required");
+            }
         }
         if (stagedSPCampaigns.length > 0) {
-            const { successfulItems } = await processBatchUpdates({
+            const { successfulItems, failedCount, failedItems } = await processBatchUpdates({
                 updates: stagedSPCampaigns,
                 entityType: "SP_CAMPAIGNS",
                 profile,
                 checkConfigAds,
-                configId: rule.configId
+                configId: rule.configId,
+                beforeRequest: execution.assertActive
             });
+            await execution.assertActive?.();
             for (const item of successfulItems) {
                 await handleSuccessItem(item);
             }
+            if (failedCount || failedItems?.length) {
+                await flushSuccessfulUpdates();
+                throw new Error("SP targeting rule has unconfirmed or failed updates; recovery required");
+            }
         }
         if (stagedSPAdGroups.length > 0) {
-            const { successfulItems } = await processBatchUpdates({
+            const { successfulItems, failedCount, failedItems } = await processBatchUpdates({
                 updates: stagedSPAdGroups,
                 entityType: "SP_ADGROUPS",
                 profile,
                 checkConfigAds,
-                configId: rule.configId
+                configId: rule.configId,
+                beforeRequest: execution.assertActive
             });
+            await execution.assertActive?.();
             for (const item of successfulItems) {
                 await handleSuccessItem(item);
             }
+            if (failedCount || failedItems?.length) {
+                await flushSuccessfulUpdates();
+                throw new Error("SP targeting rule has unconfirmed or failed updates; recovery required");
+            }
         }
 
-        if (bulkTargetingOps.length > 0) {
-            await targetingSchema.bulkWrite(bulkTargetingOps);
-        }
-        if (bulkCampaignOps.length > 0) {
-            await campaignSchema.bulkWrite(bulkCampaignOps);
-        }
-        if (bulkAdGroupOps.length > 0) {
-            await adGroupsSchema.bulkWrite(bulkAdGroupOps);
-        }
+        await flushSuccessfulUpdates();
 
 
     }
@@ -5361,7 +5428,7 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
 
 }
 
-const runSponsoredBrandRule = async (rule, checkConfigAds, profile, currentDate, currentTime, data, isManual = false) => {
+const runSponsoredBrandRule = async (rule, checkConfigAds, profile, currentDate, currentTime, data, isManual = false, execution = {}) => {
     let targetingList = []
     if (Array.isArray(data)) {
         if (!data?.length) return true
@@ -5372,7 +5439,7 @@ const runSponsoredBrandRule = async (rule, checkConfigAds, profile, currentDate,
 
     await updateSnapshotHistory(rule, targetingRuleHistorySchema, currentDate, currentTime);
 
-    const campaignIds = targetingList.map(t => t.campaignId).filter((id, index, arr) => arr.indexOf(id) === index);
+    const campaignIds = [...new Set(targetingList.map(t => t.campaignId).filter(id => !Number.isNaN(id)))];
     const { lowStockCampaigns } = await checkCampaignProductAvailability(rule.configId, rule.profileId, campaignIds, currentDate, "SB");
 
     const lowStockIds = new Set(lowStockCampaigns.map(c => c.campaignId));
@@ -5406,8 +5473,7 @@ const runSponsoredBrandRule = async (rule, checkConfigAds, profile, currentDate,
     if (eligibleTargeting.length > 0) {
         const bidThreshold = await getRuleSettings(rule?.configId, rule?.profileId, "targetingRuleSetting");
 
-        const runSchedule = await Promise.all(
-            eligibleTargeting.map(async (targeting) => {
+        const runSchedule = await settleTargetingItems(eligibleTargeting, async (targeting) => {
                 cron_logs({
                     message: `Rule ID: ${rule?._id}, Rule Name: ${rule?.ruleName}, SB-Targeting: ${JSON.stringify(targeting)}`,
                     log_type: "info",
@@ -5499,21 +5565,26 @@ const runSponsoredBrandRule = async (rule, checkConfigAds, profile, currentDate,
                             }
                         }
                         if (["Increase", "Decrease", "SetBid"].includes(actionType.actionName)) {
+                            const baseline = rule.isHourlyBid && !isManual
+                                ? await resolveHourlyTargetingBaseline({ rule, type: "SB", targeting, existingActive: affectedCampaign })
+                                : targeting.keywordBid;
                             let actionValue = actionType.actionValue;
                             if (actionType.actionValueType == "Percentage") {
-                                actionValue = (targeting.keywordBid * actionValue) / 100;
+                                actionValue = (baseline * actionValue) / 100;
                             }
                             if (actionType.actionName === "Increase") {
                                 actionValue =
-                                    parseFloat(targeting.keywordBid) + parseFloat(actionValue);
+                                    parseFloat(baseline) + parseFloat(actionValue);
                             }
                             if (actionType.actionName === "Decrease") {
                                 actionValue =
-                                    parseFloat(targeting.keywordBid) - parseFloat(actionValue);
+                                    parseFloat(baseline) - parseFloat(actionValue);
                             }
                             if (actionType.actionName == "SetBid") {
                                 actionValue = parseFloat(actionValue);
                             }
+
+                            if (rule.isHourlyBid && !isManual) actionValue = Number(Number(actionValue).toFixed(2));
 
                             if (bidThreshold?.maxBid && actionValue > bidThreshold?.maxBid) {
                                 actionValue = bidThreshold?.maxBid;
@@ -5613,21 +5684,27 @@ const runSponsoredBrandRule = async (rule, checkConfigAds, profile, currentDate,
                         }
 
                         if (options?.data) {
+                            if (execution.assertActive) options.meta = { ...options.meta, beforeRequest: execution.assertActive };
                             try {
-                                const response = await retryWithBackoff(() => amazonAxios(options));
+                                const response = await retryWithBackoff(async () => {
+                                    await execution.assertActive?.();
+                                    return amazonAxios(options);
+                                });
+                                await execution.assertActive?.();
+                                assertTargetingUpdateConfirmed(response, options);
 
                                 cron_logs({
                                     message: `runSponsoredBrandRule -> Targeting Response: ${JSON.stringify(response.data)}`,
                                     log_type: "info",
                                 });
 
-                                if (response.status == 207) {
+                                if ([200, 207].includes(response.status)) {
 
                                     const isStatusChange = ["Enabled", "Paused", "CampaignEnabled", "CampaignPaused", "AdGroupEnabled", "AdGroupPaused"].includes(actionType.actionName);
                                     const oldValue = isStatusChange ? oldStatus : targeting.keywordBid;
                                     const newValue = isStatusChange ? status : Number(keywordBid);
 
-                                    await recordRuleExecutionChange({
+                                    await recordTargetingExecutionChange(execution, {
                                         conditionSnapshot: targeting.conditionSnapshot,
                                         configId: rule.configId,
                                         profileId: rule.profileId,
@@ -5779,10 +5856,11 @@ const runSponsoredBrandRule = async (rule, checkConfigAds, profile, currentDate,
                     }
                 }
                 return true;
-            })
-        );
+            });
 
-        await Promise.all(runSchedule);
+        if (runSchedule.some(result => result.status === "rejected" || result.value === false)) {
+            throw new Error("SB targeting rule has unconfirmed or failed updates; recovery required");
+        }
 
     }
 
@@ -5790,7 +5868,7 @@ const runSponsoredBrandRule = async (rule, checkConfigAds, profile, currentDate,
 
 }
 
-const runSponsoredDisplayRule = async (rule, checkConfigAds, profile, currentDate, currentTime, data, isManual = false) => {
+const runSponsoredDisplayRule = async (rule, checkConfigAds, profile, currentDate, currentTime, data, isManual = false, execution = {}) => {
     let targetingList = []
     if (Array.isArray(data)) {
         if (!data?.length) return true
@@ -5801,7 +5879,7 @@ const runSponsoredDisplayRule = async (rule, checkConfigAds, profile, currentDat
 
     await updateSnapshotHistory(rule, targetingRuleHistorySchema, currentDate, currentTime);
 
-    const campaignIds = targetingList.map(t => t.campaignId).filter((id, index, arr) => arr.indexOf(id) === index);
+    const campaignIds = [...new Set(targetingList.map(t => t.campaignId).filter(id => !Number.isNaN(id)))];
     const { lowStockCampaigns } = await checkCampaignProductAvailability(rule.configId, rule.profileId, campaignIds, currentDate, "SD");
 
     const lowStockIds = new Set(lowStockCampaigns.map(c => c.campaignId));
@@ -5835,8 +5913,7 @@ const runSponsoredDisplayRule = async (rule, checkConfigAds, profile, currentDat
     if (eligibleTargeting.length > 0) {
         const bidThreshold = await getRuleSettings(rule?.configId, rule?.profileId, "targetingRuleSetting");
 
-        const runSchedule = await Promise.all(
-            eligibleTargeting.map(async (targeting) => {
+        const runSchedule = await settleTargetingItems(eligibleTargeting, async (targeting) => {
                 cron_logs({
                     message: `Rule ID: ${rule?._id}, Rule Name: ${rule?.ruleName}, SD-Targeting: ${JSON.stringify(targeting)}`,
                     log_type: "info",
@@ -5901,21 +5978,26 @@ const runSponsoredDisplayRule = async (rule, checkConfigAds, profile, currentDat
                             changed = "state";
                         }
                         if (["Increase", "Decrease", "SetBid"].includes(actionType.actionName)) {
+                            const baseline = rule.isHourlyBid && !isManual
+                                ? await resolveHourlyTargetingBaseline({ rule, type: "SD", targeting, existingActive: affectedCampaign })
+                                : targeting.keywordBid;
                             let actionValue = actionType.actionValue;
                             if (actionType.actionValueType == "Percentage") {
-                                actionValue = (targeting.keywordBid * actionValue) / 100;
+                                actionValue = (baseline * actionValue) / 100;
                             }
                             if (actionType.actionName === "Increase") {
                                 actionValue =
-                                    parseFloat(targeting.keywordBid) + parseFloat(actionValue);
+                                    parseFloat(baseline) + parseFloat(actionValue);
                             }
                             if (actionType.actionName === "Decrease") {
                                 actionValue =
-                                    parseFloat(targeting.keywordBid) - parseFloat(actionValue);
+                                    parseFloat(baseline) - parseFloat(actionValue);
                             }
                             if (actionType.actionName == "SetBid") {
                                 actionValue = parseFloat(actionValue);
                             }
+
+                            if (rule.isHourlyBid && !isManual) actionValue = Number(Number(actionValue).toFixed(2));
 
                             if (bidThreshold?.maxBid && actionValue > bidThreshold?.maxBid) {
                                 actionValue = bidThreshold?.maxBid;
@@ -5998,21 +6080,27 @@ const runSponsoredDisplayRule = async (rule, checkConfigAds, profile, currentDat
                         }
 
                         if (options?.data) {
+                            if (execution.assertActive) options.meta = { ...options.meta, beforeRequest: execution.assertActive };
                             try {
-                                const response = await retryWithBackoff(() => amazonAxios(options));
+                                const response = await retryWithBackoff(async () => {
+                                    await execution.assertActive?.();
+                                    return amazonAxios(options);
+                                });
+                                await execution.assertActive?.();
+                                assertTargetingUpdateConfirmed(response, options);
 
                                 cron_logs({
                                     message: `runSponsoredDisplayRule -> Targeting Response: ${JSON.stringify(response.data)}`,
                                     log_type: "info",
                                 });
 
-                                if (response.status == 207) {
+                                if ([200, 207].includes(response.status)) {
 
                                     const isStatusChange = ["Enabled", "Paused", "CampaignEnabled", "CampaignPaused", "AdGroupEnabled", "AdGroupPaused"].includes(actionType.actionName);
                                     const oldValue = isStatusChange ? oldStatus : targeting.keywordBid;
                                     const newValue = isStatusChange ? status : Number(keywordBid);
 
-                                    await recordRuleExecutionChange({
+                                    await recordTargetingExecutionChange(execution, {
                                         conditionSnapshot: targeting.conditionSnapshot,
                                         configId: rule.configId,
                                         profileId: rule.profileId,
@@ -6163,10 +6251,11 @@ const runSponsoredDisplayRule = async (rule, checkConfigAds, profile, currentDat
                     }
                 }
                 return true;
-            })
-        );
+            });
 
-        await Promise.all(runSchedule);
+        if (runSchedule.some(result => result.status === "rejected" || result.value === false)) {
+            throw new Error("SD targeting rule has unconfirmed or failed updates; recovery required");
+        }
 
     }
 
@@ -6317,79 +6406,46 @@ exports.executeTargetingRulesForProfile = async (profile, scheduledFor = new Dat
 
     let executedCount = 0;
     if (finalRulesToRun.length > 0) {
-        await Promise.all(
-            finalRulesToRun.map((finalRule) =>
-                ruleLimit(async () => {
-                    try {
-                        if (global.updateTaskProgress) global.updateTaskProgress("TargetingRuleSchedules");
-                        const rule = finalRule.rule;
-                        if (rule.ruleType != "T" || (rule.ruleType == "T" && moment(currentDate).isBetween(rule.startDate, rule.endDate, "day", "[]"))) {
-
-                            const configId = rule.configId;
-                            const checkConfigAds = await getAccessToken(configId);
-                            if (
-                                checkConfigAds &&
-                                checkConfigAds.adsAccessToken
-                            ) {
-
-                                const spStatus = await runSponsoredProductRule(rule, checkConfigAds, profile, currentDate, finalRule?.scheduledTime);
-                                const sbStatus = await runSponsoredBrandRule(rule, checkConfigAds, profile, currentDate, finalRule?.scheduledTime);
-                                const sdStatus = await runSponsoredDisplayRule(rule, checkConfigAds, profile, currentDate, finalRule?.scheduledTime);
-
-                                if (!spStatus || !sbStatus || !sdStatus) {
-                                    throw new Error(`ProfileId: ${profile.name} -> rule: ${rule.ruleName}, Something went wrong while running this rule`);
-                                }
-
-                                await ruleRunHistorySchema.findOneAndUpdate(
-                                    {
-                                        configId: profile.configId,
-                                        profileId: profile.profileId,
-                                        ruleId: rule._id,
-                                        ruleSchema: "TargetingRule",
-                                        ruleDate: currentDate,
-                                        ruleTime: finalRule.scheduledTime
-                                    },
-                                    {
-                                        $set: { isRun: true }
-                                    },
-                                    { new: true, upsert: true }
-                                ).lean();
-
-                                executedCount++;
-
-                                cron_logs({
-                                    message: `ProfileId: ${profile.name} -> rule: ${rule.ruleName}, rule run successfully`,
-                                    log_type: "info",
-                                });
-
-                            }
-                            else {
-                                cron_logs({
-                                    message: `Account disconnected for Profile: ${profile.name}`,
-                                    log_type: "info",
-                                });
-                            }
-
-                        }
-                        return;
-                    } catch (err) {
-                        cron_logs({
-                            message: `Error in TargetingRule: ${err.message}`,
-                            log_type: "error",
-                        });
-                        throw err;
-                    } finally {
-                        if (!isQueue) {
-                            await targetingRuleSchema.findByIdAndUpdate(
-                                { _id: finalRule.rule._id },
-                                { isRunning: false },
-                                { new: true, upsert: true }
-                            );
-                        }
-                    }
-                })
-            )
-        );
+        // Drain every sibling before surfacing an error so the profile lease is
+        // not released while another rule is still sending Amazon updates.
+        const results = await Promise.allSettled(finalRulesToRun.map(finalRule => ruleLimit(async () => {
+            const rule = finalRule.rule;
+            const historyIdentity = { configId: profile.configId, profileId: profile.profileId,
+                ruleId: rule._id, ruleDate: currentDate, ruleTime: finalRule.scheduledTime, lastRun: finalRule.scheduledTime };
+            try {
+                const result = await runWithRuleSlot({ configId: profile.configId, profileId: profile.profileId,
+                    ruleSchema: "TargetingRule", ruleId: rule._id, ruleDate: currentDate, scheduledTime: finalRule.scheduledTime },
+                async ({ assertActive }) => {
+                    if (global.updateTaskProgress) global.updateTaskProgress("TargetingRuleSchedules");
+                    await targetingRuleHistorySchema.findOneAndUpdate(historyIdentity,
+                        { $set: { ruleName: rule.ruleName, status: "RUNNING" } }, { new: true, upsert: true }).lean();
+                    const checkConfigAds = await getAccessToken(rule.configId);
+                    if (!checkConfigAds?.adsAccessToken) throw new Error("Account disconnected; targeting rule slot requires recovery");
+                    const execution = { assertActive };
+                    await assertActive();
+                    const spStatus = await runSponsoredProductRule(rule, checkConfigAds, profile, currentDate, finalRule.scheduledTime, undefined, false, execution);
+                    await assertActive();
+                    const sbStatus = await runSponsoredBrandRule(rule, checkConfigAds, profile, currentDate, finalRule.scheduledTime, undefined, false, execution);
+                    await assertActive();
+                    const sdStatus = await runSponsoredDisplayRule(rule, checkConfigAds, profile, currentDate, finalRule.scheduledTime, undefined, false, execution);
+                    if (!spStatus || !sbStatus || !sdStatus) throw new Error("Targeting rule has unconfirmed updates; recovery required");
+                    await assertActive();
+                    await targetingRuleHistorySchema.findOneAndUpdate(historyIdentity,
+                        { $set: { status: "COMPLETED" } }, { new: true }).lean();
+                });
+                if (!result.skipped) executedCount++;
+            } catch (err) {
+                await targetingRuleHistorySchema.findOneAndUpdate(historyIdentity,
+                    { $set: { status: "FAILED" } }, { new: true }).lean();
+                cron_logs({ message: "Error in TargetingRule: " + err.message, log_type: "error" });
+                throw err;
+            } finally {
+                if (!isQueue) await targetingRuleSchema.findByIdAndUpdate({ _id: rule._id },
+                    { isRunning: false }, { new: true }).lean();
+            }
+        })));
+        const failure = results.find(result => result.status === "rejected");
+        if (failure) throw failure.reason;
     }
 
     await cronJobHistorySchema.findOneAndUpdate(

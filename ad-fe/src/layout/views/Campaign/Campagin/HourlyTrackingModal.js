@@ -6,6 +6,7 @@ import { useEffect, useState, useRef, useCallback, useContext } from "react";
 import { saveAs } from "file-saver";
 import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
+import { FiRefreshCw } from "react-icons/fi";
 import { ApiHourlyCampaignTracking } from "../../../../api-wrapper/campaign/ApiCampaign";
 import { Toast } from "../../../../helper/links/Link";
 import { ShadcnDateRangePicker as DateRangePicker } from "../../../../components/ui/date-range-picker";
@@ -983,6 +984,10 @@ const HourlyTrackingModal = ({ showModal, setShowModal, campaignId, profileId, c
                                 <div className="hidden sm:block h-6 w-[1px]" style={{ background: isDark ? "rgba(255, 255, 255, 0.1)" : "#e5e7eb" }} />
 
                                 <div className="flex items-center gap-2">
+                                    <Button variant="outline" size="sm" onClick={fetchHourlyData} disabled={loading} className="gap-1.5 h-8 px-3 text-xs font-semibold bg-transparent dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800" title={t("Refresh data")}>
+                                        <FiRefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-sky-500" : ""}`} />
+                                        {t("Refresh")}
+                                    </Button>
                                     <Button variant="outline" size="sm" onClick={exportCSV} className="gap-1.5 h-8 px-3 text-xs font-semibold bg-transparent dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800">
                                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />

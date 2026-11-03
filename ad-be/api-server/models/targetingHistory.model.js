@@ -87,5 +87,7 @@ const targetingHistorySchema = new mongoose.Schema(
 targetingHistorySchema.index({ configId: 1, profileId: 1, targetId: 1, createdAt: -1 });
 targetingHistorySchema.index({ targetId: 1, last_updated_date_time: -1 });
 targetingHistorySchema.index({ campaignId: 1, targetId: 1 });
+targetingHistorySchema.index({ profileId: 1, campaignId: 1, last_updated_date_time: -1, createdAt: -1 });
+targetingHistorySchema.index({ campaignId: 1, last_updated_date_time: -1, createdAt: -1 });
 
 module.exports = mongoose.model("targetingHistory", targetingHistorySchema);

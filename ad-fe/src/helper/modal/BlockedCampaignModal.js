@@ -2,6 +2,7 @@ import { useContext, useEffect, useState } from "react";
 import { t } from "i18next";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../../components/ui/dialog";
 import { Button } from "../../components/ui/button";
+import { FiRefreshCw } from "react-icons/fi";
 import { ApiRuleBlockCampaign } from "../../api-wrapper/placement/ApiPlacement";
 import { ProfileContext } from "../usecontext/useContext";
 import { CampaignNameCell } from "../../utility/campaignNavigation";
@@ -51,8 +52,19 @@ function BlockedCampaignModal({ show, onHide, ruleId, ruleDate }) {
     return (
         <Dialog open={show} onOpenChange={(open) => !open && onHide()}>
             <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col blocked-campaign-modal">
-                <DialogHeader>
+                <DialogHeader className="flex flex-row justify-between items-center pr-10">
                     <DialogTitle>{t("blockedCampaigns")}</DialogTitle>
+                    <button
+                        type="button"
+                        id="blocked-campaign-refresh-btn"
+                        onClick={fetchCampaigns}
+                        disabled={loading}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-200/90 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:border-sky-500/50 hover:bg-sky-50/50 dark:hover:bg-white/5 transition-all duration-150 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
+                        title={t("Refresh")}
+                    >
+                        <FiRefreshCw className={`text-slate-500 dark:text-slate-400 ${loading ? "animate-spin text-sky-500" : ""}`} size={12} />
+                        <span>{t("Refresh")}</span>
+                    </button>
                 </DialogHeader>
 
                 <div className="overflow-y-auto py-4 flex-1">

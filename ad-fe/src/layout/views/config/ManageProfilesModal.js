@@ -149,12 +149,25 @@ const ManageProfilesModal = ({ open, onClose, configId, sellerId = null, isOAuth
     <Dialog open={open} onOpenChange={(val) => !val && onClose()}>
       <DialogContent className="sm:max-w-[700px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-0 shadow-2xl overflow-hidden">
         <DialogHeader className="p-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-          <DialogTitle className="text-xl font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
-              <i className="fa fa-amazon text-blue-600 dark:text-blue-400"></i>
-            </div>
-            {t('Manage Amazon Profiles')}
-          </DialogTitle>
+          <div className="flex items-center justify-between pr-8">
+            <DialogTitle className="text-xl font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
+                <i className="fa fa-amazon text-blue-600 dark:text-blue-400"></i>
+              </div>
+              {t('Manage Amazon Profiles')}
+            </DialogTitle>
+            <button
+              type="button"
+              id="manage-profiles-refresh-btn"
+              onClick={fetchProfiles}
+              disabled={loading}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-200/90 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:border-sky-500/50 hover:bg-sky-50/50 dark:hover:bg-white/5 transition-all duration-150 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
+              title={t('Refresh profiles')}
+            >
+              <i className={`fa fa-refresh text-slate-500 dark:text-slate-400 ${loading ? 'fa-spin text-sky-500' : ''}`} />
+              <span>{t('Refresh')}</span>
+            </button>
+          </div>
           <DialogDescription className="text-sm text-slate-500 dark:text-slate-400 pt-1.5">
             {t('Select the profiles you want to sync from your connected Amazon account. Your organization can store a total of')} <span className="font-semibold text-slate-700 dark:text-slate-300">{profileLimit}</span> {t('profiles.')}
           </DialogDescription>

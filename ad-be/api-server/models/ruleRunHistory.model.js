@@ -21,7 +21,16 @@ const ruleRunHistorySchema = new mongoose.Schema(
     ruleTime: {
       type: String
     },
-    isRun: { type: Boolean, default: false }
+    isRun: { type: Boolean, default: false },
+    slotState: { type: String, enum: ["RUNNING", "COMPLETED", "RECOVERY_REQUIRED"] },
+    slotOwnerToken: { type: String },
+    slotClaimedAt: { type: Date },
+    slotHeartbeatAt: { type: Date },
+    slotLeaseExpiresAt: { type: Date },
+    slotCompletedAt: { type: Date },
+    slotFailedAt: { type: Date },
+    slotFailureReason: { type: String },
+    slotJobId: { type: String }
   },
   { timestamps: true }
 );

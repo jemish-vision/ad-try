@@ -2,7 +2,7 @@ import AgTable from "../../common/grid/AgTable";
 import { CustomModal } from "./CustomModal";
 import { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { FiClock, FiList, FiRotateCcw, FiTarget, FiDollarSign, FiSliders, FiSearch, FiZap, FiArrowRight, FiInfo } from "react-icons/fi";
+import { FiClock, FiList, FiRotateCcw, FiTarget, FiDollarSign, FiSliders, FiSearch, FiZap, FiArrowRight, FiInfo, FiRefreshCw } from "react-icons/fi";
 import { Dialog, DialogContent } from "../../components/ui/dialog";
 import { Button } from "../../components/ui/button";
 import { AppTooltip } from "../../components/ui/AppTooltip";
@@ -345,9 +345,11 @@ const formatAmazonChangeType = (row) => {
     }
 
     // 2. Keyword / Target Bid
+    const isRestoration = row.isReverted || /revert/i.test(row.notes || "") || (row.metricsHistory || []).some(m => m.eventType === "REVERT_TO_BASELINE");
+    const restoreSuffix = isRestoration ? " [Restored to Baseline]" : "";
     if (changed === "bid" || (target && /bid/i.test(changed))) {
-        if (target) return `${entityName} bid${matchStr} - ${target}`;
-        return `${entityName} bid${matchStr}`;
+        if (target) return `${entityName} bid${matchStr} - ${target}${restoreSuffix}`;
+        return `${entityName} bid${matchStr}${restoreSuffix}`;
     }
 
     // 3. Status changes
@@ -619,7 +621,7 @@ const ExpandedComponent = ({ data }) => {
     );
 };
 
-const AffectedHistoryModel = ({ show, onClose, data = [], onRevert }) => {
+const AffectedHistoryModel = ({ show, onClose, data = [], onRevert, onRefresh, loading = false }) => {
     const [isDark, setIsDark] = useState(document.documentElement.getAttribute("data-theme") === "dark");
     useEffect(() => {
         const handleTheme = () => setIsDark(document.documentElement.getAttribute("data-theme") === "dark");
@@ -735,8 +737,16 @@ const AffectedHistoryModel = ({ show, onClose, data = [], onRevert }) => {
             dayparting: 0,
             status: 0,
             searchTerm: 0,
+            uniqueEntities: 0,
+            restores: 0,
         };
+        const uniqueSet = new Set();
         data.forEach(item => {
+            const uid = item.targetId || item.keywordId || (item.placement ? `${item.campaignId}_${item.placement}` : item.campaignId) || item._id;
+            if (uid) uniqueSet.add(uid);
+            if (item.isReverted || item.notes?.includes("Revert") || item.metricsHistory?.some(m => m.eventType === "REVERT_TO_BASELINE")) {
+                counts.restores++;
+            }
             const info = getSettingInfo(item);
             if (info.type === "bid" || info.type === "target") counts.bid++;
             else if (info.type === "budget") counts.budget++;
@@ -745,6 +755,7 @@ const AffectedHistoryModel = ({ show, onClose, data = [], onRevert }) => {
             else if (info.isStatus) counts.status++;
             else if (info.type === "searchTerm") counts.searchTerm++;
         });
+        counts.uniqueEntities = uniqueSet.size;
         return counts;
     }, [data]);
 
@@ -1259,6 +1270,19 @@ const AffectedHistoryModel = ({ show, onClose, data = [], onRevert }) => {
                                 <FiList size={18} />
                             </span>
                             {t("Rule Impact & Change History")}
+                            {onRefresh && (
+                                <button
+                                    type="button"
+                                    id="affected-history-refresh-btn"
+                                    onClick={onRefresh}
+                                    disabled={loading}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-200/90 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:border-sky-500/50 hover:bg-sky-50/50 dark:hover:bg-white/5 transition-all duration-150 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
+                                    title={t("Refresh History")}
+                                >
+                                    <FiRefreshCw className={`text-slate-500 dark:text-slate-400 ${loading ? "animate-spin text-sky-500" : ""}`} size={12} />
+                                    <span>{t("Refresh")}</span>
+                                </button>
+                            )}
                         </div>
 
                         {/* ── Revert Action Buttons (top-right of header) ── */}
@@ -1323,7 +1347,7 @@ const AffectedHistoryModel = ({ show, onClose, data = [], onRevert }) => {
                                     borderRadius: "20px", padding: "4px 12px",
                                     fontSize: "12px", fontWeight: "600",
                                 }}>
-                                    📁 {data.length} {data.length === 1 ? t("Total Impact") : t("Total Impacts")}
+                                    📁 {summaryBreakdown.uniqueEntities || data.length} {summaryBreakdown.uniqueEntities === 1 ? t("Unique Entity") : t("Unique Entities")} ({data.length} {data.length === 1 ? t("Total Event") : t("Total Events")})
                                 </span>
 
                                 {summaryBreakdown.bid > 0 && (

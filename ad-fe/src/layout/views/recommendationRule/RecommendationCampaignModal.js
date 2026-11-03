@@ -18,7 +18,8 @@ import {
     FiCheck,
     FiTrash2,
     FiX,
-    FiTag
+    FiTag,
+    FiRefreshCw
 } from "react-icons/fi";
 
 const AD_TYPE_FILTERS = [
@@ -352,7 +353,7 @@ function RecommendationCampaignModal({
                 onEscapeKeyDown={(e) => e.preventDefault()}
             >
                 {/* Header */}
-                <DialogHeader className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#131b2e] flex flex-row items-center justify-between">
+                <DialogHeader className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#131b2e] flex flex-row items-center justify-between pr-10">
                     <div>
                         <DialogTitle className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
                             <FiLayers className="text-[#1A9FD4]" />
@@ -369,6 +370,17 @@ function RecommendationCampaignModal({
                             )}
                         </p>
                     </div>
+                    <button
+                        type="button"
+                        id="recommendation-campaign-refresh-btn"
+                        onClick={() => fetchCampaigns(profileId)}
+                        disabled={loading}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-200/90 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:border-sky-500/50 hover:bg-sky-50/50 dark:hover:bg-white/5 transition-all duration-150 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
+                        title={t("Refresh campaigns")}
+                    >
+                        <FiRefreshCw className={`text-slate-500 dark:text-slate-400 ${loading ? "animate-spin text-sky-500" : ""}`} size={12} />
+                        <span>{t("Refresh")}</span>
+                    </button>
                 </DialogHeader>
 
                 {/* Body */}

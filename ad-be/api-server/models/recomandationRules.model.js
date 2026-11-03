@@ -202,9 +202,8 @@ recommendationRuleSchema.index({
 
 
 // --- Performance Indexing ---
-conditionSchema.index({ isActive: 1, isDeleted: 1 });
-conditionSchema.index({ _id: 1, isActive: 1 });
-conditionSchema.index({ _id: 1, isActive: 1, isDeleted: 1 });
-conditionSchema.index({ configId: 1, profileId: 1, isActive: 1, isDeleted: 1 });
+recommendationRuleSchema.index({ isActive: 1, isDeleted: 1 });
+recommendationRuleSchema.index({ configId: 1, profileId: 1, isActive: 1, isDeleted: 1 });
+recommendationRuleSchema.index({ profileId: 1, isActive: 1, isDeleted: 1 });
 
 module.exports = mongoose.model("recommendationRule", recommendationRuleSchema);
