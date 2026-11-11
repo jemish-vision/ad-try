@@ -558,8 +558,8 @@ function Placement() {
 
     if (!profileId?.value || !selectedAdType || !date || date.length === 0) {
       setIsTableLoading(false);
+      setTableData([]);
       setPlacementData([]);
-      setPlacementFullData({});
       return;
     }
 
