@@ -47,6 +47,7 @@ function query(rows) {
 async function run(historyScope, extra = {}, fixture = {}) {
   const fixtureHistory = fixture.history || history;
   const fixtureStream = fixture.stream || stream;
+  const fixtureMetrics = fixture.targetMetrics || [];
   const failures = [];
   const streamFilters = [];
   const emptyModel = { find: () => query([]) };
@@ -57,17 +58,45 @@ async function run(historyScope, extra = {}, fixture = {}) {
     campaignChangeHistorySchema: { find: filter => query(fixtureHistory.filter(match(filter))), countDocuments: async filter => fixtureHistory.filter(match(filter)).length },
     targetingHistorySchema: { find: filter => { streamFilters.push(filter); return query(fixtureStream.filter(match(filter))); } },
     bidDataSchema: emptyModel, targetingRuleSchema: { find: () => query(fixture.hourlyRules || []) }, placementRulesSchema: emptyModel, budgetRulesSchema: emptyModel,
-    campaignsSchema: emptyModel, targetingSchema: emptyModel,
+    campaignsSchema: emptyModel, targetingSchema: { find: filter => query(fixtureMetrics.filter(match(filter))) },
+    ...require('../api-server/helper/historyBidAcos'),
     console: { error: (...args) => failures.push(args) }, write_logs: entry => failures.push(entry), setImmediate: () => {},
   };
   vm.runInNewContext(handler, context);
-  const req = { config: { configId }, adType: 'SP', body: { profileId, campaignId, targetId, targeting: 'complements', pageNo: 1, perPage: 10, historyScope, ...extra } };
+  const req = { config: { configId }, adType: Object.hasOwn(fixture, 'adType') ? fixture.adType : 'SP', body: { profileId, campaignId, targetId, targeting: 'complements', pageNo: 1, perPage: 10, historyScope, ...extra } };
   const res = { status(code) { this.code = code; return this; }, send(body) { this.body = body; return this; } };
   await context.exports.getHistory(req, res);
   assert.equal(res.code, 200, JSON.stringify(failures));
   assert.deepEqual(failures, []);
   return { ...res.body, streamFilters };
 }
+
+test('Bid-to-Bid uses the preceding bid outside the visible date and source filters', async () => {
+  const fixture = {
+    history: [
+      { ...common, _id: 'older', source: 'MANUAL', oldValue: '1', newValue: '2', createdAt: new Date('2026-10-08T12:00:00Z') },
+      { ...common, _id: 'newer', source: 'RECOMMENDATION', oldValue: '2', newValue: '3', createdAt: new Date('2026-10-09T12:00:00Z') },
+    ],
+    stream: [],
+    targetMetrics: [
+      { configId, profileId, campaignId, targetId, targeting: 'complements', reportDate: '2026-10-08', spend: 5, sales: 25 },
+      { configId, profileId, campaignId, targetId, targeting: 'complements', reportDate: '2026-10-09', spend: 90, sales: 100 },
+    ],
+  };
+  const page = await run(['recommendation'], {
+    oldAcosMode: 'bid-to-bid', fromDate: '2026-10-09', toDate: '2026-10-09', perPage: 1,
+    currentAcosFromDate: '2026-10-09', currentAcosToDate: '2026-10-09',
+  }, fixture);
+  assert.equal(page.totalRecords, 1);
+  assert.equal(page.data[0]._id, 'newer');
+  assert.equal(page.data[0].oldAcos, 20);
+  assert.equal(page.data[0].bidAcosFrom, '2026-10-08');
+  assert.equal(page.data[0].bidAcosTo, '2026-10-09');
+  assert.equal(page.data[0].currentAcos, 90);
+  const oldest = await run(['all'], { oldAcosMode: 'bid-to-bid', pageNo: 2, perPage: 1 }, fixture);
+  assert.equal(oldest.data[0]._id, 'older');
+  assert.equal(oldest.data[0].oldAcos, null);
+});
 
 for (const [scope, expected] of [
   [['recommendation'], ['rec']],
@@ -253,4 +282,52 @@ test('status source match is bounded and keeps distinct delivery and campaign st
     {...budgetStatus('state', 'AMAZON_API', 0), changeType: 'Update Campaign Status', oldValue:'ENABLED',newValue:'PAUSED'},
     {...budgetStatus('delivery', 'AMAZON_SQS', 0), changeType: 'Update Campaign Delivery Status',oldValue:'ENABLED',newValue:'PAUSED'}];
   assert.equal((await run('all', {targetId: undefined, targeting: undefined}, {history: rows, stream: []})).totalRecords, 4);
+});
+
+test('repeated targeting bid transitions survive while cross-source echoes still merge', async () => {
+  const rows = [
+    {...common, _id:'first',source:'RECOMMENDATION',oldValue:'1',newValue:'2',createdAt:new Date('2026-11-01T00:00:00Z')},
+    {...common, _id:'reverse',source:'MANUAL',oldValue:'2',newValue:'1',createdAt:new Date('2026-11-01T00:01:00Z')},
+    {...common, _id:'second',source:'RECOMMENDATION',oldValue:'1',newValue:'2',createdAt:new Date('2026-11-01T00:02:00Z')},
+    {...common, _id:'echo',source:'AMAZON_SQS',oldValue:'1',newValue:'2',createdAt:new Date('2026-11-01T00:02:01Z')},
+  ];
+  const result=await run('all',{perPage:1},{history:rows,stream:[]});
+  assert.equal(result.totalRecords,3);
+  assert.equal(result.data[0]._id,'second');
+  assert.equal((await run('all',{perPage:1,pageNo:3},{history:rows,stream:[]})).data[0]._id,'first');
+  assert.equal((await run('other',{}, {history:rows,stream:[]})).totalRecords,1);
+});
+test('cross-source repeated transitions on opposite sides of a reversal remain distinct', async () => {
+  const rows = [
+    {...common,_id:'first',source:'RECOMMENDATION',oldValue:'1',newValue:'2',createdAt:new Date('2026-11-01T00:00:00Z')},
+    {...common,_id:'reverse',source:'MANUAL',oldValue:'2',newValue:'1',createdAt:new Date('2026-11-01T00:01:00Z')},
+    {...common,_id:'second',source:'AMAZON_SQS',oldValue:'1',newValue:'2',createdAt:new Date('2026-11-01T00:02:00Z')},
+  ];
+  assert.equal((await run('all',{}, {history:rows,stream:[]})).totalRecords,3);
+});
+
+test('distinct placement fields remain separate for identical bid transitions', async () => {
+  const rows=['TOP_OF_SEARCH','PRODUCT_PAGE'].map((placement,i)=>({
+    configId,profileId,changeLevel:campaignId,type:'SP',_id:'placement-'+i,placement,
+    changeType:'Update Placement Bid',oldValue:'10',newValue:'20',source:'RECOMMENDATION',createdAt:new Date('2026-11-01T00:00:00Z'),
+  }));
+  assert.equal((await run('all',{targetId:undefined,targeting:undefined},{history:rows,stream:[]})).totalRecords,2);
+});
+
+test('generic echoes are bounded and same-timestamp observations retain their identity', async () => {
+  const rows=[
+    {...common,_id:'rec',source:'RECOMMENDATION',oldValue:'1',newValue:'2',createdAt:new Date('2026-11-01T00:00:00Z')},
+    {...common,_id:'near',source:'AMAZON_SQS',oldValue:'1',newValue:'2',createdAt:new Date('2026-11-01T00:00:10Z')},
+    {...common,_id:'separate',source:'AMAZON_SQS',oldValue:'1',newValue:'2',createdAt:new Date('2026-11-01T00:00:10Z')},
+    {...common,_id:'hours-later',source:'MANUAL',oldValue:'1',newValue:'2',createdAt:new Date('2026-11-01T02:00:00Z')},
+  ];
+  assert.equal((await run('all',{}, {history:rows,stream:[]})).totalRecords,3);
+});
+
+test('known different ad types retain identical transitions in aggregate history', async () => {
+  const rows=['SP','SB'].map((type,i)=>({
+    ...common,type,_id:'ad-type-'+i,source:i?'AMAZON_SQS':'RECOMMENDATION',
+    oldValue:'1',newValue:'2',createdAt:new Date('2026-11-01T00:00:00Z'),
+  }));
+  assert.equal((await run('all',{}, {history:rows,stream:[],adType:null})).totalRecords,2);
 });

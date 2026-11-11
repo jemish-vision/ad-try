@@ -144,7 +144,12 @@ export default function DashboardRecommendations({ profileId, adType = "SP" }) {
 
   const fetchRecommendations = useCallback(async () => {
     const pid = effectiveProfileId;
-    if (!pid) return;
+    if (!pid) {
+      setLoading(false);
+      setRecommendations([]);
+      setHasMoreRecs(false);
+      return;
+    }
     setLoading(true);
     setRecPage(1);
     try {

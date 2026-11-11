@@ -283,7 +283,7 @@ const StepTargeting = ({ formik, currencySymbol = "₹" }) => {
 
                                     <button
                                         type="button"
-                                        className="customize-button clicked w-full m-0 gap-0"
+                                        className="btn-campaign-primary w-full"
                                         style={{ height: "36px", display: "flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap" }}
                                         onClick={handleAddKeywords}
                                     >
@@ -382,7 +382,7 @@ const StepTargeting = ({ formik, currencySymbol = "₹" }) => {
                                         </div>
                                         <button
                                             type="button"
-                                            className="customize-button clicked m-0 gap-0"
+                                            className="btn-campaign-primary px-5"
                                             style={{ height: "36px", display: "inline-flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap" }}
                                             onClick={() => handleProductSearch()}
                                             disabled={loading}

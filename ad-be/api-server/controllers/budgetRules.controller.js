@@ -44,11 +44,12 @@ const {
 } = require("../helper/common");
 
 const { checkCampaignProductAvailability } = require("../helper/checkEligibility");
-const { recordRuleExecutionChange, enrichWithCampaignMetrics } = require("../helpers/ruleImpactMetricsHelper");
+const { recordRuleExecutionChange, enrichWithCampaignMetrics, resolveBaselineBid, hasRuleExecutedInSlotOrHour, markRuleExecutedInSlotAndHour } = require("../helpers/ruleImpactMetricsHelper");
 const { write_logs } = require("../../winston/budgetRules/logger");
 const { cron_logs } = require("../../winston/cronAutomation/logger");
 const amazonAxios = require("../helper/amazonAxios");
 const { processBatchUpdates } = require("../services/amazonBatchService");
+const { runWithRuleSlot } = require("../services/automation/ruleSlotExecution.service");
 
 function getActiveSlot(slots, hour) {
   if (!Array.isArray(slots) || slots.length === 0) return null;
@@ -983,7 +984,13 @@ exports.manualRun = async (req, res) => {
   }
 };
 
-const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDate, currentTime, data, isManual = false) => {
+const recordBudgetExecutionChange = async (execution, input) => {
+  const record = await recordRuleExecutionChange(input);
+  if (execution.assertActive && !record) throw new Error("Budget lifecycle persistence failed after update; recovery required");
+  return record;
+};
+
+const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDate, currentTime, data, isManual = false, execution = {}) => {
   let campaigns = []
   if (Array.isArray(data)) {
     // if (!data?.length) return true
@@ -1050,7 +1057,7 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
       $set: {
         conditionSnapshot: rule.conditionSnapshot,
         ruleName: rule.ruleName,
-        status: "COMPLETED",
+        status: execution.assertActive ? "RUNNING" : "COMPLETED",
         remark: remark
       },
     },
@@ -1098,7 +1105,7 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
 
             // Check if setting is already in effect
             if (existingActive && String(existingActive.newValue) === String(status) && String(campaign.status).toUpperCase() === String(status)) {
-              await recordRuleExecutionChange({
+              await recordBudgetExecutionChange(execution, {
                 conditionSnapshot: campaign.conditionSnapshot,
                 configId: rule.configId,
                 profileId: rule.profileId,
@@ -1139,7 +1146,7 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
           actionType.actionName == "setBudget"
         ) {
           let actionValue = actionType.actionValue;
-          const baseline = (rule.allowMultiTimeChanges || !existingActive) ? (parseFloat(campaign.budget) || parseFloat(existingActive?.oldValue) || 0) : (parseFloat(existingActive?.oldValue) || parseFloat(campaign.budget) || 0);
+          const baseline = resolveBaselineBid({ existingActive, currentValue: campaign.budget, allowMultiTimeChanges: rule.allowMultiTimeChanges, isHourly: Boolean(rule.isHourlyBudget || rule.isHourlyBid) });
           calculatedBudget = baseline;
 
           if (actionType.actionValueType == "Percentage") {
@@ -1167,7 +1174,7 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
           newValue = calculatedBudget;
 
           if (!rule.allowMultiTimeChanges && existingActive && Number(existingActive.newValue) === calculatedBudget && Number(campaign.budget) === calculatedBudget) {
-            await recordRuleExecutionChange({
+            await recordBudgetExecutionChange(execution, {
               conditionSnapshot: campaign.conditionSnapshot,
               configId: rule.configId,
               profileId: rule.profileId,
@@ -1224,13 +1231,15 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
     }
 
     if (stagedSPCampaigns.length > 0) {
-      const { successfulItems } = await processBatchUpdates({
+      const { successfulItems, failedCount, failedItems } = await processBatchUpdates({
         updates: stagedSPCampaigns,
         entityType: "SP_CAMPAIGNS",
         profile,
         checkConfigAds,
         configId: rule.configId,
+        beforeRequest: execution.assertActive,
       });
+      await execution.assertActive?.();
 
       const bulkOps = [];
       for (const item of successfulItems) {
@@ -1238,7 +1247,7 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
         if (!ctx) continue;
         const { campaign, changeType, oldValue, newValue, changed, status, calculatedBudget } = ctx;
 
-        await recordRuleExecutionChange({
+        await recordBudgetExecutionChange(execution, {
           conditionSnapshot: campaign.conditionSnapshot,
           configId: rule.configId,
           profileId: rule.profileId,
@@ -1313,6 +1322,9 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
       if (bulkOps.length > 0) {
         await campaignsSchema.bulkWrite(bulkOps);
       }
+      if (execution.assertActive && (failedCount || failedItems?.length || successfulItems.length !== stagedSPCampaigns.length)) {
+        throw new Error("Budget rule has unconfirmed campaign updates; recovery required");
+      }
     }
 
   }
@@ -1320,7 +1332,7 @@ const runSponsoredProductRule = async (rule, checkConfigAds, profile, currentDat
   return true;
 }
 
-const runSponsoredBrandRule = async (rule, checkConfigAds, profile, currentDate, currentTime, data) => {
+const runSponsoredBrandRule = async (rule, checkConfigAds, profile, currentDate, currentTime, data, isManual = false, execution = {}) => {
   let campaigns = []
   if (Array.isArray(data)) {
     if (!data?.length) return true
@@ -1400,7 +1412,7 @@ const runSponsoredBrandRule = async (rule, checkConfigAds, profile, currentDate,
 
             // Check if setting is already in effect
             if (existingActive && String(existingActive.newValue) === String(status) && String(campaign.status).toUpperCase() === String(status)) {
-              await recordRuleExecutionChange({
+              await recordBudgetExecutionChange(execution, {
                 conditionSnapshot: campaign.conditionSnapshot,
                 configId: rule.configId,
                 profileId: rule.profileId,
@@ -1441,7 +1453,7 @@ const runSponsoredBrandRule = async (rule, checkConfigAds, profile, currentDate,
         ) {
           let actionValue = actionType.actionValue;
           // Anchor to baseline
-          const baseline = (rule.allowMultiTimeChanges || !existingActive) ? (parseFloat(campaign.budget) || parseFloat(existingActive?.oldValue) || 0) : (parseFloat(existingActive?.oldValue) || parseFloat(campaign.budget) || 0);
+          const baseline = resolveBaselineBid({ existingActive, currentValue: campaign.budget, allowMultiTimeChanges: rule.allowMultiTimeChanges, isHourly: Boolean(rule.isHourlyBudget || rule.isHourlyBid) });
           calculatedBudget = baseline;
 
           if (actionType.actionValueType == "Percentage") {
@@ -1470,7 +1482,7 @@ const runSponsoredBrandRule = async (rule, checkConfigAds, profile, currentDate,
 
           // Check if setting is already in effect
           if (!rule.allowMultiTimeChanges && existingActive && Number(existingActive.newValue) === calculatedBudget && Number(campaign.budget) === calculatedBudget) {
-            await recordRuleExecutionChange({
+            await recordBudgetExecutionChange(execution, {
               conditionSnapshot: campaign.conditionSnapshot,
               configId: rule.configId,
               profileId: rule.profileId,
@@ -1527,13 +1539,15 @@ const runSponsoredBrandRule = async (rule, checkConfigAds, profile, currentDate,
     }
 
     if (stagedSBCampaigns.length > 0) {
-      const { successfulItems } = await processBatchUpdates({
+      const { successfulItems, failedCount, failedItems } = await processBatchUpdates({
         updates: stagedSBCampaigns,
         entityType: "SB_CAMPAIGNS",
         profile,
         checkConfigAds,
         configId: rule.configId,
+        beforeRequest: execution.assertActive,
       });
+      await execution.assertActive?.();
 
       const bulkOps = [];
       for (const item of successfulItems) {
@@ -1541,7 +1555,7 @@ const runSponsoredBrandRule = async (rule, checkConfigAds, profile, currentDate,
         if (!ctx) continue;
         const { campaign, changeType, oldValue, newValue, changed, status, calculatedBudget } = ctx;
 
-        await recordRuleExecutionChange({
+        await recordBudgetExecutionChange(execution, {
           conditionSnapshot: campaign.conditionSnapshot,
           configId: rule.configId,
           profileId: rule.profileId,
@@ -1616,6 +1630,9 @@ const runSponsoredBrandRule = async (rule, checkConfigAds, profile, currentDate,
       if (bulkOps.length > 0) {
         await sbCampaignsSchema.bulkWrite(bulkOps);
       }
+      if (execution.assertActive && (failedCount || failedItems?.length || successfulItems.length !== stagedSBCampaigns.length)) {
+        throw new Error("Budget rule has unconfirmed campaign updates; recovery required");
+      }
     }
 
   }
@@ -1623,7 +1640,7 @@ const runSponsoredBrandRule = async (rule, checkConfigAds, profile, currentDate,
   return true;
 }
 
-const runSponsoredDisplayRule = async (rule, checkConfigAds, profile, currentDate, currentTime, data) => {
+const runSponsoredDisplayRule = async (rule, checkConfigAds, profile, currentDate, currentTime, data, isManual = false, execution = {}) => {
   let campaigns = []
   if (Array.isArray(data)) {
     if (!data?.length) return true
@@ -1703,7 +1720,7 @@ const runSponsoredDisplayRule = async (rule, checkConfigAds, profile, currentDat
 
             // Check if setting is already in effect
             if (existingActive && String(existingActive.newValue).toLowerCase() === String(status).toLowerCase() && String(campaign.status).toLowerCase() === String(status).toLowerCase()) {
-              await recordRuleExecutionChange({
+              await recordBudgetExecutionChange(execution, {
                 conditionSnapshot: campaign.conditionSnapshot,
                 configId: rule.configId,
                 profileId: rule.profileId,
@@ -1744,7 +1761,7 @@ const runSponsoredDisplayRule = async (rule, checkConfigAds, profile, currentDat
         ) {
           let actionValue = actionType.actionValue;
           // Anchor to baseline
-          const baseline = (rule.allowMultiTimeChanges || !existingActive) ? (parseFloat(campaign.budget) || parseFloat(existingActive?.oldValue) || 0) : (parseFloat(existingActive?.oldValue) || parseFloat(campaign.budget) || 0);
+          const baseline = resolveBaselineBid({ existingActive, currentValue: campaign.budget, allowMultiTimeChanges: rule.allowMultiTimeChanges, isHourly: Boolean(rule.isHourlyBudget || rule.isHourlyBid) });
           calculatedBudget = baseline;
 
           if (actionType.actionValueType == "Percentage") {
@@ -1773,7 +1790,7 @@ const runSponsoredDisplayRule = async (rule, checkConfigAds, profile, currentDat
 
           // Check if setting is already in effect
           if (!rule.allowMultiTimeChanges && existingActive && Number(existingActive.newValue) === calculatedBudget && Number(campaign.budget) === calculatedBudget) {
-            await recordRuleExecutionChange({
+            await recordBudgetExecutionChange(execution, {
               conditionSnapshot: campaign.conditionSnapshot,
               configId: rule.configId,
               profileId: rule.profileId,
@@ -1830,13 +1847,15 @@ const runSponsoredDisplayRule = async (rule, checkConfigAds, profile, currentDat
     }
 
     if (stagedSDCampaigns.length > 0) {
-      const { successfulItems } = await processBatchUpdates({
+      const { successfulItems, failedCount, failedItems } = await processBatchUpdates({
         updates: stagedSDCampaigns,
         entityType: "SD_CAMPAIGNS",
         profile,
         checkConfigAds,
         configId: rule.configId,
+        beforeRequest: execution.assertActive,
       });
+      await execution.assertActive?.();
 
       const bulkOps = [];
       for (const item of successfulItems) {
@@ -1844,7 +1863,7 @@ const runSponsoredDisplayRule = async (rule, checkConfigAds, profile, currentDat
         if (!ctx) continue;
         const { campaign, changeType, oldValue, newValue, changed, status, calculatedBudget } = ctx;
 
-        await recordRuleExecutionChange({
+        await recordBudgetExecutionChange(execution, {
           conditionSnapshot: campaign.conditionSnapshot,
           configId: rule.configId,
           profileId: rule.profileId,
@@ -1919,6 +1938,9 @@ const runSponsoredDisplayRule = async (rule, checkConfigAds, profile, currentDat
       if (bulkOps.length > 0) {
         await sdCampaignsSchema.bulkWrite(bulkOps);
       }
+      if (execution.assertActive && (failedCount || failedItems?.length || successfulItems.length !== stagedSDCampaigns.length)) {
+        throw new Error("Budget rule has unconfirmed campaign updates; recovery required");
+      }
     }
 
   }
@@ -1952,6 +1974,7 @@ exports.executeBudgetRulesForProfile = async (profile, scheduledFor = new Date()
   }).lean();
 
   const executedMap = new Map();
+  todayHistory.forEach(h => markRuleExecutedInSlotAndHour(executedMap, h.ruleId, h.ruleTime));
   todayHistory.forEach(h => {
     executedMap.set(
       `${h.ruleId.toString()}_${h.ruleTime}`,
@@ -1975,7 +1998,7 @@ exports.executeBudgetRulesForProfile = async (profile, scheduledFor = new Date()
 
       if (activeSlot && activeSlot.enabled) {
         const historyKey = `${rule._id.toString()}_${activeSlot.startTime}`;
-        const alreadyExecuted = executedMap.has(historyKey);
+        const alreadyExecuted = hasRuleExecutedInSlotOrHour(executedMap, rule._id, typeof activeSlot !== "undefined" ? activeSlot.startTime : time, Boolean(rule.isHourlyBudget || rule.isHourlyBid));
 
         if (!alreadyExecuted) {
           const hourlyRule = { ...rule };
@@ -1994,7 +2017,7 @@ exports.executeBudgetRulesForProfile = async (profile, scheduledFor = new Date()
 
           finalRulesToRun.push({
             rule: hourlyRule,
-            scheduledTime: activeSlot.startTime
+            scheduledTime: (markRuleExecutedInSlotAndHour(executedMap, rule._id, activeSlot.startTime), activeSlot.startTime)
           });
 
           if (!isQueue) {
@@ -2031,7 +2054,7 @@ exports.executeBudgetRulesForProfile = async (profile, scheduledFor = new Date()
         const isPastOrNow = ruleDateTime.isSameOrBefore(now);
 
         const historyKey = `${rule._id.toString()}_${time}`;
-        const alreadyExecuted = executedMap.has(historyKey);
+        const alreadyExecuted = hasRuleExecutedInSlotOrHour(executedMap, rule._id, typeof activeSlot !== "undefined" ? activeSlot.startTime : time, Boolean(rule.isHourlyBudget || rule.isHourlyBid));
 
         if (isPastOrNow && !alreadyExecuted) {
           finalRulesToRun.push({
@@ -2058,78 +2081,47 @@ exports.executeBudgetRulesForProfile = async (profile, scheduledFor = new Date()
 
   let executedCount = 0;
   if (finalRulesToRun.length > 0) {
-    await Promise.all(
-      finalRulesToRun.map((finalRule) =>
-        ruleLimit(async () => {
-          try {
-            if (global.updateTaskProgress) global.updateTaskProgress("BudgetRuleSchedules");
-
-            const rule = finalRule.rule;
-            if (rule.ruleType != "T" || (rule.ruleType == "T" && moment(currentDate).isBetween(rule.startDate, rule.endDate, "day", "[]"))) {
-
+    // Drain every sibling before surfacing an error so the profile lease is
+    // not released while another rule is still sending Amazon updates.
+    const results = await Promise.allSettled(finalRulesToRun.map(finalRule => ruleLimit(async () => {
+      const rule = finalRule.rule;
+      const historyIdentity = { configId: profile.configId, profileId: profile.profileId,
+          ruleId: rule._id, ruleDate: currentDate, ruleTime: finalRule.scheduledTime, lastRun: finalRule.scheduledTime };
+      try {
+          if (rule.ruleType === "T" && !moment(currentDate).isBetween(rule.startDate, rule.endDate, "day", "[]")) return;
+          const result = await runWithRuleSlot({ configId: profile.configId, profileId: profile.profileId,
+              ruleSchema: "BudgetRule", ruleId: rule._id, ruleDate: currentDate, scheduledTime: finalRule.scheduledTime },
+          async ({ assertActive }) => {
+              if (global.updateTaskProgress) global.updateTaskProgress("BudgetRuleSchedules");
+              await budgetRulesHistorySchema.findOneAndUpdate(historyIdentity,
+                  { $set: { ruleName: rule.ruleName, status: "RUNNING" } }, { new: true, upsert: true }).lean();
               const checkConfigAds = await getAccessToken(rule.configId);
-              if (checkConfigAds && checkConfigAds.adsAccessToken && profile) {
-
-                const spStatus = await runSponsoredProductRule(rule, checkConfigAds, profile, currentDate, finalRule?.scheduledTime);
-                const sbStatus = await runSponsoredBrandRule(rule, checkConfigAds, profile, currentDate, finalRule?.scheduledTime);
-                const sdStatus = await runSponsoredDisplayRule(rule, checkConfigAds, profile, currentDate, finalRule?.scheduledTime);
-
-                if (!spStatus || !sbStatus || !sdStatus) {
-                  cron_logs({
-                    message: `ProfileId: ${profile.name} -> rule: ${rule.ruleName}, Something went wrong while running this rule`,
-                    isSuccess: false,
-                  });
-                }
-
-                await ruleRunHistorySchema.findOneAndUpdate(
-                  {
-                    configId: profile.configId,
-                    profileId: profile.profileId,
-                    ruleId: rule._id,
-                    ruleSchema: "BudgetRule",
-                    ruleDate: currentDate,
-                    ruleTime: finalRule.scheduledTime
-                  },
-                  {
-                    $set: { isRun: true }
-                  },
-                  { new: true, upsert: true }
-                ).lean();
-
-                executedCount++;
-
-                cron_logs({
-                  message: `ProfileId: ${profile.name} -> rule: ${rule.ruleName}, rule run successfully`,
-                  log_type: "info",
-                });
-
-              } else {
-                cron_logs({
-                  message: `Account disconnected for Profile: ${profile.name}`,
-                  log_type: "info",
-                });
-              }
-            }
-
-            return;
-          } catch (err) {
-            cron_logs({
-              message: `Error in BudgetRule: ${err.message}`,
-              log_type: "error",
-            });
-            throw err;
-          } finally {
-            if (!isQueue) {
-              await budgetRulesSchema.findByIdAndUpdate(
-                { _id: finalRule.rule._id },
-                { isRunning: false },
-                { new: true, upsert: true }
-              );
-            }
-          }
-        })
-      )
-    );
+              if (!checkConfigAds?.adsAccessToken) throw new Error("Account disconnected; budget rule slot requires recovery");
+              const execution = { assertActive };
+              await assertActive();
+              const spStatus = await runSponsoredProductRule(rule, checkConfigAds, profile, currentDate, finalRule.scheduledTime, undefined, false, execution);
+              await assertActive();
+              const sbStatus = await runSponsoredBrandRule(rule, checkConfigAds, profile, currentDate, finalRule.scheduledTime, undefined, false, execution);
+              await assertActive();
+              const sdStatus = await runSponsoredDisplayRule(rule, checkConfigAds, profile, currentDate, finalRule.scheduledTime, undefined, false, execution);
+              if (!spStatus || !sbStatus || !sdStatus) throw new Error("Budget rule has unconfirmed updates; recovery required");
+              await assertActive();
+              await budgetRulesHistorySchema.findOneAndUpdate(historyIdentity,
+                  { $set: { status: "COMPLETED" } }, { new: true }).lean();
+          });
+          if (!result.skipped) executedCount++;
+      } catch (err) {
+          await budgetRulesHistorySchema.findOneAndUpdate(historyIdentity,
+              { $set: { status: "FAILED" } }, { new: true }).lean();
+          cron_logs({ message: "Error in BudgetRule: " + err.message, log_type: "error" });
+          throw err;
+      } finally {
+          if (!isQueue) await budgetRulesSchema.findByIdAndUpdate({ _id: rule._id },
+              { isRunning: false }, { new: true }).lean();
+      }
+    })));
+    const failure = results.find(result => result.status === "rejected");
+    if (failure) throw failure.reason;
   }
 
   await cronJobHistorySchema.findOneAndUpdate(

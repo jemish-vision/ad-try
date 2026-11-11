@@ -253,16 +253,16 @@ const AddCampaign = () => {
                                 </div>
 
                                 <div className="form-footer">
-                                    <button id="campaign-discard-btn" className="customize-button m-0 gap-0 mr-auto" type="button" style={{ height: "36px", display: "inline-flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap" }} onClick={() => navigate("/campaigns")}>{t("Discard")}</button>
+                                    <button id="campaign-discard-btn" className="btn-campaign-secondary mr-auto" type="button" style={{ height: "38px", padding: "0 20px", display: "inline-flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap" }} onClick={() => navigate("/campaigns")}>{t("Discard")}</button>
                                     {activeStep > 0 && (
-                                        <button id="campaign-back-btn" className="customize-button m-0 gap-0" type="button" style={{ height: "36px", display: "inline-flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap" }} onClick={handleBack}>
+                                        <button id="campaign-back-btn" className="btn-campaign-secondary" type="button" style={{ height: "38px", padding: "0 20px", display: "inline-flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap", gap: "6px" }} onClick={handleBack}>
                                             <i className="fa-solid fa-arrow-left pr-1"></i> {t("Back")}
                                         </button>
                                     )}
                                     {activeStep < steps.length - 1 ? (
-                                        <button id="campaign-next-btn" className="customize-button clicked m-0 gap-0" type="button" style={{ height: "36px", display: "inline-flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap" }} onClick={() => handleNext(formik)}>{t("Next")}: {t(steps[activeStep + 1].visibleText)} <i className="fa-solid fa-arrow-right pl-1"></i></button>
+                                        <button id="campaign-next-btn" className="btn-campaign-primary" type="button" style={{ height: "38px", padding: "0 24px", display: "inline-flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap", gap: "8px" }} onClick={() => handleNext(formik)}><span>{t("Next")}: {t(steps[activeStep + 1].visibleText)}</span><i className="fa-solid fa-arrow-right text-xs"></i></button>
                                     ) : (
-                                        <button className="customize-button clicked m-0 gap-0" type="button" style={{ height: "36px", display: "inline-flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap" }} onClick={async () => {
+                                        <button className="btn-campaign-primary" type="button" style={{ height: "38px", padding: "0 24px", display: "inline-flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap", gap: "8px" }} onClick={async () => {
                                             const errors = await formik.validateForm();
                                             if (Object.keys(errors).length === 0) {
                                                 setPendingSubmit(() => formik.submitForm);

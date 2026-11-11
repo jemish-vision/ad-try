@@ -95,13 +95,11 @@ const JOB_TIMEOUT_MS = {
     HourlyDataConsolidation: 3 * 60 * 60 * 1000,
 };
 
-const withTimeout = (promise, ms, name) => {
-    let timer;
-    const timeout = new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`Job ${name} exceeded ${ms}ms timeout`)), ms);
-    });
-    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
-};
+const { withDrainingTimeout } = require("./drainingTimeout.helper");
+const withTimeout = (promise, ms, name) => withDrainingTimeout(promise, ms, name, error => {
+    cron_logs({ message: `[worker-heavy] ${error.message}; retaining task guard and worker slot until execution settles`, log_type: "error" });
+    return sendThrottledCronAlert(name, error);
+});
 
 function scheduleJobs(jobList) {
     jobList.forEach(job => {

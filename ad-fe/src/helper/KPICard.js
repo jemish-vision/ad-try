@@ -136,7 +136,7 @@ const getIsometricSVG = (key) => {
     );
   }
 
-  if (normKey === "orders") {
+  if (normKey === "orders" || normKey === "purchases") {
     return (
       <svg width="40" height="40" viewBox="0 0 46 46" fill="none" xmlns="http://www.w3.org/2000/svg" className="kpi-isometric-svg">
         <defs>

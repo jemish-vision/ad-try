@@ -5,6 +5,7 @@ const mongoose = require("mongoose");
 const pLimit = require("p-limit").default;
 const limit = pLimit(Number(process.env.PROCESS_LIMIT));
 
+const cronJobHistorySchema = require("../models/cronJobHistory.model");
 const campaignSchema = require("../models/campaign.model");
 const targetingSchema = require("../models/targeting.model");
 const productAdsSchema = require("../models/productAds.model");
@@ -866,6 +867,20 @@ exports.cronWeeklyPerformanceEmail = async () => {
         message: `cronWeeklyPerformanceEmail`,
         log_type: "info",
     });
+    const currentDate = moment().tz("Asia/Kolkata").format("YYYY-MM-DD");
+    let cronDoc = null;
+    let emailsSent = 0;
+    try {
+        cronDoc = new cronJobHistorySchema({
+            cronName: "Weekly Performance Email",
+            historyDate: currentDate,
+            configId: null,
+            profileId: null,
+            status: "PENDING",
+            details: { startedAt: new Date().toISOString() },
+        });
+        await cronDoc.save();
+    } catch (_e) {}
 
     try {
 
@@ -946,6 +961,7 @@ exports.cronWeeklyPerformanceEmail = async () => {
                             })
                         );
 
+                        emailsSent++;
                         cron_logs({
                             message: `Weekly report sent to ${user.email}`,
                             log_type: "info",
@@ -960,6 +976,17 @@ exports.cronWeeklyPerformanceEmail = async () => {
             )
         );
 
+        if (cronDoc?._id) {
+            await cronJobHistorySchema.findByIdAndUpdate(cronDoc._id, {
+                status: "COMPLETED",
+                recordsCount: emailsSent,
+                $set: {
+                    "details.completedAt": new Date().toISOString(),
+                    "details.emailsSent": emailsSent,
+                    "details.totalUsers": users?.length || 0,
+                },
+            });
+        }
         cron_logs({
             message: "Weekly performance emails sent successfully.",
             log_type: "info",
@@ -970,6 +997,15 @@ exports.cronWeeklyPerformanceEmail = async () => {
             message: `Weekly performance email error: ${error}`,
             log_type: "error",
         });
+        if (cronDoc?._id) {
+            await cronJobHistorySchema.findByIdAndUpdate(cronDoc._id, {
+                status: "FAILED",
+                error: error?.message || String(error),
+                $set: {
+                    "details.failedAt": new Date().toISOString(),
+                },
+            });
+        }
     }
 };
 

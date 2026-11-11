@@ -41,6 +41,11 @@ const campaignChangeHistorySchema = new mongoose.Schema(
       trim: true,
       default: null
     },
+    placement: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     oldValue: {
       type: String,
       trim: true,

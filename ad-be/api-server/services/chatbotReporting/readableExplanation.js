@@ -112,7 +112,8 @@ function explainReport(report) {
     return [day, hour].filter(Boolean).join(' ') || String(rawName);
   };
   const hasAnalysisText = report.text && !report.text.startsWith('Read-only ') && !report.text.includes('automatic explanations, opportunity checks and anomaly analysis are added in Step 5');
-  if (report.status === 'partial') {
+  const hasInventoryOrCostGaps = (report.freshness?.missingInputs || []).some(item => /keyword inventory|product costs|selling fees/i.test(item));
+  if (report.status === 'partial' && hasInventoryOrCostGaps) {
     paragraphs.push('Here are the available results. Some data is incomplete, so these figures may change.');
   }
   if (report.status === 'unavailable') paragraphs.push("I can't show this exact view yet — here's what it needs, and you can use the suggestions below for what I can show now:");

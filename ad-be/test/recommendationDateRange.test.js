@@ -160,6 +160,7 @@ function createTestContext({
                 bulkWrite: async () => ({ modifiedCount: 0 })
             };
         }
+        if (name === '../helper/targetingMetricsPipeline') return require('../api-server/helper/targetingMetricsPipeline');
         if (name === '../helper/sanitizeQuery') return require('../api-server/helper/sanitizeQuery');
         if (name === '../helper/adTypeCollections') return { SP: { campaign: 'campaigns', adGroup: 'ad_groups', targeting: 'targetings', placement: 'placements' } };
         if (name.includes('logger')) return { recommendation_logs: () => {} };

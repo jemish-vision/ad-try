@@ -12,7 +12,7 @@ const METRIC_LABELS = {
   sales: "Sales",
   acos: "ACOS",
   roas: "ROAS",
-  orders: "Orders",
+  orders: "Purchases",
   clicks: "Clicks",
   impressions: "Impressions",
   cpc: "CPC",

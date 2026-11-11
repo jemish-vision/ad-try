@@ -59,6 +59,7 @@ const CampaignComparision = ({ show, onClose, campaginIds, date }) => {
     const { t } = useTranslation();
     const { profileId, selectedAdType } = useContext(ProfileContext);
     const [activeTab, setActiveTab] = useState(0);
+    const [loading, setLoading] = useState(false);
 
     const [currentData, setCurrentData] = useState([]);
     const [previousData, setPreviousData] = useState([]);
@@ -123,21 +124,24 @@ const CampaignComparision = ({ show, onClose, campaginIds, date }) => {
         }
     };
 
+    const handleRefresh = async () => {
+        if (!dateStart || !dateEnd || !prevDateStart || !prevDateEnd || !campaginIds?.length || !profileId?.value) return;
+        setLoading(true);
+        try {
+            await Promise.all([
+                fetchCampaignData(dateStart, dateEnd, setCurrentData, setCurrentTotal),
+                fetchCampaignData(prevDateStart, prevDateEnd, setPreviousData, setPreviousTotal),
+            ]);
+        } catch (err) {
+            console.error("Error refreshing campaign comparison:", err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
         if (show && profileId?.value && selectedAdType && dateStart && dateEnd && prevDateStart && prevDateEnd && campaginIds?.length) {
-            fetchCampaignData(
-                dateStart,
-                dateEnd,
-                setCurrentData,
-                setCurrentTotal,
-            );
-
-            fetchCampaignData(
-                prevDateStart,
-                prevDateEnd,
-                setPreviousData,
-                setPreviousTotal,
-            );
+            handleRefresh();
         }
     }, [profileId?.value, selectedAdType, show, dateStart, dateEnd, prevDateStart, prevDateEnd, campaginIdsStr]);
 
@@ -168,7 +172,7 @@ const CampaignComparision = ({ show, onClose, campaginIds, date }) => {
             { label: "Sales", c: currentTotal.sales, p: previousTotal.sales },
             { label: "ACOS", c: currentTotal.acos, p: previousTotal.acos, percent: true },
             { label: "ROAS", c: currentTotal.roas, p: previousTotal.roas },
-            { label: "Orders", c: currentTotal.orders, p: previousTotal.orders, format: true },
+            { label: "Purchases", c: currentTotal.orders, p: previousTotal.orders, format: true },
             { label: "CPC", c: currentTotal.cpc, p: previousTotal.cpc },
         ].map((row) => ({
             ...row,
@@ -243,7 +247,7 @@ const CampaignComparision = ({ show, onClose, campaginIds, date }) => {
             ),
         },
         {
-            name: t("Orders"),
+            name: t("Purchases"),
             cell: (row) => (
                 <div className="mx-auto flex items-center flex-col gap-1 my-1 text-center">
                     <span className="text-xs font-bold text-slate-800 dark:text-white">{CurrencyFormat(row.orders)}</span>
@@ -395,7 +399,7 @@ const CampaignComparision = ({ show, onClose, campaginIds, date }) => {
                     <button
                         type="button"
                         id="campaign-comparison-refresh-btn"
-                        onClick={fetchCampaignData}
+                        onClick={handleRefresh}
                         disabled={loading}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-200/90 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:border-sky-500/50 hover:bg-sky-50/50 dark:hover:bg-white/5 transition-all duration-150 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
                         title={t("Refresh data")}
@@ -414,6 +418,7 @@ const CampaignComparision = ({ show, onClose, campaginIds, date }) => {
                                     customStyles={tableStyles}
                                     columns={columns}
                                     data={mergedData}
+                                    progressPending={loading}
                                     fixedHeader
                                     noDataComponent={
                                         <div className="flex flex-col items-center justify-center p-12 text-center gap-3">
@@ -437,6 +442,7 @@ const CampaignComparision = ({ show, onClose, campaginIds, date }) => {
                                     customStyles={tableStyles}
                                     columns={totalColumns}
                                     data={totalComparisonRows}
+                                    progressPending={loading}
                                     fixedHeader
                                     noDataComponent={
                                         <div className="flex flex-col items-center justify-center p-12 text-center gap-3">

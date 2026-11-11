@@ -99,7 +99,6 @@ export default function ChatReportRenderer({
           reason={report.text || "Report data is unavailable."}
           hasSuggestions={Array.isArray(report.followUps) && report.followUps.length > 0}
         />
-        <ReportWarningsBanner warnings={warnings} collapsible={isWorkspace} />
         <ReportFollowUps followUps={report.followUps} onFollowUp={onFollowUp} />
       </div>
     );
@@ -118,7 +117,6 @@ export default function ChatReportRenderer({
         <ReportEmptyState
           message={report.text || "No records found matching criteria."}
         />
-        <ReportWarningsBanner warnings={warnings} collapsible={isWorkspace} />
         <ReportFollowUps followUps={report.followUps} onFollowUp={onFollowUp} />
       </div>
     );
@@ -256,8 +254,6 @@ export default function ChatReportRenderer({
         )
       )}
 
-      {/* 6. Warnings Callout (attributions, provisional data, prerequisites) */}
-      <ReportWarningsBanner warnings={warnings} collapsible={isWorkspace} />
 
       {/* 7. Suggested Follow-ups */}
       <ReportFollowUps followUps={report.followUps} onFollowUp={onFollowUp} />

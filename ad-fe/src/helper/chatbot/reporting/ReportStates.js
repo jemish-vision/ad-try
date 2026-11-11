@@ -59,36 +59,6 @@ export function ReportUnavailableState({
 
 const INTERNAL_FILTER = /VERIFIED_IMPORT_COVERAGE|SOURCE_COMPLETENESS|ROWS_NOT_FROM_COMPLETED|NEWER_INCOMPLETE|NO_COMPLETED_IMPORT|requested metric inputs|conflict-free source rows|verified data completeness/i;
 
-export function ReportWarningsBanner({ warnings = [], collapsible = false }) {
-  if (!Array.isArray(warnings) || warnings.length === 0) return null;
-  const filtered = warnings.filter((w) => !INTERNAL_FILTER.test(String(w)));
-  const messages = [...new Set(filtered.map(friendlyText).filter(Boolean))].slice(0, 2);
-  if (messages.length === 0) return null;
-
-  if (collapsible) {
-    return (
-      <details className="report-data-notes rounded-xl border border-amber-200/80 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/20 text-amber-900 dark:text-amber-200">
-        <summary className="cursor-pointer px-4 py-3 text-sm font-medium focus-visible:outline-blue-500">
-          About these numbers <span className="font-normal opacity-80">· {messages.length} data {messages.length === 1 ? "note" : "notes"}</span>
-        </summary>
-        <ul className="list-disc pl-8 pr-4 pb-4 space-y-2 text-xs leading-relaxed">
-          {messages.map(message => <li key={message}>{message}</li>)}
-        </ul>
-      </details>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-1 p-2 rounded-lg border border-amber-200/80 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 text-[11px]">
-      <div className="flex items-center gap-1 font-semibold text-[11.5px]">
-        <AlertTriangle size={12} className="text-amber-600 dark:text-amber-400 flex-shrink-0" />
-        <span>About these numbers</span>
-      </div>
-      <ul className="list-disc pl-4 space-y-0.5 text-amber-800 dark:text-amber-300">
-        {messages.map((w, idx) => (
-          <li key={idx}>{w}</li>
-        ))}
-      </ul>
-    </div>
-  );
+export function ReportWarningsBanner() {
+  return null;
 }

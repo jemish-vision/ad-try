@@ -177,6 +177,7 @@ app.use("/api/profit-analysis", require("./routes/profitAnalysis.route"));
 //Super admin
 app.use("/api/pages", require("./routes/superAdmin/pages.route"));
 app.use("/api/columns", require("./routes/customColumns.route"));
+app.use("/api/chart-settings", require("./routes/chartSettings.route"));
 app.use("/api/permission", require("./routes/superAdmin/permission.route"));
 app.use("/api/role", require("./routes/superAdmin/role.route"));
 app.use("/api/superAdmin", require("./routes/superAdmin/superAdmin.route"));

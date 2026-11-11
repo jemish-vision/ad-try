@@ -25,10 +25,38 @@ function createHourlySyncProcessor() {
         log_type: "info",
       });
       const startTime = Date.now();
+      const today = moment().tz("Asia/Kolkata").format("YYYY-MM-DD");
+      let historyDoc = null;
+      try {
+        const cronJobHistorySchema = require("../../api-server/models/cronJobHistory.model");
+        historyDoc = new cronJobHistorySchema({
+          cronName: "Report Batch Writer",
+          historyDate: today,
+          configId: configId || null,
+          profileId: profileId || null,
+          status: "PENDING",
+          details: { startedAt: new Date().toISOString(), jobId: job.id },
+        });
+        await historyDoc.save();
+      } catch (_e) {}
+
       try {
         const { processStagedReportBatches } = require("../../api-server/services/reportBatchWriter.service");
         const writeResult = await processStagedReportBatches();
         const duration = Date.now() - startTime;
+        if (historyDoc?._id) {
+          const cronJobHistorySchema = require("../../api-server/models/cronJobHistory.model");
+          await cronJobHistorySchema.findByIdAndUpdate(historyDoc._id, {
+            status: "COMPLETED",
+            recordsCount: writeResult?.totalBatchesProcessed || 0,
+            durationMs: duration,
+            $set: {
+              "details.completedAt": new Date().toISOString(),
+              "details.durationMs": duration,
+              "details.totalBatchesProcessed": writeResult?.totalBatchesProcessed || 0,
+            },
+          });
+        }
         cron_logs({
           message: `[HourlySyncProcessor] [REPORT_BATCH_WRITER] Drained ${writeResult.totalBatchesProcessed} batch(es) to MongoDB in ${duration}ms`,
           log_type: "info",
@@ -39,6 +67,16 @@ function createHourlySyncProcessor() {
           result: writeResult,
         };
       } catch (err) {
+        if (historyDoc?._id) {
+          const cronJobHistorySchema = require("../../api-server/models/cronJobHistory.model");
+          await cronJobHistorySchema.findByIdAndUpdate(historyDoc._id, {
+            status: "FAILED",
+            error: err.message,
+            $set: {
+              "details.failedAt": new Date().toISOString(),
+            },
+          });
+        }
         cron_logs({
           message: `[HourlySyncProcessor] [REPORT_BATCH_WRITER] Batch writer error: ${err?.stack || err?.message || err}`,
           log_type: "error",
@@ -67,17 +105,58 @@ function createHourlySyncProcessor() {
         log_type: "info",
       });
       const startTime = Date.now();
+      const today = moment().tz("Asia/Kolkata").format("YYYY-MM-DD");
+      let historyDoc = null;
+      try {
+        const cronJobHistorySchema = require("../../api-server/models/cronJobHistory.model");
+        historyDoc = new cronJobHistorySchema({
+          cronName: "Hourly Data Consolidation",
+          historyDate: today,
+          configId: configId || null,
+          profileId: profileId || null,
+          status: "PENDING",
+          details: { startedAt: new Date().toISOString(), jobId: job.id },
+        });
+        await historyDoc.save();
+      } catch (_e) {}
+
       try {
         const { cronConsolidateHourlyData } = require("../../api-server/services/hourlyDataConsolidation.service");
         const consolidationResult = await cronConsolidateHourlyData();
         const duration = Date.now() - startTime;
         if (!consolidationResult.success) {
           const errMsg = consolidationResult.errors?.join("; ") || "Unknown error";
+          if (historyDoc?._id) {
+            const cronJobHistorySchema = require("../../api-server/models/cronJobHistory.model");
+            await cronJobHistorySchema.findByIdAndUpdate(historyDoc._id, {
+              status: "FAILED",
+              error: errMsg,
+              durationMs: duration,
+              $set: {
+                "details.failedAt": new Date().toISOString(),
+              },
+            });
+          }
           cron_logs({
             message: `[HourlySyncProcessor] [HOURLY_DATA_CONSOLIDATION] Failed in ${duration}ms: ${errMsg}`,
             log_type: "error",
           });
           throw new Error(`Hourly data consolidation failed: ${errMsg}`);
+        }
+        if (historyDoc?._id) {
+          const cronJobHistorySchema = require("../../api-server/models/cronJobHistory.model");
+          await cronJobHistorySchema.findByIdAndUpdate(historyDoc._id, {
+            status: "COMPLETED",
+            recordsCount: consolidationResult.totalHourlyCount || 0,
+            durationMs: duration,
+            $set: {
+              "details.completedAt": new Date().toISOString(),
+              "details.durationMs": duration,
+              "details.processedDates": consolidationResult.processedDates,
+              "details.totalRawCount": consolidationResult.totalRawCount,
+              "details.totalHourlyCount": consolidationResult.totalHourlyCount,
+            },
+          });
         }
         cron_logs({
           message: `[HourlySyncProcessor] [HOURLY_DATA_CONSOLIDATION] Successfully completed in ${duration}ms`,
@@ -89,6 +168,16 @@ function createHourlySyncProcessor() {
           result: consolidationResult,
         };
       } catch (err) {
+        if (historyDoc?._id) {
+          const cronJobHistorySchema = require("../../api-server/models/cronJobHistory.model");
+          await cronJobHistorySchema.findByIdAndUpdate(historyDoc._id, {
+            status: "FAILED",
+            error: err.message,
+            $set: {
+              "details.failedAt": new Date().toISOString(),
+            },
+          });
+        }
         cron_logs({
           message: `[HourlySyncProcessor] [HOURLY_DATA_CONSOLIDATION] Error: ${err?.stack || err?.message || err}`,
           log_type: "error",

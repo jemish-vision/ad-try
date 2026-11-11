@@ -118,7 +118,7 @@ test('sanitizeReportRequest ensures strict v1.0 parameters and defaults', () => 
   assert.deepEqual(sanitized.profileIds, ['1001']);
   assert.deepEqual(sanitized.adTypes, ['SP']);
   assert.equal(sanitized.period.preset, 'yesterday');
-  assert.equal(sanitized.comparison.mode, 'previous_period');
+  assert.equal(sanitized.comparison.mode, 'none');
   assert.ok(sanitized.metrics.includes('spend'));
   assert.ok(sanitized.metrics.includes('sales'));
   assert.ok(sanitized.metrics.includes('acos'));

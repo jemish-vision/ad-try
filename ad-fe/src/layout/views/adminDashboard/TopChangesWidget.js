@@ -14,7 +14,7 @@ const METRICS = [
     { value: 'acos', label: 'ACOS' },
     { value: 'roas', label: 'ROAS' },
     { value: 'impressions', label: 'Impressions' },
-    { value: 'orders', label: 'Orders' },
+    { value: 'orders', label: 'Purchases' },
     { value: 'clicks', label: 'Clicks' },
     { value: 'ctr', label: 'CTR' },
     { value: 'cpc', label: 'CPC' }

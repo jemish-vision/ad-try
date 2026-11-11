@@ -684,11 +684,11 @@ const WarehouseDetails = () => {
           ...fcCodesList.flatMap((fc) => {
             const st = fcStatesMap[fc];
             const label = st && st !== "Unknown" ? `${fc} (${st})` : fc;
-            return [`${label} Stock`, `${label} Orders`, `${label} Send`];
+            return [`${label} Stock`, `${label} Purchases`, `${label} Send`];
           }),
           "Total Stock",
-          `Total Orders (${effectiveMatrixDays}D)`,
-          "Avg Orders / Day",
+          `Total Purchases (${effectiveMatrixDays}D)`,
+          "Avg Purchases / Day",
           "Total Send",
         ];
 
@@ -1148,7 +1148,7 @@ const WarehouseDetails = () => {
             cellRenderer: (p) => numCell(p.value),
           },
           {
-            headerName: "Orders",
+            headerName: "Purchases",
             colId: `${fc}_orders`,
             width: 85,
             valueGetter: (p) => p.data?.fcs?.[fc]?.orders || 0,
@@ -1178,7 +1178,7 @@ const WarehouseDetails = () => {
       cellRenderer: (p) => numCell(p.value, "font-bold text-slate-800 dark:text-slate-100"),
     },
     {
-      headerName: `Total Orders (${effectiveMatrixDays}d)`,
+      headerName: `Total Purchases (${effectiveMatrixDays}d)`,
       field: "totalOrders",
       colId: "totalOrders",
       width: 110,
@@ -1187,13 +1187,13 @@ const WarehouseDetails = () => {
       autoHeaderHeight: true,
       headerComponent: MultiLineHeader,
       headerComponentParams: {
-        title: "TOTAL ORDERS",
+        title: "TOTAL PURCHASES",
         subLabel: `(${effectiveMatrixDays}D)`,
       },
       cellRenderer: (p) => numCell(p.value, "font-bold text-blue-600 dark:text-blue-400"),
     },
     {
-      headerName: "Avg Orders / Day",
+      headerName: "Avg Purchases / Day",
       field: "avgDailyOrders",
       colId: "avgDailyOrders",
       width: 110,
@@ -1201,7 +1201,7 @@ const WarehouseDetails = () => {
       wrapHeaderText: true,
       autoHeaderHeight: true,
       headerComponent: MultiLineHeader,
-      headerComponentParams: { title: "AVG ORDERS", subLabel: "/ DAY" },
+      headerComponentParams: { title: "AVG PURCHASES", subLabel: "/ DAY" },
       cellRenderer: (p) => numCell(p.value, "font-bold text-slate-700 dark:text-slate-200"),
     },
     {
@@ -1467,14 +1467,14 @@ const WarehouseDetails = () => {
                   <div className="w-44">
                     <Select value={matrixDays} onValueChange={(val) => { setMatrixDays(val); setPage(1); }}>
                       <SelectTrigger className="h-9 text-xs">
-                        <SelectValue placeholder="Orders period" />
+                        <SelectValue placeholder="Purchases period" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="7">Orders: Last 7 days</SelectItem>
-                        <SelectItem value="15">Orders: Last 15 days</SelectItem>
-                        <SelectItem value="30">Orders: Last 30 days</SelectItem>
-                        <SelectItem value="60">Orders: Last 60 days</SelectItem>
-                        <SelectItem value="CUSTOM">Orders: Custom Date</SelectItem>
+                        <SelectItem value="7">Purchases: Last 7 days</SelectItem>
+                        <SelectItem value="15">Purchases: Last 15 days</SelectItem>
+                        <SelectItem value="30">Purchases: Last 30 days</SelectItem>
+                        <SelectItem value="60">Purchases: Last 60 days</SelectItem>
+                        <SelectItem value="CUSTOM">Purchases: Custom Date</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

@@ -40,6 +40,7 @@ const TargetingSection = ({ campaignDetails, date, viewPress }) => {
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(firstPageRows);
   const [sortModel, setSortModel] = useState({ fieldName: "totalSales", sortType: "DESC" });
+  const [groupByAdGroup, setGroupByAdGroup] = useState(false);
 
   // Row selection & bulk actions
   const [selectedRows, setSelectedRows] = useState([]);
@@ -112,7 +113,7 @@ const TargetingSection = ({ campaignDetails, date, viewPress }) => {
   }, [searchName]);
 
   // Fetch Targeting Data
-  const fetchTargetingData = useCallback(async (customPage, customPerPage, customSort) => {
+  const fetchTargetingData = useCallback(async (customPage, customPerPage, customSort, customGroupBy) => {
     if (!profileId?.value || !campaignDetails?.campaignId) return;
 
     setLoading(true);
@@ -130,6 +131,8 @@ const TargetingSection = ({ campaignDetails, date, viewPress }) => {
         ...(statusFilter !== "ALL" && { status: statusFilter }),
       };
 
+      const activeGroupBy = customGroupBy !== undefined ? customGroupBy : groupByAdGroup;
+
       const payload = {
         profileId: profileId.value,
         campaignId: targetCampaignId,
@@ -138,6 +141,7 @@ const TargetingSection = ({ campaignDetails, date, viewPress }) => {
         toDate,
         pageNo: activePage,
         perPage: activePerPage,
+        groupByAdGroup: Boolean(activeGroupBy),
         ...(debouncedSearch.trim() && { searchName: debouncedSearch.trim() }),
         ...(activeSort?.fieldName && {
           fieldName: activeSort.fieldName,
@@ -165,7 +169,7 @@ const TargetingSection = ({ campaignDetails, date, viewPress }) => {
     } finally {
       setLoading(false);
     }
-  }, [profileId?.value, campaignDetails?.campaignId, date, today, page, perPage, debouncedSearch, statusFilter, sortModel]);
+  }, [profileId?.value, campaignDetails?.campaignId, date, today, page, perPage, debouncedSearch, statusFilter, sortModel, groupByAdGroup]);
 
   useEffect(() => {
     fetchTargetingData();
@@ -268,9 +272,26 @@ const TargetingSection = ({ campaignDetails, date, viewPress }) => {
         sortType: sortDef.sortDef?.direction === "asc" ? "ASC" : "DESC",
       };
       setSortModel(newSort);
-      fetchTargetingData(page, perPage, newSort);
+      fetchTargetingData(page, perPage, newSort, groupByAdGroup);
     }
   };
+
+  const postSortRows = useCallback(
+    (params) => {
+      if (!groupByAdGroup || !params?.nodes) return;
+      params.nodes.sort((a, b) => {
+        if (a.data?.isTotalRow) return 1;
+        if (b.data?.isTotalRow) return -1;
+        const nameA = String(a.data?.adGroupName || "");
+        const nameB = String(b.data?.adGroupName || "");
+        if (nameA !== nameB) {
+          return nameA.localeCompare(nameB);
+        }
+        return 0;
+      });
+    },
+    [groupByAdGroup]
+  );
 
   // Helper for match type badges
   const renderMatchTypeBadge = (type, matchType) => {
@@ -327,7 +348,7 @@ const TargetingSection = ({ campaignDetails, date, viewPress }) => {
       cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
       cellRenderer: (params) => {
         const row = params.data;
-        if (!row || row?.isTotalRow || !row?.targetId) return null;
+        if (!row || row?.isTotalRow || params.node?.isRowPinned?.() || !row?.targetId) return null;
         return (
           <StyledCheckbox
             checked={selectedRows.includes(row.targetId)}
@@ -356,7 +377,7 @@ const TargetingSection = ({ campaignDetails, date, viewPress }) => {
       cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
       cellRenderer: (params) => {
         const row = params.data;
-        if (!row || row?.isTotalRow) return null;
+        if (!row || row?.isTotalRow || params.node?.isRowPinned?.()) return null;
         const isEnabled = row.status === "ENABLED";
         return (
           <div className="flex items-center justify-center">
@@ -385,7 +406,7 @@ const TargetingSection = ({ campaignDetails, date, viewPress }) => {
       cellRenderer: (params) => {
         const row = params.data;
         if (!row) return null;
-        if (row.isTotalRow) {
+        if (row?.isTotalRow || params.node?.isRowPinned?.()) {
           return <span className="font-bold text-slate-800 dark:text-slate-100">{t("Total")}</span>;
         }
 
@@ -411,7 +432,7 @@ const TargetingSection = ({ campaignDetails, date, viewPress }) => {
                 />
               </div>
               {row.adGroupName && (
-                <span className="text-[11px] text-slate-400 dark:text-slate-500 truncate block">
+                <span className={`text-[11px] truncate block ${groupByAdGroup ? "font-semibold text-blue-600 dark:text-blue-400" : "text-slate-400 dark:text-slate-500"}`}>
                   {row.adGroupName}
                 </span>
               )}
@@ -430,7 +451,7 @@ const TargetingSection = ({ campaignDetails, date, viewPress }) => {
       resizable: true,
       cellRenderer: (params) => {
         const row = params.data;
-        if (!row || row?.isTotalRow) return null;
+        if (!row || row?.isTotalRow || params.node?.isRowPinned?.()) return null;
         return (
           <div className="flex items-center h-full">
             <TargetingTypeBadge
@@ -454,7 +475,7 @@ const TargetingSection = ({ campaignDetails, date, viewPress }) => {
       cellRenderer: (params) => {
         const row = params.data;
         if (!row) return null;
-        if (row.isTotalRow) return "-";
+        if (row?.isTotalRow || params.node?.isRowPinned?.()) return "-";
         const numericBid = Number(typeof row.keywordBid === "object" ? row.keywordBid?.$numberDecimal : row.keywordBid);
         return (
           <InlineEditPopup
@@ -502,7 +523,7 @@ const TargetingSection = ({ campaignDetails, date, viewPress }) => {
 
     // 9. Orders
     {
-      headerName: t("Orders"),
+      headerName: t("Purchases"),
       field: "orders",
       width: 110,
       sortable: true,
@@ -611,7 +632,7 @@ const TargetingSection = ({ campaignDetails, date, viewPress }) => {
       resizable: false,
       cellRenderer: (params) => {
         const row = params.data;
-        if (!row || row?.isTotalRow || !row?.targetId) return null;
+        if (!row || row?.isTotalRow || params.node?.isRowPinned?.() || !row?.targetId) return null;
         return (
           <div className="flex items-center justify-center h-full">
             <button
@@ -627,15 +648,12 @@ const TargetingSection = ({ campaignDetails, date, viewPress }) => {
         );
       },
     },
-  ], [t, selectAll, selectedRows, targetingData, actionLoading, currencyCode]);
+  ], [t, selectAll, selectedRows, targetingData, actionLoading, currencyCode, groupByAdGroup]);
 
-  // Combined data with summary total row if available
-  const tableRows = useMemo(() => {
-    if (!targetingData || targetingData.length === 0) return [];
-    if (totalRow) {
-      return [...targetingData, { ...totalRow, isTotalRow: true }];
-    }
-    return targetingData;
+  // Summary total row pinned permanently at bottom of table
+  const pinnedBottomRowData = useMemo(() => {
+    if (!targetingData || targetingData.length === 0 || !totalRow) return [];
+    return [{ ...totalRow, isTotalRow: true }];
   }, [targetingData, totalRow]);
 
   return (
@@ -668,6 +686,28 @@ const TargetingSection = ({ campaignDetails, date, viewPress }) => {
               {t("Add keywords")}
             </button>
           )}
+
+          {/* Ad Group Sort Toggle */}
+          <div
+            onClick={() => {
+              const next = !groupByAdGroup;
+              setGroupByAdGroup(next);
+              fetchTargetingData(page, perPage, sortModel, next);
+            }}
+            className={`flex items-center gap-2 h-[34px] px-3 rounded-lg border transition cursor-pointer select-none shadow-sm ${
+              groupByAdGroup
+                ? "border-blue-500 bg-blue-50/60 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300"
+                : "border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+            }`}
+          >
+            <span className="text-xs font-semibold whitespace-nowrap">
+              {t("Group by Ad Group")}
+            </span>
+            <Switch
+              checked={groupByAdGroup}
+              className="scale-75 pointer-events-none data-[state=checked]:bg-blue-600"
+            />
+          </div>
 
           {/* Search Input */}
           <div className="relative">
@@ -792,21 +832,23 @@ const TargetingSection = ({ campaignDetails, date, viewPress }) => {
           tableId="campaign-targeting-table"
           loading={loading}
           isLoading={loading}
-          rowData={tableRows}
+          rowData={targetingData}
+          pinnedBottomRowData={pinnedBottomRowData}
           columnDefs={columnDefs}
           totalRecords={totalRecords || 0}
           perPage={perPage}
           currentPage={page}
           onPageChange={(newPage) => {
             setPage(newPage);
-            fetchTargetingData(newPage, perPage);
+            fetchTargetingData(newPage, perPage, sortModel, groupByAdGroup);
           }}
           onPerPageChange={(newPerPage) => {
             setPerPage(newPerPage);
             setPage(1);
-            fetchTargetingData(1, newPerPage);
+            fetchTargetingData(1, newPerPage, sortModel, groupByAdGroup);
           }}
           onSortChanged={handleSortChanged}
+          postSortRows={postSortRows}
           paginationOptions={paginationRowsPerPageOptions}
         />
       </div>

@@ -76,4 +76,8 @@ const profileSchema = new mongoose.Schema(
 
   { timestamps: true }
 );
+profileSchema.index({ profileId: 1 });
+profileSchema.index({ configId: 1, profileId: 1 });
+profileSchema.index({ isActive: 1, isAdsSyncEnabled: 1, isSpSyncEnabled: 1 });
+
 module.exports = new mongoose.model("profile", profileSchema);

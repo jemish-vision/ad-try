@@ -43,7 +43,7 @@ const GRID_NAMES = [
 const CONDITION_METRICS = [
   { value: 'Impressions', label: 'Impressions' },
   { value: 'Clicks', label: 'Clicks' },
-  { value: 'Orders', label: 'Orders' },
+  { value: 'Orders', label: 'Purchases' },
   { value: 'Sales', label: 'Sales' },
   { value: 'ACOS', label: 'ACOS' },
   { value: 'ROAS', label: 'ROAS' },

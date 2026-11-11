@@ -126,6 +126,8 @@ export const CampaignNameCell = ({
   row,
   name,
   campaignId,
+  fromDate,
+  toDate,
   showStatusDot = false,
   className = "",
   style = {},
@@ -165,10 +167,10 @@ export const CampaignNameCell = ({
       onClick(data, e);
       return;
     }
-    openCampaignViewInNewTab(data, displayName, { campaignId: cId });
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
-  const url = getCampaignViewUrl(data, displayName, { campaignId: cId });
+  const url = getCampaignViewUrl(data, displayName, { campaignId: cId, fromDate, toDate });
 
   return (
     <div

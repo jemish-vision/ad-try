@@ -119,7 +119,7 @@ function AddSearchTermRule({ setaddModalFlag, editId, setEditId, getRule, editDa
   const DEFAULT_SEARCH_TERM_FILTERS = [
     { name: "Impressions", label: "Impressions", value: "Impressions", isDefault: true },
     { name: "Clicks", label: "Clicks", value: "Clicks", isDefault: true },
-    { name: "Orders", label: "Orders", value: "Orders", isDefault: true },
+    { name: "Purchases", label: "Purchases", value: "Orders", isDefault: true },
     { name: "Sales", label: "Sales", value: "Sales", isDefault: true },
     { name: "ROAS", label: "ROAS", value: "ROAS", isDefault: true },
     { name: "ACOS", label: "ACOS", value: "ACOS", isDefault: true },

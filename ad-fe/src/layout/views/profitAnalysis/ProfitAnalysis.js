@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect, useContext, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { ProfileContext } from "../../../helper/usecontext/useContext";
 import useSpConnection from "../../../helper/hooks/useSpConnection";
@@ -12,6 +12,7 @@ import { predefinedRanges } from "../../../common/helper/calendarValues/calendar
 import { Input } from "../../../components/ui/input";
 import { ApiGetProfitAnalysisSummary, ApiGetProfitAnalysisMonthly, ApiGetProfitAnalysisProducts } from "../../../api-wrapper/profitAnalysis/ApiProfitAnalysis";
 import { ApiGetProductTypes } from "../../../api-wrapper/productList/ApiProductList";
+import { useChartPreferenceSettings } from "../../../helper/hooks/useChartSettings";
 import { ProfitLossMonthlyGrid } from "./components/ProfitLossMonthlyGrid";
 import { ProductAnalysisGrid } from "./components/ProductAnalysisGrid";
 import { MultiSelect } from "../../../components/ui/multi-select";
@@ -40,7 +41,23 @@ const ProfitAnalysis = () => {
   const { isConnected: isSpConnected, isLoaded: isSpLoaded } = useSpConnection();
 
   const [isDark, setIsDark] = useState(document.documentElement.getAttribute("data-theme") === "dark");
-  const [chartFocus, setChartFocus] = useState("sales"); // "sales", "profit", "spend"
+  const { settings: chartSettings, setSettings: setChartSettings } = useChartPreferenceSettings({
+    savePageName: "ProfitAnalysis",
+    defaultSettings: { chartFocus: "sales" },
+    sanitizeSettings: (saved) => ({
+      chartFocus: ["sales", "profit", "spend"].includes(saved?.chartFocus) ? saved.chartFocus : "sales",
+    }),
+  });
+  const chartFocus = chartSettings.chartFocus;
+  const setChartFocus = useCallback(
+    (value) => {
+      setChartSettings((previous) => ({
+        ...previous,
+        chartFocus: typeof value === "function" ? value(previous.chartFocus) : value,
+      }));
+    },
+    [setChartSettings]
+  );
   useEffect(() => {
     const handleTheme = () => setIsDark(document.documentElement.getAttribute("data-theme") === "dark");
     const observer = new MutationObserver(handleTheme);

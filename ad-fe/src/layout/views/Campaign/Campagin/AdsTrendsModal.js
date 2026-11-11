@@ -135,7 +135,7 @@ const AdsTrendsModal = ({ show, onClose }) => {
             ),
         },
         {
-            name: t("Orders"),
+            name: t("Purchases"),
             cell: (row) => (
                 <div className="font-bold text-dark" style={{ fontFamily: "Inter", fontSize: "13.5px" }}>
                     {CurrencyFormat(row.orders)}

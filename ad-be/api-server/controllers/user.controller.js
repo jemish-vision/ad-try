@@ -1,3 +1,4 @@
+const cronJobHistorySchema = require("../models/cronJobHistory.model");
 const moment = require("moment-timezone");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
@@ -1368,6 +1369,19 @@ exports.cronSendSubscriptionRenewalEmail = async () => {
     message: `cronSendSubscriptionRenewalEmail`,
     log_type: "info",
   });
+  const currentDate = moment().tz("Asia/Kolkata").format("YYYY-MM-DD");
+  let cronDoc = null;
+  try {
+    cronDoc = new cronJobHistorySchema({
+      cronName: "Renewal Reminder",
+      historyDate: currentDate,
+      configId: null,
+      profileId: null,
+      status: "PENDING",
+      details: { startedAt: new Date().toISOString() },
+    });
+    await cronDoc.save();
+  } catch (_e) {}
 
   try {
 
@@ -1438,7 +1452,7 @@ exports.cronSendSubscriptionRenewalEmail = async () => {
 
     const activeUsers = await userSchema.aggregate(pipeline);
     if (activeUsers.length > 0) {
-      activeUsers.map((user) => limit(async () => {
+      const notifications = await Promise.allSettled(activeUsers.map((user) => limit(async () => {
 
         cron_logs({
           message: `User Email: ${user?.email}, Remainning days: ${user?.remainingDays}`,
@@ -1456,7 +1470,7 @@ exports.cronSendSubscriptionRenewalEmail = async () => {
 
         const encodedData = Buffer.from(JSON.stringify(data)).toString("base64");
 
-        await sendEmailHelper(
+        const delivery = await sendEmailHelper(
           user?.email,
           `Your subscription ends in ${user?.remainingDays} days — action required`,
           trialEndReminderEmail({
@@ -1467,19 +1481,43 @@ exports.cronSendSubscriptionRenewalEmail = async () => {
           })
         );
 
-      }));
+        if (!delivery?.delivered) throw new Error("Subscription reminder email delivery failed");
+      })));
+      const failed = notifications.filter(result => result.status === "rejected");
+      if (failed.length) throw new AggregateError(failed.map(result => result.reason), `${failed.length} subscription reminders failed`);
     }
 
+    if (cronDoc?._id) {
+      await cronJobHistorySchema.findByIdAndUpdate(cronDoc._id, {
+        status: "COMPLETED",
+        recordsCount: activeUsers.length,
+        $set: {
+          "details.completedAt": new Date().toISOString(),
+          "details.usersNotified": activeUsers.length,
+        },
+      });
+    }
     cron_logs({
       message: "Subscription renewal email sent successfully.",
       log_type: "info",
     });
+    return { recordsCount: activeUsers.length };
 
   } catch (error) {
     cron_logs({
       message: `Subscription renewal email error: ${error}`,
       log_type: "error",
     });
+    if (cronDoc?._id) {
+      await cronJobHistorySchema.findByIdAndUpdate(cronDoc._id, {
+        status: "FAILED",
+        error: error?.message || String(error),
+        $set: {
+          "details.failedAt": new Date().toISOString(),
+        },
+      });
+    }
+    throw error;
   }
 }
 

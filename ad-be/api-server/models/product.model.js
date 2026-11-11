@@ -99,4 +99,5 @@ productSchema.index({
   reportDate: 1
 });
 
+productSchema.index({ profileId: 1, reportDate: 1 });
 module.exports = new mongoose.model("product", productSchema);

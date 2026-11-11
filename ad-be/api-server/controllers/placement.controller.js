@@ -73,7 +73,7 @@ const AD_TYPE_COLLECTIONS = require("../helper/adTypeCollections");
 const { stageReportFileInRedis } = require("../services/reportFileStager.service");
 const { processStagedReportBatches } = require("../services/reportBatchWriter.service");
 const { getRunManifest } = require("../services/reportStaging.service");
-const { linkReportHistory } = require("../services/reportHistoryCompletion.service");
+const { linkReportHistory, finalizeReportHistory } = require("../services/reportHistoryCompletion.service");
 
 exports.cronGeneratePlacementReport = async (generateWeeklyReport = false, generateBiWeeklyReport = false, pastSyncObj = null) => {
   try {
@@ -85,7 +85,7 @@ exports.cronGeneratePlacementReport = async (generateWeeklyReport = false, gener
     const { profileId, configId, cronjobid, recurring = true } = pastSyncObj ?? {};
     const cronName = generateBiWeeklyReport
       ? "BiWeekly Report"
-      : generateWeeklyReport || pastSyncObj != null
+      : generateWeeklyReport || pastSyncObj?.isWeekly
       ? "Weekly Report"
       : "Placement Report";
 
@@ -138,23 +138,29 @@ exports.cronGeneratePlacementReport = async (generateWeeklyReport = false, gener
           if (pastSyncObj.endDate) endDate = pastSyncObj.endDate;
         }
 
-        let getCronData;
-        if (recurring) {
-          getCronData = await cronJobHistorySchema.findOneAndUpdate(
-            {
-              configId: profile.configId,
-              profileId: profile.profileId,
-              cronName: cronName,
-              historyDate: currentDate,
-            },
-            {
-              $set: {
-                status: "PENDING",
+        let getCronData = null;
+              if (recurring) {
+                try {
+                  getCronData = new cronJobHistorySchema({
+                    configId: profile.configId,
+                    profileId: profile.profileId,
+                    cronName: cronName,
+                    historyDate: currentDate,
+                    status: "PENDING",
+                    details: {
+                      startedAt: new Date().toISOString(),
+                      startDate,
+                      endDate,
+                    },
+                  });
+                  await getCronData.save();
+                } catch (saveErr) {
+                  cron_logs({
+                    message: `[${cronName}] Failed to create cron history for profile ${profile.profileId}: ${saveErr.message}`,
+                    log_type: "warn",
+                  });
+                }
               }
-            },
-            { new: true, upsert: true }
-          ).lean();
-        }
 
         const reportSpResponse = await spGenerateReport(
           profile.profileId,
@@ -761,23 +767,16 @@ exports.manualGenerateReport = async (req, res) => {
     const endDate = moment().tz(profile.timezone).format("YYYY-MM-DD");
     const checkConfigAds = await getAccessToken(profile.configId);
     if (checkConfigAds && checkConfigAds.adsAccessToken) {
-      const getCronData = await cronJobHistorySchema.findOne({
+      const createCronHistory = new cronJobHistorySchema({
         configId: profile.configId,
         profileId: profile.profileId,
         cronName: "Placement Report",
         status: "PENDING",
         historyDate: startDate,
-      }).lean();
-      if (!getCronData) {
-        const createCronHistory = new cronJobHistorySchema({
-          configId: profile.configId,
-          profileId: profile.profileId,
-          cronName: "Placement Report",
-          status: "PENDING",
-          historyDate: startDate,
-        });
-        await createCronHistory.save();
-      }
+        details: { mode: "manual", triggeredAt: new Date() },
+      });
+      await createCronHistory.save();
+      const cronHistoryId = createCronHistory._id;
       let responseSPStatus = "PENDING";
       let responseSBStatus = "IN_PROGRESS";
       while (responseSPStatus != "COMPLETED" || responseSBStatus != "SUCCESS") {
@@ -813,16 +812,9 @@ exports.manualGenerateReport = async (req, res) => {
           }
         }
       }
-      const getUpdateCronData = await cronJobHistorySchema.findOne({
-        configId: configId,
-        profileId: profileId,
-        cronName: "Placement Report",
-        status: "PENDING",
-        historyDate: startDate,
-      }).lean();
-      if (getUpdateCronData) {
+      if (cronHistoryId) {
         await cronJobHistorySchema.findByIdAndUpdate(
-          { _id: getUpdateCronData._id },
+          { _id: cronHistoryId },
           {
             status: "COMPLETED",
           },

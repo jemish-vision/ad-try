@@ -172,7 +172,7 @@ const FbaPlanningCharts = ({ data, loading, isDark }) => {
                   <Line
                     type="monotone"
                     dataKey="orders"
-                    name={t("Orders")}
+                    name={t("Purchases")}
                     stroke={P.primary}
                     strokeWidth={2}
                     dot={{ r: 3, fill: P.primary, stroke: "#fff", strokeWidth: 1.5 }}

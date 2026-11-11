@@ -1,3 +1,4 @@
+import { BID_TO_BID, getBidAcosRangeLabel } from "../History/bidAcos";
 import React, { useState, useEffect, useContext, useMemo, useRef } from "react";
 import { useParams, useSearchParams, useNavigate, Link } from "react-router-dom";
 import moment from "moment-timezone";
@@ -148,6 +149,7 @@ export default function TargetingDetail() {
   const [perPage, setPerPage] = useState(firstPageRows);
   const [currentPage, setCurrentPage] = useState(1);
   const historyGridRef = useRef(null);
+  const historyRequest = useRef(0);
 
   // Debounce search
   useEffect(() => {
@@ -164,6 +166,7 @@ export default function TargetingDetail() {
     const fromDateStr = moment(date[0]).format("YYYY-MM-DD");
     const toDateStr = moment(date[1]).format("YYYY-MM-DD");
 
+    const request = ++historyRequest.current;
     setChartLoading(true);
     setLoadingHistory(true);
 
@@ -192,7 +195,8 @@ export default function TargetingDetail() {
           adType: selectedAdType || "SP",
           fromDate: fromDateStr,
           toDate: toDateStr,
-          acosLookbackMode: acosPeriod,
+          acosLookbackMode: acosPeriod === BID_TO_BID ? "7" : acosPeriod,
+          oldAcosMode: acosPeriod === BID_TO_BID ? BID_TO_BID : undefined,
           acosLookbackDays: acosPeriod === "custom_days" ? customDays : Number(acosPeriod) || 7,
           customAcosFromDate:
             acosPeriod === "custom_range" && customDateRange?.[0]
@@ -228,6 +232,7 @@ export default function TargetingDetail() {
       }
 
       // Set History
+      if (request !== historyRequest.current) return;
       if (historyRes?.isSuccess) {
         setHistoryList(historyRes.data || []);
         if (historyRes.targetInfo) {
@@ -246,7 +251,7 @@ export default function TargetingDetail() {
       Toast.error(t("Something went wrong while loading targeting details"));
     } finally {
       setChartLoading(false);
-      setLoadingHistory(false);
+      if (request === historyRequest.current) setLoadingHistory(false);
     }
   };
 
@@ -260,6 +265,7 @@ export default function TargetingDetail() {
     const fromDateStr = date?.[0] ? moment(date[0]).format("YYYY-MM-DD") : undefined;
     const toDateStr = date?.[1] ? moment(date[1]).format("YYYY-MM-DD") : undefined;
 
+    const request = ++historyRequest.current;
     setLoadingHistory(true);
     try {
       const payload = {
@@ -269,7 +275,8 @@ export default function TargetingDetail() {
         adType: selectedAdType || "SP",
         fromDate: fromDateStr,
         toDate: toDateStr,
-        acosLookbackMode: period,
+        acosLookbackMode: period === BID_TO_BID ? "7" : period,
+        oldAcosMode: period === BID_TO_BID ? BID_TO_BID : undefined,
         acosLookbackDays: period === "custom_days" ? days : Number(period) || 7,
         customAcosFromDate:
           period === "custom_range" && customRange?.[0]
@@ -282,6 +289,7 @@ export default function TargetingDetail() {
       };
 
       const historyRes = await ApiGetTargetingHistory(payload);
+      if (request !== historyRequest.current) return;
       if (historyRes?.isSuccess) {
         setHistoryList(historyRes.data || []);
         if (historyRes.targetInfo) {
@@ -296,16 +304,19 @@ export default function TargetingDetail() {
         setHistoryList([]);
       }
     } catch (err) {
+      if (request !== historyRequest.current) return;
+      setHistoryList([]);
       console.error("[TargetingDetail] Fetch History Error:", err);
       Toast.error(t("Something went wrong while loading targeting history"));
     } finally {
-      setLoadingHistory(false);
+      if (request === historyRequest.current) setLoadingHistory(false);
     }
   };
 
   const handleAcosPeriodChange = (val) => {
+    if ((val === BID_TO_BID) !== (acosPeriod === BID_TO_BID)) setHistoryList([]);
     setAcosPeriod(val);
-    if (val !== "custom_days" && val !== "custom_range") {
+    if (acosPeriod === BID_TO_BID || (val !== "custom_days" && val !== "custom_range")) {
       fetchHistory(val, customDays, customDateRange);
     }
   };
@@ -573,7 +584,8 @@ export default function TargetingDetail() {
       },
       {
         headerName: t("ACOS"),
-        field: "acos",
+        field: acosPeriod === BID_TO_BID ? "oldAcos" : "acos",
+        colId: "acos",
         title: "ACOS",
         minWidth: 140,
         flex: 1.1,
@@ -585,17 +597,26 @@ export default function TargetingDetail() {
           const spend = params.data?.spend;
           const sales = params.data?.sales;
 
-          const rangeText =
-            range?.startDate && range?.endDate
+          const bidToBid = acosPeriod === BID_TO_BID;
+          const rangeText = bidToBid
+            ? getBidAcosRangeLabel(params.data)
+            : range?.startDate && range?.endDate
               ? `${moment(range.startDate).format("DD/MM/YYYY")} – ${moment(range.endDate).format("DD/MM/YYYY")}`
               : "";
 
           if (val === null || val === undefined || val === "—") {
-            return <span className="text-slate-400 font-mono text-xs">—</span>;
+            return (
+              <div className="flex flex-col justify-center py-1 leading-tight">
+                <span className="text-slate-400 font-mono text-xs">—</span>
+                {bidToBid && rangeText && (
+                  <span className="text-[10px] text-slate-400 tracking-tight">{rangeText}</span>
+                )}
+              </div>
+            );
           }
 
           const numVal = Number(val);
-          if (isNaN(numVal) || (numVal === 0 && (!sales || sales === 0))) {
+          if (isNaN(numVal) || (!bidToBid && numVal === 0 && (!sales || sales === 0))) {
             return (
               <div
                 className="flex flex-col justify-center py-1 leading-tight"
@@ -613,7 +634,9 @@ export default function TargetingDetail() {
             <div
               className="flex flex-col justify-center py-1 leading-tight"
               title={
-                rangeText
+                bidToBid
+                  ? rangeText
+                  : rangeText
                   ? `Period: ${rangeText}\nSpend: ${CurrencyCode(spend || 0)}\nSales: ${CurrencyCode(sales || 0)}`
                   : `Spend: ${CurrencyCode(spend || 0)}\nSales: ${CurrencyCode(sales || 0)}`
               }
@@ -664,7 +687,7 @@ export default function TargetingDetail() {
         ),
       },
     ],
-    [t, targetInfo]
+    [t, targetInfo, acosPeriod]
   );
 
   return (
@@ -786,6 +809,7 @@ export default function TargetingDetail() {
               chartData={chartData}
               totalRow={totalRow}
               id={"targeting-detail-chart"}
+              chartId="TargetingDetail"
             />
           </div>
 
@@ -844,6 +868,9 @@ export default function TargetingDetail() {
                         </SelectItem>
                         <SelectItem value="30" className="text-xs py-1.5 cursor-pointer">
                           {t("30 Days ACOS")}
+                        </SelectItem>
+                        <SelectItem value={BID_TO_BID} className="text-xs py-1.5 cursor-pointer">
+                          {t("Bid-to-Bid")}
                         </SelectItem>
                         <SelectItem value="custom_days" className="text-xs py-1.5 cursor-pointer">
                           {t("Custom Days")}

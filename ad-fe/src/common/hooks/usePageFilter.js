@@ -62,6 +62,9 @@ const usePageFilter = ({
       isPageFilterLoadedRef.current = false;
       setIsFilterReady(false);
       getPageFilter();
+    } else if (!pageName || !profileId) {
+      isPageFilterLoadedRef.current = false;
+      setIsFilterReady(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileId, selectedAdType, pageName]);

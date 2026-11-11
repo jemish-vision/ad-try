@@ -1926,23 +1926,16 @@ exports.manualGenerateReport = async (req, res) => {
     const endDate = moment().tz(getProfile.timezone).format("YYYY-MM-DD");
     const checkConfigAds = await getAccessToken(getProfile.configId);
     if (checkConfigAds && checkConfigAds.adsAccessToken) {
-      const getCronData = await cronJobHistorySchema.findOne({
+      const createCronHistory = new cronJobHistorySchema({
         configId: getProfile.configId,
         profileId: getProfile.profileId,
         cronName: "Keyword Report",
         status: "PENDING",
         historyDate: startDate,
-      }).lean();
-      if (!getCronData) {
-        const createCronHistory = new cronJobHistorySchema({
-          configId: getProfile.configId,
-          profileId: getProfile.profileId,
-          cronName: "Keyword Report",
-          status: "PENDING",
-          historyDate: startDate,
-        });
-        await createCronHistory.save();
-      }
+        details: { mode: "manual", triggeredAt: new Date() },
+      });
+      await createCronHistory.save();
+      const cronHistoryId = createCronHistory._id;
       let responseSPStatus = "PENDING";
       while (responseSPStatus != "COMPLETED") {
         if (responseSPStatus != "COMPLETED" && responseSPStatus != "ERROR") {
@@ -1963,16 +1956,9 @@ exports.manualGenerateReport = async (req, res) => {
           }
         }
       }
-      const getUpdateCronData = await cronJobHistorySchema.findOne({
-        configId: configId,
-        profileId: profileId,
-        cronName: "Keyword Report",
-        status: "PENDING",
-        historyDate: startDate,
-      }).lean();
-      if (getUpdateCronData) {
+      if (cronHistoryId) {
         await cronJobHistorySchema.findByIdAndUpdate(
-          { _id: getUpdateCronData._id },
+          { _id: cronHistoryId },
           {
             status: "COMPLETED",
           },

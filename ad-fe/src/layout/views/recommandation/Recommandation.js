@@ -515,6 +515,7 @@ function Recommendation() {
           currentPage: res.currentPage || 1,
           perPage: res.perPage || 25,
           totalPages: res.totalPages || 1,
+          newCount: res?.newCount ?? recommendation?.newCount ?? 0,
         });
         setShowModal(true);
       } else {

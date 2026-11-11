@@ -23,6 +23,7 @@ const { cronListTargetingFromAmazon, cronGenerateTargetingReport } = require("..
 const { cronListProductAdsFromAmazon, cronGenerateAdProductReport } = require("../../controllers/productAds.controller");
 const { cronGeneratePlacementReport } = require("../../controllers/placement.controller");
 const { cronGenerateSearchTermReport } = require("../../controllers/searchTerm.controller");
+const { runPeriodicReportSync } = require("./periodicReportSync.service");
 
 /** Generate/poll targeting reports and require verified imports before completion. */
 async function runTargetingReportSync({ pastSyncObj, configId, profileId, syncDate, scheduledFor }) {
@@ -223,24 +224,19 @@ async function runHourlySyncForProfile({ task, configId, profileId, timeBlock, s
         result = await cronGenerateSearchTermReport(false, false, pastSyncObj);
         break;
       case SYNC_TASKS.BIWEEKLY_REPORT:
-        result = {
-          campaign: await cronGenerateCampaignReport(false, true, pastSyncObj),
-          adGroup: await cronGenerateAdGroupReport(false, true, pastSyncObj),
-          targeting: await cronGenerateTargetingReport(false, true, pastSyncObj),
-          productAds: await cronGenerateAdProductReport(false, true, pastSyncObj),
-          placement: await cronGeneratePlacementReport(false, true, pastSyncObj),
-          searchTerm: await cronGenerateSearchTermReport(false, true, pastSyncObj),
-        };
-        break;
       case SYNC_TASKS.WEEKLY_REPORT:
-        result = {
-          campaign: await cronGenerateCampaignReport(true, false, pastSyncObj),
-          adGroup: await cronGenerateAdGroupReport(true, false, pastSyncObj),
-          targeting: await cronGenerateTargetingReport(true, false, pastSyncObj),
-          productAds: await cronGenerateAdProductReport(true, false, pastSyncObj),
-          placement: await cronGeneratePlacementReport(true, false, pastSyncObj),
-          searchTerm: await cronGenerateSearchTermReport(true, false, pastSyncObj),
-        };
+        result = await runPeriodicReportSync({
+          task, configId, profileId, syncDate, pastSyncObj,
+          weekly: task === SYNC_TASKS.WEEKLY_REPORT,
+          delegates: {
+            campaign: cronGenerateCampaignReport,
+            adGroup: cronGenerateAdGroupReport,
+            targeting: cronGenerateTargetingReport,
+            productAds: cronGenerateAdProductReport,
+            placement: cronGeneratePlacementReport,
+            searchTerm: cronGenerateSearchTermReport,
+          },
+        });
         break;
       default:
         throw new PermanentJobError(`Unsupported sync task: "${task}"`);

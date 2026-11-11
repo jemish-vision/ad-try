@@ -31,7 +31,24 @@ import { Button as ShadcnButton } from "../../../components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "../../../components/ui/popover";
 import { Input } from "../../../components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../../../components/ui/dialog";
-import { ChevronDown as ExpandMoreIcon, RefreshCw as RefreshIcon, X as CloseIcon } from "lucide-react";
+import {
+  ChevronDown as ExpandMoreIcon,
+  RefreshCw as RefreshIcon,
+  X as CloseIcon,
+  TrendingUp,
+  TrendingDown,
+  SlidersHorizontal,
+  ChevronDown,
+  Layers,
+} from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "../../../components/ui/dropdown-menu";
 import HourlyPlacementTrackingModal from "./Placement/HourlyPlacementTrackingModal";
 import { buildMongoQuery, formatCondition } from "../../../utility/common";
 import { MdOutlineClose } from "react-icons/md";
@@ -213,7 +230,7 @@ function Placement() {
   }, []);
 
   const checkOrderColumns = useCallback((title) => {
-    const matched = visibleColumns?.find(col => col?.title === title);
+    const matched = visibleColumns?.find(col => col?.title === title || (title === "Purchases" && col?.title === "Orders"));
     return {
       width: matched?.width ?? 200,
       hide: Boolean(visibleColumns?.length && !matched),
@@ -403,11 +420,11 @@ function Placement() {
       headerComponentParams: { ...sharedFilterParams, field: "spend", hasFilter: true },
     },
     {
-      headerName: t("Orders"),
+      headerName: t("Purchases"),
       field: "orders",
-      title: "Orders",
+      title: "Purchases",
       exportFormatter: (val) => val !== "" && val != null ? val : 0,
-      ...(checkOrderColumns("Orders")),
+      ...(checkOrderColumns("Purchases")),
       sortable: true,
       resizable: true,
       cellRenderer: (params) => <>{CurrencyFormat(params.value ?? 0)}</>,
@@ -538,6 +555,14 @@ function Placement() {
     }
 
     lastFetchParamsRef.current = requestSignature;
+
+    if (!profileId?.value || !selectedAdType || !date || date.length === 0) {
+      setIsTableLoading(false);
+      setPlacementData([]);
+      setPlacementFullData({});
+      return;
+    }
+
     setIsTableLoading(true);
     const apiOptions = { skipLoader: true };
 
@@ -1079,7 +1104,7 @@ function Placement() {
             const reverseFieldMap = {
               "impressions": "Impressions",
               "clicks": "Clicks",
-              "orders": "Orders",
+              "orders": "Purchases",
               "sales": "Sales",
               "roas": "ROAS",
               "acos": "ACOS",
@@ -1410,22 +1435,51 @@ function Placement() {
               {/* Bulk Actions (Contextual) */}
               {(selectedRows?.length > 0 || isTourActive) && PermissionCheck(SYSTEM_PAGES.PLACEMENT, PAGE_ACTIONS.UPDATE) && (
                 <div id="bulk-actions-dropdown" style={{ flex: isMobile ? "1 1 100%" : "0 0 auto" }}>
-                  <Popover>
-                    <PopoverTrigger asChild>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
                       <ShadcnButton
                         variant="outline"
-                        className="customize-button m-0 gap-0"
+                        className="customize-button m-0 gap-1.5 whitespace-nowrap"
                       >
-                        {t("Bulk actions")}
-                        <ExpandMoreIcon style={{ fontSize: 18 }} className="ml-2 text-slate-500" />
+                        <Layers className="w-3.5 h-3.5 text-blue-500 opacity-90" />
+                        <span>{t("Bulk actions")}</span>
+                        <ChevronDown className="w-3.5 h-3.5 ml-0.5 opacity-60" />
                       </ShadcnButton>
-                    </PopoverTrigger>
-                    <PopoverContent align="start" className="w-[290px] z-[9999] bg-white dark:bg-[#0f172a] border-slate-200 dark:border-white/10">
-                      <div className="flex cursor-pointer items-center rounded-sm px-2 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer text-slate-700 dark:text-white/80 focus:bg-slate-100 dark:focus:bg-white/10" onClick={() => handleAction("increase-perc")} >{t("➕ Increase Bid Adjustment (%)")}</div>
-                      <div className="flex cursor-pointer items-center rounded-sm px-2 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer text-slate-700 dark:text-white/80 focus:bg-slate-100 dark:focus:bg-white/10" onClick={() => handleAction("decrease-perc")} >{t("➖ Decrease Bid Adjustment (%)")}</div>
-                      <div className="flex cursor-pointer items-center rounded-sm px-2 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer text-slate-700 dark:text-white/80 focus:bg-slate-100 dark:focus:bg-white/10" onClick={() => handleAction("set")} >{t("🟰 Set Bid (%)")}</div>
-                    </PopoverContent>
-                  </Popover>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-64 p-1.5 bg-white dark:bg-[#0f172a] border border-slate-200/80 dark:border-slate-800 rounded-xl shadow-xl z-[9999]">
+                      <div className="flex items-center justify-between px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800/60 rounded-lg mb-1 border border-slate-100 dark:border-slate-800/80">
+                        <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">{t("Selected")}</span>
+                        <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-full border border-blue-100 dark:border-blue-900/40">
+                          {selectedRows?.length || 0} {selectedRows?.length === 1 ? t("row") : t("rows")}
+                        </span>
+                      </div>
+                      <DropdownMenuSeparator className="my-1 bg-slate-100 dark:bg-slate-800" />
+                      <DropdownMenuLabel className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 px-2.5 py-1">
+                        {t("bid Adjustment")}
+                      </DropdownMenuLabel>
+                      <DropdownMenuItem
+                        onClick={() => handleAction("increase-perc")}
+                        className="flex items-center gap-2.5 px-2.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 rounded-lg cursor-pointer hover:bg-emerald-50 dark:hover:bg-emerald-950/30 hover:text-emerald-700 dark:hover:text-emerald-400 focus:bg-emerald-50 dark:focus:bg-emerald-950/30 focus:text-emerald-700 dark:focus:text-emerald-400 transition-colors"
+                      >
+                        <TrendingUp className="w-4 h-4 text-emerald-500" />
+                        <span>{t("Increase Bid Adjustment (%)")}</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => handleAction("decrease-perc")}
+                        className="flex items-center gap-2.5 px-2.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 rounded-lg cursor-pointer hover:bg-amber-50 dark:hover:bg-amber-950/30 hover:text-amber-700 dark:hover:text-amber-400 focus:bg-amber-50 dark:focus:bg-amber-950/30 focus:text-amber-700 dark:focus:text-amber-400 transition-colors"
+                      >
+                        <TrendingDown className="w-4 h-4 text-amber-500" />
+                        <span>{t("Decrease Bid Adjustment (%)")}</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => handleAction("set")}
+                        className="flex items-center gap-2.5 px-2.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 rounded-lg cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950/30 hover:text-blue-700 dark:hover:text-blue-400 focus:bg-blue-50 dark:focus:bg-blue-950/30 focus:text-blue-700 dark:focus:text-blue-400 transition-colors"
+                      >
+                        <SlidersHorizontal className="w-4 h-4 text-blue-500" />
+                        <span>{t("Set Bid (%)")}</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               )}
 

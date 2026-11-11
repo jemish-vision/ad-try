@@ -1,3 +1,4 @@
+import { useHourlyChartSettings } from "../../../../helper/hooks/useHourlyChartSettings";
 import moment from "moment-timezone";
 import { Button } from "../../../../components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../components/ui/select";
@@ -16,14 +17,14 @@ import loaderGif from "../../../../common/loader/logo_loader.gif";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const hours = [...Array(24).keys()].map((h) => h.toString().padStart(2, "0"));
-const METRICS = ["Impressions", "Clicks", "Spend", "Ads Orders", "Ads Sales", "CTR", "CPC", "ACOS", "ROAS"];
-const INT_METRICS = ["Ads Orders", "Clicks", "Impressions"];
+const METRICS = ["Impressions", "Clicks", "Spend", "Ads Purchases", "Ads Sales", "CTR", "CPC", "ACOS", "ROAS"];
+const INT_METRICS = ["Ads Purchases", "Clicks", "Impressions"];
 
 const METRIC_FIELDS = {
     Impressions: "impressions",
     Clicks: "clicks",
     Spend: "spends",
-    "Ads Orders": "adsOrders",
+    "Ads Purchases": "adsOrders",
     "Ads Sales": "adsSales",
     CTR: "ctr",
     CPC: "cpc",
@@ -33,7 +34,7 @@ const METRIC_FIELDS = {
 
 const LINE_COLORS = {
     "Ads Sales": "#15803d",
-    "Ads Orders": "#1d4ed8",
+    "Ads Purchases": "#1d4ed8",
     Clicks: "#d97706",
     Impressions: "#7c3aed",
     Spend: "#dc2626",
@@ -608,9 +609,12 @@ const DateHourHeatmap = ({ hourlyData, metric, currencyCode, isDark = false }) =
                                     case "Impressions": return (c.impressions || 0) > 0;
                                     case "Clicks": return (c.clicks || 0) > 0;
                                     case "Spend": return (c.spends || 0) > 0;
-                                    case "Orders": return (c.orders || 0) > 0;
-                                    case "Ads Orders": return (c.adsOrders || 0) > 0;
-                                    case "Organic Orders": return (c.organicOrders || 0) > 0;
+                                    case "Purchases": return (c.orders || 0) > 0;
+
+                                    case "Ads Purchases": return (c.adsOrders || 0) > 0;
+
+                                    case "Organic Purchases": return (c.organicOrders || 0) > 0;
+
                                     case "Sales": return (c.sales || 0) > 0;
                                     case "Ads Sales": return (c.adsSales || 0) > 0;
                                     case "Organic Sales": return (c.organicSales || 0) > 0;
@@ -797,8 +801,9 @@ const HourlyTrackingModal = ({ showModal, setShowModal, campaignId, profileId, c
         document.documentElement.getAttribute("data-theme") === "black"
     );
     const [date, setDate] = useState([]);
-    const [heatMetric, setHeatMetric] = useState("Ads Sales");
-    const [lineMetrics, setLineMetrics] = useState(["Ads Sales", "Ads Orders"]);
+    const { heatMetric, setHeatMetric, lineMetrics, setLineMetrics } = useHourlyChartSettings(
+        "CampaignHourlyTracking", METRICS, "Ads Sales", ["Ads Sales","Ads Purchases"]
+    );
     const [chartLoading, setChartLoading] = useState(true);
     const [hourlyData, setHourlyData] = useState([]);
     const [modalReady, setModalReady] = useState(false);
@@ -821,9 +826,9 @@ const HourlyTrackingModal = ({ showModal, setShowModal, campaignId, profileId, c
         Impressions: hourlyData.reduce((s, r) => s + (r.impressions || 0), 0),
         Clicks: hourlyData.reduce((s, r) => s + (r.clicks || 0), 0),
         Spend: hourlyData.reduce((s, r) => s + (r.spends || 0), 0),
-        Orders: hourlyData.reduce((s, r) => s + (r.orders || 0), 0),
-        "Ads Orders": hourlyData.reduce((s, r) => s + (r.adsOrders || 0), 0),
-        "Organic Orders": hourlyData.reduce((s, r) => s + (r.organicOrders || 0), 0),
+        Purchases: hourlyData.reduce((s, r) => s + (r.orders || 0), 0),
+        "Ads Purchases": hourlyData.reduce((s, r) => s + (r.adsOrders || 0), 0),
+        "Organic Purchases": hourlyData.reduce((s, r) => s + (r.organicOrders || 0), 0),
         Sales: hourlyData.reduce((s, r) => s + (r.sales || 0), 0),
         "Ads Sales": hourlyData.reduce((s, r) => s + (r.adsSales || 0), 0),
         "Organic Sales": hourlyData.reduce((s, r) => s + (r.organicSales || 0), 0),
@@ -984,8 +989,8 @@ const HourlyTrackingModal = ({ showModal, setShowModal, campaignId, profileId, c
                                 <div className="hidden sm:block h-6 w-[1px]" style={{ background: isDark ? "rgba(255, 255, 255, 0.1)" : "#e5e7eb" }} />
 
                                 <div className="flex items-center gap-2">
-                                    <Button variant="outline" size="sm" onClick={fetchHourlyData} disabled={loading} className="gap-1.5 h-8 px-3 text-xs font-semibold bg-transparent dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800" title={t("Refresh data")}>
-                                        <FiRefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-sky-500" : ""}`} />
+                                    <Button variant="outline" size="sm" onClick={fetchHourlyData} disabled={chartLoading} className="gap-1.5 h-8 px-3 text-xs font-semibold bg-transparent dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800" title={t("Refresh data")}>
+                                        <FiRefreshCw className={`w-3.5 h-3.5 ${chartLoading ? "animate-spin text-sky-500" : ""}`} />
                                         {t("Refresh")}
                                     </Button>
                                     <Button variant="outline" size="sm" onClick={exportCSV} className="gap-1.5 h-8 px-3 text-xs font-semibold bg-transparent dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800">
@@ -1053,7 +1058,7 @@ const HourlyTrackingModal = ({ showModal, setShowModal, campaignId, profileId, c
                                 <>
                                     {/* Stats row */}
                                     <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(auto-fill, minmax(100px, 1fr))" : "repeat(9, 1fr)", gap: 8, marginBottom: 14 }}>
-                                        {["Impressions", "Clicks", "Spend", "Ads Orders", "Ads Sales", "CTR", "CPC", "ROAS", "ACOS"].map((m) => (
+                                        {["Impressions", "Clicks", "Spend", "Ads Purchases", "Ads Sales", "CTR", "CPC", "ROAS", "ACOS"].map((m) => (
                                             <div key={m} style={{ ...statCardStyle, flex: "none" }}>
                                                 <div style={{ fontSize: 10, color: isDark ? "#9CA3AF" : "#9ca3af", fontWeight: 700, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>
                                                     {t(m)}

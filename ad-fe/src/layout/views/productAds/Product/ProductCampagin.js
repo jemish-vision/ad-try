@@ -10,7 +10,7 @@ import { CampaignNameCell } from "../../../../utility/campaignNavigation";
 
 const ProductCampagin = ({ data, visibleColumns }) => {
 
-    const checkHide = (title) => Boolean(visibleColumns?.length && !visibleColumns?.find((col) => col?.title === title));
+    const checkHide = (title) => Boolean(visibleColumns?.length && !visibleColumns?.find((col) => col?.title === title || (title === "Purchases" && col?.title === "Orders")));
 
     const columnDefs = useMemo(() => [
 
@@ -112,10 +112,10 @@ const ProductCampagin = ({ data, visibleColumns }) => {
 
         // ── Orders ──────────────────────────────────────
         {
-            headerName: t("Orders"),
+            headerName: t("Purchases"),
             field: "orders",
             minWidth: 110,
-            hide: checkHide("Orders"),
+            hide: checkHide("Purchases"),
             cellRenderer: (p) => <>{CurrencyFormat(p.value ?? 0)}</>
         },
 

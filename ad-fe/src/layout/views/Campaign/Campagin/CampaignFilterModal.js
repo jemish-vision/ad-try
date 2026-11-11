@@ -91,7 +91,7 @@ const CampaignFilterModal = (props) => {
                     "Time in Budget": "TimeInBudget",
                     Budget: "Budget",
                     Clicks: "Clicks",
-                    Orders: "Orders",
+                    Purchases: "Orders",
                     Sales: "Sales",
                     ROAS: "ROAS",
                     ACOS: "ACOS",

@@ -22,7 +22,7 @@ function fixture() {
     dateRange: ['2026-10-01', '2026-10-30'], gridPage: 1, gridPerPage: 50,
     sortCol: null, sortOrder: null, debouncedSearch: '', campaignStatus: [],
     lastFetchParamsRef: { current: '' }, fetchIdRef: { current: 0 },
-    setLoading: jest.fn(), setGridData: jest.fn(), setTotalRecords: jest.fn(), setGridPage: jest.fn(),
+    setLoading: jest.fn(), setGridData: jest.fn(), setGridDateRange: jest.fn(), setTotalRecords: jest.fn(), setGridPage: jest.fn(),
     console: { error: jest.fn() },
     ApiKeywordAnalysis: jest.fn(() => {
       const request = deferred();
@@ -39,12 +39,16 @@ const response = id => ({ isSuccess: true, getKeywordAnalysisData: [{ id }], tot
 test('an older response cannot replace the latest page', async () => {
   const f = fixture();
   const oldRequest = f.run(1);
+  f.context.dateRange = ['2026-11-01', '2026-11-02'];
   const newRequest = f.run(2);
   f.pending[1].resolve(response('new'));
   await newRequest;
   f.pending[0].resolve(response('old'));
   await oldRequest;
   expect(f.context.setGridData.mock.calls).toEqual([[[{ id: 'new' }]]]);
+  expect(f.context.setGridDateRange.mock.calls).toEqual([
+    [{ fromDate: '2026-11-01', toDate: '2026-11-02' }],
+  ]);
   expect(f.context.setGridPage).toHaveBeenCalledTimes(1);
   expect(f.context.setGridPage).toHaveBeenCalledWith(2);
 });

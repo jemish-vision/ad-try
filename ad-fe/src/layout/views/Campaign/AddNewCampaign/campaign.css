@@ -392,10 +392,11 @@
     gap: 12px;
     margin-top: auto;
     position: sticky;
-    bottom: -33px;
+    bottom: -32px;
     background: #f8fafc;
     padding: 16px;
     border-top: 1px solid #e2e8f0;
+    border-bottom-right-radius: 16px;
     z-index: 50;
     /* high enough to cover form fields */
 }
@@ -680,7 +681,7 @@
 
 [data-theme='dark'] .form-footer {
     background: #0f172a !important;
-    border-top-color: #334155;
+    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
 }
 
 [data-theme='dark'] .btn-modern-outline {

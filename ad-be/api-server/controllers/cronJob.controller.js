@@ -509,13 +509,31 @@ exports.getAllCronJobByProfile = async (req, res) => {
     const filteredCrons = await Promise.all(
       getCrons.map(async (cron) => {
 
-        const getCronData = await cronJobHistorySchema
+        const aliasList = [
+          cron.cronName,
+          ...(cron.cronName === "Shipment Queue Report" ? ["Shipment Queue"] : []),
+          ...(cron.cronName === "Sync Coupons" ? ["Coupon Listing"] : []),
+          ...(cron.cronName === "AdGroup Report" ? ["AdGroups Report"] : []),
+          ...(cron.cronName === "SearchTerm Report" ? ["Search Term Report"] : []),
+          ...(cron.cronName === "ProductAds Report" ? ["Product Ads Report"] : []),
+          ...(cron.cronName === "FC Storage Fee" ? ["FC Storage Fee Report"] : []),
+        ];
+
+        let getCronData = await cronJobHistorySchema
           .findOne({
             configId: configId,
             profileId,
-            cronName: cron.cronName,
+            cronName: { $in: aliasList },
           })
           .sort({ updatedAt: -1 });
+
+        if (!getCronData) {
+          getCronData = await cronJobHistorySchema
+            .findOne({
+              cronName: { $in: aliasList },
+            })
+            .sort({ updatedAt: -1 });
+        }
 
         cron["lastRun"] =
           getCronData == null

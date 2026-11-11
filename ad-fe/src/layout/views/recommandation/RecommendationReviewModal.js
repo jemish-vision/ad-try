@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog, DialogContent } from "../../../components/ui/dialog";
 import CurrencyCode from "../../../helper/currencyCode/CurrencyCode";
-import { FiCheckCircle, FiClock, FiTrash2, FiSearch, FiAlertTriangle, FiX, FiLayers, FiArrowRight, FiArrowLeft, FiChevronLeft, FiChevronRight } from "react-icons/fi";
+import { FiCheckCircle, FiInfo, FiClock, FiTrash2, FiSearch, FiAlertTriangle, FiX, FiLayers, FiArrowRight, FiArrowLeft, FiChevronLeft, FiChevronRight } from "react-icons/fi";
 import moment from "moment-timezone";
 
 const getRelativeDaysText = (dateStr) => {
@@ -198,6 +198,27 @@ const RecommendationReviewModal = ({
     const [currentPage, setCurrentPage] = useState(1);
     const pageSize = 50;
 
+    const hasLessThanOneItem = useMemo(() => {
+        return (selectedItems || []).some((item) => {
+            if (gridName === "Targeting") {
+                const curr = parseFloat(item?.targetingBid || item?.keywordBid || item?.bid || 0);
+                const action = (actions || []).find((a) => ['IncreaseBid', 'DecreaseBid', 'SetBid'].includes(a.actionName));
+                if (!action) return false;
+                const actionVal = parseFloat(action.actionValue || 0);
+                let diff = actionVal;
+                if (action.actionValueType === "Percentage") {
+                    diff = (curr * actionVal) / 100;
+                }
+                let next = curr;
+                if (action.actionName === "IncreaseBid") next = curr + diff;
+                if (action.actionName === "DecreaseBid") next = curr - diff;
+                if (action.actionName === "SetBid") next = actionVal;
+                return next < 1;
+            }
+            return false;
+        });
+    }, [selectedItems, actions, gridName]);
+
     const filteredReviewItems = useMemo(() => {
         if (!searchQuery.trim()) return selectedItems;
         const query = searchQuery.toLowerCase().trim();
@@ -224,7 +245,7 @@ const RecommendationReviewModal = ({
     }, [filteredReviewItems, currentPage, pageSize]);
 
     const getFilterBadgeText = () => {
-        if (filterType === "less_than_one") return t("Filtered: Data Less Than 1");
+        if (filterType === "less_than_one") return t("Filtered: Bids Under 1.00");
         if (filterType === "unchanged") return t("Filtered: Unchanged Campaigns (No Prior Changes)");
         if (filterType === "before_days") return t("Filtered: Changed Before {{days}} Days", { days: filterDays });
         if (filterType === "exact_days") return t("Filtered: Changed Exactly {{days}} Days Ago", { days: filterDays });
@@ -321,6 +342,14 @@ const RecommendationReviewModal = ({
 
                 {/* ── Modal Body: Selected Campaigns Table ── */}
                 <div className="flex-1 overflow-y-auto p-6 max-h-[50vh]">
+                    {hasLessThanOneItem && (
+                        <div className="mb-4 p-3 rounded-xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 flex items-center gap-2.5 text-xs text-amber-700 dark:text-amber-300 shadow-sm animate-in fade-in duration-200">
+                            <FiInfo className="text-amber-500 shrink-0" size={16} />
+                            <span className="font-medium">
+                                {t("Note: Minimum bid for India is ₹1.00. Lower bids will be set to ₹1.00 when applied.")}
+                            </span>
+                        </div>
+                    )}
                     {applyLoading && (
                         <div className="mb-4 p-3.5 rounded-xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800/60 flex items-center justify-between gap-3 text-xs text-sky-800 dark:text-sky-200 shadow-sm animate-pulse">
                             <div className="flex items-center gap-2.5">

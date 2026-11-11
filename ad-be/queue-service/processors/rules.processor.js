@@ -31,7 +31,15 @@ function getRandomJitterMs() {
  * BullMQ processor for rules queue.
  * Handles single-profile rule family execution with profile-level lease protection.
  */
-function createRulesProcessor(redisClient) {
+function createRulesProcessor(redisClient, dependencies = {}) {
+  const service = {
+    processBudgetRulesForProfile,
+    processTargetingRulesForProfile,
+    processPlacementRulesForProfile,
+    processDaypartingRulesForProfile,
+    ...dependencies,
+  };
+
   return async function rulesProcessor(job, token) {
     const validated = validateJobPayload(job.data);
     const { task, configId, profileId, scheduledFor, timeBlock } = validated;
@@ -87,7 +95,7 @@ function createRulesProcessor(redisClient) {
 
       switch (task) {
         case RULE_TASKS.BUDGET:
-          result = await processBudgetRulesForProfile({
+          result = await service.processBudgetRulesForProfile({
             configId,
             profileId,
             scheduledFor,
@@ -96,7 +104,7 @@ function createRulesProcessor(redisClient) {
           break;
 
         case RULE_TASKS.TARGETING:
-          result = await processTargetingRulesForProfile({
+          result = await service.processTargetingRulesForProfile({
             configId,
             profileId,
             scheduledFor,
@@ -105,7 +113,7 @@ function createRulesProcessor(redisClient) {
           break;
 
         case RULE_TASKS.PLACEMENT:
-          result = await processPlacementRulesForProfile({
+          result = await service.processPlacementRulesForProfile({
             configId,
             profileId,
             scheduledFor,
@@ -114,7 +122,7 @@ function createRulesProcessor(redisClient) {
           break;
 
         case RULE_TASKS.DAYPARTING:
-          result = await processDaypartingRulesForProfile({
+          result = await service.processDaypartingRulesForProfile({
             configId,
             profileId,
             scheduledFor,

@@ -1,3 +1,4 @@
+import { BID_TO_BID, BidAcosRange } from "../History/bidAcos";
 import React, { useEffect, useState, useCallback, useMemo, useContext, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../components/ui/dialog";
@@ -10,16 +11,12 @@ import CurrencyFormat from "../../../helper/currencyCode/CurrencyFormat";
 import moment from "moment-timezone";
 import { Popover, PopoverTrigger, PopoverContent } from "../../../components/ui/popover";
 import { StyledCheckbox } from "../../../common/grid/StyledCheckbox";
+import AgTable from "../../../common/grid/AgTable";
 import {
   FiClock,
-  FiCalendar,
   FiRefreshCw,
   FiUser,
   FiSearch,
-  FiChevronLeft,
-  FiChevronRight,
-  FiChevronsLeft,
-  FiChevronsRight,
   FiChevronDown,
 } from "react-icons/fi";
 import { MdOutlineClose } from "react-icons/md";
@@ -112,7 +109,7 @@ const CampaignHistoryModal = ({
   const [acosPeriod, setAcosPeriod] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_PERIOD);
-      if (saved && ["7", "14", "30", "custom_days"].includes(saved)) {
+      if (saved && ["7", "14", "30", "custom_days", BID_TO_BID].includes(saved)) {
         return saved;
       }
     } catch (e) {
@@ -261,7 +258,8 @@ const CampaignHistoryModal = ({
   const isOnlyRecommendation = selectedScopes.length === 1 && selectedScopes.includes("recommendation");
   const isOnlyDayparting = selectedScopes.length === 1 && selectedScopes.includes("dayparting");
 
-  const tableContainerRef = useRef(null);
+  const gridRef = useRef(null);
+  const gridApiRef = useRef(null);
 
   // Debounce search input
   useEffect(() => {
@@ -272,28 +270,21 @@ const CampaignHistoryModal = ({
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Support Shift + Mouse Scroll for smooth horizontal scrolling
   useEffect(() => {
-    const el = tableContainerRef.current;
-    if (!el) return;
-
-    const handleWheel = (e) => {
-      if (e.shiftKey || Math.abs(e.deltaX) > 0) {
-        if (e.deltaY !== 0 && e.shiftKey) {
-          el.scrollLeft += e.deltaY;
-          e.preventDefault();
-        }
+    const handleResize = () => {
+      if (gridApiRef.current && typeof gridApiRef.current.sizeColumnsToFit === "function") {
+        gridApiRef.current.sizeColumnsToFit();
       }
     };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
-    el.addEventListener("wheel", handleWheel, { passive: false });
-    return () => {
-      el.removeEventListener("wheel", handleWheel);
-    };
-  }, [historyList]);
+  const historyRequest = useRef(0);
 
   const fetchHistory = useCallback(async (overridePeriod, overrideDays) => {
     if (!campaignId) return;
+    const request = ++historyRequest.current;
     setLoading(true);
     try {
       let apiType = selectedType !== "All" ? selectedType : undefined;
@@ -349,11 +340,13 @@ const CampaignHistoryModal = ({
         changeType: apiChangeType,
         historyScope: apiHistoryScope,
         source: selectedSource !== "All" ? selectedSource : undefined,
-        acosLookbackMode: activePeriod,
+        acosLookbackMode: activePeriod === BID_TO_BID ? "7" : activePeriod,
+        oldAcosMode: activePeriod === BID_TO_BID ? BID_TO_BID : undefined,
         acosLookbackDays: lookbackDays,
       };
 
       const res = await ApiHistory(payload);
+      if (request !== historyRequest.current) return;
       if (res?.isSuccess) {
         setHistoryList(res?.data || []);
         setDailyStats(Array.isArray(res?.dailyStats) ? res.dailyStats : null);
@@ -369,13 +362,14 @@ const CampaignHistoryModal = ({
         setTotalPages(1);
       }
     } catch (err) {
+      if (request !== historyRequest.current) return;
       console.error("Failed to fetch campaign history:", err);
       setHistoryList([]);
       setDailyStats(null);
       setTotalRecords(0);
       setTotalPages(1);
     } finally {
-      setLoading(false);
+      if (request === historyRequest.current) setLoading(false);
     }
   }, [
     profileId,
@@ -474,6 +468,7 @@ const CampaignHistoryModal = ({
 
   // Recalculate Old Bid ACOS in memory whenever lookback days change (0ms latency)
   const computedHistoryList = useMemo(() => {
+    if (acosPeriod === BID_TO_BID) return historyList;
     if (!deduplicatedHistoryList.length) return [];
     if (!Array.isArray(dailyStats) || !dailyStats.length) return deduplicatedHistoryList;
 
@@ -540,8 +535,9 @@ const CampaignHistoryModal = ({
   }, [historyList, dailyStats, acosPeriod, customDays, profileTimezone]);
 
   const handleAcosPeriodChange = (val) => {
+    acosPeriodRef.current = val;
     setAcosPeriod(val);
-    if (!Array.isArray(dailyStats) && val !== "custom_days") {
+    if (val === BID_TO_BID || acosPeriod === BID_TO_BID || (!Array.isArray(dailyStats) && val !== "custom_days")) {
       fetchHistory(val, customDays);
     }
   };
@@ -662,12 +658,333 @@ const CampaignHistoryModal = ({
   const startRecord = totalRecords === 0 ? 0 : (page - 1) * perPage + 1;
   const endRecord = Math.min(page * perPage, totalRecords);
 
+  const gridHeight = useMemo(() => {
+    if (loading) return "220px";
+    const count = computedHistoryList.length;
+    if (count === 0) return "220px";
+    // Horizontal overflow takes space from the row viewport.
+    const calculated = 48 + count * 48 + 2 + 16;
+    return `min(${calculated}px, 52vh)`;
+  }, [computedHistoryList.length, loading]);
+
+  const columns = useMemo(() => [
+    {
+      headerName: t("Date & Time"),
+      field: "createdAt",
+      colId: "createdAt",
+      lockPosition: "left",
+      minWidth: 150,
+      width: 165,
+      flex: 1.1,
+      sortable: false,
+      resizable: true,
+      cellRenderer: (params) => {
+        const item = params.data;
+        if (!item) return null;
+        const formattedDate = moment(item.createdAt).format("DD/MM/YYYY hh:mm:ss A");
+        const dateParts = formattedDate.split(" ");
+        const datePart = dateParts[0] || "";
+        const timePart = dateParts.slice(1).join(" ") || "";
+        return (
+          <div className="flex flex-col justify-center h-full leading-tight">
+            <div className="flex items-center gap-1 font-semibold text-[12px] text-slate-700 dark:text-slate-200">
+              <FiClock size={12} className="opacity-60 text-slate-400 flex-shrink-0" />
+              <span>{datePart}</span>
+            </div>
+            {timePart && (
+              <span className="text-[10px] text-slate-400 pl-[16px]">{timePart}</span>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      headerName: t("Change level", "Change level"),
+      field: "changeLevel",
+      colId: "changeLevel",
+      minWidth: 190,
+      flex: 1.5,
+      sortable: false,
+      resizable: true,
+      cellRenderer: (params) => {
+        const item = params.data;
+        if (!item) return null;
+        const rowCampaignName = item?.campaignDetails?.name || item?.campaignName || campaignName || "";
+        const rowCampaignId = item?.campaignDetails?.campaignId || item?.campaignId || item?.changeLevel || campaignId;
+        const rawAdGroupName = item?.adGroupDetails?.name || item?.adGroupName || recommendationData?.adGroupName || "";
+        const rawAdGroupId = item?.adGroupId || item?.adGroupDetails?.adGroupId || recommendationData?.adGroupId;
+        const isAdGroup = isAdGroupLevelChange(item);
+
+        let primaryAdGroup = "";
+        if (rawAdGroupName && rawAdGroupName.toLowerCase() !== rowCampaignName.toLowerCase()) {
+          primaryAdGroup = rawAdGroupName;
+        } else if (rawAdGroupId && String(rawAdGroupId) !== String(rowCampaignId)) {
+          primaryAdGroup = `Ad Group #${rawAdGroupId}`;
+        }
+
+        return (
+          <div className="flex flex-col justify-center h-full leading-tight min-w-0">
+            {isAdGroup && (primaryAdGroup || rowCampaignName) ? (
+              <div className="flex flex-col gap-0.5 min-w-0">
+                {primaryAdGroup ? (
+                  <div className="flex items-center min-w-0 text-[12px] font-semibold">
+                    <span className="text-slate-400 dark:text-slate-500 mr-1 flex-shrink-0 font-medium">
+                      {t("Ad Group")}:
+                    </span>
+                    <span
+                      className="truncate cursor-pointer text-sky-600 dark:text-[#38bdf8] hover:underline font-semibold"
+                      title={primaryAdGroup}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openCampaignViewInNewTab(item, rowCampaignName, {
+                          campaignId: rowCampaignId,
+                          adGroupId: rawAdGroupId,
+                          adGroupName: primaryAdGroup,
+                        });
+                      }}
+                    >
+                      {primaryAdGroup}
+                    </span>
+                  </div>
+                ) : null}
+                {rowCampaignName ? (
+                  <div className="flex items-center min-w-0 text-[11px]">
+                    <span className="text-slate-400 dark:text-slate-500 mr-1 flex-shrink-0">
+                      {t("Campaign")}:
+                    </span>
+                    <span
+                      className="truncate cursor-pointer text-slate-500 dark:text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 hover:underline"
+                      title={rowCampaignName}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openCampaignViewInNewTab(item, rowCampaignName, { campaignId: rowCampaignId });
+                      }}
+                    >
+                      {rowCampaignName}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="flex items-center min-w-0 text-[12px]">
+                <span className="text-slate-400 dark:text-slate-500 mr-1 flex-shrink-0 font-medium">
+                  {t("Campaign")}:
+                </span>
+                <span
+                  className="truncate cursor-pointer text-sky-600 dark:text-[#38bdf8] hover:underline font-semibold"
+                  title={rowCampaignName}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openCampaignViewInNewTab(item, rowCampaignName, { campaignId: rowCampaignId });
+                  }}
+                >
+                  {rowCampaignName || "—"}
+                </span>
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      headerName: t("Change type", "Change type"),
+      field: "changeType",
+      colId: "changeType",
+      minWidth: 180,
+      flex: 1.2,
+      sortable: false,
+      resizable: true,
+      cellRenderer: (params) => {
+        const item = params.data;
+        if (!item) return null;
+        const formattedChangeType = formatAmazonChangeType(item);
+        return (
+          <div className="flex items-center h-full w-full min-w-0">
+            <span
+              className="truncate text-[12px] font-medium text-slate-800 dark:text-slate-200"
+              title={formattedChangeType}
+            >
+              {formattedChangeType}
+            </span>
+          </div>
+        );
+      },
+    },
+    {
+      headerName: t("From"),
+      field: "oldValue",
+      colId: "oldValue",
+      minWidth: 80,
+      width: 90,
+      flex: 0.7,
+      sortable: false,
+      resizable: true,
+      cellRenderer: (params) => {
+        const item = params.data;
+        if (!item) return null;
+        if (item.oldValue !== undefined && item.oldValue !== null && item.oldValue !== "" && item.oldValue !== "—") {
+          const badgeProps = getStatusBadgeProps(item.oldValue);
+          if (badgeProps) {
+            return (
+              <div className="flex items-center h-full">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${badgeProps.className}`}>
+                  {t(badgeProps.label)}
+                </span>
+              </div>
+            );
+          }
+          return (
+            <div className="flex items-center h-full">
+              <span className="text-rose-600 dark:text-rose-400 font-semibold text-[12px] truncate" title={formatValue(item.oldValue)}>
+                {formatValue(item.oldValue)}
+              </span>
+            </div>
+          );
+        }
+        return (
+          <div className="flex items-center h-full">
+            <span className="text-slate-400">—</span>
+          </div>
+        );
+      },
+    },
+    {
+      headerName: t("To"),
+      field: "newValue",
+      colId: "newValue",
+      minWidth: 80,
+      width: 90,
+      flex: 0.7,
+      sortable: false,
+      resizable: true,
+      cellRenderer: (params) => {
+        const item = params.data;
+        if (!item) return null;
+        if (item.newValue !== undefined && item.newValue !== null && item.newValue !== "" && item.newValue !== "—") {
+          const badgeProps = getStatusBadgeProps(item.newValue);
+          if (badgeProps) {
+            return (
+              <div className="flex items-center h-full">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${badgeProps.className}`}>
+                  {t(badgeProps.label)}
+                </span>
+              </div>
+            );
+          }
+          return (
+            <div className="flex items-center h-full">
+              <span className="text-emerald-600 dark:text-emerald-400 font-semibold text-[12px] truncate" title={formatValue(item.newValue)}>
+                {formatValue(item.newValue)}
+              </span>
+            </div>
+          );
+        }
+        return (
+          <div className="flex items-center h-full">
+            <span className="text-slate-400">—</span>
+          </div>
+        );
+      },
+    },
+    {
+      headerName: t("Old Bid ACOS"),
+      field: "oldAcos",
+      colId: "oldAcos",
+      minWidth: 125,
+      width: 135,
+      flex: 1.0,
+      sortable: false,
+      resizable: true,
+      cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      cellRenderer: (params) => {
+        const item = params.data;
+        if (!item) return null;
+        const displayAcos =
+          item.oldAcos !== undefined && item.oldAcos !== null
+            ? Number(item.oldAcos)
+            : (acosPeriod !== BID_TO_BID && item.acos !== undefined && item.acos !== null ? Number(item.acos) : null);
+
+        return (
+          <div className="flex flex-col items-center justify-center h-full leading-tight text-center">
+            {displayAcos !== null ? (
+              <span
+                className={`inline-block px-2.5 py-0.5 rounded-md font-semibold text-xs border ${
+                  displayAcos === 0
+                    ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700"
+                    : displayAcos <= 30
+                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60"
+                    : displayAcos <= 50
+                    ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border-amber-200 dark:border-amber-800/60"
+                    : "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border-rose-200 dark:border-rose-800/60"
+                }`}
+                title={
+                  acosPeriod !== BID_TO_BID && item.dateRange
+                    ? `Spend: ${formatValue(item.spend)} | Sales: ${formatValue(item.sales)} (${item.dateRange.startDate} to ${item.dateRange.endDate})`
+                    : t("ACOS when old bid was active")
+                }
+              >
+                {displayAcos.toFixed(2)}%
+              </span>
+            ) : (
+              <span className="text-slate-400">—</span>
+            )}
+            {acosPeriod === BID_TO_BID && <BidAcosRange row={item} />}
+          </div>
+        );
+      },
+    },
+    {
+      headerName: t("Triggered From"),
+      field: "triggerSource",
+      colId: "triggerSource",
+      minWidth: 125,
+      width: 135,
+      flex: 1.0,
+      sortable: false,
+      resizable: true,
+      cellRenderer: (params) => {
+        const item = params.data;
+        if (!item) return null;
+        return (
+          <div className="flex items-center h-full">
+            {getSourceBadge(item)}
+          </div>
+        );
+      },
+    },
+    {
+      headerName: t("Changed By"),
+      field: "updatedBy",
+      colId: "updatedBy",
+      minWidth: 110,
+      width: 120,
+      flex: 0.8,
+      sortable: false,
+      resizable: true,
+      cellRenderer: (params) => {
+        const item = params.data;
+        if (!item) return null;
+        const user = item.updatedBy || "System";
+        return (
+          <div className="flex items-center h-full">
+            <div className="flex items-center gap-1 text-slate-600 dark:text-slate-300">
+              <FiUser size={12} className="opacity-60 text-slate-400 flex-shrink-0" />
+              <span className="truncate max-w-[140px]" title={user}>
+                {user}
+              </span>
+            </div>
+          </div>
+        );
+      },
+    },
+  ], [t, campaignName, campaignId, recommendationData, acosPeriod]);
+
   return (
     <Dialog open={show} onOpenChange={setShow}>
       <DialogContent
         hideCloseButton={true}
         style={{ zIndex: 100050 }}
-        className="max-w-[1300px] w-[96vw] p-0 gap-0 overflow-hidden border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-2xl bg-white dark:bg-[#0b1329] text-slate-800 dark:text-slate-100 z-[100050] flex flex-col max-h-[90vh]"
+        className="max-w-[1260px] w-[95vw] max-h-[86vh] p-0 gap-0 overflow-hidden border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-2xl bg-white dark:bg-[#0b1329] text-slate-800 dark:text-slate-100 z-[100050] flex flex-col"
         onInteractOutside={(e) => e.preventDefault()}
       >
         {/* Modal Header */}
@@ -908,6 +1225,9 @@ const CampaignHistoryModal = ({
                     <SelectItem value="30" className="text-xs font-medium cursor-pointer">
                       {t("Last 30 Days")}
                     </SelectItem>
+                    <SelectItem value={BID_TO_BID} className="text-xs font-medium cursor-pointer">
+                      {t("Bid-to-Bid")}
+                    </SelectItem>
                     <SelectItem value="custom_days" className="text-xs font-medium cursor-pointer">
                       {t("Custom Days")}
                     </SelectItem>
@@ -948,318 +1268,49 @@ const CampaignHistoryModal = ({
           </div>
         </div>
 
-        {/* Content Body / Table */}
-        <div className="flex-1 overflow-hidden p-6 w-full max-w-full flex flex-col min-h-0">
-          {loading ? (
-            <div className="py-20 flex flex-col items-center justify-center gap-3">
-              <div className="w-9 h-9 border-3 border-sky-500 border-t-transparent rounded-full animate-spin" />
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                {t("Fetching campaign history...")}
-              </p>
-            </div>
-          ) : computedHistoryList.length === 0 ? (
-            <div className="py-20 text-center">
-              <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3 text-slate-400 border border-slate-200 dark:border-slate-700">
-                <FiClock size={28} />
-              </div>
-              <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                {t("No Change History Found")}
-              </h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
-                {t("No modifications recorded for this campaign in the selected date range matching your criteria.")}
-              </p>
-            </div>
-          ) : (
-            <div
-              ref={tableContainerRef}
-              className="overflow-x-auto overflow-y-auto max-h-[56vh] w-full max-w-full border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm bg-white dark:bg-[#0b1329]"
-              style={{ WebkitOverflowScrolling: "touch" }}
-            >
-              <table className="w-full text-left border-collapse text-xs">
-                <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-sm">
-                  <tr className="text-slate-600 dark:text-slate-300 font-semibold uppercase tracking-wider text-[11px]">
-                    <th className="py-3.5 px-4 whitespace-nowrap min-w-[240px] bg-slate-50 dark:bg-slate-900">{t("Change level", "Change level")}</th>
-                    <th className="py-3.5 px-4 whitespace-nowrap min-w-[210px] bg-slate-50 dark:bg-slate-900">{t("Change type", "Change type")}</th>
-                    <th className="py-3.5 px-4 whitespace-nowrap min-w-[100px] bg-slate-50 dark:bg-slate-900">{t("From")}</th>
-                    <th className="py-3.5 px-4 whitespace-nowrap min-w-[100px] bg-slate-50 dark:bg-slate-900">{t("To")}</th>
-                    <th className="py-3.5 px-4 whitespace-nowrap min-w-[130px] bg-slate-50 dark:bg-slate-900 text-center">{t("Old Bid ACOS")}</th>
-                    <th className="py-3.5 px-4 whitespace-nowrap min-w-[140px] bg-slate-50 dark:bg-slate-900">{t("Triggered From")}</th>
-                    <th className="py-3.5 px-4 whitespace-nowrap min-w-[150px] bg-slate-50 dark:bg-slate-900">{t("Changed By")}</th>
-                    <th className="py-3.5 px-4 whitespace-nowrap min-w-[160px] bg-slate-50 dark:bg-slate-900">{t("Date & Time")}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
-                  {computedHistoryList.map((item, idx) => {
-                    const rowCampaignName = item?.campaignDetails?.name || item?.campaignName || campaignName || "";
-                    const rowCampaignId = item?.campaignDetails?.campaignId || item?.campaignId || item?.changeLevel || campaignId;
-                    const rawAdGroupName = item?.adGroupDetails?.name || item?.adGroupName || recommendationData?.adGroupName || "";
-                    const rawAdGroupId = item?.adGroupId || item?.adGroupDetails?.adGroupId || recommendationData?.adGroupId;
-                    const isAdGroup = isAdGroupLevelChange(item);
-
-                    // Ensure primaryAdGroup only shows the actual ad group name, never falling back to the campaign name
-                    let primaryAdGroup = "";
-                    if (rawAdGroupName && rawAdGroupName.toLowerCase() !== rowCampaignName.toLowerCase()) {
-                      primaryAdGroup = rawAdGroupName;
-                    } else if (rawAdGroupId && String(rawAdGroupId) !== String(rowCampaignId)) {
-                      primaryAdGroup = `Ad Group #${rawAdGroupId}`;
-                    }
-
-                    const formattedChangeType = formatAmazonChangeType(item);
-
-                    const formattedDate = moment(item.createdAt).format("DD/MM/YYYY hh:mm:ss A");
-                    const dateParts = formattedDate.split(" ");
-                    const datePart = dateParts[0] || "";
-                    const timePart = dateParts.slice(1).join(" ") || "";
-
-                    const displayAcos =
-                      item.oldAcos !== undefined && item.oldAcos !== null
-                        ? Number(item.oldAcos)
-                        : (item.acos !== undefined && item.acos !== null ? Number(item.acos) : null);
-
-                    return (
-                      <tr
-                        key={item._id || idx}
-                        className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
-                      >
-                        {/* 1. Change level */}
-                        <td className="py-3 px-4 min-w-[240px] max-w-[320px]">
-                          {isAdGroup && (primaryAdGroup || rowCampaignName) ? (
-                            <div className="flex flex-col gap-0.5 min-w-0">
-                              {primaryAdGroup ? (
-                                <div className="flex items-center min-w-0 text-[12px] font-semibold">
-                                  <span className="text-slate-400 dark:text-slate-500 mr-1 flex-shrink-0 font-medium">
-                                    {t("Ad Group")}:
-                                  </span>
-                                  <span
-                                    className="truncate cursor-pointer text-sky-600 dark:text-[#38bdf8] hover:underline font-semibold"
-                                    title={primaryAdGroup}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      openCampaignViewInNewTab(item, rowCampaignName, {
-                                        campaignId: rowCampaignId,
-                                        adGroupId: rawAdGroupId,
-                                        adGroupName: primaryAdGroup
-                                      });
-                                    }}
-                                  >
-                                    {primaryAdGroup}
-                                  </span>
-                                </div>
-                              ) : null}
-                              {rowCampaignName && (
-                                <div className="flex items-center min-w-0 text-[11px]">
-                                  <span className="text-slate-400 dark:text-slate-500 mr-1 flex-shrink-0">
-                                    {t("Campaign")}:
-                                  </span>
-                                  <span
-                                    className="truncate cursor-pointer text-slate-500 dark:text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 hover:underline"
-                                    title={rowCampaignName}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      openCampaignViewInNewTab(item, rowCampaignName, { campaignId: rowCampaignId });
-                                    }}
-                                  >
-                                    {rowCampaignName}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="flex items-center min-w-0 text-[12px]">
-                              <span className="text-slate-400 dark:text-slate-500 mr-1 flex-shrink-0 font-medium">
-                                {t("Campaign")}:
-                              </span>
-                              <span
-                                className="truncate cursor-pointer text-sky-600 dark:text-[#38bdf8] hover:underline font-semibold"
-                                title={rowCampaignName}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openCampaignViewInNewTab(item, rowCampaignName, { campaignId: rowCampaignId });
-                                }}
-                              >
-                                {rowCampaignName || "—"}
-                              </span>
-                            </div>
-                          )}
-                        </td>
-
-                        {/* 2. Change type */}
-                        <td className="py-3 px-4 min-w-[210px] max-w-[300px]">
-                          <span
-                            className="truncate block text-[12px] font-medium text-slate-800 dark:text-slate-200"
-                            title={formattedChangeType}
-                          >
-                            {formattedChangeType}
-                          </span>
-                        </td>
-
-                        {/* 3. From */}
-                        <td className="py-3 px-4 whitespace-nowrap">
-                          {item.oldValue !== undefined && item.oldValue !== null && item.oldValue !== "" ? (
-                            getStatusBadgeProps(item.oldValue) ? (
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${getStatusBadgeProps(item.oldValue).className}`}>
-                                {t(getStatusBadgeProps(item.oldValue).label)}
-                              </span>
-                            ) : (
-                              <span className="text-rose-600 dark:text-rose-400 font-semibold text-[12px]">
-                                {formatValue(item.oldValue)}
-                              </span>
-                            )
-                          ) : (
-                            <span className="text-slate-400">—</span>
-                          )}
-                        </td>
-
-                        {/* 4. To */}
-                        <td className="py-3 px-4 whitespace-nowrap">
-                          {item.newValue !== undefined && item.newValue !== null && item.newValue !== "" ? (
-                            getStatusBadgeProps(item.newValue) ? (
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${getStatusBadgeProps(item.newValue).className}`}>
-                                {t(getStatusBadgeProps(item.newValue).label)}
-                              </span>
-                            ) : (
-                              <span className="text-emerald-600 dark:text-emerald-400 font-semibold text-[12px]">
-                                {formatValue(item.newValue)}
-                              </span>
-                            )
-                          ) : (
-                            <span className="text-slate-400">—</span>
-                          )}
-                        </td>
-
-                        {/* 5. Old Bid ACOS */}
-                        <td className="py-3 px-4 whitespace-nowrap text-center font-medium">
-                          {displayAcos !== null ? (
-                            <span
-                              className={`inline-block px-2.5 py-0.5 rounded-md font-semibold text-xs border ${
-                                displayAcos === 0
-                                  ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700"
-                                  : displayAcos <= 30
-                                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60"
-                                  : displayAcos <= 50
-                                  ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border-amber-200 dark:border-amber-800/60"
-                                  : "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border-rose-200 dark:border-rose-800/60"
-                              }`}
-                              title={
-                                item.dateRange
-                                  ? `Spend: ${formatValue(item.spend)} | Sales: ${formatValue(item.sales)} (${item.dateRange.startDate} to ${item.dateRange.endDate})`
-                                  : t("ACOS when old bid was active")
-                              }
-                            >
-                              {displayAcos.toFixed(2)}%
-                            </span>
-                          ) : (
-                            <span className="text-slate-400">—</span>
-                          )}
-                        </td>
-
-                        {/* 6. Triggered From */}
-                        <td className="py-3 px-4 whitespace-nowrap">
-                          {getSourceBadge(item)}
-                        </td>
-
-                        {/* 7. Changed By */}
-                        <td className="py-3 px-4 whitespace-nowrap">
-                          <div className="flex items-center gap-1 text-slate-600 dark:text-slate-300">
-                            <FiUser size={12} className="opacity-60 text-slate-400 flex-shrink-0" />
-                            <span className="truncate max-w-[160px]" title={item.updatedBy || "System"}>
-                              {item.updatedBy || "System"}
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* 8. Date & Time */}
-                        <td className="py-3 px-4 whitespace-nowrap">
-                          <div className="flex flex-col justify-center leading-tight">
-                            <div className="flex items-center gap-1 font-semibold text-[12px] text-slate-700 dark:text-slate-200">
-                              <FiClock size={12} className="opacity-60 text-slate-400 flex-shrink-0" />
-                              <span>{datePart}</span>
-                            </div>
-                            {timePart && (
-                              <span className="text-[10px] text-slate-400 pl-[16px]">{timePart}</span>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Modal Footer with Pagination */}
-        <div className="px-6 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 flex flex-wrap items-center justify-between gap-3 flex-shrink-0 text-xs text-slate-600 dark:text-slate-400">
-          <div className="flex items-center gap-3">
-            <span>
-              {t("Showing")} <strong className="text-slate-900 dark:text-white">{startRecord}</strong>–<strong className="text-slate-900 dark:text-white">{endRecord}</strong> {t("of")} <strong className="text-sky-600 dark:text-sky-400">{totalRecords}</strong>
-            </span>
-
-            <div className="flex items-center gap-1.5 ml-2">
-              <span className="text-[11px] text-slate-500">{t("Rows per page")}:</span>
-              <Select
-                value={String(perPage)}
-                onValueChange={(val) => {
-                  setPerPage(Number(val));
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="w-[75px] h-7 px-2 text-xs rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 cursor-pointer shadow-sm">
-                  <SelectValue>{perPage}</SelectValue>
-                </SelectTrigger>
-                <SelectContent className="z-[100060]">
-                  <SelectItem value="10" className="text-xs font-medium cursor-pointer">10</SelectItem>
-                  <SelectItem value="25" className="text-xs font-medium cursor-pointer">25</SelectItem>
-                  <SelectItem value="50" className="text-xs font-medium cursor-pointer">50</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span>
-              {t("Page")} <strong className="text-slate-900 dark:text-white">{page}</strong> {t("of")} <strong className="text-slate-900 dark:text-white">{totalPages}</strong>
-            </span>
-
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setPage(1)}
-                disabled={page <= 1}
-                className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
-                title={t("First page")}
-              >
-                <FiChevronsLeft size={14} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page <= 1}
-                className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
-                title={t("Previous page")}
-              >
-                <FiChevronLeft size={14} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page >= totalPages}
-                className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
-                title={t("Next page")}
-              >
-                <FiChevronRight size={14} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setPage(totalPages)}
-                disabled={page >= totalPages}
-                className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
-                title={t("Last page")}
-              >
-                <FiChevronsRight size={14} />
-              </button>
-            </div>
+        {/* Content Body / AgTable */}
+        <div className="overflow-hidden px-5 pt-2 pb-3 w-full max-w-full flex flex-col min-h-0">
+          <div
+            className="data_table flex flex-col min-h-0 [&_.glass-grid-container]:!rounded-xl [&_.iq-ag-table]:!rounded-t-xl [&_.ag-root-wrapper]:!rounded-t-xl [&_.iq-pagination]:!rounded-b-xl [&_.iq-pagination]:!flex-shrink-0"
+            id="campaign-history-modal-grid-wrapper"
+          >
+            <AgTable
+              ref={gridRef}
+              tableId="campaign-history-modal-grid"
+              height={gridHeight}
+              minHeight={computedHistoryList.length === 0 || loading ? "220px" : "auto"}
+              rowHeight={48}
+              rowData={computedHistoryList}
+              columnDefs={columns}
+              totalRecords={totalRecords}
+              perPage={perPage}
+              currentPage={page}
+              onPageChange={(p) => setPage(p)}
+              onPerPageChange={(size) => {
+                setPerPage(size);
+                setPage(1);
+              }}
+              paginationOptions={[10, 25, 50]}
+              isCustomSaveColumns={false}
+              enableCustomizeColumns={false}
+              loading={loading}
+              onRefresh={() => fetchHistory(acosPeriod, customDays)}
+              defaultColDef={{ resizable: true, suppressSizeToFit: false, sortable: false }}
+              onGridReady={(params) => {
+                gridApiRef.current = params?.api;
+                setTimeout(() => {
+                  if (params?.api && typeof params.api.sizeColumnsToFit === "function") {
+                    params.api.sizeColumnsToFit();
+                  }
+                }, 100);
+              }}
+              onFirstDataRendered={(params) => {
+                params?.api?.sizeColumnsToFit?.();
+              }}
+              onRowDataUpdated={(params) => {
+                params?.api?.sizeColumnsToFit?.();
+              }}
+            />
           </div>
         </div>
       </DialogContent>

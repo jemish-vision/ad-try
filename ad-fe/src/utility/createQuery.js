@@ -57,9 +57,9 @@ export const addRuleQuery = (sendData, labels, cType) => {
             addClause(campaignQuery);
         }
 
-        if (["Impressions", "Clicks", "Orders", "Sales", "ROAS", "ACOS", "Spend", "Bid", "Top of Search IS"].includes(conditionType) && isCFilterExist) {
+        if (["Impressions", "Clicks", "Orders", "Purchases", "Sales", "ROAS", "ACOS", "Spend", "Bid", "Top of Search IS"].includes(conditionType) && isCFilterExist) {
             let operator = {};
-            const type = conditionType === "Bid" ? "keywordBid" : conditionType === "Top of Search IS" ? "topOfSearchImpressionShare" : `${conditionType}`.toLowerCase()
+            const type = conditionType === "Bid" ? "keywordBid" : conditionType === "Top of Search IS" ? "topOfSearchImpressionShare" : conditionType === "Purchases" ? "orders" : `${conditionType}`.toLowerCase()
 
             switch (conditionOperator) {
                 case "LESS_THAN":
@@ -141,7 +141,7 @@ export const addTargetingQuery = (sendData) => {
     if (appliedFilters?.length) {
         appliedFilters.forEach(filter => {
             const { apiFieldName, condition, value, type } = filter
-            const apiFieldFilter = type === "Bid" ? "keywordBid" : type === "Top of Search IS" ? "topOfSearchImpressionShare" : `${apiFieldName}`.toLowerCase()
+            const apiFieldFilter = type === "Bid" ? "keywordBid" : type === "Top of Search IS" ? "topOfSearchImpressionShare" : `${apiFieldName}`.toLowerCase() === "purchases" ? "orders" : `${apiFieldName}`.toLowerCase()
             const checkFilter = ["impressions", "clicks", "orders", "sales", "roas", "acos", "spend", "keywordBid", "topOfSearchImpressionShare"].includes(apiFieldFilter)
 
             if (apiFieldName && condition && checkFilter) {
@@ -225,9 +225,9 @@ export const addPlacementRuleQuery = (sendData, labels, cType) => {
             return;
         }
 
-        if (["Impressions", "Clicks", "Orders", "Sales", "ROAS", "ACOS", "Spend"].includes(conditionType) && isCFilterExist) {
+        if (["Impressions", "Clicks", "Orders", "Purchases", "Sales", "ROAS", "ACOS", "Spend"].includes(conditionType) && isCFilterExist) {
             let operator = {};
-            const type = conditionType.toLowerCase()
+            const type = conditionType === "Purchases" ? "orders" : conditionType.toLowerCase()
 
             switch (conditionOperator) {
                 case "LESS_THAN":
@@ -306,7 +306,7 @@ export const addSearchTermQuery = (sendData) => {
     if (appliedFilters?.length) {
         appliedFilters.forEach(filter => {
             const { apiFieldName, condition, value } = filter
-            const apiFieldFilter = `${apiFieldName}`.toLowerCase()
+            const apiFieldFilter = `${apiFieldName}`.toLowerCase() === "purchases" ? "orders" : `${apiFieldName}`.toLowerCase()
             const checkFilter = ["impressions", "clicks", "orders", "sales", "roas", "acos", "spend"].includes(apiFieldFilter)
 
             if (apiFieldName && condition && checkFilter) {
@@ -345,8 +345,8 @@ export const addSearchTermRuleQuery = (sendData, labels, cType) => {
         }
 
         // -------- Handle Default Metric Filters --------
-        else if (["Impressions", "Clicks", "Orders", "Sales", "ROAS", "ACOS", "Spend", "Bid"].includes(conditionType) && isCFilterExist) {
-            const type = conditionType === "Bid" ? "keywordBid" : `${conditionType}`.toLowerCase();
+        else if (["Impressions", "Clicks", "Orders", "Purchases", "Sales", "ROAS", "ACOS", "Spend", "Bid"].includes(conditionType) && isCFilterExist) {
+            const type = conditionType === "Bid" ? "keywordBid" : conditionType === "Purchases" ? "orders" : `${conditionType}`.toLowerCase();
 
             if (conditionOperator === "BETWEEN") {
                 fieldCondition = { [type]: { $gte: Number(conditionValue), $lte: Number(conditionMaxValue) } };
@@ -443,7 +443,7 @@ export const addPlacementQuery = (sendData) => {
     if (appliedFilters?.length) {
         appliedFilters.forEach(filter => {
             const { apiFieldName, condition, value, type } = filter
-            const apiFieldFilter = type === "BidAdjustment" ? "placementModifier" : `${apiFieldName}`.toLowerCase()
+            const apiFieldFilter = type === "BidAdjustment" ? "placementModifier" : `${apiFieldName}`.toLowerCase() === "purchases" ? "orders" : `${apiFieldName}`.toLowerCase()
             const checkFilter = ["impressions", "clicks", "orders", "sales", "roas", "acos", "spend", "placementModifier"].includes(apiFieldFilter)
 
             if (apiFieldName && condition && checkFilter) {
@@ -496,9 +496,9 @@ export const addBudgetRuleQuery = (sendData, labels, cType) => {
             });
         }
 
-        if (["Impressions", "Clicks", "Orders", "Sales", "ROAS", "ACOS", "Spend", "CPC", "Budget", "TimeInBudget", "BudgetUsage"].includes(conditionType) && isCFilterExist) {
+        if (["Impressions", "Clicks", "Orders", "Purchases", "Sales", "ROAS", "ACOS", "Spend", "CPC", "Budget", "TimeInBudget", "BudgetUsage"].includes(conditionType) && isCFilterExist) {
             let operator = {};
-            const type = conditionType === "TimeInBudget" ? "timeInBudget" : `${conditionType}`.toLowerCase()
+            const type = conditionType === "TimeInBudget" ? "timeInBudget" : conditionType === "Purchases" ? "orders" : `${conditionType}`.toLowerCase()
 
             switch (conditionOperator) {
                 case "LESS_THAN":
@@ -592,8 +592,8 @@ export const addHealthScoreSettingQuery = (sendData, labels) => {
         }
 
         // -------- Handle Default Metric Filters --------
-        else if (["Impressions", "Clicks", "Orders", "Sales", "ROAS", "ACOS", "Spend", "CPC", "CTR", "Budget", "TimeInBudget", "ConversionRate"].includes(conditionType)) {
-            const type = conditionType === "TimeInBudget" ? "timeInBudget" : conditionType === "ConversionRate" ? "conversionRate" : `${conditionType}`.toLowerCase();
+        else if (["Impressions", "Clicks", "Orders", "Purchases", "Sales", "ROAS", "ACOS", "Spend", "CPC", "CTR", "Budget", "TimeInBudget", "ConversionRate"].includes(conditionType)) {
+            const type = conditionType === "TimeInBudget" ? "timeInBudget" : conditionType === "ConversionRate" ? "conversionRate" : conditionType === "Purchases" ? "orders" : `${conditionType}`.toLowerCase();
 
             if (conditionOperator === "BETWEEN") {
                 fieldCondition = { [type]: { $gte: Number(conditionValue), $lte: Number(conditionMaxValue) } };
@@ -700,6 +700,7 @@ export const buildRecommendationQuery = (conditions) => {
             'Impressions': 'impressions',
             'Clicks': 'clicks',
             'Orders': 'orders',
+            'Purchases': 'orders',
             'Sales': 'sales',
             'ACOS': 'acos',
             'ROAS': 'roas',

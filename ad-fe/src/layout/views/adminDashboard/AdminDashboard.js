@@ -105,21 +105,21 @@ function Sparkline({ data, color }) {
 // ─── KPI Cards Config ─────────────────────────────────────────────────────────
 
 const KPI_CARDS_MOCK = [
-  { label: "Total Sales", value: "...", delta: null, green: true, colorTheme: "theme-blue", metricKey: "sales" },
-  { label: "Ad Sales", value: "...", delta: null, green: true, colorTheme: "theme-green", metricKey: "sales" },
-  { label: "TACoS", value: "...", delta: null, colorTheme: "theme-purple", metricKey: "acos" },
-  { label: "ACoS", value: "...", delta: null, colorTheme: "theme-orange", metricKey: "acos" },
-  { label: "roas", value: "...", delta: null, colorTheme: "theme-yellow", metricKey: "roas" },
+  { label: "Total Sales", value: "—", delta: null, green: true, colorTheme: "theme-blue", metricKey: "sales" },
+  { label: "Ad Sales", value: "—", delta: null, green: true, colorTheme: "theme-green", metricKey: "sales" },
+  { label: "TACoS", value: "—", delta: null, colorTheme: "theme-purple", metricKey: "acos" },
+  { label: "ACoS", value: "—", delta: null, colorTheme: "theme-orange", metricKey: "acos" },
+  { label: "roas", value: "—", delta: null, colorTheme: "theme-yellow", metricKey: "roas" },
   {
     label: "conversionRate",
-    value: "...",
+    value: "—",
     sparkline: null,
     colorTheme: "theme-pink",
     metricKey: "clicks"
   },
   {
     label: "Inventory Health",
-    value: "...",
+    value: "—",
     sparkline: null,
     colorTheme: "theme-teal",
     metricKey: "orders"
@@ -335,9 +335,9 @@ export default function AdminDashboard() {
       totalSales: "Total Sales",
       adSales: "Ad Sales",
       organicSales: "Organic Sales",
-      totalOrders: "Total Orders",
-      adOrders: "Ad Orders",
-      organicOrders: "Organic Orders",
+      totalOrders: "Total Purchases",
+      adOrders: "Ad Purchases",
+      organicOrders: "Organic Purchases",
       acos: "ACoS",
       cvr: "CVR",
       stockDays: "Stock Days"
@@ -392,9 +392,9 @@ export default function AdminDashboard() {
   const defaultColumns = ["Product"];
 
   const checkOrderColumns = useCallback((title) => ({
-    width: visibleColumns?.find((col) => col?.title === title)?.width ?? 150,
-    hide: Boolean(visibleColumns?.length && !visibleColumns?.find((col) => col?.title === title)),
-    order: visibleColumns?.find((col) => col?.title === title)?.order,
+    width: visibleColumns?.find((col) => col?.title === title || (title === "Total Purchases" && col?.title === "Total Orders") || (title === "Ad Purchases" && col?.title === "Ad Orders") || (title === "Organic Purchases" && col?.title === "Organic Orders"))?.width ?? 150,
+    hide: Boolean(visibleColumns?.length && !visibleColumns?.find((col) => col?.title === title || (title === "Total Purchases" && col?.title === "Total Orders") || (title === "Ad Purchases" && col?.title === "Ad Orders") || (title === "Organic Purchases" && col?.title === "Organic Orders"))),
+    order: visibleColumns?.find((col) => col?.title === title || (title === "Total Purchases" && col?.title === "Total Orders") || (title === "Ad Purchases" && col?.title === "Ad Orders") || (title === "Organic Purchases" && col?.title === "Organic Orders"))?.order,
   }), [visibleColumns]);
 
   const productColumns = useMemo(() => [
@@ -456,22 +456,22 @@ export default function AdminDashboard() {
       headerComponentParams: { ...sharedFilterParams, field: "organicSales", hasFilter: true },
     },
     {
-      headerName: "Total Orders", field: "totalOrders", title: "Total Orders",
-      ...(checkOrderColumns("Total Orders")), sortable: true, resizable: true,
+      headerName: "Total Purchases", field: "totalOrders", title: "Total Purchases",
+      ...(checkOrderColumns("Total Purchases")), sortable: true, resizable: true,
       cellRenderer: (params) => <>{params.value ?? 0}</>,
       headerComponent: AgCustomHeader,
       headerComponentParams: { ...sharedFilterParams, field: "totalOrders", hasFilter: true },
     },
     {
-      headerName: "Ad Orders", field: "adOrders", title: "Ad Orders",
-      ...(checkOrderColumns("Ad Orders")), sortable: true, resizable: true,
+      headerName: "Ad Purchases", field: "adOrders", title: "Ad Purchases",
+      ...(checkOrderColumns("Ad Purchases")), sortable: true, resizable: true,
       cellRenderer: (params) => <>{params.value ?? 0}</>,
       headerComponent: AgCustomHeader,
       headerComponentParams: { ...sharedFilterParams, field: "adOrders", hasFilter: true },
     },
     {
-      headerName: "Organic Orders", field: "organicOrders", title: "Organic Orders",
-      ...(checkOrderColumns("Organic Orders")), sortable: true, resizable: true,
+      headerName: "Organic Purchases", field: "organicOrders", title: "Organic Purchases",
+      ...(checkOrderColumns("Organic Purchases")), sortable: true, resizable: true,
       cellRenderer: (params) => <span style={{ color: params.value < 0 ? "#e74c3c" : "inherit" }}>{params.value}</span>,
       headerComponent: AgCustomHeader,
       headerComponentParams: { ...sharedFilterParams, field: "organicOrders", hasFilter: true },
@@ -585,7 +585,10 @@ export default function AdminDashboard() {
   const loadProductTypes = async () => {
     try {
       const pid = currentProfileId;
-      if (!pid) return;
+      if (!pid) {
+        setProductTypes([]);
+        return;
+      }
       const res = await ApiGetProductTypes({ profileId: pid });
       if (res?.isSuccess) {
         if (res.marketplace_id) setMarketplace(res.marketplace_id);
@@ -607,7 +610,10 @@ export default function AdminDashboard() {
   // Fetch KPI Cards
   const loadKpiData = async () => {
     const pid = currentProfileId;
-    if (!pid) return;
+    if (!pid) {
+      setIsKpiLoading(false);
+      return;
+    }
     try {
       setIsKpiLoading(true);
       const res = await ApiGetDashboardCards({
@@ -632,7 +638,10 @@ export default function AdminDashboard() {
   // Fetch Chart Data
   const loadChartData = async () => {
     const pid = currentProfileId;
-    if (!pid) return;
+    if (!pid) {
+      setIsGraphLoading(false);
+      return;
+    }
     try {
       setIsGraphLoading(true);
       const res = await ApiGetDashboardGraph({
@@ -655,6 +664,12 @@ export default function AdminDashboard() {
   };
 
   const loadGridData = async ({ page = gridPage, limit = gridPerPage, sortField = gridSortField, sortType = gridSortType, dynamicFilters = appliedFilters, overrides = {} } = {}) => {
+    if (!currentProfileId) {
+      setLoadingGrid(false);
+      setGridData([]);
+      setGridTotal(0);
+      return;
+    }
     try {
       setLoadingGrid(true);
       const customFilter = addDashboardQuery({ appliedFilters: dynamicFilters, selectedMatrix });
@@ -690,7 +705,10 @@ export default function AdminDashboard() {
   // Fetch Performance Matrix
   const loadMatrixData = async () => {
     const pid = currentProfileId;
-    if (!pid) return;
+    if (!pid) {
+      setIsMatrixLoading(false);
+      return;
+    }
     try {
       setIsMatrixLoading(true);
       const res = await ApiGetPerformanceMatrix({
@@ -715,7 +733,11 @@ export default function AdminDashboard() {
   // Fetch Smart Insights
   const loadInsightsData = async (pageNum = 1) => {
     const pid = currentProfileId;
-    if (!pid) return;
+    if (!pid) {
+      setIsInsightsLoading(false);
+      setIsInsightsLoadingMore(false);
+      return;
+    }
     try {
       if (pageNum === 1) {
         setIsInsightsLoading(true);
@@ -880,7 +902,7 @@ export default function AdminDashboard() {
     { label: "Ad Sales", value: CurrencyCode(kpiData.adSales || 0), delta: kpiData.adSalesChange, deltaAbs: kpiData.adSalesChangeAbs, isCurrency: true, green: (kpiData.adSalesChange || 0) >= 0, colorTheme: "theme-green", isPrimary: true, accentColor: "var(--accent-primary)", metricKey: "sales" },
     { label: "ACoS", value: `${kpiData.acos || 0}%`, delta: kpiData.acosChange, deltaAbs: kpiData.acosChangeAbs, isCurrency: false, green: (kpiData.acosChange || 0) <= 0, colorTheme: "theme-orange", accentColor: "var(--accent-negative)", metricKey: "acos" },
     { label: "roas", value: `${kpiData.roas || 0}`, delta: kpiData.roasChange, deltaAbs: kpiData.roasChangeAbs, isCurrency: false, green: (kpiData.roasChange || 0) >= 0, colorTheme: "theme-yellow", accentColor: "var(--accent-positive)", metricKey: "roas" },
-    { label: "Orders", value: CurrencyFormat(kpiData.adOrders || 0), delta: kpiData.adOrdersChange, deltaAbs: kpiData.adOrdersChangeAbs, isCurrency: false, green: (kpiData.adOrdersChange || 0) >= 0, colorTheme: "theme-blue", accentColor: "var(--accent-primary)", metricKey: "orders" },
+    { label: "Purchases", value: CurrencyFormat(kpiData.adOrders || 0), delta: kpiData.adOrdersChange, deltaAbs: kpiData.adOrdersChangeAbs, isCurrency: false, green: (kpiData.adOrdersChange || 0) >= 0, colorTheme: "theme-blue", accentColor: "var(--accent-primary)", metricKey: "orders" },
     { label: "Impressions", value: CurrencyFormat(kpiData.impressions || 0), delta: kpiData.impressionsChange, deltaAbs: kpiData.impressionsChangeAbs, isCurrency: false, green: (kpiData.impressionsChange || 0) >= 0, colorTheme: "theme-purple", accentColor: "var(--accent-primary)", metricKey: "impressions" },
     { label: "Clicks", value: CurrencyFormat(kpiData.clicks || 0), delta: kpiData.clicksChange, deltaAbs: kpiData.clicksChangeAbs, isCurrency: false, green: (kpiData.clicksChange || 0) >= 0, colorTheme: "theme-pink", accentColor: "var(--accent-primary)", metricKey: "clicks" },
     { label: "Avg CPC", value: CurrencyCode(kpiData.cpc || 0), delta: kpiData.cpcChange, deltaAbs: kpiData.cpcChangeAbs, isCurrency: true, green: (kpiData.cpcChange || 0) <= 0, colorTheme: "theme-teal", accentColor: "var(--accent-warning)", metricKey: "cpc" },
@@ -1122,6 +1144,7 @@ export default function AdminDashboard() {
         {/* ── Main Chart (Full Width) ────────────────────────────────── */}
         <div className="dash-chart-card" id={"dashboard-chart"}>
           <DashbordGraph
+            chartId="Dashboard"
             isChartLoading={isGraphLoading}
             chartData={graphData}
             currencyCode={currencyCode || "INR"}

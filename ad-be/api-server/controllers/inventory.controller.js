@@ -1931,11 +1931,11 @@ exports.getTopProductsGrid = async (req, res) => {
         const mainCampaignModel = AD_TYPE_COLLECTIONS?.[`${adType}Model`]?.campaignSchema || campaignSchema;
 
         let activeCampaigns = hasActiveCampaigns
-            ? await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId",{ configId, profileId: Number(profileId), status: "ENABLED", reportDate: { $eq: currentDate } })
-            : await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId",{ configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
+            ? await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId", { configId, profileId: Number(profileId), status: "ENABLED", reportDate: { $eq: currentDate } })
+            : await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId", { configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
 
         if (!activeCampaigns || !activeCampaigns.length) {
-            activeCampaigns = await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId",{ configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
+            activeCampaigns = await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId", { configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
         }
 
         const pipeline = [
@@ -2212,11 +2212,11 @@ exports.getProductDecisionMatrix = async (req, res) => {
         const mainCampaignModel = AD_TYPE_COLLECTIONS?.[`${adType}Model`]?.campaignSchema || campaignSchema;
 
         let activeCampaigns = hasActiveCampaigns
-            ? await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId",{ configId, profileId: Number(profileId), status: "ENABLED", reportDate: { $eq: currentDate } })
-            : await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId",{ configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
+            ? await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId", { configId, profileId: Number(profileId), status: "ENABLED", reportDate: { $eq: currentDate } })
+            : await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId", { configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
 
         if (!activeCampaigns || !activeCampaigns.length) {
-            activeCampaigns = await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId",{ configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
+            activeCampaigns = await distinctCampaignIdsForAdType(adType, campaignSchema, "campaignId", { configId, profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } });
         }
 
         const pipeline = [
@@ -2396,7 +2396,7 @@ exports.getDashboardInsights = async (req, res) => {
             if (cached) {
                 return res.status(200).send(typeof cached === "string" ? JSON.parse(cached) : cached);
             }
-        } catch (_) {}
+        } catch (_) { }
 
         const diffDays = Math.max(moment(toDate).diff(moment(fromDate), "days"), 1);
 
@@ -2437,7 +2437,7 @@ exports.getDashboardInsights = async (req, res) => {
             };
             try {
                 await setCacheWithLog(cacheKey, JSON.stringify(emptyPayload), 600);
-            } catch (_) {}
+            } catch (_) { }
             return res.status(200).send(emptyPayload);
         }
 
@@ -2638,7 +2638,7 @@ exports.getDashboardInsights = async (req, res) => {
 
         try {
             await setCacheWithLog(cacheKey, JSON.stringify(responsePayload), 600);
-        } catch (_) {}
+        } catch (_) { }
 
         return res.status(200).send(responsePayload);
 
@@ -3729,6 +3729,12 @@ exports.cronDetectDeadInventory = async () => {
                 const configId = profile.configId;
                 const profileId = profile.profileId;
 
+                const currentDate = moment().tz(profile.timezone || "Asia/Kolkata").format("YYYY-MM-DD");
+                const deadCronDoc = await cronJobHistorySchema.findOneAndUpdate(
+                    { configId, profileId, cronName: "DetectDeadInventory", historyDate: currentDate },
+                    { $set: { status: "PENDING", "details.startedAt": new Date().toISOString() } },
+                    { upsert: true, new: true }
+                );
                 // 1. Load all aging configs for this profile into a map keyed by SKU
                 const agingConfigs = await inventoryAgingConfigSchema.find({ configId, profileId }).lean();
                 const configMap = {};
@@ -3937,6 +3943,12 @@ exports.cronInventoryForecastAlerts = async () => {
                 const configId = profile.configId;
                 const profileId = profile.profileId;
 
+                const currentDate = moment().tz(profile.timezone || "Asia/Kolkata").format("YYYY-MM-DD");
+                const forecastCronDoc = await cronJobHistorySchema.findOneAndUpdate(
+                    { configId, profileId, cronName: "Inventory Forecast Alerts", historyDate: currentDate },
+                    { $set: { status: "PENDING", "details.startedAt": new Date().toISOString() } },
+                    { upsert: true, new: true }
+                );
                 const commonPipeline = [
                     ...this.inventoryForecastCommonPipeline({ configId, profileId }),
                     { $match: { salesPerDay: { $gt: 0 }, shouldTriggerAlert: true } }
@@ -4076,10 +4088,10 @@ exports.cronInventoryForecastAlerts = async () => {
 
                         // Trigger alert if threshold is breached, stock is urgent/plan shipment, or out of stock
                         const isAlert = (threshold !== null && threshold > 0 && currentQty <= threshold) ||
-                                        (threshold !== null && threshold === 0 && currentQty <= 0) ||
-                                        (whStatus === "URGENT") ||
-                                        (whStatus === "PLAN_SHIPMENT") ||
-                                        (currentQty <= 0 && (wh.transitDays || wh.bufferDays));
+                            (threshold !== null && threshold === 0 && currentQty <= 0) ||
+                            (whStatus === "URGENT") ||
+                            (whStatus === "PLAN_SHIPMENT") ||
+                            (currentQty <= 0 && (wh.transitDays || wh.bufferDays));
 
                         if (isAlert) {
                             const lastNotified = wh.lastNotifiedAt ? moment(wh.lastNotifiedAt) : null;
@@ -4221,8 +4233,22 @@ exports.cronInventoryForecastAlerts = async () => {
                     message: `cronInventoryForecastAlerts: Profile ${profileId} → FC:${warehouseAlertItems.length} Urgent:${urgentItems.length} Plan:${planShipmentItems.length} Overstock:${overstockItems.length}`,
                     log_type: "info"
                 });
+                if (forecastCronDoc?._id) {
+                    await cronJobHistorySchema.findByIdAndUpdate(forecastCronDoc._id, {
+                        status: "COMPLETED",
+                        recordsCount: allAlertItems.length,
+                        $set: { "details.completedAt": new Date().toISOString() }
+                    });
+                }
 
             } catch (profileErr) {
+                if (forecastCronDoc?._id) {
+                    await cronJobHistorySchema.findByIdAndUpdate(forecastCronDoc._id, {
+                        status: "FAILED",
+                        error: profileErr.message,
+                        $set: { "details.failedAt": new Date().toISOString() }
+                    });
+                }
                 cron_logs({
                     message: `cronInventoryForecastAlerts: Profile ${profile.profileId} error → ${profileErr.message}`,
                     log_type: "error"

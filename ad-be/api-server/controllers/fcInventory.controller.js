@@ -573,16 +573,17 @@ exports.cronGenerateFcStorageFeeReport = async (customParam1 = null) => {
 
           let cronData = null;
           if (recurring) {
-            cronData = await cronJobHistorySchema.findOneAndUpdate(
-              {
+            try {
+              cronData = new cronJobHistorySchema({
                 configId: profile.configId,
                 profileId: profile.profileId,
                 cronName: "FC Storage Fee",
                 historyDate: todayStr,
-              },
-              { $set: { status: "PENDING" } },
-              { upsert: true, new: true }
-            );
+                status: "PENDING",
+                details: { startedAt: new Date().toISOString() },
+              });
+              await cronData.save();
+            } catch (_e) {}
           }
 
           const result = await generateFcStorageFeeReportForMonth(profile, targetMonth, startDate, endDate, checkSPConfig, recurring);
@@ -596,6 +597,13 @@ exports.cronGenerateFcStorageFeeReport = async (customParam1 = null) => {
           }
         } catch (error) {
           cron_logs({ message: `[FC Storage] Profile ${profile.profileId} error: ${error.stack || error.message}`, log_type: "error" });
+          if (recurring && cronData?._id) {
+            await cronJobHistorySchema.findByIdAndUpdate(cronData._id, {
+              status: "FAILED",
+              error: error.message,
+              $set: { "details.failedAt": new Date().toISOString() },
+            });
+          }
           if (!recurring && cronjobid) await cronJobHistorySchema.findByIdAndUpdate(cronjobid, { status: "FAILED" });
         }
       })

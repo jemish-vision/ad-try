@@ -12,6 +12,7 @@ import { t } from "i18next";
 import { saveAs } from "file-saver";
 import Toast from "../../../common/helper/toast/Toast";
 import { ApiHourlyCampaignTracking } from "../../../api-wrapper/campaign/ApiCampaign";
+import { useHourlyChartSettings } from "../../../helper/hooks/useHourlyChartSettings";
 import { ShadcnDateRangePicker as DateRangePicker } from "../../../components/ui/date-range-picker";
 import { predefinedRanges } from "../../../common/helper/calendarValues/calendarValues";
 import {
@@ -23,16 +24,19 @@ import {
 
 // ─── Hourly Tracking Constants ────────────────────────────────────────────────
 const hours = [...Array(24).keys()].map((h) => h.toString().padStart(2, "0"));
-const METRICS = ["Impressions", "Clicks", "Spend", "Total Orders", "Ads Orders", "Organic Orders", "Total Sales", "Ads Sales", "Organic Sales", "CTR", "CPC", "ACOS", "ROAS"];
-const INT_METRICS = ["Total Orders", "Clicks", "Impressions"];
+const METRICS = ["Impressions", "Clicks", "Spend", "Total Purchases", "Ads Purchases", "Organic Purchases", "Total Sales", "Ads Sales", "Organic Sales", "CTR", "CPC", "ACOS", "ROAS"];
+const INT_METRICS = ["Total Purchases", "Clicks", "Impressions"];
 
 const METRIC_FIELDS = {
   Impressions: "impressions",
   Clicks: "clicks",
   Spend: "spends",
-  "Total Orders": "orders",
-  "Ads Orders": "adsOrders",
-  "Organic Orders": "organicOrders",
+  "Total Purchases": "orders",
+
+  "Ads Purchases": "adsOrders",
+
+  "Organic Purchases": "organicOrders",
+
   "Total Sales": "sales",
   "Ads Sales": "adsSales",
   "Organic Sales": "organicSales",
@@ -46,9 +50,12 @@ const LINE_COLORS = {
   "Total Sales": "#16a34a",
   "Ads Sales": "#15803d",
   "Organic Sales": "#4ade80",
-  "Total Orders": "#2563eb",
-  "Ads Orders": "#1d4ed8",
-  "Organic Orders": "#60a5fa",
+  "Total Purchases": "#2563eb",
+
+  "Ads Purchases": "#1d4ed8",
+
+  "Organic Purchases": "#60a5fa",
+
   Clicks: "#d97706",
   Impressions: "#7c3aed",
   Spend: "#dc2626",
@@ -537,9 +544,12 @@ const DateHourHeatmap = ({ hourlyData, metric, currencyCode, isDark = false }) =
                   case "Impressions": return (c.impressions || 0) > 0;
                   case "Clicks": return (c.clicks || 0) > 0;
                   case "Spend": return (c.spends || 0) > 0;
-                  case "Total Orders": return (c.orders || 0) > 0;
-                  case "Ads Orders": return (c.orders || 0) > 0;
-                  case "Organic Orders": return (c.organicOrders || 0) > 0;
+                  case "Total Purchases": return (c.orders || 0) > 0;
+
+                  case "Ads Purchases": return (c.adsOrders || c.orders || 0) > 0;
+
+                  case "Organic Purchases": return (c.organicOrders || 0) > 0;
+
                   case "Total Sales": return (c.sales || 0) > 0;
                   case "Ads Sales": return (c.adsSales || 0) > 0;
                   case "Organic Sales": return (c.organicSales || 0) > 0;
@@ -750,8 +760,9 @@ const HourlyTrackingSection = ({ profileId }) => {
       });
     }
   }, [selectedDate]);
-  const [heatMetric, setHeatMetric] = useState("Total Sales");
-  const [lineMetrics, setLineMetrics] = useState(["Total Sales", "Total Orders"]);
+  const { heatMetric, setHeatMetric, lineMetrics, setLineMetrics } = useHourlyChartSettings(
+    "DaypartingStrategy", METRICS, "Total Sales", ["Total Sales", "Total Purchases"]
+  );
   const [chartLoading, setChartLoading] = useState(false);
   const [hourlyData, setHourlyData] = useState([]);
 
@@ -764,9 +775,12 @@ const HourlyTrackingSection = ({ profileId }) => {
     Impressions: hourlyData.reduce((s, r) => s + (r.impressions || 0), 0),
     Clicks: hourlyData.reduce((s, r) => s + (r.clicks || 0), 0),
     Spend: hourlyData.reduce((s, r) => s + (r.spends || 0), 0),
-    "Total Orders": hourlyData.reduce((s, r) => s + (r.orders || 0), 0),
-    "Ads Orders": hourlyData.reduce((s, r) => s + (r.adsOrders || 0), 0),
-    "Organic Orders": hourlyData.reduce((s, r) => s + (r.organicOrders || 0), 0),
+    "Total Purchases": hourlyData.reduce((s, r) => s + (r.orders || 0), 0),
+
+    "Ads Purchases": hourlyData.reduce((s, r) => s + (r.adsOrders || 0), 0),
+
+    "Organic Purchases": hourlyData.reduce((s, r) => s + (r.organicOrders || 0), 0),
+
     "Total Sales": hourlyData.reduce((s, r) => s + (r.sales || 0), 0),
     "Ads Sales": hourlyData.reduce((s, r) => s + (r.adsSales || 0), 0),
     "Organic Sales": hourlyData.reduce((s, r) => s + (r.organicSales || 0), 0),
@@ -1008,7 +1022,7 @@ const HourlyTrackingSection = ({ profileId }) => {
                 { label: "Impressions", accent: "#6366f1" },
                 { label: "Clicks", accent: "#0ea5e9" },
                 { label: "Spend", accent: "#dc2626" },
-                { label: "Total Orders", accent: "#2563eb" },
+                { label: "Total Purchases", accent: "#2563eb" },
                 { label: "Total Sales", accent: "#16a34a" },
                 { label: "CTR", accent: "#0891b2" },
                 { label: "CPC", accent: "#c2410c" },

@@ -1596,14 +1596,14 @@ li.active .sidebar_arrow {
   transition: color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease !important;
 
   &:hover {
-    background: rgba(35, 116, 242, 0.06) !important;
+    background: rgba(35, 116, 242, 0.05) !important;
     color: #2374F2 !important;
-    transform: translateX(4px) !important;
+    transform: none !important;
     box-shadow: none !important;
 
     .owner-nav-icon {
       color: #2374F2 !important;
-      transform: scale(1.05);
+      transform: none !important;
     }
   }
 }
@@ -1626,26 +1626,31 @@ li.active .sidebar_arrow {
   transition: all 0.2s ease !important;
 }
 
-/* Premium Active Nav state: Solid Blue Gradient Pill */
+/* Premium Active Nav state: Consistent with AdvertiseIQ Theme */
 .owner-nav-item.is-active > .owner-nav-link {
-  background: linear-gradient(135deg, #2374F2 0%, #1A9FD4 100%) !important;
-  color: #ffffff !important;
-  border-left: none !important;
-  border-radius: 12px !important;
-  box-shadow: 0 4px 14px rgba(35, 116, 242, 0.22) !important;
+  background: rgba(35, 116, 242, 0.08) !important;
+  color: #2374F2 !important;
+  border: 1px solid rgba(35, 116, 242, 0.18) !important;
+  border-left: 3px solid #2374F2 !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+  font-weight: 600 !important;
 
   .owner-nav-icon {
-    color: #ffffff !important;
+    color: #2374F2 !important;
   }
 }
 
 [data-theme="dark"] .owner-nav-item.is-active > .owner-nav-link {
-  background: linear-gradient(135deg, #5B9CF6 0%, #1A9FD4 100%) !important;
-  color: #ffffff !important;
-  border-left: none !important;
+  background: rgba(59, 130, 246, 0.12) !important;
+  color: #60a5fa !important;
+  border: 1px solid rgba(59, 130, 246, 0.25) !important;
+  border-left: 3px solid #60a5fa !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
 
   .owner-nav-icon {
-    color: #ffffff !important;
+    color: #60a5fa !important;
   }
 }
 

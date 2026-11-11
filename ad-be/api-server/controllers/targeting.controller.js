@@ -1,4 +1,5 @@
 const { buildTargetingMetricsPipeline } = require("../helper/targetingMetricsPipeline");
+const { applyBidHistoryAcos } = require("../helper/historyBidAcos");
 const { buildFilteredTargetingPipeline, canFilterWithoutCampaignJoin, buildArchivedCampaignPipeline } = require("../helper/filteredTargetingPipeline");
 const { getConditionRows, captureManualSelection, prepareSnapshotBulkUpdates, updateSnapshotHistory } = require("../helpers/ruleConditionSnapshotHelper");
 const { validateCampaignAssignment } = require("../helper/ruleCampaignAssignment");
@@ -45,7 +46,7 @@ const sdCampaignSchema = require("../models/sdCampaign.model");
 const sdAdGroupsSchema = require("../models/sdAdGroups.model");
 const sdTargetingSchema = require("../models/sdTargeting.model");
 const targetingHistorySchema = require("../models/targetingHistory.model");
-const { recordRuleExecutionChange, enrichWithCampaignMetrics } = require("../helpers/ruleImpactMetricsHelper");
+const { recordRuleExecutionChange, enrichWithCampaignMetrics, resolveBaselineBid, hasRuleExecutedInSlotOrHour, markRuleExecutedInSlotAndHour } = require("../helpers/ruleImpactMetricsHelper");
 const { write_logs } = require("../../winston/targeting/logger");
 
 const {
@@ -87,7 +88,7 @@ const adNotificationSchema = require("../models/adNotification.model");
 const { sendNotificationToUser } = require("../helper/sendNotification");
 const { stageReportFileInRedis } = require("../services/reportFileStager.service");
 const { processStagedReportBatches } = require("../services/reportBatchWriter.service");
-const { linkReportHistory } = require("../services/reportHistoryCompletion.service");
+const { linkReportHistory, finalizeReportHistory } = require("../services/reportHistoryCompletion.service");
 const { deletePatternWithLog } = require("../services/redis.service");
 
 const sendMinBidClampedNotification = async ({
@@ -141,7 +142,7 @@ exports.cronGenerateTargetingReport = async (generateWeeklyReport = false, gener
         const { profileId, configId, cronjobid, recurring = true } = pastSyncObj ?? {};
         const cronName = generateBiWeeklyReport
             ? "BiWeekly Report"
-            : generateWeeklyReport || pastSyncObj != null
+            : generateWeeklyReport || pastSyncObj?.isWeekly
                 ? "Weekly Report"
                 : "Targeting Report";
 
@@ -194,23 +195,29 @@ exports.cronGenerateTargetingReport = async (generateWeeklyReport = false, gener
                     if (pastSyncObj.endDate) endDate = pastSyncObj.endDate;
                 }
 
-                let getCronData;
-                if (recurring) {
-                    getCronData = await cronJobHistorySchema.findOneAndUpdate(
-                        {
-                            configId: profile.configId,
-                            profileId: profile.profileId,
-                            cronName: cronName,
-                            historyDate: currentDate,
-                        },
-                        {
-                            $set: {
-                                status: "PENDING",
-                            }
-                        },
-                        { new: true, upsert: true }
-                    ).lean();
+                let getCronData = null;
+              if (recurring) {
+                try {
+                  getCronData = new cronJobHistorySchema({
+                    configId: profile.configId,
+                    profileId: profile.profileId,
+                    cronName: cronName,
+                    historyDate: currentDate,
+                    status: "PENDING",
+                    details: {
+                      startedAt: new Date().toISOString(),
+                      startDate,
+                      endDate,
+                    },
+                  });
+                  await getCronData.save();
+                } catch (saveErr) {
+                  cron_logs({
+                    message: `[${cronName}] Failed to create cron history for profile ${profile.profileId}: ${saveErr.message}`,
+                    log_type: "warn",
+                  });
                 }
+              }
 
                 const reportSpResponse = await spGenerateReport(
                     profile.profileId,
@@ -276,15 +283,8 @@ exports.cronGenerateTargetingReport = async (generateWeeklyReport = false, gener
                         );
                     }
                     return "ERROR";
-                } else if (recurring && [reportSpResponse, reportSbResponse, reportSdResponse].every(status => status === "COMPLETED")) {
-                    if (getCronData?._id) {
-                        await cronJobHistorySchema.findByIdAndUpdate(
-                            getCronData._id,
-                            { status: "COMPLETED" },
-                            { new: true },
-                        );
-                    }
-                    return "COMPLETED";
+                } else if (recurring && getCronData?._id) {
+                    await finalizeReportHistory(getCronData._id);
                 }
 
                 if (!recurring && cronjobid && reportSpResponse == "COMPLETED" && reportSbResponse == "COMPLETED" && reportSdResponse == "COMPLETED") {
@@ -363,7 +363,7 @@ async function spGenerateReport(
 
             if (existing && existing.status == "COMPLETED") return "COMPLETED";
             if (existing && requestedAfter && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) {
-                processStagedReportBatches(["targeting"]).catch(() => {});
+                processStagedReportBatches(["targeting"]).catch(() => { });
                 return existing.status;
             }
             if (existing && existing.status == "STAGED") {
@@ -373,7 +373,7 @@ async function spGenerateReport(
                     await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
                     existing = null;
                 } else {
-                    processStagedReportBatches(["targeting"]).catch(() => {});
+                    processStagedReportBatches(["targeting"]).catch(() => { });
                     return "STAGED";
                 }
             }
@@ -559,7 +559,7 @@ async function sbGenerateReport(
 
         if (existing && existing.status == "COMPLETED") return "COMPLETED";
         if (existing && requestedAfter && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) {
-            processStagedReportBatches(["sbTargeting"]).catch(() => {});
+            processStagedReportBatches(["sbTargeting"]).catch(() => { });
             return existing.status;
         }
         if (existing && existing.status == "STAGED") {
@@ -569,7 +569,7 @@ async function sbGenerateReport(
                 await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
                 existing = null;
             } else {
-                processStagedReportBatches(["sbTargeting"]).catch(() => {});
+                processStagedReportBatches(["sbTargeting"]).catch(() => { });
                 return "STAGED";
             }
         }
@@ -753,7 +753,7 @@ async function sdGenerateReport(
 
             if (existing && existing.status == "COMPLETED") return "COMPLETED";
             if (existing && requestedAfter && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) {
-                processStagedReportBatches(["sdTargeting"]).catch(() => {});
+                processStagedReportBatches(["sdTargeting"]).catch(() => { });
                 return existing.status;
             }
             if (existing && existing.status == "STAGED") {
@@ -763,7 +763,7 @@ async function sdGenerateReport(
                     await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
                     existing = null;
                 } else {
-                    processStagedReportBatches(["sdTargeting"]).catch(() => {});
+                    processStagedReportBatches(["sdTargeting"]).catch(() => { });
                     return "STAGED";
                 }
             }
@@ -970,6 +970,7 @@ exports.getTargeting = async (req, res) => {
             filteredTargetingIds = [],
             query: Query,
             isExactSearchMatch = false,
+            groupByAdGroup = false,
         } = req.body;
 
         if (!profileId) {
@@ -1032,7 +1033,7 @@ exports.getTargeting = async (req, res) => {
         const joinedFields = ["campaignName", "campaignStatus", "adGroupName", "adGroupStatus", "budget", "daysSinceCreation", "bidThreshold"];
         const queryStr = Query ? (typeof Query === "string" ? Query : JSON.stringify(Query)) : "";
         const isJoinedFilter = (fieldName && joinedFields.includes(fieldName)) || (queryStr && joinedFields.some(f => queryStr.includes(f)));
-        const isJoinedSort = (fieldName && joinedFields.includes(fieldName));
+        const isJoinedSort = (fieldName && joinedFields.includes(fieldName)) || Boolean(groupByAdGroup);
         const needsEarlyLookup = Boolean(isJoinedFilter || isJoinedSort);
 
         const page = Math.max(1, Number(pageNo) || 1);
@@ -1040,12 +1041,22 @@ exports.getTargeting = async (req, res) => {
         const skipCount = (page - 1) * limitCount;
 
         const sortStage = {};
-        if (sortType === "ASC") {
-            sortStage[fieldName] = 1;
-        } else if (sortType === "DESC") {
-            sortStage[fieldName] = -1;
+        const targetField = fieldName === "totalSales" ? "sales" : fieldName;
+        if (groupByAdGroup) {
+            sortStage.adGroupName = 1;
+            if (targetField && targetField !== "adGroupName") {
+                sortStage[targetField] = sortType === "ASC" ? 1 : -1;
+            } else if (!targetField) {
+                sortStage.targetId = -1;
+            }
         } else {
-            sortStage.targetId = -1;
+            if (sortType === "ASC") {
+                sortStage[targetField] = 1;
+            } else if (sortType === "DESC") {
+                sortStage[targetField] = -1;
+            } else {
+                sortStage.targetId = -1;
+            }
         }
 
         const lookupStages = [
@@ -1225,7 +1236,8 @@ exports.getTargeting = async (req, res) => {
 
         const baseGroupPipeline = [
             ...buildTargetingMetricsPipeline(query),
-            { $addFields: {
+            {
+                $addFields: {
                     acos: {
                         $cond: [
                             { $gt: ["$sales", 0] },
@@ -1844,23 +1856,18 @@ exports.manualGenerateReport = async (req, res) => {
         const checkConfigAds = await getAccessToken(profile.configId);
 
         if (checkConfigAds && checkConfigAds.adsAccessToken) {
-            const getCronData = await cronJobHistorySchema.findOne({
+            const createCronHistory = new cronJobHistorySchema({
                 configId: profile.configId,
                 profileId: profile.profileId,
                 cronName: "Targeting Report",
                 status: "PENDING",
                 historyDate: startDate,
-            }).lean();
-            if (!getCronData) {
-                const createCronHistory = new cronJobHistorySchema({
-                    configId: profile.configId,
-                    profileId: profile.profileId,
-                    cronName: "Targeting Report",
-                    status: "PENDING",
-                    historyDate: startDate,
-                });
-                await createCronHistory.save();
-            }
+                details: {
+                    startedAt: new Date().toISOString(),
+                    manual: true,
+                },
+            });
+            await createCronHistory.save();
             let responseSPStatus = "PENDING";
             while (responseSPStatus != "COMPLETED") {
                 if (responseSPStatus != "COMPLETED") {
@@ -1881,18 +1888,12 @@ exports.manualGenerateReport = async (req, res) => {
                     }
                 }
             }
-            const getUpdateCronData = await cronJobHistorySchema.findOne({
-                configId: configId,
-                profileId: profileId,
-                cronName: "Targeting Report",
-                status: "PENDING",
-                historyDate: startDate,
-            }).lean();
-            if (getUpdateCronData) {
+            if (createCronHistory?._id) {
                 await cronJobHistorySchema.findByIdAndUpdate(
-                    { _id: getUpdateCronData._id },
+                    createCronHistory._id,
                     {
                         status: "COMPLETED",
+                        "details.completedAt": new Date().toISOString(),
                     },
                     { new: true }
                 );
@@ -1909,6 +1910,13 @@ exports.manualGenerateReport = async (req, res) => {
         }
     } catch (error) {
         write_logs({ message: `[manualGenerateReport Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+        if (configId && profileId) {
+            await cronJobHistorySchema.findOneAndUpdate(
+                { configId, profileId, cronName: "Targeting Report", status: "PENDING" },
+                { $set: { status: "FAILED", error: error.message, "details.failedAt": new Date().toISOString() } },
+                { sort: { updatedAt: -1 } }
+            );
+        }
         return res.status(203).send({
             error: "An internal server error occurred",
             message: "Something went wrong, please try again!",
@@ -2327,7 +2335,7 @@ exports.adjustBid = async (req, res) => {
         try {
             await deletePatternWithLog(`kw_analysis:${profileId}_*`);
             await deletePatternWithLog(`latest_camp_history:*_${profileId}_*`);
-        } catch (_) {}
+        } catch (_) { }
 
         return res.status(200).send({
             isSuccess: true,
@@ -2760,7 +2768,7 @@ exports.changeStatus = async (req, res) => {
         try {
             await deletePatternWithLog(`kw_analysis:${profileId}_*`);
             await deletePatternWithLog(`latest_camp_history:*_${profileId}_*`);
-        } catch (_) {}
+        } catch (_) { }
 
         if (allSuccessIds.length < totalRequested) {
             return res.status(200).send({
@@ -2823,56 +2831,107 @@ exports.cronListTargetingFromAmazon = async (pastSyncObj) => {
                 if (dates.length == 0) {
                     dates.push(currentDate);
                 }
-
-                await processSPTargetings({
-                    profile,
-                    checkConfigAds,
-                    dates,
-                    currentDate,
-                });
-
-                await processSBTargetings({
-                    profile,
-                    checkConfigAds,
-                    dates,
-                    currentDate,
-                });
-
-                await processSDTargetings({
-                    profile,
-                    checkConfigAds,
-                    dates,
-                    currentDate,
-                });
-
-                if (cronjobid) {
-                    await cronJobHistorySchema.findByIdAndUpdate(
-                        cronjobid,
-                        { status: "COMPLETED" },
-                        { new: true },
-                    );
-                } else {
-                    await cronJobHistorySchema.findOneAndUpdate(
-                        {
+                let profileCronDoc = null;
+                if (!cronjobid) {
+                    try {
+                        profileCronDoc = new cronJobHistorySchema({
                             configId: profile.configId,
                             profileId: profile.profileId,
                             cronName: cronName,
                             historyDate: currentDate,
-                        },
-                        {
-                            $set: {
-                                status: "COMPLETED",
-                            }
-                        },
-                        { new: true, upsert: true }
-                    ).lean();
+                            status: "PENDING",
+                            details: { startedAt: new Date().toISOString() },
+                        });
+                        await profileCronDoc.save();
+                    } catch (_e) { }
                 }
 
-                cron_logs({
-                    message: `Profile: ${profile.name}, Targeting listed successfully.`,
-                    log_type: "info"
-                });
+                try {
+                    await processSPTargetings({
+                        profile,
+                        checkConfigAds,
+                        dates,
+                        currentDate,
+                    });
 
+                    await processSBTargetings({
+                        profile,
+                        checkConfigAds,
+                        dates,
+                        currentDate,
+                    });
+
+                    await processSDTargetings({
+                        profile,
+                        checkConfigAds,
+                        dates,
+                        currentDate,
+                    });
+
+                    if (cronjobid) {
+                        await cronJobHistorySchema.findByIdAndUpdate(
+                            cronjobid,
+                            { status: "COMPLETED", $set: { "details.completedAt": new Date().toISOString() } },
+                            { new: true },
+                        );
+                    } else if (profileCronDoc?._id) {
+                        await cronJobHistorySchema.findByIdAndUpdate(
+                            profileCronDoc._id,
+                            {
+                                status: "COMPLETED",
+                                $set: { "details.completedAt": new Date().toISOString() },
+                            },
+                            { new: true }
+                        );
+                    } else {
+                        await cronJobHistorySchema.findOneAndUpdate(
+                            {
+                                configId: profile.configId,
+                                profileId: profile.profileId,
+                                cronName: cronName,
+                                historyDate: currentDate,
+                            },
+                            {
+                                $set: {
+                                    status: "COMPLETED",
+                                    "details.completedAt": new Date().toISOString(),
+                                }
+                            },
+                            { new: true, upsert: true }
+                        ).lean();
+                    }
+
+                    cron_logs({
+                        message: `Profile: ${profile.name}, Targeting listed successfully.`,
+                        log_type: "info"
+                    });
+                } catch (targetListErr) {
+                    cron_logs({
+                        message: `Profile: ${profile.name}, Targeting listing error: ${targetListErr.message}`,
+                        log_type: "error"
+                    });
+                    if (cronjobid) {
+                        await cronJobHistorySchema.findByIdAndUpdate(
+                            cronjobid,
+                            {
+                                status: "FAILED",
+                                error: targetListErr.message,
+                                $set: { "details.failedAt": new Date().toISOString() },
+                            },
+                            { new: true },
+                        );
+                    } else if (profileCronDoc?._id) {
+                        await cronJobHistorySchema.findByIdAndUpdate(
+                            profileCronDoc._id,
+                            {
+                                status: "FAILED",
+                                error: targetListErr.message,
+                                $set: { "details.failedAt": new Date().toISOString() },
+                            },
+                            { new: true }
+                        );
+                    }
+                }
             } else {
                 return cron_logs({
                     message: `Account disconnected in Targeting listing for ${profile.name}`,
@@ -5474,389 +5533,389 @@ const runSponsoredBrandRule = async (rule, checkConfigAds, profile, currentDate,
         const bidThreshold = await getRuleSettings(rule?.configId, rule?.profileId, "targetingRuleSetting");
 
         const runSchedule = await settleTargetingItems(eligibleTargeting, async (targeting) => {
-                cron_logs({
-                    message: `Rule ID: ${rule?._id}, Rule Name: ${rule?.ruleName}, SB-Targeting: ${JSON.stringify(targeting)}`,
-                    log_type: "info",
-                });
+            cron_logs({
+                message: `Rule ID: ${rule?._id}, Rule Name: ${rule?.ruleName}, SB-Targeting: ${JSON.stringify(targeting)}`,
+                log_type: "info",
+            });
 
-                const affectedCampaign = await affectedCampaignByRuleSchema.findOne({
-                    configId: rule.configId,
-                    profileId: rule.profileId,
-                    userId: rule.userId,
-                    ruleSchema: "TargetingRule",
-                    ruleId: rule._id,
-                    ruleDate: currentDate,
-                    type: "SB",
-                    campaignId: targeting.campaignId,
-                    targetId: targeting.targetId
-                }).lean();
+            const affectedCampaign = await affectedCampaignByRuleSchema.findOne({
+                configId: rule.configId,
+                profileId: rule.profileId,
+                userId: rule.userId,
+                ruleSchema: "TargetingRule",
+                ruleId: rule._id,
+                ruleDate: currentDate,
+                type: "SB",
+                campaignId: targeting.campaignId,
+                targetId: targeting.targetId
+            }).lean();
 
-                if (!affectedCampaign || rule.allowMultiTimeChanges || 1 == 1) {
+            if (!affectedCampaign || rule.allowMultiTimeChanges || 1 == 1) {
 
-                    const actionType = rule.actionType;
-                    const isCampaign = ["CampaignEnabled", "CampaignPaused"].includes(actionType.actionName);
-                    const isAdGroup = ["AdGroupEnabled", "AdGroupPaused"].includes(actionType.actionName);
+                const actionType = rule.actionType;
+                const isCampaign = ["CampaignEnabled", "CampaignPaused"].includes(actionType.actionName);
+                const isAdGroup = ["AdGroupEnabled", "AdGroupPaused"].includes(actionType.actionName);
 
-                    const oldStatus = isCampaign ? targeting?.campaignStatus : isAdGroup ? targeting?.adGroupStatus : targeting.status;
-                    let status = isCampaign ? targeting?.campaignStatus : isAdGroup ? targeting?.adGroupStatus : targeting.status;
-                    let keywordBid = targeting.keywordBid;
-                    const isDayparting = Boolean(rule.isHourlyBid || rule.hourlyConfig?.slots?.length);
-                    const runPrefix = isDayparting
-                        ? (isManual ? `Manual Dayparting Run (${rule.ruleName})` : `Dayparting Rule Run (${rule.ruleName})`)
-                        : (isManual ? `Manual Run (${rule.ruleName})` : `Rule Run (${rule.ruleName})`);
-                    let keywordBidUpdatedFrom = `${runPrefix}: Targeting bid adjusted`;
-                    let changed;
+                const oldStatus = isCampaign ? targeting?.campaignStatus : isAdGroup ? targeting?.adGroupStatus : targeting.status;
+                let status = isCampaign ? targeting?.campaignStatus : isAdGroup ? targeting?.adGroupStatus : targeting.status;
+                let keywordBid = targeting.keywordBid;
+                const isDayparting = Boolean(rule.isHourlyBid || rule.hourlyConfig?.slots?.length);
+                const runPrefix = isDayparting
+                    ? (isManual ? `Manual Dayparting Run (${rule.ruleName})` : `Dayparting Rule Run (${rule.ruleName})`)
+                    : (isManual ? `Manual Run (${rule.ruleName})` : `Rule Run (${rule.ruleName})`);
+                let keywordBidUpdatedFrom = `${runPrefix}: Targeting bid adjusted`;
+                let changed;
 
-                    if (true) {
-                        let options;
-                        if (targeting?.targetId?.startsWith("T-")) {
-                            options = {
-                                method: "PUT",
-                                url: `${profile.amazonUrl}/sb/targets`,
-                                headers: {
-                                    "Amazon-Advertising-API-ClientId": checkConfigAds.adsClientId,
-                                    "Amazon-Advertising-API-Scope": profile.profileId,
-                                    "Authorization": `Bearer ${checkConfigAds.adsAccessToken}`,
-                                    "Content-Type": "application/json",
-                                },
-                                meta: { configId: rule.configId, tokenKey: "adsAccessToken" }
-                            };
-                        }
-                        else if (targeting?.targetId?.startsWith("K-")) {
-                            options = {
-                                method: "PUT",
-                                url: `${profile.amazonUrl}/sb/keywords`,
-                                headers: {
-                                    "Amazon-Advertising-API-ClientId": checkConfigAds.adsClientId,
-                                    "Amazon-Advertising-API-Scope": profile.profileId,
-                                    "Authorization": `Bearer ${checkConfigAds.adsAccessToken}`,
-                                    "Content-Type": "application/json",
-                                },
-                                meta: { configId: rule.configId, tokenKey: "adsAccessToken" }
-                            };
-                        }
+                if (true) {
+                    let options;
+                    if (targeting?.targetId?.startsWith("T-")) {
+                        options = {
+                            method: "PUT",
+                            url: `${profile.amazonUrl}/sb/targets`,
+                            headers: {
+                                "Amazon-Advertising-API-ClientId": checkConfigAds.adsClientId,
+                                "Amazon-Advertising-API-Scope": profile.profileId,
+                                "Authorization": `Bearer ${checkConfigAds.adsAccessToken}`,
+                                "Content-Type": "application/json",
+                            },
+                            meta: { configId: rule.configId, tokenKey: "adsAccessToken" }
+                        };
+                    }
+                    else if (targeting?.targetId?.startsWith("K-")) {
+                        options = {
+                            method: "PUT",
+                            url: `${profile.amazonUrl}/sb/keywords`,
+                            headers: {
+                                "Amazon-Advertising-API-ClientId": checkConfigAds.adsClientId,
+                                "Amazon-Advertising-API-Scope": profile.profileId,
+                                "Authorization": `Bearer ${checkConfigAds.adsAccessToken}`,
+                                "Content-Type": "application/json",
+                            },
+                            meta: { configId: rule.configId, tokenKey: "adsAccessToken" }
+                        };
+                    }
 
-                        if (["Enabled", "Paused"].includes(actionType.actionName)) {
-                            status = actionType.actionName.toUpperCase();
-                            if (status) {
-                                if (targeting?.targetId?.startsWith("T-")) {
-                                    options.data = {
-                                        targets: [
-                                            {
-                                                targetId: parseInt(targeting.targetId.replace("T-", "")),
-                                                adGroupId: targeting?.adGroupId,
-                                                campaignId: targeting?.campaignId,
-                                                state: `${status}`.toLowerCase(),
-                                            },
-                                        ]
-                                    };
-                                }
-                                else if (targeting?.targetId?.startsWith("K-")) {
-                                    options.data = [
+                    if (["Enabled", "Paused"].includes(actionType.actionName)) {
+                        status = actionType.actionName.toUpperCase();
+                        if (status) {
+                            if (targeting?.targetId?.startsWith("T-")) {
+                                options.data = {
+                                    targets: [
                                         {
-                                            keywordId: parseInt(targeting.targetId.replace("K-", "")),
+                                            targetId: parseInt(targeting.targetId.replace("T-", "")),
                                             adGroupId: targeting?.adGroupId,
                                             campaignId: targeting?.campaignId,
                                             state: `${status}`.toLowerCase(),
                                         },
-                                    ];
-                                }
-                                changed = "state";
+                                    ]
+                                };
                             }
+                            else if (targeting?.targetId?.startsWith("K-")) {
+                                options.data = [
+                                    {
+                                        keywordId: parseInt(targeting.targetId.replace("K-", "")),
+                                        adGroupId: targeting?.adGroupId,
+                                        campaignId: targeting?.campaignId,
+                                        state: `${status}`.toLowerCase(),
+                                    },
+                                ];
+                            }
+                            changed = "state";
                         }
-                        if (["Increase", "Decrease", "SetBid"].includes(actionType.actionName)) {
-                            const baseline = rule.isHourlyBid && !isManual
-                                ? await resolveHourlyTargetingBaseline({ rule, type: "SB", targeting, existingActive: affectedCampaign })
-                                : targeting.keywordBid;
-                            let actionValue = actionType.actionValue;
-                            if (actionType.actionValueType == "Percentage") {
-                                actionValue = (baseline * actionValue) / 100;
+                    }
+                    if (["Increase", "Decrease", "SetBid"].includes(actionType.actionName)) {
+                        const baseline = rule.isHourlyBid && !isManual
+                            ? await resolveHourlyTargetingBaseline({ rule, type: "SB", targeting, existingActive: affectedCampaign })
+                            : targeting.keywordBid;
+                        let actionValue = actionType.actionValue;
+                        if (actionType.actionValueType == "Percentage") {
+                            actionValue = (baseline * actionValue) / 100;
+                        }
+                        if (actionType.actionName === "Increase") {
+                            actionValue =
+                                parseFloat(baseline) + parseFloat(actionValue);
+                        }
+                        if (actionType.actionName === "Decrease") {
+                            actionValue =
+                                parseFloat(baseline) - parseFloat(actionValue);
+                        }
+                        if (actionType.actionName == "SetBid") {
+                            actionValue = parseFloat(actionValue);
+                        }
+
+                        if (rule.isHourlyBid && !isManual) actionValue = Number(Number(actionValue).toFixed(2));
+
+                        if (bidThreshold?.maxBid && actionValue > bidThreshold?.maxBid) {
+                            actionValue = bidThreshold?.maxBid;
+                        }
+
+                        if (bidThreshold?.minBid && actionValue < bidThreshold?.minBid) {
+                            actionValue = bidThreshold?.minBid;
+                        }
+
+                        if (actionValue) {
+                            keywordBid = actionValue;
+
+                            const marketMin = getMarketplaceMinBid(profile?.currencyCode, profile?.countryCode);
+                            const maxCap = (targeting?.bidThreshold?.maxBid && Number(targeting.bidThreshold.maxBid) > 0) ? Number(targeting.bidThreshold.maxBid) : 50;
+                            const minCap = Math.max(marketMin, (targeting?.bidThreshold?.minBid && Number(targeting.bidThreshold.minBid) > 0) ? Number(targeting.bidThreshold.minBid) : marketMin);
+                            const originalAttemptedBid = keywordBid;
+                            if (keywordBid > maxCap) {
+                                keywordBid = maxCap;
+                                keywordBidUpdatedFrom = `${runPrefix}: Targeting bid adjusted and capped at maximum bid`;
                             }
-                            if (actionType.actionName === "Increase") {
-                                actionValue =
-                                    parseFloat(baseline) + parseFloat(actionValue);
-                            }
-                            if (actionType.actionName === "Decrease") {
-                                actionValue =
-                                    parseFloat(baseline) - parseFloat(actionValue);
-                            }
-                            if (actionType.actionName == "SetBid") {
-                                actionValue = parseFloat(actionValue);
-                            }
 
-                            if (rule.isHourlyBid && !isManual) actionValue = Number(Number(actionValue).toFixed(2));
-
-                            if (bidThreshold?.maxBid && actionValue > bidThreshold?.maxBid) {
-                                actionValue = bidThreshold?.maxBid;
+                            if (keywordBid < minCap) {
+                                keywordBid = minCap;
+                                keywordBidUpdatedFrom = `${runPrefix}: Targeting bid adjusted and raised to minimum bid`;
+                                await sendMinBidClampedNotification({
+                                    profile,
+                                    rule,
+                                    targeting,
+                                    calculatedBid: originalAttemptedBid,
+                                    clampedBid: keywordBid,
+                                    marketMin,
+                                    adType: "SB",
+                                });
                             }
 
-                            if (bidThreshold?.minBid && actionValue < bidThreshold?.minBid) {
-                                actionValue = bidThreshold?.minBid;
-                            }
-
-                            if (actionValue) {
-                                keywordBid = actionValue;
-
-                                const marketMin = getMarketplaceMinBid(profile?.currencyCode, profile?.countryCode);
-                                const maxCap = (targeting?.bidThreshold?.maxBid && Number(targeting.bidThreshold.maxBid) > 0) ? Number(targeting.bidThreshold.maxBid) : 50;
-                                const minCap = Math.max(marketMin, (targeting?.bidThreshold?.minBid && Number(targeting.bidThreshold.minBid) > 0) ? Number(targeting.bidThreshold.minBid) : marketMin);
-                                const originalAttemptedBid = keywordBid;
-                                if (keywordBid > maxCap) {
-                                    keywordBid = maxCap;
-                                    keywordBidUpdatedFrom = `${runPrefix}: Targeting bid adjusted and capped at maximum bid`;
-                                }
-
-                                if (keywordBid < minCap) {
-                                    keywordBid = minCap;
-                                    keywordBidUpdatedFrom = `${runPrefix}: Targeting bid adjusted and raised to minimum bid`;
-                                    await sendMinBidClampedNotification({
-                                        profile,
-                                        rule,
-                                        targeting,
-                                        calculatedBid: originalAttemptedBid,
-                                        clampedBid: keywordBid,
-                                        marketMin,
-                                        adType: "SB",
-                                    });
-                                }
-
-                                if (targeting?.targetId?.startsWith("T-")) {
-                                    options.data = {
-                                        targets: [
-                                            {
-                                                targetId: parseInt(targeting.targetId.replace("T-", "")),
-                                                adGroupId: targeting?.adGroupId,
-                                                campaignId: targeting?.campaignId,
-                                                bid: Number(keywordBid),
-                                            },
-                                        ]
-                                    };
-                                }
-                                else if (targeting?.targetId?.startsWith("K-")) {
-                                    options.data = [
+                            if (targeting?.targetId?.startsWith("T-")) {
+                                options.data = {
+                                    targets: [
                                         {
-                                            keywordId: parseInt(targeting.targetId.replace("K-", "")),
+                                            targetId: parseInt(targeting.targetId.replace("T-", "")),
                                             adGroupId: targeting?.adGroupId,
                                             campaignId: targeting?.campaignId,
                                             bid: Number(keywordBid),
                                         },
-                                    ];
-                                }
-                                changed = "bid"
+                                    ]
+                                };
                             }
+                            else if (targeting?.targetId?.startsWith("K-")) {
+                                options.data = [
+                                    {
+                                        keywordId: parseInt(targeting.targetId.replace("K-", "")),
+                                        adGroupId: targeting?.adGroupId,
+                                        campaignId: targeting?.campaignId,
+                                        bid: Number(keywordBid),
+                                    },
+                                ];
+                            }
+                            changed = "bid"
                         }
+                    }
 
-                        if (isCampaign) {
-                            status = `${actionType.actionName}`.replace("Campaign", "").toUpperCase();
-                            options = {
-                                method: "PUT",
-                                url: `${profile.amazonUrl}/sb/v4/campaigns`,
-                                headers: {
-                                    "Amazon-Advertising-API-ClientId": checkConfigAds.adsClientId,
-                                    "Amazon-Advertising-API-Scope": profile.profileId,
-                                    "Authorization": `Bearer ${checkConfigAds.adsAccessToken}`,
-                                    "Prefer": "return=representation",
-                                    "Accept": "application/vnd.sbcampaignresource.v4+json",
-                                    "Content-Type": "application/vnd.sbcampaignresource.v4+json",
-                                },
-                                data: { campaigns: [{ campaignId: String(targeting.campaignId), state: status }] },
-                                meta: { configId: rule.configId, tokenKey: "adsAccessToken" }
-                            };
-                            changed = "campaignState";
-                        }
-                        if (isAdGroup) {
-                            status = `${actionType.actionName}`.replace("AdGroup", "").toUpperCase();
-                            options = {
-                                method: "PUT",
-                                url: `${profile.amazonUrl}/sb/v4/adGroups`,
-                                headers: {
-                                    "Amazon-Advertising-API-ClientId": checkConfigAds.adsClientId,
-                                    "Amazon-Advertising-API-Scope": profile.profileId,
-                                    "Authorization": `Bearer ${checkConfigAds.adsAccessToken}`,
-                                    "Prefer": "return=representation",
-                                    "Accept": "application/vnd.sbadgroupresource.v4+json",
-                                    "Content-Type": "application/vnd.sbadgroupresource.v4+json",
-                                },
-                                data: { adGroups: [{ adGroupId: String(targeting.adGroupId), state: status }] },
-                                meta: { configId: rule.configId, tokenKey: "adsAccessToken" }
-                            };
-                            changed = "adGroupState";
-                        }
+                    if (isCampaign) {
+                        status = `${actionType.actionName}`.replace("Campaign", "").toUpperCase();
+                        options = {
+                            method: "PUT",
+                            url: `${profile.amazonUrl}/sb/v4/campaigns`,
+                            headers: {
+                                "Amazon-Advertising-API-ClientId": checkConfigAds.adsClientId,
+                                "Amazon-Advertising-API-Scope": profile.profileId,
+                                "Authorization": `Bearer ${checkConfigAds.adsAccessToken}`,
+                                "Prefer": "return=representation",
+                                "Accept": "application/vnd.sbcampaignresource.v4+json",
+                                "Content-Type": "application/vnd.sbcampaignresource.v4+json",
+                            },
+                            data: { campaigns: [{ campaignId: String(targeting.campaignId), state: status }] },
+                            meta: { configId: rule.configId, tokenKey: "adsAccessToken" }
+                        };
+                        changed = "campaignState";
+                    }
+                    if (isAdGroup) {
+                        status = `${actionType.actionName}`.replace("AdGroup", "").toUpperCase();
+                        options = {
+                            method: "PUT",
+                            url: `${profile.amazonUrl}/sb/v4/adGroups`,
+                            headers: {
+                                "Amazon-Advertising-API-ClientId": checkConfigAds.adsClientId,
+                                "Amazon-Advertising-API-Scope": profile.profileId,
+                                "Authorization": `Bearer ${checkConfigAds.adsAccessToken}`,
+                                "Prefer": "return=representation",
+                                "Accept": "application/vnd.sbadgroupresource.v4+json",
+                                "Content-Type": "application/vnd.sbadgroupresource.v4+json",
+                            },
+                            data: { adGroups: [{ adGroupId: String(targeting.adGroupId), state: status }] },
+                            meta: { configId: rule.configId, tokenKey: "adsAccessToken" }
+                        };
+                        changed = "adGroupState";
+                    }
 
-                        if (options?.data) {
-                            if (execution.assertActive) options.meta = { ...options.meta, beforeRequest: execution.assertActive };
-                            try {
-                                const response = await retryWithBackoff(async () => {
-                                    await execution.assertActive?.();
-                                    return amazonAxios(options);
-                                });
+                    if (options?.data) {
+                        if (execution.assertActive) options.meta = { ...options.meta, beforeRequest: execution.assertActive };
+                        try {
+                            const response = await retryWithBackoff(async () => {
                                 await execution.assertActive?.();
-                                assertTargetingUpdateConfirmed(response, options);
+                                return amazonAxios(options);
+                            });
+                            await execution.assertActive?.();
+                            assertTargetingUpdateConfirmed(response, options);
+
+                            cron_logs({
+                                message: `runSponsoredBrandRule -> Targeting Response: ${JSON.stringify(response.data)}`,
+                                log_type: "info",
+                            });
+
+                            if ([200, 207].includes(response.status)) {
+
+                                const isStatusChange = ["Enabled", "Paused", "CampaignEnabled", "CampaignPaused", "AdGroupEnabled", "AdGroupPaused"].includes(actionType.actionName);
+                                const oldValue = isStatusChange ? oldStatus : targeting.keywordBid;
+                                const newValue = isStatusChange ? status : Number(keywordBid);
+
+                                await recordTargetingExecutionChange(execution, {
+                                    conditionSnapshot: targeting.conditionSnapshot,
+                                    configId: rule.configId,
+                                    profileId: rule.profileId,
+                                    userId: rule.userId,
+                                    ruleSchema: "TargetingRule",
+                                    ruleId: rule._id,
+                                    ruleDate: currentDate,
+                                    ruleTime: currentTime,
+                                    type: "SB",
+                                    campaignId: targeting.campaignId,
+                                    adGroupId: targeting?.adGroupId,
+                                    targetId: targeting.targetId,
+                                    name: targeting.campaignName,
+                                    adGroupName: targeting?.adGroupName,
+                                    targetName: targeting?.targeting,
+                                    targetType: targeting?.matchType,
+                                    oldValue: oldValue,
+                                    newValue: newValue,
+                                    changed,
+                                    metrics: {
+                                        impressions: targeting?.impressions,
+                                        clicks: targeting?.clicks,
+                                        spend: targeting?.spend,
+                                        sales: targeting?.sales,
+                                        orders: targeting?.orders,
+                                        acos: targeting?.acos,
+                                        roas: targeting?.roas,
+                                        cpc: targeting?.cpc,
+                                        ctr: targeting?.ctr,
+                                    },
+                                    notes: `SB Targeting rule executed: ${rule.ruleName}`,
+                                });
+
+                                if (actionType.actionName === "Enabled" || actionType.actionName === "Paused") {
+                                    await createStatusHistory(
+                                        targeting?.targetId,
+                                        status,
+                                        rule.configId,
+                                        profile?.profileId,
+                                        `${runPrefix}: Update Targeting Status`,
+                                        rule.userId,
+                                        "SB",
+                                        isDayparting ? "DAYPARTING" : "RULE"
+                                    );
+                                    await sbTargetingSchema.updateMany(
+                                        { targetId: targeting?.targetId },
+                                        { $set: { status: status } }
+                                    );
+                                }
+                                if (actionType.actionName === "Increase" || actionType.actionName === "Decrease" || actionType.actionName == "SetBid") {
+                                    await createBidHistory(
+                                        targeting?.targetId,
+                                        keywordBid,
+                                        rule.configId,
+                                        profile?.profileId,
+                                        keywordBidUpdatedFrom,
+                                        rule.userId,
+                                        "SB",
+                                        isDayparting ? "DAYPARTING" : "RULE"
+                                    );
+                                    await sbTargetingSchema.updateMany(
+                                        { targetId: targeting?.targetId },
+                                        { $set: { keywordBid: Number(keywordBid) } }
+                                    );
+                                }
+                                if (isCampaign) {
+                                    await createCampaignHistory(
+                                        targeting.campaignId,
+                                        isDayparting ? `${runPrefix}: Update Campaign Status` : "Update Campaign Status",
+                                        oldValue,
+                                        newValue,
+                                        rule.configId,
+                                        rule.profileId,
+                                        rule.userId,
+                                        "SB",
+                                        isDayparting ? "DAYPARTING" : "RULE"
+                                    );
+                                }
+                                if (isAdGroup) {
+                                    await createAdGroupHistory(
+                                        targeting.campaignId,
+                                        targeting.adGroupId,
+                                        isDayparting ? `${runPrefix}: Update AdGroup Status` : "Update AdGroup Status",
+                                        oldValue,
+                                        newValue,
+                                        rule.configId,
+                                        rule.profileId,
+                                        rule.userId,
+                                        "SB",
+                                        isDayparting ? "DAYPARTING" : "RULE"
+                                    );
+                                }
+
+                                let result;
+                                if (isCampaign) {
+                                    result = await sbCampaignSchema.findOneAndUpdate(
+                                        {
+                                            configId: rule.configId,
+                                            profileId: rule.profileId,
+                                            campaignId: targeting.campaignId,
+                                            reportDate: currentDate
+                                        },
+                                        { $set: { status: status } },
+                                        { new: true, upsert: true }
+                                    ).lean();
+                                } else if (isAdGroup) {
+                                    result = await sbAdGroupsSchema.findOneAndUpdate(
+                                        {
+                                            configId: rule.configId,
+                                            profileId: rule.profileId,
+                                            campaignId: targeting.campaignId,
+                                            adGroupId: targeting.adGroupId,
+                                            reportDate: currentDate
+                                        },
+                                        { $set: { status: status } },
+                                        { new: true, upsert: true }
+                                    ).lean();
+                                } else {
+                                    result = await sbTargetingSchema.findOneAndUpdate(
+                                        {
+                                            configId: rule.configId,
+                                            profileId: rule.profileId,
+                                            targeting: targeting.targeting,
+                                            targetId: targeting.targetId,
+                                            reportDate: currentDate
+                                        },
+                                        { $set: { status: status, keywordBid: keywordBid } },
+                                        { new: true, upsert: true }
+                                    ).lean();
+                                }
 
                                 cron_logs({
-                                    message: `runSponsoredBrandRule -> Targeting Response: ${JSON.stringify(response.data)}`,
+                                    message: `runSponsoredBrandRule -> Targeting Updated: ${JSON.stringify(result)}`,
                                     log_type: "info",
                                 });
 
-                                if ([200, 207].includes(response.status)) {
-
-                                    const isStatusChange = ["Enabled", "Paused", "CampaignEnabled", "CampaignPaused", "AdGroupEnabled", "AdGroupPaused"].includes(actionType.actionName);
-                                    const oldValue = isStatusChange ? oldStatus : targeting.keywordBid;
-                                    const newValue = isStatusChange ? status : Number(keywordBid);
-
-                                    await recordTargetingExecutionChange(execution, {
-                                        conditionSnapshot: targeting.conditionSnapshot,
-                                        configId: rule.configId,
-                                        profileId: rule.profileId,
-                                        userId: rule.userId,
-                                        ruleSchema: "TargetingRule",
-                                        ruleId: rule._id,
-                                        ruleDate: currentDate,
-                                        ruleTime: currentTime,
-                                        type: "SB",
-                                        campaignId: targeting.campaignId,
-                                        adGroupId: targeting?.adGroupId,
-                                        targetId: targeting.targetId,
-                                        name: targeting.campaignName,
-                                        adGroupName: targeting?.adGroupName,
-                                        targetName: targeting?.targeting,
-                                        targetType: targeting?.matchType,
-                                        oldValue: oldValue,
-                                        newValue: newValue,
-                                        changed,
-                                        metrics: {
-                                            impressions: targeting?.impressions,
-                                            clicks: targeting?.clicks,
-                                            spend: targeting?.spend,
-                                            sales: targeting?.sales,
-                                            orders: targeting?.orders,
-                                            acos: targeting?.acos,
-                                            roas: targeting?.roas,
-                                            cpc: targeting?.cpc,
-                                            ctr: targeting?.ctr,
-                                        },
-                                        notes: `SB Targeting rule executed: ${rule.ruleName}`,
-                                    });
-
-                                    if (actionType.actionName === "Enabled" || actionType.actionName === "Paused") {
-                                        await createStatusHistory(
-                                            targeting?.targetId,
-                                            status,
-                                            rule.configId,
-                                            profile?.profileId,
-                                            `${runPrefix}: Update Targeting Status`,
-                                            rule.userId,
-                                            "SB",
-                                            isDayparting ? "DAYPARTING" : "RULE"
-                                        );
-                                        await sbTargetingSchema.updateMany(
-                                            { targetId: targeting?.targetId },
-                                            { $set: { status: status } }
-                                        );
-                                    }
-                                    if (actionType.actionName === "Increase" || actionType.actionName === "Decrease" || actionType.actionName == "SetBid") {
-                                        await createBidHistory(
-                                            targeting?.targetId,
-                                            keywordBid,
-                                            rule.configId,
-                                            profile?.profileId,
-                                            keywordBidUpdatedFrom,
-                                            rule.userId,
-                                            "SB",
-                                            isDayparting ? "DAYPARTING" : "RULE"
-                                        );
-                                        await sbTargetingSchema.updateMany(
-                                            { targetId: targeting?.targetId },
-                                            { $set: { keywordBid: Number(keywordBid) } }
-                                        );
-                                    }
-                                    if (isCampaign) {
-                                        await createCampaignHistory(
-                                            targeting.campaignId,
-                                            isDayparting ? `${runPrefix}: Update Campaign Status` : "Update Campaign Status",
-                                            oldValue,
-                                            newValue,
-                                            rule.configId,
-                                            rule.profileId,
-                                            rule.userId,
-                                            "SB",
-                                            isDayparting ? "DAYPARTING" : "RULE"
-                                        );
-                                    }
-                                    if (isAdGroup) {
-                                        await createAdGroupHistory(
-                                            targeting.campaignId,
-                                            targeting.adGroupId,
-                                            isDayparting ? `${runPrefix}: Update AdGroup Status` : "Update AdGroup Status",
-                                            oldValue,
-                                            newValue,
-                                            rule.configId,
-                                            rule.profileId,
-                                            rule.userId,
-                                            "SB",
-                                            isDayparting ? "DAYPARTING" : "RULE"
-                                        );
-                                    }
-
-                                    let result;
-                                    if (isCampaign) {
-                                        result = await sbCampaignSchema.findOneAndUpdate(
-                                            {
-                                                configId: rule.configId,
-                                                profileId: rule.profileId,
-                                                campaignId: targeting.campaignId,
-                                                reportDate: currentDate
-                                            },
-                                            { $set: { status: status } },
-                                            { new: true, upsert: true }
-                                        ).lean();
-                                    } else if (isAdGroup) {
-                                        result = await sbAdGroupsSchema.findOneAndUpdate(
-                                            {
-                                                configId: rule.configId,
-                                                profileId: rule.profileId,
-                                                campaignId: targeting.campaignId,
-                                                adGroupId: targeting.adGroupId,
-                                                reportDate: currentDate
-                                            },
-                                            { $set: { status: status } },
-                                            { new: true, upsert: true }
-                                        ).lean();
-                                    } else {
-                                        result = await sbTargetingSchema.findOneAndUpdate(
-                                            {
-                                                configId: rule.configId,
-                                                profileId: rule.profileId,
-                                                targeting: targeting.targeting,
-                                                targetId: targeting.targetId,
-                                                reportDate: currentDate
-                                            },
-                                            { $set: { status: status, keywordBid: keywordBid } },
-                                            { new: true, upsert: true }
-                                        ).lean();
-                                    }
-
-                                    cron_logs({
-                                        message: `runSponsoredBrandRule -> Targeting Updated: ${JSON.stringify(result)}`,
-                                        log_type: "info",
-                                    });
-
-                                }
-                                else {
-                                    return false;
-                                }
-                            } catch (error) {
-                                cron_logs({
-                                    message: `runSponsoredBrandRule -> Error: ${error.message}`,
-                                    log_type: "error",
-                                });
+                            }
+                            else {
                                 return false;
                             }
+                        } catch (error) {
+                            cron_logs({
+                                message: `runSponsoredBrandRule -> Error: ${error.message}`,
+                                log_type: "error",
+                            });
+                            return false;
                         }
                     }
                 }
-                return true;
-            });
+            }
+            return true;
+        });
 
         if (runSchedule.some(result => result.status === "rejected" || result.value === false)) {
             throw new Error("SB targeting rule has unconfirmed or failed updates; recovery required");
@@ -5914,344 +5973,344 @@ const runSponsoredDisplayRule = async (rule, checkConfigAds, profile, currentDat
         const bidThreshold = await getRuleSettings(rule?.configId, rule?.profileId, "targetingRuleSetting");
 
         const runSchedule = await settleTargetingItems(eligibleTargeting, async (targeting) => {
-                cron_logs({
-                    message: `Rule ID: ${rule?._id}, Rule Name: ${rule?.ruleName}, SD-Targeting: ${JSON.stringify(targeting)}`,
-                    log_type: "info",
-                });
+            cron_logs({
+                message: `Rule ID: ${rule?._id}, Rule Name: ${rule?.ruleName}, SD-Targeting: ${JSON.stringify(targeting)}`,
+                log_type: "info",
+            });
 
-                const affectedCampaign = await affectedCampaignByRuleSchema.findOne({
-                    configId: rule.configId,
-                    profileId: rule.profileId,
-                    userId: rule.userId,
-                    ruleSchema: "TargetingRule",
-                    ruleId: rule._id,
-                    ruleDate: currentDate,
-                    type: "SD",
-                    campaignId: targeting.campaignId,
-                    targetId: targeting.targetId
-                }).lean();
+            const affectedCampaign = await affectedCampaignByRuleSchema.findOne({
+                configId: rule.configId,
+                profileId: rule.profileId,
+                userId: rule.userId,
+                ruleSchema: "TargetingRule",
+                ruleId: rule._id,
+                ruleDate: currentDate,
+                type: "SD",
+                campaignId: targeting.campaignId,
+                targetId: targeting.targetId
+            }).lean();
 
-                if (!affectedCampaign || rule.allowMultiTimeChanges || 1 == 1) {
+            if (!affectedCampaign || rule.allowMultiTimeChanges || 1 == 1) {
 
-                    const actionType = rule.actionType;
-                    const isCampaign = ["CampaignEnabled", "CampaignPaused"].includes(actionType.actionName);
-                    const isAdGroup = ["AdGroupEnabled", "AdGroupPaused"].includes(actionType.actionName);
+                const actionType = rule.actionType;
+                const isCampaign = ["CampaignEnabled", "CampaignPaused"].includes(actionType.actionName);
+                const isAdGroup = ["AdGroupEnabled", "AdGroupPaused"].includes(actionType.actionName);
 
-                    const oldStatus = isCampaign ? targeting?.campaignStatus : isAdGroup ? targeting?.adGroupStatus : targeting.status;
-                    let status = isCampaign ? targeting?.campaignStatus : isAdGroup ? targeting?.adGroupStatus : targeting.status;
-                    let keywordBid = targeting.keywordBid;
-                    const isDayparting = Boolean(rule.isHourlyBid || rule.hourlyConfig?.slots?.length);
-                    const runPrefix = isDayparting
-                        ? (isManual ? `Manual Dayparting Run (${rule.ruleName})` : `Dayparting Rule Run (${rule.ruleName})`)
-                        : (isManual ? `Manual Run (${rule.ruleName})` : `Rule Run (${rule.ruleName})`);
-                    let keywordBidUpdatedFrom = `${runPrefix}: Targeting bid adjusted`;
-                    let changed;
+                const oldStatus = isCampaign ? targeting?.campaignStatus : isAdGroup ? targeting?.adGroupStatus : targeting.status;
+                let status = isCampaign ? targeting?.campaignStatus : isAdGroup ? targeting?.adGroupStatus : targeting.status;
+                let keywordBid = targeting.keywordBid;
+                const isDayparting = Boolean(rule.isHourlyBid || rule.hourlyConfig?.slots?.length);
+                const runPrefix = isDayparting
+                    ? (isManual ? `Manual Dayparting Run (${rule.ruleName})` : `Dayparting Rule Run (${rule.ruleName})`)
+                    : (isManual ? `Manual Run (${rule.ruleName})` : `Rule Run (${rule.ruleName})`);
+                let keywordBidUpdatedFrom = `${runPrefix}: Targeting bid adjusted`;
+                let changed;
 
-                    if (true) {
-                        let options;
-                        if (targeting?.targetId?.startsWith("T-")) {
-                            options = {
-                                method: "PUT",
-                                url: `${profile.amazonUrl}/sd/targets`,
-                                headers: {
-                                    "Amazon-Advertising-API-ClientId": checkConfigAds.adsClientId,
-                                    "Amazon-Advertising-API-Scope": profile.profileId,
-                                    "Authorization": `Bearer ${checkConfigAds.adsAccessToken}`,
-                                    "Content-Type": "application/json",
-                                },
-                                meta: { configId: rule.configId, tokenKey: "adsAccessToken" }
-                            };
-                        }
+                if (true) {
+                    let options;
+                    if (targeting?.targetId?.startsWith("T-")) {
+                        options = {
+                            method: "PUT",
+                            url: `${profile.amazonUrl}/sd/targets`,
+                            headers: {
+                                "Amazon-Advertising-API-ClientId": checkConfigAds.adsClientId,
+                                "Amazon-Advertising-API-Scope": profile.profileId,
+                                "Authorization": `Bearer ${checkConfigAds.adsAccessToken}`,
+                                "Content-Type": "application/json",
+                            },
+                            meta: { configId: rule.configId, tokenKey: "adsAccessToken" }
+                        };
+                    }
 
-                        if (["Enabled", "Paused"].includes(actionType.actionName)) {
-                            status = actionType.actionName.toUpperCase();
-                            if (status) {
-                                if (targeting?.targetId?.startsWith("T-")) {
-                                    options.data = [
-                                        {
-                                            targetId: parseInt(targeting.targetId.replace("T-", "")),
-                                            state: `${status}`.toLowerCase(),
-                                        },
-                                    ];
-                                }
-                            }
-                            changed = "state";
-                        }
-                        if (["Increase", "Decrease", "SetBid"].includes(actionType.actionName)) {
-                            const baseline = rule.isHourlyBid && !isManual
-                                ? await resolveHourlyTargetingBaseline({ rule, type: "SD", targeting, existingActive: affectedCampaign })
-                                : targeting.keywordBid;
-                            let actionValue = actionType.actionValue;
-                            if (actionType.actionValueType == "Percentage") {
-                                actionValue = (baseline * actionValue) / 100;
-                            }
-                            if (actionType.actionName === "Increase") {
-                                actionValue =
-                                    parseFloat(baseline) + parseFloat(actionValue);
-                            }
-                            if (actionType.actionName === "Decrease") {
-                                actionValue =
-                                    parseFloat(baseline) - parseFloat(actionValue);
-                            }
-                            if (actionType.actionName == "SetBid") {
-                                actionValue = parseFloat(actionValue);
-                            }
-
-                            if (rule.isHourlyBid && !isManual) actionValue = Number(Number(actionValue).toFixed(2));
-
-                            if (bidThreshold?.maxBid && actionValue > bidThreshold?.maxBid) {
-                                actionValue = bidThreshold?.maxBid;
-                            }
-
-                            if (bidThreshold?.minBid && actionValue < bidThreshold?.minBid) {
-                                actionValue = bidThreshold?.minBid;
-                            }
-
-                            if (actionValue) {
-                                keywordBid = actionValue;
-
-                                const marketMin = getMarketplaceMinBid(profile?.currencyCode, profile?.countryCode);
-                                const maxCap = (targeting?.bidThreshold?.maxBid && Number(targeting.bidThreshold.maxBid) > 0) ? Number(targeting.bidThreshold.maxBid) : 50;
-                                const minCap = Math.max(marketMin, (targeting?.bidThreshold?.minBid && Number(targeting.bidThreshold.minBid) > 0) ? Number(targeting.bidThreshold.minBid) : marketMin);
-                                const originalAttemptedBid = keywordBid;
-                                if (keywordBid > maxCap) {
-                                    keywordBid = maxCap;
-                                    keywordBidUpdatedFrom = `${runPrefix}: Targeting bid adjusted and capped at maximum bid`;
-                                }
-
-                                if (keywordBid < minCap) {
-                                    keywordBid = minCap;
-                                    keywordBidUpdatedFrom = `${runPrefix}: Targeting bid adjusted and raised to minimum bid`;
-                                    await sendMinBidClampedNotification({
-                                        profile,
-                                        rule,
-                                        targeting,
-                                        calculatedBid: originalAttemptedBid,
-                                        clampedBid: keywordBid,
-                                        marketMin,
-                                        adType: "SD",
-                                    });
-                                }
-
-                                if (targeting?.targetId?.startsWith("T-")) {
-                                    options.data = [
-                                        {
-                                            targetId: parseInt(targeting.targetId.replace("T-", "")),
-                                            bid: Number(keywordBid),
-                                        },
-                                    ];
-                                }
-                                changed = "bid"
+                    if (["Enabled", "Paused"].includes(actionType.actionName)) {
+                        status = actionType.actionName.toUpperCase();
+                        if (status) {
+                            if (targeting?.targetId?.startsWith("T-")) {
+                                options.data = [
+                                    {
+                                        targetId: parseInt(targeting.targetId.replace("T-", "")),
+                                        state: `${status}`.toLowerCase(),
+                                    },
+                                ];
                             }
                         }
-
-                        if (isCampaign) {
-                            status = `${actionType.actionName}`.replace("Campaign", "").toUpperCase();
-                            options = {
-                                method: "PUT",
-                                url: `${profile.amazonUrl}/sd/campaigns`,
-                                headers: {
-                                    "Amazon-Advertising-API-ClientId": checkConfigAds.adsClientId,
-                                    "Amazon-Advertising-API-Scope": profile.profileId,
-                                    "Authorization": `Bearer ${checkConfigAds.adsAccessToken}`,
-                                    "Content-Type": "application/json",
-                                },
-                                data: [{ campaignId: parseInt(targeting.campaignId), state: status.toLowerCase() }],
-                                meta: { configId: rule.configId, tokenKey: "adsAccessToken" }
-                            };
-                            changed = "campaignState";
+                        changed = "state";
+                    }
+                    if (["Increase", "Decrease", "SetBid"].includes(actionType.actionName)) {
+                        const baseline = rule.isHourlyBid && !isManual
+                            ? await resolveHourlyTargetingBaseline({ rule, type: "SD", targeting, existingActive: affectedCampaign })
+                            : targeting.keywordBid;
+                        let actionValue = actionType.actionValue;
+                        if (actionType.actionValueType == "Percentage") {
+                            actionValue = (baseline * actionValue) / 100;
+                        }
+                        if (actionType.actionName === "Increase") {
+                            actionValue =
+                                parseFloat(baseline) + parseFloat(actionValue);
+                        }
+                        if (actionType.actionName === "Decrease") {
+                            actionValue =
+                                parseFloat(baseline) - parseFloat(actionValue);
+                        }
+                        if (actionType.actionName == "SetBid") {
+                            actionValue = parseFloat(actionValue);
                         }
 
-                        if (isAdGroup) {
-                            status = `${actionType.actionName}`.replace("AdGroup", "").toUpperCase();
-                            options = {
-                                method: "PUT",
-                                url: `${profile.amazonUrl}/sd/adGroups`,
-                                headers: {
-                                    "Amazon-Advertising-API-ClientId": checkConfigAds.adsClientId,
-                                    "Amazon-Advertising-API-Scope": profile.profileId,
-                                    "Authorization": `Bearer ${checkConfigAds.adsAccessToken}`,
-                                    "Content-Type": "application/json",
-                                },
-                                data: [{ adGroupId: parseInt(targeting.adGroupId), state: status.toLowerCase() }],
-                                meta: { configId: rule.configId, tokenKey: "adsAccessToken" }
-                            };
-                            changed = "adGroupState";
+                        if (rule.isHourlyBid && !isManual) actionValue = Number(Number(actionValue).toFixed(2));
+
+                        if (bidThreshold?.maxBid && actionValue > bidThreshold?.maxBid) {
+                            actionValue = bidThreshold?.maxBid;
                         }
 
-                        if (options?.data) {
-                            if (execution.assertActive) options.meta = { ...options.meta, beforeRequest: execution.assertActive };
-                            try {
-                                const response = await retryWithBackoff(async () => {
-                                    await execution.assertActive?.();
-                                    return amazonAxios(options);
+                        if (bidThreshold?.minBid && actionValue < bidThreshold?.minBid) {
+                            actionValue = bidThreshold?.minBid;
+                        }
+
+                        if (actionValue) {
+                            keywordBid = actionValue;
+
+                            const marketMin = getMarketplaceMinBid(profile?.currencyCode, profile?.countryCode);
+                            const maxCap = (targeting?.bidThreshold?.maxBid && Number(targeting.bidThreshold.maxBid) > 0) ? Number(targeting.bidThreshold.maxBid) : 50;
+                            const minCap = Math.max(marketMin, (targeting?.bidThreshold?.minBid && Number(targeting.bidThreshold.minBid) > 0) ? Number(targeting.bidThreshold.minBid) : marketMin);
+                            const originalAttemptedBid = keywordBid;
+                            if (keywordBid > maxCap) {
+                                keywordBid = maxCap;
+                                keywordBidUpdatedFrom = `${runPrefix}: Targeting bid adjusted and capped at maximum bid`;
+                            }
+
+                            if (keywordBid < minCap) {
+                                keywordBid = minCap;
+                                keywordBidUpdatedFrom = `${runPrefix}: Targeting bid adjusted and raised to minimum bid`;
+                                await sendMinBidClampedNotification({
+                                    profile,
+                                    rule,
+                                    targeting,
+                                    calculatedBid: originalAttemptedBid,
+                                    clampedBid: keywordBid,
+                                    marketMin,
+                                    adType: "SD",
                                 });
+                            }
+
+                            if (targeting?.targetId?.startsWith("T-")) {
+                                options.data = [
+                                    {
+                                        targetId: parseInt(targeting.targetId.replace("T-", "")),
+                                        bid: Number(keywordBid),
+                                    },
+                                ];
+                            }
+                            changed = "bid"
+                        }
+                    }
+
+                    if (isCampaign) {
+                        status = `${actionType.actionName}`.replace("Campaign", "").toUpperCase();
+                        options = {
+                            method: "PUT",
+                            url: `${profile.amazonUrl}/sd/campaigns`,
+                            headers: {
+                                "Amazon-Advertising-API-ClientId": checkConfigAds.adsClientId,
+                                "Amazon-Advertising-API-Scope": profile.profileId,
+                                "Authorization": `Bearer ${checkConfigAds.adsAccessToken}`,
+                                "Content-Type": "application/json",
+                            },
+                            data: [{ campaignId: parseInt(targeting.campaignId), state: status.toLowerCase() }],
+                            meta: { configId: rule.configId, tokenKey: "adsAccessToken" }
+                        };
+                        changed = "campaignState";
+                    }
+
+                    if (isAdGroup) {
+                        status = `${actionType.actionName}`.replace("AdGroup", "").toUpperCase();
+                        options = {
+                            method: "PUT",
+                            url: `${profile.amazonUrl}/sd/adGroups`,
+                            headers: {
+                                "Amazon-Advertising-API-ClientId": checkConfigAds.adsClientId,
+                                "Amazon-Advertising-API-Scope": profile.profileId,
+                                "Authorization": `Bearer ${checkConfigAds.adsAccessToken}`,
+                                "Content-Type": "application/json",
+                            },
+                            data: [{ adGroupId: parseInt(targeting.adGroupId), state: status.toLowerCase() }],
+                            meta: { configId: rule.configId, tokenKey: "adsAccessToken" }
+                        };
+                        changed = "adGroupState";
+                    }
+
+                    if (options?.data) {
+                        if (execution.assertActive) options.meta = { ...options.meta, beforeRequest: execution.assertActive };
+                        try {
+                            const response = await retryWithBackoff(async () => {
                                 await execution.assertActive?.();
-                                assertTargetingUpdateConfirmed(response, options);
+                                return amazonAxios(options);
+                            });
+                            await execution.assertActive?.();
+                            assertTargetingUpdateConfirmed(response, options);
+
+                            cron_logs({
+                                message: `runSponsoredDisplayRule -> Targeting Response: ${JSON.stringify(response.data)}`,
+                                log_type: "info",
+                            });
+
+                            if ([200, 207].includes(response.status)) {
+
+                                const isStatusChange = ["Enabled", "Paused", "CampaignEnabled", "CampaignPaused", "AdGroupEnabled", "AdGroupPaused"].includes(actionType.actionName);
+                                const oldValue = isStatusChange ? oldStatus : targeting.keywordBid;
+                                const newValue = isStatusChange ? status : Number(keywordBid);
+
+                                await recordTargetingExecutionChange(execution, {
+                                    conditionSnapshot: targeting.conditionSnapshot,
+                                    configId: rule.configId,
+                                    profileId: rule.profileId,
+                                    userId: rule.userId,
+                                    ruleSchema: "TargetingRule",
+                                    ruleId: rule._id,
+                                    ruleDate: currentDate,
+                                    ruleTime: currentTime,
+                                    type: "SD",
+                                    campaignId: targeting.campaignId,
+                                    adGroupId: targeting?.adGroupId,
+                                    targetId: targeting.targetId,
+                                    name: targeting.campaignName,
+                                    adGroupName: targeting?.adGroupName,
+                                    targetName: targeting?.targeting,
+                                    targetType: targeting?.matchType,
+                                    oldValue: oldValue,
+                                    newValue: newValue,
+                                    changed,
+                                    metrics: {
+                                        impressions: targeting?.impressions,
+                                        clicks: targeting?.clicks,
+                                        spend: targeting?.spend,
+                                        sales: targeting?.sales,
+                                        orders: targeting?.orders,
+                                        acos: targeting?.acos,
+                                        roas: targeting?.roas,
+                                        cpc: targeting?.cpc,
+                                        ctr: targeting?.ctr,
+                                    },
+                                    notes: `SD Targeting rule executed: ${rule.ruleName}`,
+                                });
+
+                                if (actionType.actionName === "Enabled" || actionType.actionName === "Paused") {
+                                    await createStatusHistory(
+                                        targeting?.targetId,
+                                        status,
+                                        rule.configId,
+                                        profile?.profileId,
+                                        `${runPrefix}: Update Targeting Status`,
+                                        rule.userId,
+                                        "SD",
+                                        isDayparting ? "DAYPARTING" : "RULE"
+                                    );
+                                    await sdTargetingSchema.updateMany(
+                                        { targetId: targeting?.targetId },
+                                        { $set: { status: status } }
+                                    );
+                                }
+                                if (actionType.actionName === "Increase" || actionType.actionName === "Decrease" || actionType.actionName === "SetBid") {
+                                    await createBidHistory(
+                                        targeting?.targetId,
+                                        keywordBid,
+                                        rule.configId,
+                                        profile?.profileId,
+                                        keywordBidUpdatedFrom,
+                                        rule.userId,
+                                        "SD",
+                                        isDayparting ? "DAYPARTING" : "RULE"
+                                    );
+                                    await sdTargetingSchema.updateMany(
+                                        { targetId: targeting?.targetId },
+                                        { $set: { keywordBid: Number(keywordBid) } }
+                                    );
+                                }
+                                if (isCampaign) {
+                                    await createCampaignHistory(
+                                        targeting.campaignId,
+                                        isDayparting ? `${runPrefix}: Update Campaign Status` : "Update Campaign Status",
+                                        oldValue,
+                                        newValue,
+                                        rule.configId,
+                                        rule.profileId,
+                                        rule.userId,
+                                        "SD",
+                                        isDayparting ? "DAYPARTING" : "RULE"
+                                    );
+                                }
+                                if (isAdGroup) {
+                                    await createAdGroupHistory(
+                                        targeting.campaignId,
+                                        targeting.adGroupId,
+                                        isDayparting ? `${runPrefix}: Update AdGroup Status` : "Update AdGroup Status",
+                                        oldValue,
+                                        newValue,
+                                        rule.configId,
+                                        rule.profileId,
+                                        rule.userId,
+                                        "SD",
+                                        isDayparting ? "DAYPARTING" : "RULE"
+                                    );
+                                }
+
+                                let result;
+                                if (isCampaign) {
+                                    result = await sdCampaignSchema.findOneAndUpdate(
+                                        {
+                                            configId: rule.configId,
+                                            profileId: rule.profileId,
+                                            campaignId: targeting.campaignId,
+                                            reportDate: currentDate
+                                        },
+                                        { $set: { status: status } },
+                                        { new: true, upsert: true }
+                                    ).lean();
+                                } else if (isAdGroup) {
+                                    result = await sdAdGroupsSchema.findOneAndUpdate(
+                                        {
+                                            configId: rule.configId,
+                                            profileId: rule.profileId,
+                                            campaignId: targeting.campaignId,
+                                            adGroupId: targeting.adGroupId,
+                                            reportDate: currentDate
+                                        },
+                                        { $set: { status: status } },
+                                        { new: true, upsert: true }
+                                    ).lean();
+                                } else {
+                                    result = await sdTargetingSchema.findOneAndUpdate(
+                                        {
+                                            configId: rule.configId,
+                                            profileId: rule.profileId,
+                                            targetId: targeting.targetId,
+                                            reportDate: currentDate
+                                        },
+                                        { $set: { status: status, keywordBid: keywordBid } },
+                                        { new: true, upsert: true }
+                                    ).lean();
+                                }
 
                                 cron_logs({
-                                    message: `runSponsoredDisplayRule -> Targeting Response: ${JSON.stringify(response.data)}`,
+                                    message: `runSponsoredDisplayRule -> Targeting Updated: ${JSON.stringify(result)}`,
                                     log_type: "info",
                                 });
 
-                                if ([200, 207].includes(response.status)) {
-
-                                    const isStatusChange = ["Enabled", "Paused", "CampaignEnabled", "CampaignPaused", "AdGroupEnabled", "AdGroupPaused"].includes(actionType.actionName);
-                                    const oldValue = isStatusChange ? oldStatus : targeting.keywordBid;
-                                    const newValue = isStatusChange ? status : Number(keywordBid);
-
-                                    await recordTargetingExecutionChange(execution, {
-                                        conditionSnapshot: targeting.conditionSnapshot,
-                                        configId: rule.configId,
-                                        profileId: rule.profileId,
-                                        userId: rule.userId,
-                                        ruleSchema: "TargetingRule",
-                                        ruleId: rule._id,
-                                        ruleDate: currentDate,
-                                        ruleTime: currentTime,
-                                        type: "SD",
-                                        campaignId: targeting.campaignId,
-                                        adGroupId: targeting?.adGroupId,
-                                        targetId: targeting.targetId,
-                                        name: targeting.campaignName,
-                                        adGroupName: targeting?.adGroupName,
-                                        targetName: targeting?.targeting,
-                                        targetType: targeting?.matchType,
-                                        oldValue: oldValue,
-                                        newValue: newValue,
-                                        changed,
-                                        metrics: {
-                                            impressions: targeting?.impressions,
-                                            clicks: targeting?.clicks,
-                                            spend: targeting?.spend,
-                                            sales: targeting?.sales,
-                                            orders: targeting?.orders,
-                                            acos: targeting?.acos,
-                                            roas: targeting?.roas,
-                                            cpc: targeting?.cpc,
-                                            ctr: targeting?.ctr,
-                                        },
-                                        notes: `SD Targeting rule executed: ${rule.ruleName}`,
-                                    });
-
-                                    if (actionType.actionName === "Enabled" || actionType.actionName === "Paused") {
-                                        await createStatusHistory(
-                                            targeting?.targetId,
-                                            status,
-                                            rule.configId,
-                                            profile?.profileId,
-                                            `${runPrefix}: Update Targeting Status`,
-                                            rule.userId,
-                                            "SD",
-                                            isDayparting ? "DAYPARTING" : "RULE"
-                                        );
-                                        await sdTargetingSchema.updateMany(
-                                            { targetId: targeting?.targetId },
-                                            { $set: { status: status } }
-                                        );
-                                    }
-                                    if (actionType.actionName === "Increase" || actionType.actionName === "Decrease" || actionType.actionName === "SetBid") {
-                                        await createBidHistory(
-                                            targeting?.targetId,
-                                            keywordBid,
-                                            rule.configId,
-                                            profile?.profileId,
-                                            keywordBidUpdatedFrom,
-                                            rule.userId,
-                                            "SD",
-                                            isDayparting ? "DAYPARTING" : "RULE"
-                                        );
-                                        await sdTargetingSchema.updateMany(
-                                            { targetId: targeting?.targetId },
-                                            { $set: { keywordBid: Number(keywordBid) } }
-                                        );
-                                    }
-                                    if (isCampaign) {
-                                        await createCampaignHistory(
-                                            targeting.campaignId,
-                                            isDayparting ? `${runPrefix}: Update Campaign Status` : "Update Campaign Status",
-                                            oldValue,
-                                            newValue,
-                                            rule.configId,
-                                            rule.profileId,
-                                            rule.userId,
-                                            "SD",
-                                            isDayparting ? "DAYPARTING" : "RULE"
-                                        );
-                                    }
-                                    if (isAdGroup) {
-                                        await createAdGroupHistory(
-                                            targeting.campaignId,
-                                            targeting.adGroupId,
-                                            isDayparting ? `${runPrefix}: Update AdGroup Status` : "Update AdGroup Status",
-                                            oldValue,
-                                            newValue,
-                                            rule.configId,
-                                            rule.profileId,
-                                            rule.userId,
-                                            "SD",
-                                            isDayparting ? "DAYPARTING" : "RULE"
-                                        );
-                                    }
-
-                                    let result;
-                                    if (isCampaign) {
-                                        result = await sdCampaignSchema.findOneAndUpdate(
-                                            {
-                                                configId: rule.configId,
-                                                profileId: rule.profileId,
-                                                campaignId: targeting.campaignId,
-                                                reportDate: currentDate
-                                            },
-                                            { $set: { status: status } },
-                                            { new: true, upsert: true }
-                                        ).lean();
-                                    } else if (isAdGroup) {
-                                        result = await sdAdGroupsSchema.findOneAndUpdate(
-                                            {
-                                                configId: rule.configId,
-                                                profileId: rule.profileId,
-                                                campaignId: targeting.campaignId,
-                                                adGroupId: targeting.adGroupId,
-                                                reportDate: currentDate
-                                            },
-                                            { $set: { status: status } },
-                                            { new: true, upsert: true }
-                                        ).lean();
-                                    } else {
-                                        result = await sdTargetingSchema.findOneAndUpdate(
-                                            {
-                                                configId: rule.configId,
-                                                profileId: rule.profileId,
-                                                targetId: targeting.targetId,
-                                                reportDate: currentDate
-                                            },
-                                            { $set: { status: status, keywordBid: keywordBid } },
-                                            { new: true, upsert: true }
-                                        ).lean();
-                                    }
-
-                                    cron_logs({
-                                        message: `runSponsoredDisplayRule -> Targeting Updated: ${JSON.stringify(result)}`,
-                                        log_type: "info",
-                                    });
-
-                                }
-                                else {
-                                    return false;
-                                }
-                            } catch (error) {
-                                cron_logs({
-                                    message: `runSponsoredDisplayRule -> Error: ${error.message}`,
-                                    log_type: "error",
-                                });
+                            }
+                            else {
                                 return false;
                             }
+                        } catch (error) {
+                            cron_logs({
+                                message: `runSponsoredDisplayRule -> Error: ${error.message}`,
+                                log_type: "error",
+                            });
+                            return false;
                         }
                     }
                 }
-                return true;
-            });
+            }
+            return true;
+        });
 
         if (runSchedule.some(result => result.status === "rejected" || result.value === false)) {
             throw new Error("SD targeting rule has unconfirmed or failed updates; recovery required");
@@ -6270,6 +6329,18 @@ exports.executeTargetingRulesForProfile = async (profile, scheduledFor = new Dat
     const currentDate = now.format("YYYY-MM-DD");
     const currentTime = now.format("HH:mm");
     const currentDay = now.format("dddd");
+    let profileCronDoc = null;
+    try {
+        profileCronDoc = new cronJobHistorySchema({
+            configId: profile.configId,
+            profileId: profile.profileId,
+            cronName: "Targeting Rule Schedules",
+            historyDate: currentDate,
+            status: "PENDING",
+            details: { startedAt: new Date().toISOString() },
+        });
+        await profileCronDoc.save();
+    } catch (_e) { }
 
     const rules = await targetingRuleSchema.find({
         configId: profile.configId,
@@ -6291,6 +6362,7 @@ exports.executeTargetingRulesForProfile = async (profile, scheduledFor = new Dat
     }).lean();
 
     const executedMap = new Map();
+    todayHistory.forEach(h => markRuleExecutedInSlotAndHour(executedMap, h.ruleId, h.ruleTime));
     todayHistory.forEach(h => {
         executedMap.set(
             `${h.ruleId.toString()}_${h.ruleTime}`,
@@ -6316,7 +6388,7 @@ exports.executeTargetingRulesForProfile = async (profile, scheduledFor = new Dat
 
             if (activeSlot && activeSlot.enabled) {
                 const historyKey = `${rule._id.toString()}_${activeSlot.startTime}`;
-                const alreadyExecuted = executedMap.has(historyKey);
+                const alreadyExecuted = hasRuleExecutedInSlotOrHour(executedMap, rule._id, typeof activeSlot !== "undefined" ? activeSlot.startTime : time, Boolean(rule.isHourlyBid));
 
                 if (!alreadyExecuted) {
                     const hourlyRule = { ...rule };
@@ -6343,7 +6415,7 @@ exports.executeTargetingRulesForProfile = async (profile, scheduledFor = new Dat
 
                     finalRulesToRun.push({
                         rule: hourlyRule,
-                        scheduledTime: activeSlot.startTime
+                        scheduledTime: (markRuleExecutedInSlotAndHour(executedMap, rule._id, activeSlot.startTime), activeSlot.startTime)
                     });
 
                     if (!isQueue) {
@@ -6379,9 +6451,11 @@ exports.executeTargetingRulesForProfile = async (profile, scheduledFor = new Dat
 
                 const isPastOrNow = ruleDateTime.isSameOrBefore(now);
                 const historyKey = `${rule._id.toString()}_${time}`;
-                const alreadyExecuted = executedMap.has(historyKey);
+                const isTimeExecuted = executedMap.has(historyKey);
+                const alreadyExecuted = hasRuleExecutedInSlotOrHour(executedMap, rule._id, typeof activeSlot !== "undefined" ? activeSlot.startTime : time, Boolean(rule.isHourlyBid));
 
-                if (isPastOrNow && !alreadyExecuted) {
+                if (isPastOrNow && !isTimeExecuted) {
+                    markRuleExecutedInSlotAndHour(executedMap, rule._id, time);
                     finalRulesToRun.push({
                         rule,
                         scheduledTime: time
@@ -6410,29 +6484,33 @@ exports.executeTargetingRulesForProfile = async (profile, scheduledFor = new Dat
         // not released while another rule is still sending Amazon updates.
         const results = await Promise.allSettled(finalRulesToRun.map(finalRule => ruleLimit(async () => {
             const rule = finalRule.rule;
-            const historyIdentity = { configId: profile.configId, profileId: profile.profileId,
-                ruleId: rule._id, ruleDate: currentDate, ruleTime: finalRule.scheduledTime, lastRun: finalRule.scheduledTime };
+            const historyIdentity = {
+                configId: profile.configId, profileId: profile.profileId,
+                ruleId: rule._id, ruleDate: currentDate, ruleTime: finalRule.scheduledTime, lastRun: finalRule.scheduledTime
+            };
             try {
-                const result = await runWithRuleSlot({ configId: profile.configId, profileId: profile.profileId,
-                    ruleSchema: "TargetingRule", ruleId: rule._id, ruleDate: currentDate, scheduledTime: finalRule.scheduledTime },
-                async ({ assertActive }) => {
-                    if (global.updateTaskProgress) global.updateTaskProgress("TargetingRuleSchedules");
-                    await targetingRuleHistorySchema.findOneAndUpdate(historyIdentity,
-                        { $set: { ruleName: rule.ruleName, status: "RUNNING" } }, { new: true, upsert: true }).lean();
-                    const checkConfigAds = await getAccessToken(rule.configId);
-                    if (!checkConfigAds?.adsAccessToken) throw new Error("Account disconnected; targeting rule slot requires recovery");
-                    const execution = { assertActive };
-                    await assertActive();
-                    const spStatus = await runSponsoredProductRule(rule, checkConfigAds, profile, currentDate, finalRule.scheduledTime, undefined, false, execution);
-                    await assertActive();
-                    const sbStatus = await runSponsoredBrandRule(rule, checkConfigAds, profile, currentDate, finalRule.scheduledTime, undefined, false, execution);
-                    await assertActive();
-                    const sdStatus = await runSponsoredDisplayRule(rule, checkConfigAds, profile, currentDate, finalRule.scheduledTime, undefined, false, execution);
-                    if (!spStatus || !sbStatus || !sdStatus) throw new Error("Targeting rule has unconfirmed updates; recovery required");
-                    await assertActive();
-                    await targetingRuleHistorySchema.findOneAndUpdate(historyIdentity,
-                        { $set: { status: "COMPLETED" } }, { new: true }).lean();
-                });
+                const result = await runWithRuleSlot({
+                    configId: profile.configId, profileId: profile.profileId,
+                    ruleSchema: "TargetingRule", ruleId: rule._id, ruleDate: currentDate, scheduledTime: finalRule.scheduledTime
+                },
+                    async ({ assertActive }) => {
+                        if (global.updateTaskProgress) global.updateTaskProgress("TargetingRuleSchedules");
+                        await targetingRuleHistorySchema.findOneAndUpdate(historyIdentity,
+                            { $set: { ruleName: rule.ruleName, status: "RUNNING" } }, { new: true, upsert: true }).lean();
+                        const checkConfigAds = await getAccessToken(rule.configId);
+                        if (!checkConfigAds?.adsAccessToken) throw new Error("Account disconnected; targeting rule slot requires recovery");
+                        const execution = { assertActive };
+                        await assertActive();
+                        const spStatus = await runSponsoredProductRule(rule, checkConfigAds, profile, currentDate, finalRule.scheduledTime, undefined, false, execution);
+                        await assertActive();
+                        const sbStatus = await runSponsoredBrandRule(rule, checkConfigAds, profile, currentDate, finalRule.scheduledTime, undefined, false, execution);
+                        await assertActive();
+                        const sdStatus = await runSponsoredDisplayRule(rule, checkConfigAds, profile, currentDate, finalRule.scheduledTime, undefined, false, execution);
+                        if (!spStatus || !sbStatus || !sdStatus) throw new Error("Targeting rule has unconfirmed updates; recovery required");
+                        await assertActive();
+                        await targetingRuleHistorySchema.findOneAndUpdate(historyIdentity,
+                            { $set: { status: "COMPLETED" } }, { new: true }).lean();
+                    });
                 if (!result.skipped) executedCount++;
             } catch (err) {
                 await targetingRuleHistorySchema.findOneAndUpdate(historyIdentity,
@@ -6448,18 +6526,40 @@ exports.executeTargetingRulesForProfile = async (profile, scheduledFor = new Dat
         if (failure) throw failure.reason;
     }
 
-    await cronJobHistorySchema.findOneAndUpdate(
-        {
-            configId: profile.configId,
-            profileId: profile.profileId,
-            cronName: "Targeting Rule Schedules",
-            historyDate: currentDate,
-        },
-        {
-            $set: { status: "COMPLETED", }
-        },
-        { new: true, upsert: true }
-    ).lean();
+    if (profileCronDoc?._id) {
+        await cronJobHistorySchema.findByIdAndUpdate(
+            profileCronDoc._id,
+            {
+                status: "COMPLETED",
+                recordsCount: executedCount,
+                $set: {
+                    "details.completedAt": new Date().toISOString(),
+                    "details.executedCount": executedCount,
+                    "details.totalRulesEvaluated": rules.length,
+                },
+            },
+            { new: true }
+        );
+    } else {
+        await cronJobHistorySchema.findOneAndUpdate(
+            {
+                configId: profile.configId,
+                profileId: profile.profileId,
+                cronName: "Targeting Rule Schedules",
+                historyDate: currentDate,
+            },
+            {
+                $set: {
+                    status: "COMPLETED",
+                    recordsCount: executedCount,
+                    "details.completedAt": new Date().toISOString(),
+                    "details.executedCount": executedCount,
+                    "details.totalRulesEvaluated": rules.length,
+                }
+            },
+            { new: true, upsert: true }
+        ).lean();
+    }
 
     return {
         success: true,
@@ -6489,6 +6589,22 @@ exports.CronTargetingRule = async (req, res) => {
                             log_type: "error",
                         });
                     }
+                    await cronJobHistorySchema.findOneAndUpdate(
+                        {
+                            configId: profile.configId,
+                            profileId: profile.profileId,
+                            cronName: "Targeting Rule Schedules",
+                            status: "PENDING"
+                        },
+                        {
+                            $set: {
+                                status: "FAILED",
+                                error: err.message,
+                                "details.failedAt": new Date().toISOString(),
+                            }
+                        },
+                        { sort: { updatedAt: -1 } }
+                    );
                 })
             )
         );
@@ -8677,9 +8793,11 @@ exports.getTargetingHistory = async (req, res) => {
             toDate,
             acosLookbackMode = "7",
             acosLookbackDays = 7,
+            oldAcosMode,
             customAcosFromDate,
             customAcosToDate,
         } = req.body;
+        const compareBids = oldAcosMode === "bid-to-bid";
 
         if (!targetId && !campaignId) {
             return res.status(400).send({
@@ -8815,11 +8933,14 @@ exports.getTargetingHistory = async (req, res) => {
                 ...(reqMatchVariants.length > 0 ? { matchType: { $in: reqMatchVariants } } : {}),
                 ...(campaignId ? { campaignId: { $in: [numCampaignId, strCampaignId].filter(Boolean) } } : {}),
                 ...(numProfileId ? { profileId: numProfileId } : {}),
+                ...(compareBids && resolvedConfigId ? { configId: resolvedConfigId } : {}),
             };
-            tRecord = await targetModel
-                .findOne(targetQuery)
-                .sort({ reportDate: -1, createdAt: -1 })
-                .lean();
+            if (!compareBids || targetId || targetName) {
+                tRecord = await targetModel
+                    .findOne(targetQuery)
+                    .sort({ reportDate: -1, createdAt: -1 })
+                    .lean();
+            }
 
             if (tRecord) {
                 targetName = tRecord.targeting || tRecord.keywordText || targetName;
@@ -8855,6 +8976,8 @@ exports.getTargetingHistory = async (req, res) => {
                     matchType: { $in: matchTypeVariants },
                     ...(campaignId ? { campaignId: { $in: [numCampaignId, strCampaignId].filter(Boolean) } } : {}),
                     ...(numProfileId ? { profileId: numProfileId } : {}),
+                    ...(compareBids && resolvedConfigId ? { configId: resolvedConfigId } : {}),
+                    ...(compareBids && tRecord?.adGroupId ? { adGroupId: tRecord.adGroupId } : {}),
                 }, { targetId: 1 }).lean();
                 for (const s of (siblingDocs || [])) {
                     if (s.targetId) {
@@ -8879,6 +9002,7 @@ exports.getTargetingHistory = async (req, res) => {
             } : {}),
             ...(campaignId ? { campaignId: { $in: [strCampaignId, numCampaignId].filter(Boolean) } } : {}),
             ...(numProfileId ? { profileId: { $in: [numProfileId, String(numProfileId)].filter(Boolean) } } : {}),
+            ...(compareBids && resolvedConfigId ? { configId: resolvedConfigId } : {}),
         };
         if (matchTypeVariants.length > 0) {
             historyFilter.$and = [
@@ -8982,7 +9106,10 @@ exports.getTargetingHistory = async (req, res) => {
             targetingHistorySchema.find(historyFilter).sort({ last_updated_date_time: -1 }).lean().catch(() => []),
             campaignChangeHistorySchema.find(changeHistoryFilter).sort({ createdAt: -1 }).lean().catch(() => []),
             ruleActionExecutionSchema.find(ruleActionFilter).sort({ appliedAt: -1, createdAt: -1 }).lean().catch(() => []),
-            targetModel.find(targetDailyFilter, { reportDate: 1, spend: 1, sales: 1 }).lean().catch(() => []),
+            targetModel.find(targetDailyFilter, {
+                reportDate: 1, spend: 1, sales: 1,
+                ...(compareBids ? { campaignId: 1, adGroupId: 1, targetId: 1, targeting: 1, matchType: 1 } : {}),
+            }).lean().catch(() => []),
         ]);
 
         const historyList = [];
@@ -9025,6 +9152,7 @@ exports.getTargetingHistory = async (req, res) => {
                 targeting: doc.targeting || targetName,
                 matchType: doc.match_type || doc.matchType || targetMatchType,
                 targetId: doc.targetId || doc.target_id || cleanTargetId,
+                ...(compareBids ? { campaignId: doc.campaignId || campaignId || tRecord?.campaignId, adGroupId: doc.adGroupId } : {}),
                 action: act,
                 previousValue: oldBidVal !== null && oldBidVal !== undefined ? oldBidVal : "—",
                 updatedValue: bidVal !== null && bidVal !== undefined ? bidVal : doc.state || "—",
@@ -9079,6 +9207,12 @@ exports.getTargetingHistory = async (req, res) => {
                 targeting: mc.targeting || targetName,
                 matchType: mc.matchType || targetMatchType,
                 targetId: mc.targetId || mc.changeLevel || cleanTargetId,
+                ...(compareBids ? {
+                    campaignId: campaignId || tRecord?.campaignId || mc.changeLevel,
+                    adGroupId: mc.adGroupId,
+                    targetId: mc.targetId || (targetId ? cleanTargetId : null),
+                    changeType: mc.changeType,
+                } : {}),
                 action: act,
                 previousValue: isOldNum ? oldValNum : (mc.oldValue || "—"),
                 updatedValue: isNewNum ? newValNum : (mc.newValue || "—"),
@@ -9112,6 +9246,11 @@ exports.getTargetingHistory = async (req, res) => {
                 targeting: targetName,
                 matchType: targetMatchType,
                 targetId: ra.amazonEntityId || cleanTargetId,
+                ...(compareBids ? {
+                    campaignId: ra.campaignId || campaignId || tRecord?.campaignId,
+                    adGroupId: ra.adGroupId || (String(ra.amazonEntityId) === String(tRecord?.targetId) ? tRecord?.adGroupId : null),
+                    isRecordedBid: ra.state === "APPLIED" && !/status|state|budget/i.test(String(ra.actionType)),
+                } : {}),
                 action: act,
                 previousValue: isOldNum ? oldNum : (ra.previousValue || "—"),
                 updatedValue: isNewNum ? newNum : (ra.desiredValue || "—"),
@@ -9138,12 +9277,19 @@ exports.getTargetingHistory = async (req, res) => {
         // Filter consecutive redundant identical bids and reconcile transitions
         const filteredTransitions = [];
         let lastBid = null;
+        const lastBidByTarget = new Map();
 
         for (let i = 0; i < historyList.length; i++) {
             const item = historyList[i];
+            const identity = compareBids ? JSON.stringify([
+                String(item.campaignId || ""),
+                String(item.targetId || "").replace(/^[TK]-/i, "") ||
+                [String(item.adGroupId || ""), item.targeting, normalizeMatchType(item.matchType)],
+            ]) : null;
+            if (compareBids) lastBid = lastBidByTarget.get(identity) ?? null;
             const currentBid = typeof item.bidAmount === "number" ? item.bidAmount : null;
 
-            if (currentBid !== null && currentBid > 0) {
+            if (currentBid !== null && currentBid > 0 && (!compareBids || (item.isRecordedBid !== false && !/^Status:/i.test(item.action)))) {
                 if (lastBid !== null && currentBid === lastBid && item.changeSource === "Amazon") {
                     // Skip redundant Amazon Stream heartbeat snapshots with exact same bid
                     continue;
@@ -9151,6 +9297,7 @@ exports.getTargetingHistory = async (req, res) => {
                 if ((item.oldBid === null || item.previousValue === "—") && lastBid === null && item.changeSource === "Amazon" && !/^Status:/i.test(item.action)) {
                     // Initial baseline snapshot from Amazon Stream (not an actual bid change)
                     lastBid = currentBid;
+                    if (compareBids) lastBidByTarget.set(identity, lastBid);
                     continue;
                 }
                 if (item.oldBid === null || item.previousValue === "—") {
@@ -9161,6 +9308,7 @@ exports.getTargetingHistory = async (req, res) => {
                     item.action = currentBid > item.oldBid ? "Bid Increased" : currentBid < item.oldBid ? "Bid Decreased" : "Bid Updated";
                 }
                 lastBid = currentBid;
+                if (compareBids) lastBidByTarget.set(identity, lastBid);
             }
 
             filteredTransitions.push(item);
@@ -9243,7 +9391,17 @@ exports.getTargetingHistory = async (req, res) => {
             const dateKey = moment(item.lastChangeDate).isValid()
                 ? moment(item.lastChangeDate).format("YYYY-MM-DD HH:mm")
                 : String(item.lastChangeDate);
-            const key = `${dateKey}_${item.updatedValue}_${item.action}`;
+            const normalizedId = compareBids ? String(item.targetId || "").replace(/^[TK]-/i, "") : "";
+            const resolvedId = String(tRecord?.targetId || "").replace(/^[TK]-/i, "");
+            const adGroupId = item.adGroupId || (normalizedId && normalizedId === resolvedId ? tRecord?.adGroupId : "");
+            if (compareBids && adGroupId) item.adGroupId = adGroupId;
+            const key = compareBids
+                ? JSON.stringify([
+                    dateKey, String(item.campaignId || ""), String(adGroupId || ""),
+                    normalizedId || [item.targeting, normalizeMatchType(item.matchType)],
+                    item.previousValue, item.updatedValue, item.action,
+                ])
+                : `${dateKey}_${item.updatedValue}_${item.action}`;
             if (!seen.has(key)) {
                 seen.add(key);
                 if (item.oldBid !== null && item.oldBid !== undefined && Number(item.oldBid) === Number(item.bidAmount)) {
@@ -9252,6 +9410,8 @@ exports.getTargetingHistory = async (req, res) => {
                 uniqueHistory.push(item);
             }
         }
+
+        if (compareBids) applyBidHistoryAcos(uniqueHistory, uniqueHistory, { target: dailyStats }, timezone);
 
         return res.status(200).send({
             isSuccess: true,

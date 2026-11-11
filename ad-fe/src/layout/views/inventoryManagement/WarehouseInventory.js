@@ -386,7 +386,7 @@ export default function WarehouseInventory() {
                                 <th className="px-4 py-3 font-semibold">Location</th>
                                 <th className="px-3 py-3 font-semibold text-right">Opening</th>
                                 <th className="px-3 py-3 font-semibold text-right">Inbound (+)</th>
-                                <th className="px-3 py-3 font-semibold text-right">Orders (-)</th>
+                                <th className="px-3 py-3 font-semibold text-right">Purchases (-)</th>
                                 <th className="px-3 py-3 font-semibold text-right">Returns (+)</th>
                                 <th className="px-3 py-3 font-semibold text-right">Transfers</th>
                                 <th className="px-3 py-3 font-semibold text-right">Ending Qty</th>
@@ -577,7 +577,7 @@ export default function WarehouseInventory() {
                                             <th className="px-3 py-2.5 font-semibold">Date</th>
                                             <th className="px-3 py-2.5 font-semibold text-right">Opening</th>
                                             <th className="px-3 py-2.5 font-semibold text-right">Receipts (+)</th>
-                                            <th className="px-3 py-2.5 font-semibold text-right">Orders (-)</th>
+                                            <th className="px-3 py-2.5 font-semibold text-right">Purchases (-)</th>
                                             <th className="px-3 py-2.5 font-semibold text-right">Returns (+)</th>
                                             <th className="px-3 py-2.5 font-semibold text-right">Transfers</th>
                                             <th className="px-3 py-2.5 font-semibold text-right">Adjustments</th>

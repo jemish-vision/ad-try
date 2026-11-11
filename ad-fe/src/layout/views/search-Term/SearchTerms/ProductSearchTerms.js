@@ -179,7 +179,7 @@ const ProductSearchTerms = ({ data, asin, onSelectionChanged }) => {
         cellRenderer: (p) => CurrencyCode(p.value),
       },
       {
-        headerName: t("Orders"),
+        headerName: t("Purchases"),
         field: "orders",
         minWidth: 90,
         cellRenderer: (p) => CurrencyFormat(p.value ?? 0),

@@ -239,13 +239,14 @@ const AgTable = forwardRef(function AgTable(
         return {
           ...col,
           order: (matched.order !== undefined && matched.order !== 9999) ? matched.order : fallbackOrder,
-          hide: matched.isDisplay === false,
+          hide: col.lockVisible ? false : matched.isDisplay === false,
           ...(matched.width ? { width: matched.width, flex: null } : {}),
         };
       }
       return {
         ...col,
         order: fallbackOrder,
+        hide: false,
       };
     });
   }, [normalizedColumnDefs, savedCols]);
@@ -295,9 +296,15 @@ const AgTable = forwardRef(function AgTable(
       .sort((a, b) => (a._originalIndex ?? 0) - (b._originalIndex ?? 0));
 
     // 2. Visible user columns sorted strictly by order ascending
-    const userVisibleCols = activeCols
+    let userVisibleCols = activeCols
       .filter((c) => !c._isInternal && !c.hide)
       .sort((a, b) => ((a.order ?? 999) - (b.order ?? 999)) || ((a._originalIndex ?? 0) - (b._originalIndex ?? 0)));
+
+    const tagIndex = userVisibleCols.findIndex((c) => c.field === "isNew" || c.colId === "isNew");
+    if (tagIndex > 1 && String(savePageName || "").startsWith("Recommendation_") && (userVisibleCols[tagIndex]?.order ?? 999) >= userVisibleCols.length) {
+      const [tagCol] = userVisibleCols.splice(tagIndex, 1);
+      userVisibleCols.splice(1, 0, tagCol);
+    }
 
     // 3. Hidden columns placed at the end
     const hiddenCols = activeCols
@@ -324,7 +331,7 @@ const AgTable = forwardRef(function AgTable(
         applyOrder: true,
       });
     }
-  }, [ref]);
+  }, [ref, savePageName]);
 
   // ── Fetch Custom Columns from API on mount ───────────────────────────────
   useEffect(() => {
@@ -359,7 +366,7 @@ const AgTable = forwardRef(function AgTable(
             title: col.title,
             field: col.field,
             order: matched.order ?? (index + 1),
-            isDisplay: Boolean(matched.isDisplay),
+            isDisplay: col.lockVisible ? true : Boolean(matched.isDisplay),
             ...(matched.width ? { width: matched.width } : {}),
           };
         }
@@ -367,7 +374,7 @@ const AgTable = forwardRef(function AgTable(
           title: col.title,
           field: col.field,
           order: 9999,
-          isDisplay: false,
+          isDisplay: Boolean(col.lockVisible || col.isDefault),
         };
       });
 

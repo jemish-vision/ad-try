@@ -39,6 +39,7 @@ const sellerConfigSchema = new mongoose.Schema(
         dataDeletionStoppedBy: { type: mongoose.Schema.Types.ObjectId, ref: "user", default: null },
         deletionReminder15SentAt: { type: Date, default: null },
         deletionReminder1SentAt: { type: Date, default: null },
+        newConnectionEmailSentAt: { type: Date, default: null },
     },
     { timestamps: true }
 );

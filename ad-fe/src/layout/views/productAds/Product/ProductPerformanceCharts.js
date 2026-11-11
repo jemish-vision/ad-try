@@ -405,8 +405,8 @@ const ProductPerformanceCharts = ({ date, searchName, status, type, conditionObj
                 <div className="flex flex-wrap" style={{ gap: 14 }}>
                     {/* 1 — Orders */}
                     <ChartCard
-                        title={t("Orders")}
-                        subtitle={t("Top 10 products by orders")}
+                        title={t("Purchases")}
+                        subtitle={t("Top 10 products by purchases")}
                         icon="📦"
                         data={ordersData}
                         dataKey="orders"

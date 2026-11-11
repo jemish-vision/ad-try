@@ -74,7 +74,7 @@ const { logAudit } = require("../helpers/auditHelper");
 const { stageReportFileInRedis } = require("../services/reportFileStager.service");
 const { processStagedReportBatches } = require("../services/reportBatchWriter.service");
 const { getRunManifest } = require("../services/reportStaging.service");
-const { linkReportHistory } = require("../services/reportHistoryCompletion.service");
+const { linkReportHistory, finalizeReportHistory } = require("../services/reportHistoryCompletion.service");
 
 exports.cronGenerateSearchTermReport = async (generateWeeklyReport = false, generateBiWeeklyReport = false, pastSyncObj = null) => {
     try {
@@ -86,7 +86,7 @@ exports.cronGenerateSearchTermReport = async (generateWeeklyReport = false, gene
         const { profileId, configId, cronjobid, recurring = true } = pastSyncObj ?? {};
         const cronName = generateBiWeeklyReport
             ? "BiWeekly Report"
-            : generateWeeklyReport || pastSyncObj != null
+            : generateWeeklyReport || pastSyncObj?.isWeekly
             ? "Weekly Report"
             : "Search Term Report";
 
@@ -139,23 +139,29 @@ exports.cronGenerateSearchTermReport = async (generateWeeklyReport = false, gene
                     if (pastSyncObj.endDate) endDate = pastSyncObj.endDate;
                 }
 
-                let getCronData;
-                if (recurring) {
-                    getCronData = await cronJobHistorySchema.findOneAndUpdate(
-                        {
-                            configId: profile.configId,
-                            profileId: profile.profileId,
-                            cronName: cronName,
-                            historyDate: currentDate,
-                        },
-                        {
-                            $set: {
-                                status: "PENDING",
-                            }
-                        },
-                        { new: true, upsert: true }
-                    ).lean();
+                let getCronData = null;
+              if (recurring) {
+                try {
+                  getCronData = new cronJobHistorySchema({
+                    configId: profile.configId,
+                    profileId: profile.profileId,
+                    cronName: cronName,
+                    historyDate: currentDate,
+                    status: "PENDING",
+                    details: {
+                      startedAt: new Date().toISOString(),
+                      startDate,
+                      endDate,
+                    },
+                  });
+                  await getCronData.save();
+                } catch (saveErr) {
+                  cron_logs({
+                    message: `[${cronName}] Failed to create cron history for profile ${profile.profileId}: ${saveErr.message}`,
+                    log_type: "warn",
+                  });
                 }
+              }
                 const reportSpResponse = await spGenerateReport(
                     profile.profileId,
                     startDate,

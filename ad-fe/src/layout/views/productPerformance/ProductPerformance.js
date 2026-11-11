@@ -13,7 +13,7 @@ import { ApiGetProductTrend } from "../../../api-wrapper/productPerformance/ApiP
 
 const METRICS = [
   { value: "sales", label: "Total Sales", type: "currency" },
-  { value: "orders", label: "Orders", type: "integer" },
+  { value: "orders", label: "Purchases", type: "integer" },
   { value: "adSpend", label: "Ad Spend", type: "currency" },
   { value: "adSales", label: "Ad Sales", type: "currency" },
   { value: "acos", label: "ACoS", type: "percent", lowerIsBetter: true },
@@ -275,13 +275,13 @@ const InventoryPopover = ({ row }) => {
 // Available metric rows for the product detail modal matching reference screenshot
 const METRIC_ROWS = [
   { key: "sales", label: "Total Sales", type: "currency", color: "emerald" },
-  { key: "orders", label: "Total Orders", type: "integer", color: "rose" },
+  { key: "orders", label: "Total Purchases", type: "integer", color: "rose" },
   { key: "units", label: "Total Units", type: "integer", color: "rose" },
   { key: "organicSales", label: "Organic Sales", type: "currency", color: "emerald" },
   { key: "organicOrders", label: "Organic Units", type: "integer", color: "rose" },
   { key: "adSpend", label: "Ad Spend", type: "currency", color: "indigo" },
   { key: "adSales", label: "Ad Sales", type: "currency", color: "blue" },
-  { key: "adOrders", label: "Ad Orders", type: "integer", color: "amber" },
+  { key: "adOrders", label: "Ad Purchases", type: "integer", color: "amber" },
   { key: "roas", label: "ROAS", type: "ratio", color: "blue" },
   { key: "acos", label: "ACOS", type: "percent", color: "amber", lowerIsBetter: true },
   { key: "tacos", label: "TACOS", type: "percent", color: "amber", lowerIsBetter: true },

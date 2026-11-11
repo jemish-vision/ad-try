@@ -3,6 +3,25 @@
 // Pure question interpretation. No model calls, authorization or data reads.
 const SUMMARY_METRICS = Object.freeze(['spend', 'sales', 'acos', 'roas', 'orders', 'cpc', 'cvr']);
 
+function isGujlish(message = '') {
+  if (typeof message !== 'string') return false;
+  const text = message.toLowerCase().trim();
+  if (!text) return false;
+
+  const gujlishPatterns = [
+    /\b(?:kem\s+ch[ho]+|su\s+chale|shu\s+chale|namaste|namaskar|krupya|dhanyavad|aabhar|saroo|maja\s+ma|majama)\b/i,
+    /\b(?:shu|su|kem|kevi\s*r[ie]+te|kevo|keva|kevu|ketl[oaeu]|ky[aoei]|kyare|koni|kayi|kya\s*thi)\b/i,
+    /\b(?:tame|tamaro|tamari|tamaru|tamare|maro|mari|maru|mane|aapne|aapno|aapnu|amaro|amari|amaru)\b/i,
+    /\b(?:chhe|che|chho|cho|chhu|chu|nathi|hato|hati|hatu|hata|hovanu)\b/i,
+    /\b(?:thay[oaeu]|thay|thai|thashe|thavanu|aavy[oaeu]|aavti|aavshe|batav[oae]|batao|dekhao|aapo|kaho|janav[oae]|samjaav[oae]|samjav)\b/i,
+    /\b(?:kar[oaeu]|kary[oaeu]|karv[oaeu]|karvanu|chale|chaale|joiye|joie|shak[oaeu]|sak[oaeu])\b/i,
+    /\b(?:aaj|aaje|gaikaal|gaikale|gai\s*kaal(?:e)?|gai\s*kal(?:e)?|kale|kaale|divas|divaso|athvadiy[ue]|athwadyu|mahino|mahine|samay|vakhat)\b/i,
+    /\b(?:kharch|kharach|kamani|vechan|munāfo|munafo|faayd[oae]|faid[oae]|nuksan|bagad|saru|saras|kharab|vadhare|vadhu|och[oaeu]|farak|farq|matlab|arth|sarkhamani|paisa)\b/i,
+  ];
+
+  return gujlishPatterns.some(pattern => pattern.test(text));
+}
+
 function extractExplicitSingleMetric(message = '') {
   const text = typeof message === 'string' ? message.toLowerCase()
     .replace(/cost\s+per\s+click/g, 'cpc')
@@ -20,8 +39,8 @@ function extractExplicitSingleMetric(message = '') {
   const patterns = [
     ['acos', /\bacos\b/i],
     ['roas', /\broas\b/i],
-    ['spend', /\b(?:spend|spent|cost|ad\s*spend)\b/i],
-    ['sales', /\b(?:sales|ad\s*sales|revenue)\b/i],
+    ['spend', /\b(?:spend|spent|cost|ad\s*spend|kharch|kharach)\b/i],
+    ['sales', /\b(?:sales|ad\s*sales|revenue|kamani|vechan)\b/i],
     ['orders', /\b(?:orders?|units?\s*ordered)\b/i],
     ['clicks', /\bclicks?\b/i],
     ['impressions', /\bimpressions?\b/i],
@@ -40,11 +59,11 @@ function extractExplicitSingleMetric(message = '') {
 function hasExplicitComparisonIntent(message = '') {
   const text = typeof message === 'string' ? message.toLowerCase() : '';
   if (!text) return false;
-  return /\b(?:compare|compared|comparison|vs\.?|versus|against|than|diff|difference|growth|increase|decrease|spike|drop|why|higher|lower|change)\b/i.test(text);
+  return /\b(?:compare|compared|comparison|vs\.?|versus|against|than|diff|difference|growth|increase|decrease|spike|drop|why|higher|lower|change|sarkhamani|farak|farq|vadhyo|vadhare|ghatyo|ochu)\b/i.test(text);
 }
 
 function isPerformanceSummaryQuestion(message = '') {
-  return /\b(?:summari[sz]e|summary|overview|how\s+(?:did|are|am)\b.*\b(?:go|doing|perform(?:ing)?))\b/i.test(message);
+  return /\b(?:summari[sz]e|summary|overview|how\s+(?:did|are|am)\b.*\b(?:go|doing|perform(?:ing)?)|kevu\s+rahyu|kevu\s+chhe|performance\s+kasto\s+chhe|report\s+aapo|summary\s+aapo)\b/i.test(message);
 }
 
 function normalizeKnownWasteQuestion(args, message) {
@@ -54,13 +73,15 @@ function normalizeKnownWasteQuestion(args, message) {
 
   const relativeCampaigns = /\bcampaigns?\b.*\bspending\b.*\ba lot\b.*\bfew sales\b/i.test(message);
   const searchTermsWithoutOrders = /\bsearch\s+terms?\b.*\bclicks?\b.*\b(?:no|zero|0) orders?\b/i.test(message);
-  if (!relativeCampaigns && !searchTermsWithoutOrders) return args;
+  const generalWaste = /\b(?:check\s+wasted\s+spend|wasted\s+spend|wasting\s+money|paisa\s+waste)\b/i.test(message);
+  if (!relativeCampaigns && !searchTermsWithoutOrders && !generalWaste) return args;
 
+  const targetGroup = relativeCampaigns ? 'campaign' : searchTermsWithoutOrders ? 'search_term' : (args.groupBy?.[0] || 'keyword');
   return {
     ...args,
     category: 'waste',
     period: args.period || { preset: 'last_7_days' },
-    groupBy: [relativeCampaigns ? 'campaign' : 'search_term'],
+    groupBy: [targetGroup],
     metrics: ['spend', 'sales', 'orders', 'clicks', 'acos'],
     filters: relativeCampaigns ? [] : [
       { field: 'clicks', operator: 'gt', value: 0 },
@@ -128,22 +149,37 @@ function isEfficientKeywordQuestion(message) {
 }
 
 function normalizeKeywordGrowthQuestion(args, message, reportContext) {
-  if (!isEfficientKeywordQuestion(message)) return args;
-  const targetAcos = requestedTargetAcos(message, reportContext);
+  if (isEfficientKeywordQuestion(message)) {
+    const targetAcos = requestedTargetAcos(message, reportContext);
+    return {
+      ...args,
+      category: 'growth',
+      groupBy: ['keyword'],
+      metrics: ['spend', 'sales', 'orders', 'clicks', 'impressions', 'acos'],
+      filters: [],
+      sort: { field: 'acos', direction: 'asc' },
+      comparison: { mode: 'none' },
+      presentation: 'table',
+      entity: null,
+      offset: 0,
+      analysis: targetAcos === null ? {} : { targetAcos },
+    };
+  }
 
-  return {
-    ...args,
-    category: 'growth',
-    groupBy: ['keyword'],
-    metrics: ['spend', 'sales', 'orders', 'clicks', 'impressions', 'acos'],
-    filters: [],
-    sort: { field: 'acos', direction: 'asc' },
-    comparison: { mode: 'none' },
-    presentation: 'table',
-    entity: null,
-    offset: 0,
-    analysis: targetAcos === null ? {} : { targetAcos },
-  };
+  const isGeneralGrowth = /\b(?:find\s+growth\s+opportunities|growth\s+opportunities|growth|grow|search\s+terms?)\b/i.test(message);
+  if (isGeneralGrowth || args.category === 'growth') {
+    const hasSort = Boolean(args.sort?.field);
+    const hasFilters = Array.isArray(args.filters) && args.filters.length > 0;
+    return {
+      ...args,
+      category: 'growth',
+      groupBy: args.groupBy?.length ? args.groupBy : ['search_term'],
+      sort: hasSort ? args.sort : { field: 'orders', direction: 'desc' },
+      filters: hasFilters ? args.filters : [{ field: 'orders', operator: 'gt', value: 0 }],
+    };
+  }
+
+  return args;
 }
 
 function normalizeQuestionReportArguments(args, message, reportContext) {
@@ -198,6 +234,9 @@ function messageMentionsTimePeriod(message = '') {
   const patterns = [
     // relative day/range words
     /\b(?:today|yesterday|tonight)\b/i,
+    /\b(?:aaj|aaje|kal|kale|gai\s*kaale?|gai\s*kale?|gaikaale?|gaikale?)\b/i,
+    /\b(?:aa|gaya|chhe?l+a|che?l+a|pahela)\s+(?:athvadiyu|athwadyu|athvadiye|divas|mahino|mahine|week|month)\b/i,
+    /\b\d+\s*divas(?:o)?\b/i,
     /\bthis\s+(?:week|month|year|quarter|morning|afternoon|evening)\b/i,
     /\blast\s+(?:week|month|year|quarter|night)\b/i,
     /\b(?:last|past|previous|prior|trailing|in|over)\s+(?:the\s+)?\d+\s*(?:day|week|month|year|quarter)s?\b/i,
@@ -235,13 +274,13 @@ function explicitQuestionPeriod(message) {
 
   const matches = [];
   for (const [preset, pattern] of [
-    ['this_week', /\bthis week\b/i],
-    ['last_week', /\blast week\b/i],
-    ['yesterday', /\byesterday\b/i],
-    ['today', /\btoday\b/i],
-    ['last_7_days', /\b(?:last|past|in|over)\s+(?:the\s+)?7\s+days\b/i],
-    ['last_14_days', /\b(?:last|past|in|over)\s+(?:the\s+)?14\s+days\b/i],
-    ['last_30_days', /\b(?:last|past|in|over)\s+(?:the\s+)?30\s+days\b/i],
+    ['this_week', /\b(?:this\s+week|aa\s+athvadi(?:yu|ye)|aa\s+athwadyu|aa\s+week)\b/i],
+    ['last_week', /\b(?:last\s+week|gaya\s+athvadi(?:yu|ye)|gaya\s+athwadyu|gaya\s+week|pachhla\s+week)\b/i],
+    ['yesterday', /\b(?:yesterday|gai\s*kaal(?:e)?|gai\s*kal(?:e)?|gaikaal(?:e)?|gaikal(?:e)?|kal(?:e)?)\b/i],
+    ['today', /\b(?:today|aaj(?:e)?)\b/i],
+    ['last_7_days', /\b(?:(?:last|past|in|over)\s+(?:the\s+)?7\s+days|(?:chhe?l+a|che?l+a|pahela)\s*(?:na\s*)?7\s*divas)\b/i],
+    ['last_14_days', /\b(?:(?:last|past|in|over)\s+(?:the\s+)?14\s+days|(?:chhe?l+a|che?l+a|pahela)\s*(?:na\s*)?14\s*divas)\b/i],
+    ['last_30_days', /\b(?:(?:last|past|in|over)\s+(?:the\s+)?30\s+days|(?:chhe?l+a|che?l+a|pahela)\s*(?:na\s*)?30\s*divas)\b/i],
   ]) {
     if (pattern.test(message)) matches.push(preset);
   }
@@ -252,6 +291,7 @@ function explicitQuestionPeriod(message) {
 }
 
 module.exports = {
+  isGujlish,
   SUMMARY_METRICS,
   extractExplicitSingleMetric,
   hasExplicitComparisonIntent,

@@ -92,6 +92,20 @@ const filterSchema = require("../models/filter.model");
 const { buildDataDeletedEmail } = require("../../emailTemplate/buildDataDeletedEmail");
 
 exports.cronDeleteExpiredAccountsData = async () => {
+  const currentDate = moment().tz("Asia/Kolkata").format("YYYY-MM-DD");
+  let cronDoc = null;
+  let grandTotalDeleted = 0;
+  try {
+    cronDoc = new cronJobHistorySchema({
+      cronName: "Account Data Cleanup",
+      historyDate: currentDate,
+      configId: null,
+      profileId: null,
+      status: "PENDING",
+      details: { startedAt: new Date().toISOString() },
+    });
+    await cronDoc.save();
+  } catch (_e) {}
   cron_logs({
     message: `India Time = ${moment().tz("Asia/Kolkata").format("HH:mm")} Cleanup Expired Inactive Accounts`,
     log_type: "info",
@@ -420,6 +434,16 @@ exports.cronDeleteExpiredAccountsData = async () => {
       });
     }
 
+    if (cronDoc?._id) {
+      await cronJobHistorySchema.findByIdAndUpdate(cronDoc._id, {
+        status: "COMPLETED",
+        recordsCount: grandTotalDeleted,
+        $set: {
+          "details.completedAt": new Date().toISOString(),
+          "details.totalDeleted": grandTotalDeleted,
+        },
+      });
+    }
     cron_logs({
       message: "Account Data Cleanup cron completed successfully.",
       log_type: "info",
@@ -430,5 +454,14 @@ exports.cronDeleteExpiredAccountsData = async () => {
       message: `Account Data Cleanup Main Error: ${error.message}`,
       log_type: "error",
     });
+    if (cronDoc?._id) {
+      await cronJobHistorySchema.findByIdAndUpdate(cronDoc._id, {
+        status: "FAILED",
+        error: error.message,
+        $set: {
+          "details.failedAt": new Date().toISOString(),
+        },
+      });
+    }
   }
 };

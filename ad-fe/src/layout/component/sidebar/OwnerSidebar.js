@@ -1,5 +1,5 @@
+import { switchTheme } from "../../../helper/theme/switchTheme";
 import React, { useState, useEffect, useContext } from "react";
-import { flushSync } from "react-dom";
 import logo from "../../../common/logo/logo.png";
 import fullLogo from "../../../common/logo/full-logo.png";
 import fullLogoDark from "../../../common/logo/full-logo-dark.png";
@@ -24,26 +24,40 @@ import { ApiGetProfile } from "../../../api-wrapper/customer/ApiCustomer";
 import { AppTooltip } from "../../../components/ui/AppTooltip";
 import { ProfileContext } from "src/helper/usecontext/useContext";
 
-// Concise nav entries for Super Admin
-const OWNER_NAV = [
-  { name: "Dashboard", icon: <House size={17} weight="regular" />, path: "/admin-dashboard" },
-
-
-  { name: "Organizations", icon: <Buildings size={17} weight="regular" />, path: "/organizations" },
-  { name: "Users", icon: <Users size={17} weight="regular" />, path: "/users" },
-  { name: "Pages", icon: <FileText size={17} weight="regular" />, path: "/pages" },
-  { name: "Plans", icon: <Package size={17} weight="regular" />, path: "/packages" },
-  { name: "Role", icon: <ShieldCheck size={17} weight="regular" />, path: "/role" },
-  { name: "Retention", icon: <ClockCountdown size={17} weight="regular" />, path: "/retention" },
-  { name: "Cron Job", icon: <ChartLineUp size={17} weight="regular" />, path: "/cron-job" },
-  { name: "API Capacity & Usage", icon: <Gauge size={17} weight="regular" />, path: "/api-capacity" },
-  { name: "Holiday/Special Days", icon: <CalendarCheck size={17} weight="regular" />, path: "/holiday" },
-  { name: "Rule Blocked Time", icon: <Prohibit size={17} weight="regular" />, path: "/rule-blocked-time" },
-  { name: "Support Ticket", icon: <Headset size={17} weight="regular" />, path: "/support-ticket" },
-  { name: "Chatbot Gaps", icon: <ChatCenteredText size={17} weight="regular" />, path: "/unanswered-questions" },
-
-  /* { name: "User Guide", icon: <BookOpen size={17} weight="regular" />, path: "/user-guide" }, */
+// Categorized structured nav entries for Super Admin
+const OWNER_NAV_SECTIONS = [
+  {
+    title: "Overview",
+    items: [
+      { name: "Dashboard", icon: <House size={17} weight="regular" />, path: "/admin-dashboard" },
+    ],
+  },
+  {
+    title: "System & Live Sync",
+    items: [
+      { name: "Live Sync Monitor", icon: <ShieldCheck size={17} weight="regular" />, path: "/sync-diagnostic", isLive: true },
+      { name: "Cron Job", icon: <ChartLineUp size={17} weight="regular" />, path: "/cron-job" },
+      { name: "API Capacity & Usage", icon: <Gauge size={17} weight="regular" />, path: "/api-capacity" },
+      { name: "Rule Blocked Time", icon: <Prohibit size={17} weight="regular" />, path: "/rule-blocked-time" },
+      { name: "Holiday/Special Days", icon: <CalendarCheck size={17} weight="regular" />, path: "/holiday" },
+    ],
+  },
+  {
+    title: "Platform Management",
+    items: [
+      { name: "Organizations", icon: <Buildings size={17} weight="regular" />, path: "/organizations" },
+      { name: "Users", icon: <Users size={17} weight="regular" />, path: "/users" },
+      { name: "Pages", icon: <FileText size={17} weight="regular" />, path: "/pages" },
+      { name: "Plans", icon: <Package size={17} weight="regular" />, path: "/packages" },
+      { name: "Role", icon: <ShieldCheck size={17} weight="regular" />, path: "/role" },
+      { name: "Retention", icon: <ClockCountdown size={17} weight="regular" />, path: "/retention" },
+      { name: "Chatbot Gaps", icon: <ChatCenteredText size={17} weight="regular" />, path: "/unanswered-questions" },
+      { name: "Support Ticket", icon: <Headset size={17} weight="regular" />, path: "/support-ticket" },
+    ],
+  },
 ];
+
+const OWNER_NAV = OWNER_NAV_SECTIONS.flatMap((s) => s.items);
 
 function OwnerSidebar({ open, setOpen }) {
   const { t } = useTranslation();
@@ -90,53 +104,7 @@ function OwnerSidebar({ open, setOpen }) {
       .catch(() => { });
   }, []);
 
-  const toggleTheme = (e) => {
-    const nextTheme = theme === "light" ? "dark" : "light";
-
-    const x = e && e.clientX !== undefined ? `${e.clientX}px` : "50%";
-    const y = e && e.clientY !== undefined ? `${e.clientY}px` : "50%";
-    document.documentElement.style.setProperty("--vt-x", x);
-    document.documentElement.style.setProperty("--vt-y", y);
-
-    // Amazon Ads click ripple & spark effect
-    const origin = document.createElement("div");
-    origin.className = "ad-click-origin";
-    origin.style.setProperty("--vt-x", x);
-    origin.style.setProperty("--vt-y", y);
-
-    for (let i = 0; i < 3; i++) {
-      const ring = document.createElement("div");
-      ring.className = "ad-click-ring";
-      origin.appendChild(ring);
-    }
-
-    const spark = document.createElement("div");
-    spark.className = "ad-click-spark";
-    origin.appendChild(spark);
-
-    const smile = document.createElement("div");
-    smile.className = "ad-smile-arc";
-    origin.appendChild(smile);
-
-    document.body.appendChild(origin);
-    setTimeout(() => origin.remove(), 1000);
-
-    const updateTheme = () => {
-      setTheme(nextTheme);
-      localStorage.setItem("theme", nextTheme);
-      document.documentElement.setAttribute("data-theme", nextTheme);
-      window.dispatchEvent(new Event("themeChanged"));
-    };
-
-    if (!document.startViewTransition) {
-      updateTheme();
-      return;
-    }
-
-    document.startViewTransition(() => {
-      updateTheme();
-    });
-  };
+  const toggleTheme = (e) => switchTheme(e, setTheme);
 
   useEffect(() => {
     const handleThemeChange = () => setTheme(getActiveTheme());
@@ -275,10 +243,10 @@ function OwnerSidebar({ open, setOpen }) {
                   <img
                     src={theme === "dark" ? fullLogoDark : fullLogo}
                     alt="AdvertiseIQ"
-                    style={{ 
-                      height: theme === "dark" ? "140px" : "54px", 
-                      width: "auto", 
-                      maxWidth: "100%", 
+                    style={{
+                      height: theme === "dark" ? "140px" : "54px",
+                      width: "auto",
+                      maxWidth: "100%",
                       objectFit: "contain",
                       margin: theme === "dark" ? "-43px 0" : "0"
                     }}
@@ -316,31 +284,80 @@ function OwnerSidebar({ open, setOpen }) {
 
           {/* ── Navigation ── */}
           <nav className="owner-nav-area">
-            <ul className="owner-nav-list">
-              {OWNER_NAV.map((item, i) => {
-                const isActive = location.pathname === item.path;
-                const navLink = (
-                  <Link
-                    to={item.path}
-                    className="owner-nav-link"
-                    onClick={() => { if (window.innerWidth < 992) setOpen(false); }}
-                  >
-                    <span className="owner-nav-icon">{item.icon}</span>
-                    {isExpanded && <span className="owner-nav-text">{t(item.name)}</span>}
-                    {isExpanded && isActive && <CaretRight size={10} className="owner-nav-caret" />}
-                  </Link>
-                );
-                return (
-                  <li key={i} className={`owner-nav-item${isActive ? " is-active" : ""}`}>
-                    {!isExpanded ? (
-                      <AppTooltip text={t(item.name)} side="right">
-                        {navLink}
-                      </AppTooltip>
-                    ) : navLink}
-                  </li>
-                );
-              })}
-            </ul>
+            <div className="owner-nav-list" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {OWNER_NAV_SECTIONS.map((section, sIdx) => (
+                <div key={sIdx} className="owner-nav-section" style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                  {isExpanded && section.title && (
+                    <div
+                      style={{
+                        fontSize: "10.5px",
+                        fontWeight: "700",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                        color: "#94a3b8",
+                        padding: "6px 10px 2px 10px",
+                      }}
+                    >
+                      {t(section.title)}
+                    </div>
+                  )}
+                  <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: "2px" }}>
+                    {section.items.map((item, i) => {
+                      const isActive = location.pathname === item.path;
+                      const navLink = (
+                        <Link
+                          to={item.path}
+                          className="owner-nav-link"
+                          onClick={() => { if (window.innerWidth < 992) setOpen(false); }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "10px",
+                            padding: "8px 12px",
+                            borderRadius: "8px",
+                            textDecoration: "none",
+                            position: "relative",
+                          }}
+                        >
+                          <span className="owner-nav-icon">{item.icon}</span>
+                          {isExpanded && (
+                            <span className="owner-nav-text" style={{ flex: 1, fontSize: "13px", fontWeight: isActive ? "600" : "500" }}>
+                              {t(item.name)}
+                            </span>
+                          )}
+                          {isExpanded && item.isLive && (
+                            <span
+                              style={{
+                                background: isActive ? "#2563eb" : "#dcfce7",
+                                color: isActive ? "#ffffff" : "#166534",
+                                fontSize: "10px",
+                                fontWeight: "700",
+                                padding: "1px 6px",
+                                borderRadius: "4px",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.04em",
+                              }}
+                            >
+                              Live
+                            </span>
+                          )}
+                          {isExpanded && isActive && !item.isLive && <CaretRight size={10} className="owner-nav-caret" />}
+                        </Link>
+                      );
+                      return (
+                        <li key={i} className={`owner-nav-item${isActive ? " is-active" : ""}`}>
+                          {!isExpanded ? (
+                            <AppTooltip text={t(item.name)} side="right">
+                              {navLink}
+                            </AppTooltip>
+                          ) : navLink}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ))}
+            </div>
           </nav>
 
           {/* ── Footer ── */}

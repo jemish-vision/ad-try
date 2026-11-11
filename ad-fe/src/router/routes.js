@@ -63,6 +63,7 @@ const DealsDashboard = lazy(() => import("../layout/views/deals-dashboard/DealsD
 const UserGuide = lazy(() => import("../layout/views/userGuide/UserGuide"));
 const Profile = lazy(() => import("../layout/views/Profile/Profile"));
 const PurchasePlans = lazy(() => import("../layout/views/PurchasePlans"));
+const SyncDiagnostic = lazy(() => import("../layout/views/superAdmin/SyncDiagnostic"));
 
 const PagesRoutes = [
   {
@@ -474,4 +475,11 @@ const PagesRoutes = [
     name: "AI Assistant",
   },
 ];
+PagesRoutes.push({
+  path: "/sync-diagnostic",
+  component: <SyncDiagnostic />,
+  exact: true,
+  name: "Sync Diagnostic",
+});
+
 export default PagesRoutes;

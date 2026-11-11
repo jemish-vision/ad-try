@@ -40,7 +40,7 @@ const CAMPAIGN_STATUS_STYLES = {
 // ─── Main Component ───────────────────────────────────────────────────────────
 const KeywordAnalysis = () => {
   const { t } = useTranslation();
-  const { profileId, selectedAdType, selectedDate, setSelectedDate } = useContext(ProfileContext);
+  const { profileId, selectedAdType, selectedDate } = useContext(ProfileContext);
 
   const campaignStatusOptions = React.useMemo(() => Object.keys(CAMPAIGN_STATUS_STYLES).map(key => ({
     value: key,
@@ -115,6 +115,7 @@ const KeywordAnalysis = () => {
 
   // ── Grid state ────────────────────────────────────────────────────────────
   const [gridData, setGridData] = useState([]);
+  const [gridDateRange, setGridDateRange] = useState({});
   const [totalRecords, setTotalRecords] = useState(0);
   const [loading, setLoading] = useState(true);
   const [gridPage, setGridPage] = useState(1);
@@ -140,7 +141,7 @@ const KEYWORD_ANALYSIS_COLUMNS = [
   { title: "Clicks" },
   { title: "Spend" },
   { title: "Sales" },
-  { title: "Orders" },
+  { title: "Purchases" },
   { title: "CPC" },
   { title: "CTR" },
   { title: "CVR" },
@@ -346,6 +347,7 @@ const KEYWORD_ANALYSIS_COLUMNS = [
 
       if (res?.isSuccess) {
         setGridData(res.getKeywordAnalysisData || []);
+        setGridDateRange({ fromDate: fromDateStr, toDate: toDateStr });
         setTotalRecords(res.totalKeywordAnalysisData || 0);
         setGridPage(page);
       }
@@ -560,6 +562,8 @@ const KEYWORD_ANALYSIS_COLUMNS = [
           <KeywordAnalysisGrid
             onRefresh={handleRefresh}
             rowData={gridData}
+            fromDate={gridDateRange.fromDate}
+            toDate={gridDateRange.toDate}
             totalRecords={totalRecords}
             loading={loading}
             currentPage={gridPage}

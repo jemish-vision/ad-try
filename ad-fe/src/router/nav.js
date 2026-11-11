@@ -350,4 +350,11 @@ const nav = [
   },
 ];
 
+nav.push({
+  name: "Live Sync Monitor",
+  id: "nav-sync-diagnostic",
+  icon: <ShieldCheck size={18} weight="regular" />,
+  path: "/sync-diagnostic",
+});
+
 export default nav;

@@ -132,17 +132,18 @@ async function resolveHourlyTargetingBaseline({ rule, type, targeting, existingA
     const model = dependencies.baselineModel || require("../models/hourlyTargetingBaseline.model");
     const frozen = await model.findById(identity._id).lean();
     if (frozen) {
+        if (frozen.bootstrapSource === "FIRST_OBSERVED_BID") {
+            throw new Error("Hourly targeting baseline was seeded from an unverified report bid; reconcile it before resuming");
+        }
         const value = bid(frozen.baselineBid);
         if (value === null) throw new Error("Stored hourly targeting baseline is invalid");
         return value;
     }
 
     const historyModel = dependencies.historyModel || require("../models/affectedCampaignByRule.model");
-    let chosen = await bootstrapFromHistory(historyModel, identity, existingActive);
+    const chosen = await bootstrapFromHistory(historyModel, identity, existingActive);
     if (!chosen) {
-        const fallback = bid(targeting.keywordBid);
-        if (fallback === null) throw new Error("Cannot establish an hourly targeting baseline from invalid bids");
-        chosen = { baselineBid: fallback, bootstrapSource: "FIRST_OBSERVED_BID", bootstrapHistoryId: null };
+        throw new Error("No verified hourly targeting baseline; reconcile the live bid before resuming");
     }
     let record;
     try {
@@ -152,6 +153,9 @@ async function resolveHourlyTargetingBaseline({ rule, type, targeting, existingA
         if (err.code !== 11000) throw err;
         record = await model.findById(identity._id).lean();
         if (!record) throw err;
+    }
+    if (record?.bootstrapSource === "FIRST_OBSERVED_BID") {
+        throw new Error("Hourly targeting baseline was seeded from an unverified report bid; reconcile it before resuming");
     }
     const value = bid(record?.baselineBid);
     if (value === null) throw new Error("Failed to freeze an hourly targeting baseline");

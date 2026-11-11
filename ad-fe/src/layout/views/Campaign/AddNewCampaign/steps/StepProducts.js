@@ -298,7 +298,7 @@ const StepProducts = ({ formik, currencySymbol = "₹" }) => {
                                 </div>
                             )}
                         </div>
-                        <button type="button" className="customize-button clicked m-0 gap-0" style={{ height: "36px", display: "inline-flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap" }} onClick={handleSearch} disabled={loading}>
+                        <button type="button" className="btn-campaign-primary px-5" style={{ height: "36px", display: "inline-flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap" }} onClick={handleSearch} disabled={loading}>
                             {loading ? t("Searching...") : t("Search")}
                         </button>
                     </div>

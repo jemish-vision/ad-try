@@ -46,7 +46,7 @@ function ViewCampaign(props) {
   const dispatch = useDispatch();
 
   const { campaignDate, campaignDetails, viewPress } = props;
-  const [date, setDate] = useState([]);
+  const [date, setDate] = useState(() => campaignDate || []);
   const [status, setStatus] = useState("");
   const [searchTermStatus, setSearchTermStatus] = useState("");
   const [keywordStatus, setKeywordStatus] = useState("");
@@ -251,7 +251,7 @@ function ViewCampaign(props) {
     },
     { headerName: t("roas"), field: "roas" },
     {
-      headerName: t("Orders"),
+      headerName: t("Purchases"),
       field: "orders",
       cellRenderer: (params) => CurrencyFormat(params.value ?? 0),
     },
@@ -410,7 +410,7 @@ function ViewCampaign(props) {
       },
     },
     {
-      headerName: t("Orders"),
+      headerName: t("Purchases"),
       field: "totalOrders",
       sortable: true,
       resizable: true,
@@ -509,7 +509,7 @@ function ViewCampaign(props) {
       cellRenderer: (params) => params.value ? CurrencyCode(params.value) : "-",
     },
     {
-      headerName: t("Orders"),
+      headerName: t("Purchases"),
       field: "totalOrders",
       width: 110,
       sortable: true,
@@ -618,7 +618,7 @@ function ViewCampaign(props) {
       cellRenderer: (params) => `${params.value}` || "-",
     },
     {
-      headerName: t("Orders"),
+      headerName: t("Purchases"),
       field: "orders",
       sortable: true,
       resizable: true,
@@ -701,7 +701,7 @@ function ViewCampaign(props) {
       cellRenderer: (params) => `${params.value}` || "-",
     },
     {
-      headerName: t("Orders"),
+      headerName: t("Purchases"),
       field: "orders",
       sortable: true,
       resizable: true,
@@ -1443,7 +1443,7 @@ function ViewCampaign(props) {
         </div>
 
         {/* ── KPI Cards + Chart ── */}
-        <Chart chartLoading={chartLoading} isTotalsLoading={totalsLoading} chartData={chartData} totalRow={sumOfValues} id="view-campaign-chart" />
+        <Chart chartLoading={chartLoading} isTotalsLoading={totalsLoading} chartData={chartData} totalRow={sumOfValues} id="view-campaign-chart" chartId="ViewCampaign" />
 
         {/* ── Accordions ── */}
         <Accordion
@@ -1538,7 +1538,7 @@ function ViewCampaign(props) {
                           <thead className="sticky top-0 z-10 text-xs text-slate-700 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800 font-semibold shadow-sm">
                             <tr>
                               <th className="px-4 py-3.5 text-center whitespace-nowrap bg-slate-100/50 dark:bg-slate-800 border-r border-slate-200 dark:border-slate-800">{type === 0 ? t("day") : type === 1 ? t("week") : t("month")}</th>
-                              {[t("spend"), t("sales"), t("acos"), t("roas"), t("Orders"), t("impressions"), t("cpc"), t("clicks"), t("units"), t("conversion"), t("cvr"), t("ctr"), t("costPerOrder"), t("avgSalesPrice")].map(h => (
+                              {[t("spend"), t("sales"), t("acos"), t("roas"), t("Purchases"), t("impressions"), t("cpc"), t("clicks"), t("units"), t("conversion"), t("cvr"), t("ctr"), t("costPerOrder"), t("avgSalesPrice")].map(h => (
                                 <th key={h} className="px-4 py-3.5 text-center whitespace-nowrap border-r border-slate-200 dark:border-slate-800 last:border-r-0">{h}</th>
                               ))}
                             </tr>

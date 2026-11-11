@@ -1,3 +1,4 @@
+import { switchTheme } from "../theme/switchTheme";
 import React, { useState, useContext, useEffect, useCallback, useMemo, useRef, createContext } from 'react';
 
 import { useTour } from '../../tour';
@@ -291,53 +292,7 @@ function LayoutHeader({ nameShow = false, name, dateShow = false, profileShow, i
     };
 
     const [theme, setTheme] = useState(getActiveTheme());
-    const toggleTheme = (e) => {
-        const nextTheme = theme === "light" ? "dark" : "light";
-
-        const x = e && e.clientX !== undefined ? `${e.clientX}px` : "50%";
-        const y = e && e.clientY !== undefined ? `${e.clientY}px` : "50%";
-        document.documentElement.style.setProperty("--vt-x", x);
-        document.documentElement.style.setProperty("--vt-y", y);
-
-        // Amazon Ads click ripple & spark effect
-        const origin = document.createElement("div");
-        origin.className = "ad-click-origin";
-        origin.style.setProperty("--vt-x", x);
-        origin.style.setProperty("--vt-y", y);
-
-        for (let i = 0; i < 3; i++) {
-            const ring = document.createElement("div");
-            ring.className = "ad-click-ring";
-            origin.appendChild(ring);
-        }
-
-        const spark = document.createElement("div");
-        spark.className = "ad-click-spark";
-        origin.appendChild(spark);
-
-        const smile = document.createElement("div");
-        smile.className = "ad-smile-arc";
-        origin.appendChild(smile);
-
-        document.body.appendChild(origin);
-        setTimeout(() => origin.remove(), 1000);
-
-        const updateTheme = () => {
-            setTheme(nextTheme);
-            localStorage.setItem("theme", nextTheme);
-            document.documentElement.setAttribute("data-theme", nextTheme);
-            window.dispatchEvent(new Event("themeChanged"));
-        };
-
-        if (!document.startViewTransition) {
-            updateTheme();
-            return;
-        }
-
-        document.startViewTransition(() => {
-            updateTheme();
-        });
-    };
+    const toggleTheme = (e) => switchTheme(e, setTheme);
 
     useEffect(() => {
         const handleThemeChange = () => {

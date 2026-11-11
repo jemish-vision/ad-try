@@ -177,7 +177,7 @@ function AgingConfigModal({ profileId, fromDate, toDate, isOpen, onClose }) {
                             </h5>
                         </div>
                         <p style={{ margin: "4px 0 0 32px", color: "#94a3b8", fontSize: 12 }}>
-                            {t("Set minimum total orders per FBA SKU over the lookback window. If actual orders fall below threshold → classified as Dead Inventory.")}
+                            {t("Set minimum total purchases per FBA SKU over the lookback window. If actual purchases fall below threshold → classified as Dead Inventory.")}
                         </p>
                     </div>
                     <ShadcnButton
@@ -211,8 +211,8 @@ function AgingConfigModal({ profileId, fromDate, toDate, isOpen, onClose }) {
                     />
                     <div className="flex flex-wrap" style={{ gap: 10 }}>
                         {[
-                            { label: t("Min Orders"), desc: t("Total orders must be ≥ this") },
-                            { label: t("Lookback Days"), desc: t("Days of history to count orders") },
+                            { label: t("Min Purchases"), desc: t("Total purchases must be ≥ this") },
+                            { label: t("Lookback Days"), desc: t("Days of history to count purchases") },
                             { label: t("Enabled"), desc: t("Toggle monitoring for this SKU") },
                         ].map(h => (
                             <span key={h.label} title={h.desc} style={{
@@ -242,7 +242,7 @@ function AgingConfigModal({ profileId, fromDate, toDate, isOpen, onClose }) {
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                             <thead style={{ position: "sticky", top: 0, background: isDark ? "rgba(30, 41, 59, 0.95)" : "#f8fafc", zIndex: 1 }}>
                                 <tr>
-                                    {[t("Product"), t("ASIN / SKU"), t("Stock"), t("Status"), t("Min Orders"), t("Lookback Days"), t("Enabled")].map(h => (
+                                    {[t("Product"), t("ASIN / SKU"), t("Stock"), t("Status"), t("Min Purchases"), t("Lookback Days"), t("Enabled")].map(h => (
                                         <th key={h} style={{
                                             padding: "10px 12px", textAlign: "left",
                                             color: isDark ? "rgba(255,255,255,0.6)" : "#64748b", fontWeight: 600, fontSize: 11,
@@ -328,8 +328,8 @@ function AgingConfigModal({ profileId, fromDate, toDate, isOpen, onClose }) {
                                             <td style={{ padding: "10px 12px" }}>
                                                 <InlineEditPopup
                                                     value={edit.minOrders ?? 10}
-                                                    title={t("Min Orders")}
-                                                    append={t("orders")}
+                                                    title={t("Min Purchases")}
+                                                    append={t("purchases")}
                                                     onSave={v => saveRow(item, { minOrders: v })}
                                                 />
                                             </td>

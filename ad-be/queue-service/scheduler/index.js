@@ -15,6 +15,7 @@ const { createRedisClient } = require("../config/bullmq.config");
 const { closeQueues } = require("../queues/queues");
 const { registerGracefulShutdown } = require("../shutdown");
 const { closeMongoConnection } = require("../../shared/connection");
+const { isQueueModeEnabled, isShadowModeEnabled } = require("../../shared/automationMode");
 
 const activeCronJobs = new Map();
 let cronChangeStream = null;
@@ -35,6 +36,8 @@ function registerSchedule(cronDoc) {
     activeCronJobs.get(taskKey).stop();
     activeCronJobs.delete(taskKey);
   }
+
+  if (!isQueueModeEnabled() && !isShadowModeEnabled()) return;
 
   if (!cronDoc.isActive || !cronDoc.cronExpression) {
     return;
@@ -185,6 +188,9 @@ function setupChangeStream() {
 }
 
 async function startProducerScheduler() {
+  if (!isQueueModeEnabled() && !isShadowModeEnabled()) {
+    throw new Error("Queue producer requires AUTOMATION_EXECUTION_MODE=queue or shadow.");
+  }
   heartbeatRedis = createRedisClient("producer");
   heartbeat = new WorkerHeartbeat({
     redisClient: heartbeatRedis,

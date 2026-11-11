@@ -242,6 +242,34 @@ exports.recordRuleExecutionChange = async ({
       }
     }
 
+    // When no active record exists (e.g. after returning to baseline at 12:00):
+    const recentRevert = await affectedCampaignByRuleSchema.findOne({
+      configId,
+      profileId: Number(profileId),
+      ruleSchema,
+      ruleId,
+      ruleDate: currentDate,
+      type,
+      campaignId: Number(campaignId),
+      ...(adGroupId ? { adGroupId: Number(adGroupId) } : {}),
+      ...(targetId ? { targetId: String(targetId) } : {}),
+      ...(placement ? { placement: String(placement) } : {}),
+      ...(searchTerm ? { searchTerm: String(searchTerm) } : {}),
+      isReverted: true,
+    });
+    const isSameNumeric =
+      oldValue !== "" &&
+      newValue !== "" &&
+      !isNaN(Number(oldValue)) &&
+      !isNaN(Number(newValue)) &&
+      Number(oldValue) === Number(newValue);
+    if (String(oldValue ?? "") === String(newValue ?? "") || isSameNumeric) {
+      return recentRevert || null;
+    }
+    const safeBaselineOldValue =
+      recentRevert && recentRevert.newValue !== undefined && recentRevert.newValue !== ""
+        ? String(recentRevert.newValue)
+        : String(oldValue ?? "");
     // Create fresh initial active record
     const newRecord = new affectedCampaignByRuleSchema({
       conditionSnapshot,
@@ -264,7 +292,7 @@ exports.recordRuleExecutionChange = async ({
       targetName,
       targetType,
       changed,
-      oldValue: String(oldValue ?? ""),
+      oldValue: safeBaselineOldValue,
       newValue: String(newValue ?? ""),
       isActive: true,
       impressions: snapshot.impressions,
@@ -633,3 +661,71 @@ exports.enrichWithCampaignMetrics = async (rules, profileId, ruleType = "") => {
   }
 };
 
+
+/**
+ * Pure helper to resolve the true baseline bid/budget so hourly/dayparting rules
+ * (e.g., 06:00-12:00 +2% bid, 12:00 reset to baseline) never compound or overwrite
+ * the original basic bid even if triggered twice at 12:00 and 12:03.
+ */
+exports.resolveBaselineBid = ({
+  existingActive = null,
+  recentRevert = null,
+  currentValue = 0,
+  allowMultiTimeChanges = false,
+  isHourly = false,
+} = {}) => {
+  const parsedCurrent = parseFloat(currentValue) || 0;
+  // Hourly/dayparting rules ALWAYS anchor to the original baseline before the hourly window started
+  if (existingActive && existingActive.oldValue !== undefined && existingActive.oldValue !== "") {
+    const activeBase = parseFloat(existingActive.oldValue);
+    if (!isNaN(activeBase) && activeBase > 0 && (isHourly || !allowMultiTimeChanges)) {
+      return activeBase;
+    }
+  }
+  // If a revert record was just written today (e.g. at 12:00) and a second run happens at 12:03
+  // before the DB entity bid updated from 1.02 back to 1.00, use the reverted baseline (1.00)
+  if (recentRevert && recentRevert.newValue !== undefined && recentRevert.newValue !== "") {
+    const revertedBase = parseFloat(recentRevert.newValue);
+    if (!isNaN(revertedBase) && revertedBase > 0) {
+      return revertedBase;
+    }
+  }
+  if (existingActive && existingActive.oldValue !== undefined && existingActive.oldValue !== "") {
+    const activeBase = parseFloat(existingActive.oldValue);
+    if (!isNaN(activeBase) && activeBase > 0) {
+      return activeBase;
+    }
+  }
+  return parsedCurrent;
+};
+
+/**
+ * Checks whether a rule has already executed for the given scheduled slot OR within
+ * the same hour (for hourly/dayparting rules), preventing 12:00 and 12:03 double-runs.
+ */
+exports.hasRuleExecutedInSlotOrHour = (executedMap, ruleId, scheduledTime, isHourly = false) => {
+  if (!executedMap || !ruleId) return false;
+  const idStr = String(ruleId);
+  const slotStr = String(scheduledTime || "");
+  if (executedMap.has(`${idStr}_${slotStr}`)) {
+    return true;
+  }
+  if (isHourly && slotStr.includes(":")) {
+    const hourPrefix = slotStr.split(":")[0].padStart(2, "0");
+    if (executedMap.has(`${idStr}_HOUR_${hourPrefix}`)) {
+      return true;
+    }
+  }
+  return false;
+};
+
+exports.markRuleExecutedInSlotAndHour = (executedMap, ruleId, scheduledTime) => {
+  if (!executedMap || !ruleId) return;
+  const idStr = String(ruleId);
+  const slotStr = String(scheduledTime || "");
+  executedMap.set(`${idStr}_${slotStr}`, true);
+  if (slotStr.includes(":")) {
+    const hourPrefix = slotStr.split(":")[0].padStart(2, "0");
+    executedMap.set(`${idStr}_HOUR_${hourPrefix}`, true);
+  }
+};

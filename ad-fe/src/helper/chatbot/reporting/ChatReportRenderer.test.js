@@ -33,7 +33,7 @@ describe("ChatReportRenderer", () => {
     const dataSections = [...container.querySelectorAll("details.report-table-details")];
     expect(dataSections.length).toBeGreaterThan(0);
     dataSections.forEach(section => expect(section).not.toHaveAttribute("open"));
-    expect(container.querySelector("details.report-data-notes")).not.toHaveAttribute("open");
+    expect(container.querySelector("details.report-data-notes")).toBeNull();
     expect(screen.getByText(/Key metrics/)).toBeInTheDocument();
   });
 
@@ -68,7 +68,7 @@ describe("ChatReportRenderer", () => {
     expect(screen.getByText("Sales")).toBeInTheDocument();
     expect(screen.getByText("ACOS")).toBeInTheDocument();
     expect(screen.getByText("ROAS")).toBeInTheDocument();
-    expect(screen.getAllByText("Orders")).toHaveLength(2); // Card and friendly table header.
+    expect(screen.getAllByText("Purchases")).toHaveLength(2); // Card and friendly table header.
     expect(screen.getByText("CPC")).toBeInTheDocument();
     expect(screen.getByText("Conversion rate")).toBeInTheDocument();
 
@@ -241,7 +241,8 @@ describe("ChatReportRenderer", () => {
       { status: "verified", dataAsOf: "2026-10-23T00:00:00Z" },
     );
     render(<ChatReportRenderer report={report} />);
-    expect(screen.getByText("Data is still updating, so totals may change.")).toBeInTheDocument();
+    expect(screen.queryByText(/About these numbers/)).toBeNull();
+    expect(screen.queryByText(/still updating/)).toBeNull();
   });
 
   test("a per-entity breakdown table still renders even with a single row", () => {

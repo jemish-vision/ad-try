@@ -51,7 +51,7 @@ const Placement = (props) => {
     };
 
     // Check if a column should be hidden based on visibleColumns from parent
-    const checkHide = (title) => Boolean(visibleColumns?.length && !visibleColumns?.find((col) => col?.title === title));
+    const checkHide = (title) => Boolean(visibleColumns?.length && !visibleColumns?.find((col) => col?.title === title || (title === "Purchases" && col?.title === "Orders")));
 
     // ── Column definitions ─────────────────────────────────────────────────
     const columnDefs = useMemo(() => [
@@ -258,12 +258,12 @@ const Placement = (props) => {
 
         // ── Orders ────────────────────────────────────────────────────────────
         {
-            headerName: t("Orders"),
+            headerName: t("Purchases"),
             field: "orders",
             minWidth: 100,
             sortable: true,
             resizable: true,
-            hide: checkHide("Orders"),
+            hide: checkHide("Purchases"),
             cellRenderer: (params) => <>{CurrencyFormat(params.value ?? 0)}</>,
         },
 

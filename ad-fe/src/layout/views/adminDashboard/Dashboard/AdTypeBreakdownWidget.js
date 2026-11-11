@@ -296,7 +296,7 @@ export default function AdTypeBreakdownWidget({
                 <th className="py-3 px-4 text-right">{t("Clicks")}</th>
                 <th className="py-3 px-4 text-right">{t("Spend")}</th>
                 <th className="py-3 px-4 text-right">{t("Sales")}</th>
-                <th className="py-3 px-4 text-right">{t("Orders")}</th>
+                <th className="py-3 px-4 text-right">{t("Purchases")}</th>
                 <th className="py-3 px-4 text-right">{t("ACoS")}</th>
                 <th className="py-3 px-4 text-right">{t("ROAS")}</th>
                 <th className="py-3 px-6 text-right">{t("CTR")}</th>

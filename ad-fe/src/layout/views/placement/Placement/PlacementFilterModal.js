@@ -122,7 +122,7 @@ const PlacementFilterModal = (props) => {
                 const fieldMap = {
                     Impressions: "Impressions",
                     Clicks: "Clicks",
-                    Orders: "Orders",
+                    Purchases: "Orders",
                     Sales: "Sales",
                     ROAS: "ROAS",
                     ACOS: "ACOS",

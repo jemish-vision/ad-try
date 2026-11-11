@@ -44,6 +44,8 @@ function writerFixture({ blocked = 0, healthyPending = false, healthyNew = false
     get: async key => payloads.has(key.replace('batch:', '')) ? JSON.stringify([{ batch: key.replace('batch:', '') }]) : null,
     xAck: ack,
     xDel: async (_stream, msgId) => deleted.push(msgId),
+    del: async () => 1,
+    expire: async () => 1,
   };
   const staging = {
     STREAM_KEY_PREFIX: 'stream:', BATCH_KEY_PREFIX: 'batch:', MANIFEST_KEY_PREFIX: 'manifest:', CONSUMER_GROUP: 'group', RUN_STATUS: statuses,
@@ -78,12 +80,12 @@ function writerFixture({ blocked = 0, healthyPending = false, healthyNew = false
       getExtendedModel: () => ({ find: () => chain(mongoDocs) }),
       buildExtendedUpsertOp: row => row,
     };
-    if (name === '../helper/common') return { parallelBulkWrite: async (_model, ops) => { writes.push(ops[0].batch); if (ops[0].batch.startsWith('bad')) throw new Error('temporary write failure'); } };
+    if (name === '../helper/common') return { parallelBulkWrite: async (_model, ops) => { writes.push(ops[0].batch); if (staging.writeError) throw staging.writeError; if (ops[0].batch.startsWith('bad')) throw new Error('temporary write failure'); } };
     if (name.includes('logger')) return { write_logs: log => logs.push(log) };
     return {};
   } };
   vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, '../api-server/services/reportBatchWriter.service.js'), 'utf8'), context);
-  return { run: () => context.module.exports.processStagedReportBatches([entity]), runs, writes, updates, deleted, pending, redis, confirmed, payloads, staging, logs, finalizedHistories };
+  return { run: () => context.module.exports.processStagedReportBatches([entity]), runEntities: entities => context.module.exports.processStagedReportBatches(entities), runs, writes, updates, deleted, pending, redis, confirmed, payloads, staging, logs, finalizedHistories };
 }
 
 test('blocked pending entries do not hide a healthy later pending batch', async () => {
@@ -315,3 +317,102 @@ for (const entity of ['targeting', 'sbTargeting', 'sdTargeting']) {
     assert.equal(f.pending.length, 12);
   });
 }
+
+
+test('pool outages preserve payload and data retry budget across repeated attempts', async () => {
+  const f = writerFixture({ healthyPending: true });
+  const error = Object.assign(new Error('Timed out while checking out a connection from connection pool'), { name: 'MongoWaitQueueTimeoutError' });
+  f.staging.writeError = error;
+  for (let i = 0; i < 6; i++) await assert.rejects(f.run(), { name: error.name });
+  assert.equal(f.pending.length, 1);
+  assert.equal(f.payloads.size, 1);
+  assert.equal(f.deleted.length, 0);
+  assert.equal(f.updates.length, 0);
+  assert.equal(f.runs.get('healthy')['batchAttempts:healthy'], undefined);
+  f.staging.writeError = null;
+  assert.equal((await f.run()).totalBatchesProcessed, 1);
+});
+
+test('concurrent background drains for an entity share active work', async () => {
+  const f = writerFixture({ healthyPending: true });
+  const results = await Promise.all(Array.from({ length: 30 }, () => f.run()));
+  assert.equal(f.writes.length, 1);
+  assert.ok(results.every(result => result.totalBatchesProcessed === 1));
+  assert.equal((await f.run()).totalBatchesProcessed, 0);
+});
+
+test('different entities use one process lane and duplicates coalesce', async () => {
+  const f = writerFixture();
+  let active = 0, maxActive = 0;
+  f.redis.xAutoClaim = async () => {
+    maxActive = Math.max(maxActive, ++active);
+    await new Promise(resolve => setImmediate(resolve));
+    active--;
+    return { messages: [], nextId: '0-0' };
+  };
+  await Promise.all([f.runEntities(['campaign', 'targeting', 'campaign']), f.runEntities(['targeting'])]);
+  assert.equal(maxActive, 1);
+});
+
+for (const name of ['MongoNetworkTimeoutError', 'MongoNetworkError', 'MongoServerSelectionError']) {
+  test(`${name} leaves the batch pending without a data failure`, async () => {
+    const f = writerFixture({ healthyPending: true });
+    f.staging.writeError = Object.assign(new Error('database temporarily unavailable'), { name });
+    await assert.rejects(f.run(), { name });
+    assert.equal(f.pending.length, 1);
+    assert.equal(f.payloads.size, 1);
+    assert.equal(f.runs.get('healthy')['batchAttempts:healthy'], undefined);
+    assert.equal(f.updates.length, 0);
+  });
+}
+
+
+for (const status of ['READY', 'IMPORTING', 'WRITE_FAILED']) {
+  test(`replayed batch preserves ${status} run verification keys and manifest lifetime`, async () => {
+    const keys = ['expected-row'];
+    const f = writerFixture({ healthyPending: true, stagedKeys: keys });
+    Object.assign(f.runs.get('healthy'), { status, processedBatches: 1, expectedBatches: 2 });
+    f.confirmed.add('manifest:healthy:batches:healthy');
+    let expirations = 0;
+    f.redis.del = async key => { if (key === 'manifest:healthy:keys') keys.length = 0; };
+    f.redis.expire = async () => { expirations++; };
+    await f.run();
+    assert.deepEqual(keys, ['expected-row']);
+    assert.equal(expirations, 0);
+    assert.equal(f.pending.length, 0);
+    assert.equal(f.writes.length, 0);
+    assert.equal(f.runs.get('healthy').processedBatches, 1);
+  });
+}
+
+test('replay followed by final batch retains exact-key verification and completes the report', async () => {
+  const identity = { targetId: 'T1', reportDate: '2026-11-06' };
+  const keys = [`v2:${JSON.stringify(Object.entries(identity))}`];
+  const f = writerFixture({ entity: 'targeting', healthyPending: true, stagedKeys: keys,
+    mongoDocs: [{ ...identity, lastImportRunId: 'healthy', importSourceVersion: 1, spend: 12 }] });
+  Object.assign(f.runs.get('healthy'), { status: 'IMPORTING', expectedBatches: 2, processedBatches: 1,
+    expectedUniqueKeys: 1, sourceVersion: 1, expectedSpend: 12 });
+  f.confirmed.add('manifest:healthy:batches:healthy');
+  f.pending.push({ id: '2-0', message: { importRunId: 'healthy', batchId: 'final' } });
+  f.payloads.add('final');
+  f.redis.del = async key => { if (key === 'manifest:healthy:keys') keys.length = 0; };
+  assert.equal((await f.run()).totalBatchesProcessed, 1);
+  assert.deepEqual(f.writes, ['final']);
+  assert.equal(f.runs.get('healthy').status, 'COMPLETED');
+  assert.equal(f.updates[0].update.$set.verifiedRows, 1);
+  assert.equal(f.pending.length, 0);
+});
+
+
+test('completed run still cleans up verification keys and expires the manifest', async () => {
+  const f = writerFixture({ healthyPending: true });
+  const removed = [], expired = [];
+  f.staging.beforeAcquire = async () => { f.runs.get('healthy').status = 'COMPLETED'; };
+  f.redis.del = async key => removed.push(key);
+  f.redis.expire = async (key, seconds) => expired.push([key, seconds]);
+  await f.run();
+  assert.deepEqual(removed, ['manifest:healthy:keys']);
+  assert.deepEqual(expired, [['manifest:healthy', 300]]);
+  assert.equal(f.pending.length, 0);
+  assert.equal(f.writes.length, 0);
+});

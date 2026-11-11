@@ -137,7 +137,11 @@ export function useWasteAndScalingData({
 
   const fetchData = useCallback(async (force = false) => {
     const pid = currentPid || getProfileIdString(profileId) || getStoredProfile()?.profileId;
-    if (!pid) return;
+    if (!pid) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
 
     const paramsKey = `${pid}_${adType}_${fromDate}_${toDate}_${activeCurrency}_${activeMarketplace}`;
     if (!force && wasteDataCache.has(paramsKey)) {
@@ -307,7 +311,7 @@ export function WasteSpendWidget({
             <tr className="border-b border-slate-100 dark:border-white/5 text-[12px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
               <th className="py-2 px-2.5 font-semibold">{t("SEARCH TERM")}</th>
               <th className="py-2 px-2.5 text-right font-semibold">{t("SPEND")}</th>
-              <th className="py-2 px-2.5 text-right font-semibold">{t("ORDERS")}</th>
+              <th className="py-2 px-2.5 text-right font-semibold">{t("PURCHASES")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100/80 dark:divide-white/5">

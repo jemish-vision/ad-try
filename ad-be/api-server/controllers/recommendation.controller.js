@@ -1,8 +1,10 @@
+const { buildTargetingMetricsPipeline } = require("../helper/targetingMetricsPipeline");
 const { sanitizeQueryObject } = require("../helper/sanitizeQuery");
 const { mergeRecommendationCountsByRule } = require("../helper/recommendationMerge");
 const moment = require("moment");
 const { default: mongoose } = require("mongoose");
 const crypto = require("crypto");
+const { insertOperationHistory } = require("../helper/operationHistory");
 
 const pLimit = require("p-limit").default;
 const limit = pLimit(Number(process.env.PROCESS_LIMIT));
@@ -992,7 +994,7 @@ const hasOutOfBudgetCondition = (rule) => {
 exports.hasOutOfBudgetCondition = hasOutOfBudgetCondition;
 
 /**
- * Number of days a campaign must have been continuously out of budget.
+ * Number of completed local days that must each contain a budget-exhaustion transition.
  * Returns 0 when the rule has no look-back configured (legacy behaviour: only "currently out of budget").
  */
 const getOutOfBudgetDays = (rule) => {
@@ -1075,121 +1077,77 @@ exports.isCampaignDocOutOfBudget = isCampaignDocOutOfBudget;
 
 const getOutOfBudgetCampaignMap = async ({ configId, profileId, rule, adType, adTypeCampaignSchema }) => {
     if (!adTypeCampaignSchema) return { oobCampMap: new Map(), oobCampIds: [] };
-    const tz = rule?.timezone || "UTC";
-    const today = moment().tz(tz).format("YYYY-MM-DD");
-    const oobDays = getOutOfBudgetDays(rule);
-
-    if (oobDays <= 0) {
-        const latestCampDocs = await adTypeCampaignSchema.find(
-            { configId: rule?.configId || configId, profileId: Number(rule?.profileId || profileId) },
-            { campaignId: 1, name: 1, status: 1, campaignStatus: 1, isOutOfBudget: 1, budget: 1, dailySpend: 1, spend: 1, timeInBudget: 1, budgetTracking: 1, reportDate: 1 }
-        ).sort({ reportDate: -1, updatedAt: -1 }).lean();
-
-        const latestByCampId = new Map();
-        for (const doc of latestCampDocs) {
-            if (!latestByCampId.has(doc.campaignId)) {
-                latestByCampId.set(doc.campaignId, doc);
-            }
-        }
-
-        const oobCampMap = new Map();
-        for (const [cId, doc] of latestByCampId.entries()) {
-            const currentStatus = (doc.status || "").toUpperCase();
-            const campStatusVal = (doc.campaignStatus || "").toUpperCase();
-            if (isCampaignDocOutOfBudget(doc) && currentStatus !== "ARCHIVED" && campStatusVal !== "ARCHIVED") {
-                oobCampMap.set(cId, doc);
-            }
-        }
-
-        if (rule?.campaignSelectionType === "INCLUDE") {
-            const rawIds = rule?.campaignIds?.[adType] || [];
-            const includeSet = new Set(Array.isArray(rawIds) ? rawIds.map(Number).filter(id => !isNaN(id)) : []);
-            for (const cid of oobCampMap.keys()) {
-                if (!includeSet.has(Number(cid))) oobCampMap.delete(cid);
-            }
-        }
-
-        return { oobCampMap, oobCampIds: Array.from(oobCampMap.keys()) };
+    const timezone = rule?.timezone || "UTC";
+    const today = moment().tz(timezone).format("YYYY-MM-DD");
+    const days = getOutOfBudgetDays(rule);
+    const accountId = rule?.configId || configId;
+    const selectedProfileId = Number(rule?.profileId || profileId);
+    const scope = {
+        configId: new mongoose.Types.ObjectId(String(accountId)),
+        profileId: selectedProfileId,
+    };
+    const rawSelectedIds = rule?.campaignIds?.[adType];
+    const selectedIds = new Set(Array.isArray(rawSelectedIds) ? rawSelectedIds.map(String) : []);
+    if (rule?.campaignSelectionType === "INCLUDE" && !selectedIds.size) {
+        return { oobCampMap: new Map(), oobCampIds: [] };
     }
-
-    // Strictly completed days: [today - 1, today - 2, ..., today - oobDays]
-    const requiredDates = [];
-    for (let i = 1; i <= oobDays; i++) {
-        requiredDates.push(moment(today).subtract(i, "days").format("YYYY-MM-DD"));
-    }
-    const windowStart = requiredDates[requiredDates.length - 1];
-    const windowEnd = requiredDates[0];
-
-    const campDocs = await adTypeCampaignSchema.find(
-        {
-            configId: rule?.configId || configId,
-            profileId: Number(rule?.profileId || profileId),
-            reportDate: { $gte: windowStart, $lte: windowEnd }
-        },
-        { campaignId: 1, name: 1, status: 1, campaignStatus: 1, isOutOfBudget: 1, budget: 1, dailySpend: 1, spend: 1, timeInBudget: 1, budgetTracking: 1, reportDate: 1 }
-    ).sort({ reportDate: -1, updatedAt: -1 }).lean();
-
-    const latestByCampId = new Map();
-    for (const doc of campDocs) {
-        if (!latestByCampId.has(doc.campaignId)) {
-            latestByCampId.set(doc.campaignId, doc);
-        }
-    }
-
-    let historyDocs = [];
-    try {
-        const campaignOutOfBudgetHistory = require("../models/campaignOutOfBudgetHistory.model");
-        historyDocs = await campaignOutOfBudgetHistory.find({
-            configId: rule?.configId || configId,
-            profileId: Number(rule?.profileId || profileId),
-            date: { $in: requiredDates },
-            outOfBudget: true
-        }).lean();
-    } catch (e) {
-        // history collection is optional fallback
-    }
-
-    const oobDatesByCamp = new Map();
-    for (const doc of campDocs) {
-        if (!doc.reportDate || !requiredDates.includes(doc.reportDate)) continue;
-        if (!isCampaignDocOutOfBudget(doc)) continue;
-        if (!oobDatesByCamp.has(doc.campaignId)) oobDatesByCamp.set(doc.campaignId, new Set());
-        oobDatesByCamp.get(doc.campaignId).add(doc.reportDate);
-    }
-
-    for (const h of historyDocs) {
-        if (!h.date || !requiredDates.includes(h.date)) continue;
-        if (!oobDatesByCamp.has(h.campaignId)) oobDatesByCamp.set(h.campaignId, new Set());
-        oobDatesByCamp.get(h.campaignId).add(h.date);
-    }
-
-    const oobCampMap = new Map();
-    for (const [cId, latestDoc] of latestByCampId.entries()) {
-        const currentStatus = (latestDoc.status || "").toUpperCase();
-        const campStatusVal = (latestDoc.campaignStatus || "").toUpperCase();
-        if (currentStatus === "ARCHIVED" || campStatusVal === "ARCHIVED") continue;
-
-        const matchedDates = oobDatesByCamp.get(cId);
-        const allDaysMatch = matchedDates && requiredDates.every(d => matchedDates.has(d));
-        if (allDaysMatch) {
-            oobCampMap.set(cId, latestDoc);
-        }
-    }
-
+    const metadataScope = { ...scope, reportDate: { $lte: today } };
     if (rule?.campaignSelectionType === "INCLUDE") {
-        const rawIds = rule?.campaignIds?.[adType] || [];
-        const includeSet = new Set(Array.isArray(rawIds) ? rawIds.map(Number).filter(id => !isNaN(id)) : []);
-        for (const cid of oobCampMap.keys()) {
-            if (!includeSet.has(Number(cid))) oobCampMap.delete(cid);
+        metadataScope.campaignId = { $in: Array.from(selectedIds).flatMap(id => [Number(id), id]) };
+    }
+    const projection = {
+        campaignId: 1, name: 1, status: 1, campaignStatus: 1, isOutOfBudget: 1,
+        budget: 1, dailySpend: 1, spend: 1, timeInBudget: 1, budgetTracking: 1, reportDate: 1, updatedAt: 1,
+    };
+    // Current metadata owns archival/selection eligibility, even for historical rules.
+    const latestDocs = await adTypeCampaignSchema.aggregate([
+        { $match: metadataScope },
+        { $project: projection },
+        { $sort: { reportDate: -1, updatedAt: -1, _id: -1 } },
+        { $group: { _id: { $toString: "$campaignId" }, doc: { $first: "$$ROOT" } } },
+        { $replaceRoot: { newRoot: "$doc" } },
+    ]).allowDiskUse(true);
+    const campaigns = new Map();
+    for (const doc of latestDocs) {
+        const id = String(doc.campaignId);
+        if ([doc.status, doc.campaignStatus].some(value => String(value).toUpperCase() === "ARCHIVED")) continue;
+        if (rule?.campaignSelectionType === "INCLUDE" && !selectedIds.has(id)) continue;
+        if (rule?.campaignSelectionType === "EXCLUDE" && selectedIds.has(id)) continue;
+        campaigns.set(id, doc);
+    }
+    if (!campaigns.size) return { oobCampMap: new Map(), oobCampIds: [] };
+    const { getCampaignBudgetHistoryDays, getLatestCampaignBudgetEvents } = require("../services/outOfBudgetHistory.service");
+    const historyScope = {
+        configId: accountId, profileId: selectedProfileId, adType,
+        campaignIds: Array.from(campaigns.keys()),
+    };
+    const oobCampMap = new Map();
+    if (days === 0) {
+        const events = await getLatestCampaignBudgetEvents(historyScope);
+        for (const [id, doc] of campaigns) {
+            const event = events.get(id);
+            let qualifies = event ? event.outOfBudget : isCampaignDocOutOfBudget(doc);
+            const trackedAt = +new Date(doc.budgetTracking?.lastUpdated);
+            const usage = doc.budgetTracking?.lastUsagePercentage;
+            if (typeof usage === "number" && Number.isFinite(usage) &&
+                Number.isFinite(trackedAt) && trackedAt <= Date.now() &&
+                (!event || trackedAt > +new Date(event.createdAt))) {
+                qualifies = usage >= 100;
+            }
+            if (qualifies) oobCampMap.set(Number(id), doc);
         }
-    } else if (rule?.campaignSelectionType === "EXCLUDE") {
-        const rawIds = rule?.campaignIds?.[adType] || [];
-        const excludeSet = new Set(Array.isArray(rawIds) ? rawIds.map(Number).filter(id => !isNaN(id)) : []);
-        for (const cid of oobCampMap.keys()) {
-            if (excludeSet.has(Number(cid))) oobCampMap.delete(cid);
+    } else {
+        const requiredDates = Array.from({ length: days }, (_, index) =>
+            moment.tz(today, "YYYY-MM-DD", timezone).subtract(index + 1, "day").format("YYYY-MM-DD"));
+        const fromDate = requiredDates[requiredDates.length - 1];
+        const toDate = requiredDates[0];
+        const historyDays = await getCampaignBudgetHistoryDays({ ...historyScope, fromDate, toDate, timezone });
+        for (const [id, doc] of campaigns) {
+            const evidence = historyDays.get(id);
+            const qualifies = requiredDates.every(date => evidence?.get(date) === true);
+            if (qualifies) oobCampMap.set(Number(id), doc);
         }
     }
-
     return { oobCampMap, oobCampIds: Array.from(oobCampMap.keys()) };
 };
 exports.getOutOfBudgetCampaignMap = getOutOfBudgetCampaignMap;
@@ -1253,7 +1211,7 @@ const buildRecommendationQueryFromConditions = (conditions) => {
 const getEffectiveRuleQuery = (rule) => {
     if (rule?.conditions && Array.isArray(rule.conditions) && rule.conditions.length > 0) {
         const conditionQuery = buildRecommendationQueryFromConditions(rule.conditions);
-        if (Object.keys(conditionQuery).length > 0) {
+        if (Object.keys(conditionQuery).length > 0 || hasOutOfBudgetCondition(rule)) {
             return conditionQuery;
         }
     }
@@ -1959,6 +1917,9 @@ exports.recommendationPipeline = (query, lastDate, rule, adType = "SP", options 
         const rawIds = rule?.campaignIds?.[adType] || [];
         const includeIds = Array.isArray(rawIds) ? rawIds.map(Number).filter(id => !isNaN(id)) : [];
         if (includeIds.length > 0) {
+            if (query.campaignId !== undefined) {
+                (query.$and ||= []).push({ campaignId: query.campaignId });
+            }
             query.campaignId = { $in: includeIds };
         } else {
             query.campaignId = { $in: [] };
@@ -1967,6 +1928,9 @@ exports.recommendationPipeline = (query, lastDate, rule, adType = "SP", options 
         const rawIds = rule?.campaignIds?.[adType] || [];
         const excludeIds = Array.isArray(rawIds) ? rawIds.map(Number).filter(id => !isNaN(id)) : [];
         if (excludeIds.length > 0) {
+            if (query.campaignId !== undefined) {
+                (query.$and ||= []).push({ campaignId: query.campaignId });
+            }
             query.campaignId = { $nin: excludeIds };
         }
     }
@@ -2016,16 +1980,6 @@ exports.recommendationPipeline = (query, lastDate, rule, adType = "SP", options 
         groupId = {
             campaignId: "$campaignId",
             placement: "$placement",
-            profileId: "$profileId",
-        };
-    }
-
-    if (rule.gridName === "Targeting") {
-        groupId = {
-            campaignId: "$campaignId",
-            adGroupId: "$adGroupId",
-            targeting: "$normalizedTarget",
-            matchType: "$normalizedMatch",
             profileId: "$profileId",
         };
     }
@@ -2082,54 +2036,19 @@ exports.recommendationPipeline = (query, lastDate, rule, adType = "SP", options 
     const effectiveQuery = getEffectiveRuleQuery(rule);
     const hasEffectiveQuery = effectiveQuery && Object.keys(effectiveQuery).length > 0;
     const isOobRule = hasOutOfBudgetCondition(rule);
+    const outOfBudgetCondition = options.outOfBudgetQualified
+        ? { $literal: true }
+        : getOutOfBudgetAggregationCondition();
 
     // =========================
     // COMMON PIPELINE
     // =========================
 
-    const commonPipeline = [
+    const reportTotalsPipeline = rule.gridName === "Targeting" ? [
+        ...buildTargetingMetricsPipeline(query),
+        { $addFields: { targetingBid: "$keywordBid" } },
+    ] : [
         { $match: query },
-        ...(rule.gridName === "Targeting" ? [
-            {
-                $addFields: {
-                    isSyntheticR: {
-                        $cond: [
-                            { $regexMatch: { input: { $ifNull: ["$targetId", ""] }, regex: /^R-/i } },
-                            1,
-                            0
-                        ]
-                    },
-                    normalizedTarget: { $toLower: { $trim: { input: { $ifNull: ["$targeting", "$targetId"] } } } },
-                    normalizedMatch: {
-                        $toLower: {
-                            $trim: {
-                                input: {
-                                    $replaceAll: {
-                                        input: {
-                                            $replaceAll: {
-                                                input: { $ifNull: ["$matchType", ""] },
-                                                find: "Keyword - ",
-                                                replacement: ""
-                                            }
-                                        },
-                                        find: "keyword - ",
-                                        replacement: ""
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            ...(options?.isCountOnly ? [] : [
-                {
-                    $sort: {
-                        isSyntheticR: 1,
-                        reportDate: -1
-                    }
-                }
-            ])
-        ] : []),
         ...(options?.isCountOnly ? [
             {
                 $project: {
@@ -2193,6 +2112,10 @@ exports.recommendationPipeline = (query, lastDate, rule, adType = "SP", options 
             }
         },
 
+    ];
+
+    const commonPipeline = [
+        ...reportTotalsPipeline,
         // Calculate derived metrics early
         {
             $addFields: {
@@ -2278,13 +2201,14 @@ exports.recommendationPipeline = (query, lastDate, rule, adType = "SP", options 
                     $match: {
                         $and: [
                             {
-                                $or: [
-                                    { "latestStatus.status": { $nin: ["ARCHIVED", "archived"] } },
-                                    { "campaign.status": { $nin: ["ARCHIVED", "archived"] } },
-                                    { status: { $nin: ["ARCHIVED", "archived"] } },
-                                ],
+                                $expr: {
+                                    $ne: [
+                                        { $toUpper: { $ifNull: ["$latestStatus.status", { $ifNull: ["$campaign.status", "$status"] }] } },
+                                        "ARCHIVED",
+                                    ],
+                                },
                             },
-                            ...(!query?.campaignId
+                            ...(!options.outOfBudgetQualified
                                 ? [
                                     { $expr: getOutOfBudgetAggregationCondition() }
                                 ]
@@ -2633,7 +2557,7 @@ exports.recommendationPipeline = (query, lastDate, rule, adType = "SP", options 
                         keywordStatus: 1,
                         status: (isOobRule && (rule.gridName === "Campaign" || rule.gridName === "Placement" || rule.gridName === "Targeting")) ? {
                             $cond: [
-                                getOutOfBudgetAggregationCondition(),
+                                outOfBudgetCondition,
                                 "OUT_OF_BUDGET",
                                 { $ifNull: ["$latestStatus.status", "$status"] }
                             ]
@@ -2642,14 +2566,14 @@ exports.recommendationPipeline = (query, lastDate, rule, adType = "SP", options 
                         campaignName: { $ifNull: ["$latestStatus.name", { $ifNull: ["$campaign.name", ""] }] },
                         campaignStatus: isOobRule ? {
                             $cond: [
-                                getOutOfBudgetAggregationCondition(),
+                                outOfBudgetCondition,
                                 "OUT_OF_BUDGET",
                                 { $ifNull: ["$latestStatus.status", { $ifNull: ["$campaign.status", ""] }] }
                             ]
                         } : { $ifNull: ["$campaign.status", "$latestStatus.status"] },
                         isOutOfBudget: isOobRule ? {
                             $cond: [
-                                getOutOfBudgetAggregationCondition(),
+                                outOfBudgetCondition,
                                 true,
                                 false
                             ]
@@ -3223,7 +3147,7 @@ const computeRecommendationCounts = async ({ configId, profileId, adType, models
                 if (rule.gridName === "Placement") {
                     const isOobRule = hasOutOfBudgetCondition(rule);
                     const pipeline = exports.recommendationPipeline(matchQuery, toDate, rule, adType, {
-                        hasExistingNotNew: false, isCountOnly: true,
+                        hasExistingNotNew: false, isCountOnly: true, outOfBudgetQualified: isOobRule,
                     });
                     const lookupIndex = pipeline.findIndex(stage => stage.$lookup);
                     const [candidates, eligibility] = await Promise.all([
@@ -3241,11 +3165,7 @@ const computeRecommendationCounts = async ({ configId, profileId, adType, models
                         const campId = item.campaignId || id?.campaignId;
                         const placement = item.placement || id?.placement;
                         const campStatus = eligibility.campaigns.get(campId);
-                        if (isOobRule) {
-                            if (campStatus === "ARCHIVED" || campStatus === "archived") continue;
-                        } else {
-                            if (campStatus !== "ENABLED") continue;
-                        }
+                        if (!isOobRule && campStatus !== "ENABLED") continue;
                         count++;
                         if (!notNew.has(identity(campId, placement))) newCount++;
                     }
@@ -3255,7 +3175,7 @@ const computeRecommendationCounts = async ({ configId, profileId, adType, models
                 if (rule.gridName === "Campaign") {
                     const isOobRule = hasOutOfBudgetCondition(rule);
                     const pipeline = exports.recommendationPipeline(matchQuery, toDate, rule, adType, {
-                        hasExistingNotNew: false, isCountOnly: true,
+                        hasExistingNotNew: false, isCountOnly: true, outOfBudgetQualified: isOobRule,
                     });
                     const lookupIndex = pipeline.findIndex(stage => stage.$lookup);
                     const [candidates, eligibility] = await Promise.all([
@@ -3272,11 +3192,7 @@ const computeRecommendationCounts = async ({ configId, profileId, adType, models
                         const id = item._id;
                         const campId = item.campaignId || id?.campaignId;
                         const campStatus = eligibility.campaigns.get(campId);
-                        if (isOobRule) {
-                            if (campStatus === "ARCHIVED" || campStatus === "archived") continue;
-                        } else {
-                            if (campStatus !== "ENABLED") continue;
-                        }
+                        if (!isOobRule && campStatus !== "ENABLED") continue;
                         count++;
                         if (!notNew.has(String(campId))) newCount++;
                     }
@@ -3438,7 +3354,7 @@ const getTargetingRecommendationDetails = async ({ query, fromDate, toDate, rule
     }
 
     const pipeline = exports.recommendationPipeline(query, toDate, rule, adType, {
-        hasExistingNotNew: false, isCountOnly: true,
+        hasExistingNotNew: false, isCountOnly: true, outOfBudgetQualified: isOobRule,
     });
     const candidateQuery = adTypeTargetingSchema.aggregate(pipeline.slice(0, pipeline.findIndex(stage => stage.$lookup))).allowDiskUse(true);
 
@@ -3850,7 +3766,9 @@ exports.getRecommendationData = async (req, res) => {
                     isNew: false,
                     reportDate: { $gte: fromDate, $lte: toDate }
                 });
-                const pipeline = exports.recommendationPipeline(query, toDate, rule, adType, { hasExistingNotNew: !!hasNotNew });
+                const pipeline = exports.recommendationPipeline(query, toDate, rule, adType, {
+                    hasExistingNotNew: !!hasNotNew, outOfBudgetQualified: true,
+                });
                 allItems = await model.aggregate(pipeline).allowDiskUse(true);
             }
         } else if (rule.gridName === "Search Term" && adTypeCampaignSchema && adTypeAdGroupSchema && adTypeTargetingSchema) {
@@ -4213,6 +4131,7 @@ exports.getRecommendationData = async (req, res) => {
             },
             count: totalRecords,
             totalRecords,
+            newCount: (allItems || []).filter(item => Boolean(item.isNew)).length,
             validCount: validList.length,
             lessThanOneCount: lessThanOneList.length,
             totalAllRecords: allItems.length,
@@ -4299,7 +4218,9 @@ exports.fetchRecommendationData = async ({ configId, profileId, ruleId, models, 
         query.campaignId = { $in: oobCampIds };
     }
 
-    const pipeline = exports.recommendationPipeline(query, toDate, rule, adType);
+    const pipeline = exports.recommendationPipeline(query, toDate, rule, adType, {
+        outOfBudgetQualified: hasOutOfBudgetCondition(rule) && ["Campaign", "Placement"].includes(rule.gridName),
+    });
 
     if (onBatch) {
         const cursor = model.aggregate(pipeline).allowDiskUse(true).cursor({ batchSize });
@@ -4535,7 +4456,10 @@ exports.deleteRecommendation = async (req, res) => {
 exports.applyRuleRecommendation = async (req, res) => {
     const configId = req?.config?.configId;
     const ruleId = req?.params?.ruleId;
-    const { profileId, items = [] } = req?.body
+    const { profileId, items = [], operationId: requestedOperationId } = req?.body
+    const operationId = JSON.stringify([ruleId,
+        typeof requestedOperationId === "string" && requestedOperationId.length <= 200 && requestedOperationId.trim()
+            ? requestedOperationId.trim() : crypto.randomUUID()]);
     const adType = req?.adType;
 
     try {
@@ -4601,19 +4525,19 @@ exports.applyRuleRecommendation = async (req, res) => {
 
         /** Grid based handler */
         if (rule?.gridName === "Campaign") {
-            result = await applyCampaignRecommendation(rule, items, profile, checkConfigAds, adType);
+            result = await applyCampaignRecommendation(rule, items, profile, checkConfigAds, adType, operationId);
         }
 
         if (rule.gridName === "Placement") {
-            result = await applyPlacementRecommendation(rule, items, profile, checkConfigAds, adType);
+            result = await applyPlacementRecommendation(rule, items, profile, checkConfigAds, adType, operationId);
         }
 
         if (rule.gridName === "Targeting") {
-            result = await applyTargetingRecommendation(rule, items, profile, checkConfigAds, adType);
+            result = await applyTargetingRecommendation(rule, items, profile, checkConfigAds, adType, operationId);
         }
 
         if (rule.gridName === "Search Term") {
-            result = await applySearchTermRecommendation(rule, items, profile, checkConfigAds, adType);
+            result = await applySearchTermRecommendation(rule, items, profile, checkConfigAds, adType, operationId);
         }
 
         if (profileId) {
@@ -4651,62 +4575,10 @@ const SP_PLACEMENT_MAP = {
     "Product Page": "PLACEMENT_PRODUCT_PAGE",
 };
 
-const safeInsertRecommendationHistory = async (docs) => {
-    if (!docs || !docs.length) return;
-    try {
-        const configId = docs[0]?.configId;
-        const profileId = docs[0]?.profileId;
-        if (!configId || !profileId) {
-            await campaignChangeHistorySchema.insertMany(docs, { ordered: false }).catch(() => { });
-            return;
-        }
+const safeInsertRecommendationHistory = (docs, operationId) =>
+    insertOperationHistory(campaignChangeHistorySchema, docs, operationId);
 
-        // Filter out no-op changes (oldValue equals newValue)
-        const validDocs = docs.filter(d => {
-            if (d.oldValue !== undefined && d.oldValue !== null && d.oldValue !== "—" && d.newValue !== undefined && d.newValue !== null) {
-                const oldValStr = String(d.oldValue).trim();
-                const newValStr = String(d.newValue).trim();
-                if (oldValStr && newValStr && oldValStr === newValStr) return false;
-            }
-            return true;
-        });
-
-        if (!validDocs.length) return;
-
-        // Check for identical changes within the last 15 minutes
-        const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
-        const changeLevels = [...new Set(validDocs.map(d => d.changeLevel).filter(Boolean))];
-
-        const existing = await campaignChangeHistorySchema.find({
-            configId,
-            profileId,
-            changeLevel: { $in: changeLevels },
-            createdAt: { $gte: fifteenMinutesAgo }
-        }).select("changeLevel changeType targeting matchType newValue").lean();
-
-        const makeKey = (d) => `${d.changeLevel}_${d.changeType}_${(d.targeting || "").toLowerCase().trim()}_${(d.matchType || "").toLowerCase().trim()}_${String(d.newValue || "").trim()}`;
-        const existingKeys = new Set(existing.map(makeKey));
-
-        const deduplicated = [];
-        const seenInBatch = new Set();
-        for (const doc of validDocs) {
-            const key = makeKey(doc);
-            if (!existingKeys.has(key) && !seenInBatch.has(key)) {
-                seenInBatch.add(key);
-                deduplicated.push(doc);
-            }
-        }
-
-        if (deduplicated.length > 0) {
-            await campaignChangeHistorySchema.insertMany(deduplicated, { ordered: false }).catch(() => { });
-        }
-    } catch (err) {
-        console.error("Error in safeInsertRecommendationHistory:", err?.message || err);
-        await campaignChangeHistorySchema.insertMany(docs, { ordered: false }).catch(() => { });
-    }
-};
-
-const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds, adType) => {
+const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds, adType, operationId) => {
     const action = rule?.actions?.[0] ?? null;
     if (!action) return { isSuccess: false, message: "No action found" };
 
@@ -4815,7 +4687,7 @@ const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds,
                             source: "RECOMMENDATION",
                             createdAt: new Date(),
                         }));
-                        await safeInsertRecommendationHistory(historyDocs);
+                        await safeInsertRecommendationHistory(historyDocs, operationId);
 
                         const campBulkOps = chunk.map(({ item, actionValue }) => ({
                             updateMany: {
@@ -4839,6 +4711,7 @@ const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds,
                         results.push({ isSuccess: false, count: chunk.length, message: `Status: ${response?.status}` });
                     }
                 } catch (err) {
+                        if (err?.historyPersistenceFailure) throw err;
                     recommendation_logs({
                         log_type: "error",
                         message: `[applyCampaignRecommendation SP Budget Batch Error] ${err?.message || err}`
@@ -4924,7 +4797,7 @@ const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds,
                             source: "RECOMMENDATION",
                             createdAt: new Date(),
                         }));
-                        await safeInsertRecommendationHistory(historyDocs);
+                        await safeInsertRecommendationHistory(historyDocs, operationId);
 
                         const campBulkOps = chunk.map(item => ({
                             updateMany: {
@@ -4949,6 +4822,7 @@ const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds,
                         results.push({ isSuccess: false, count: chunk.length, message: `Status: ${response?.status}` });
                     }
                 } catch (err) {
+                        if (err?.historyPersistenceFailure) throw err;
                     recommendation_logs({
                         log_type: "error",
                         message: `[applyCampaignRecommendation SP Status Batch Error] ${err?.message || err}`
@@ -4997,7 +4871,7 @@ const computeBidValue = (currentBid, action, bidThreshold) => {
     return parseInt(actionValue, 10);
 };
 
-const applyPlacementRecommendation = async (rule, items, profile, checkConfigAds, adType) => {
+const applyPlacementRecommendation = async (rule, items, profile, checkConfigAds, adType, operationId) => {
     const actions = rule?.actions ?? [];
     const bidThreshold = await getRuleSettings(rule?.configId, rule?.profileId, "placementRuleSetting");
     const now = moment().tz(profile.timezone || "UTC");
@@ -5093,7 +4967,7 @@ const applyPlacementRecommendation = async (rule, items, profile, checkConfigAds
                         source: "RECOMMENDATION",
                         createdAt: new Date(),
                     }));
-                    await safeInsertRecommendationHistory(historyDocs);
+                    await safeInsertRecommendationHistory(historyDocs, operationId);
 
                     const placementBulkOps = chunk.map(({ item, newBid }) => ({
                         updateMany: {
@@ -5118,6 +4992,7 @@ const applyPlacementRecommendation = async (rule, items, profile, checkConfigAds
                     results.push({ isSuccess: false, count: chunk.length, message: `Status: ${response?.status}` });
                 }
             } catch (err) {
+                        if (err?.historyPersistenceFailure) throw err;
                 recommendation_logs({
                     log_type: "error",
                     message: `[applyPlacementRecommendation SP Batch Error] ${err?.message || err}`
@@ -5143,7 +5018,7 @@ const applyPlacementRecommendation = async (rule, items, profile, checkConfigAds
     }
 };
 
-const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds, adType) => {
+const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds, adType, operationId) => {
     const action = rule?.actions?.[0] ?? null;
     if (!action) return { isSuccess: false, message: "No action found" };
 
@@ -5242,6 +5117,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                                 targeting: item?.targeting,
                                 matchType: item?.matchType || item?.targetType || item?.keywordType,
                                 targetId: item?.targetId ? String(item.targetId).replace(/^[TK]-/, "") : null,
+                                historyEntityId: item?.targetId,
                                 adGroupId: item?.adGroupId,
                                 oldValue: item?.targetingBid,
                                 newValue: actionValue,
@@ -5251,7 +5127,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                                 source: "RECOMMENDATION",
                                 createdAt: new Date(),
                             }));
-                            await safeInsertRecommendationHistory(historyDocs);
+                            await safeInsertRecommendationHistory(historyDocs, operationId);
 
                             const targetBulkOps = chunk.map(({ item, actionValue }) => {
                                 const cleanId = item.targetId ? String(item.targetId).replace(/^[TK]-/, "") : null;
@@ -5287,6 +5163,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                             results.push({ isSuccess: false, count: chunk.length, message: `Status: ${response?.status}` });
                         }
                     } catch (err) {
+                        if (err?.historyPersistenceFailure) throw err;
                         recommendation_logs({
                             log_type: "error",
                             message: `[applyTargetingRecommendation SP Target Bid Batch Error] ${err?.message || err}`
@@ -5359,6 +5236,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                                 targeting: item?.targeting,
                                 matchType: item?.matchType || item?.targetType || item?.keywordType,
                                 targetId: item?.targetId ? String(item.targetId).replace(/^[TK]-/, "") : null,
+                                historyEntityId: item?.targetId,
                                 adGroupId: item?.adGroupId,
                                 oldValue: item?.targetingBid,
                                 newValue: actionValue,
@@ -5368,7 +5246,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                                 source: "RECOMMENDATION",
                                 createdAt: new Date(),
                             }));
-                            await safeInsertRecommendationHistory(historyDocs);
+                            await safeInsertRecommendationHistory(historyDocs, operationId);
 
                             const keywordBulkOps = chunk.map(({ item, actionValue }) => {
                                 const cleanId = item.targetId ? String(item.targetId).replace(/^[TK]-/, "") : null;
@@ -5404,6 +5282,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                             results.push({ isSuccess: false, count: chunk.length, message: `Status: ${response?.status}` });
                         }
                     } catch (err) {
+                        if (err?.historyPersistenceFailure) throw err;
                         recommendation_logs({
                             log_type: "error",
                             message: `[applyTargetingRecommendation SP Keyword Bid Batch Error] ${err?.message || err}`
@@ -5492,6 +5371,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                                 targeting: item?.targeting,
                                 matchType: item?.matchType || item?.targetType || item?.keywordType,
                                 targetId: item?.targetId ? String(item.targetId).replace(/^[TK]-/, "") : null,
+                                historyEntityId: item?.targetId,
                                 adGroupId: item?.adGroupId,
                                 oldValue: item?.keywordStatus || item?.status,
                                 newValue: newStatus,
@@ -5501,7 +5381,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                                 source: "RECOMMENDATION",
                                 createdAt: new Date(),
                             }));
-                            await safeInsertRecommendationHistory(historyDocs);
+                            await safeInsertRecommendationHistory(historyDocs, operationId);
 
                             const statusBulkOps = chunk.map(item => {
                                 const cleanId = item.targetId ? String(item.targetId).replace(/^[TK]-/, "") : null;
@@ -5538,6 +5418,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                             results.push({ isSuccess: false, count: chunk.length, message: `Status: ${response?.status}` });
                         }
                     } catch (err) {
+                        if (err?.historyPersistenceFailure) throw err;
                         recommendation_logs({
                             log_type: "error",
                             message: `[applyTargetingRecommendation SP Target Status Batch Error] ${err?.message || err}`
@@ -5610,6 +5491,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                                 targeting: item?.targeting,
                                 matchType: item?.matchType || item?.targetType || item?.keywordType,
                                 targetId: item?.targetId ? String(item.targetId).replace(/^[TK]-/, "") : null,
+                                historyEntityId: item?.targetId,
                                 adGroupId: item?.adGroupId,
                                 oldValue: item?.keywordStatus || item?.status,
                                 newValue: newStatus,
@@ -5619,7 +5501,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                                 source: "RECOMMENDATION",
                                 createdAt: new Date(),
                             }));
-                            await safeInsertRecommendationHistory(historyDocs);
+                            await safeInsertRecommendationHistory(historyDocs, operationId);
 
                             const keywordStatusBulkOps = chunk.map(item => {
                                 const cleanId = item.targetId ? String(item.targetId).replace(/^[TK]-/, "") : null;
@@ -5655,6 +5537,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                             results.push({ isSuccess: false, count: chunk.length, message: `Status: ${response?.status}` });
                         }
                     } catch (err) {
+                        if (err?.historyPersistenceFailure) throw err;
                         recommendation_logs({
                             log_type: "error",
                             message: `[applyTargetingRecommendation SP Keyword Status Batch Error] ${err?.message || err}`
@@ -5686,7 +5569,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
     }
 };
 
-const applySearchTermRecommendation = async (rule, items, profile, checkConfigAds, adType) => {
+const applySearchTermRecommendation = async (rule, items, profile, checkConfigAds, adType, operationId) => {
     const actions = rule?.actions ?? [];
 
     recommendation_logs({
@@ -5780,6 +5663,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                             }
                         }
                     } catch (err) {
+                        if (err?.historyPersistenceFailure) throw err;
                         recommendation_logs({
                             log_type: "error",
                             message: `[applySearchTermRecommendation Batch Negative Keywords Error] ${err?.message || err}`
@@ -5851,6 +5735,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                             }
                         }
                     } catch (err) {
+                        if (err?.historyPersistenceFailure) throw err;
                         recommendation_logs({
                             log_type: "error",
                             message: `[applySearchTermRecommendation Batch Negative ASINs Error] ${err?.message || err}`
@@ -5900,6 +5785,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                     targeting: item?.searchTerm,
                     matchType: action?.matchType || "EXACT",
                     targetId: item?.targetId ? String(item.targetId).replace(/^[TK]-/, "") : null,
+                                historyEntityId: item?.targetId,
                     adGroupId: item?.adGroupId,
                     oldValue: "—",
                     newValue: `Negative (${action?.matchType || "EXACT"})`,
@@ -5909,7 +5795,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                     source: "RECOMMENDATION",
                     createdAt: new Date(),
                 }));
-                await safeInsertRecommendationHistory(historyDocs);
+                await safeInsertRecommendationHistory(historyDocs, operationId);
 
                 const statusBulkOps = successfulItems.map(item => ({
                     updateOne: {
@@ -5998,6 +5884,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                             }
                         }
                     } catch (err) {
+                        if (err?.historyPersistenceFailure) throw err;
                         recommendation_logs({
                             log_type: "error",
                             message: `[applySearchTermRecommendation Batch Target Keywords Error] ${err?.message || err}`
@@ -6071,6 +5958,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                             }
                         }
                     } catch (err) {
+                        if (err?.historyPersistenceFailure) throw err;
                         recommendation_logs({
                             log_type: "error",
                             message: `[applySearchTermRecommendation Batch Target ASINs Error] ${err?.message || err}`
@@ -6119,6 +6007,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                     targeting: item?.searchTerm,
                     matchType: action?.matchType || "EXACT",
                     targetId: item?.targetId ? String(item.targetId).replace(/^[TK]-/, "") : null,
+                                historyEntityId: item?.targetId,
                     adGroupId: item?.adGroupId,
                     oldValue: "—",
                     newValue: `Target (${action?.matchType || "EXACT"})`,
@@ -6128,7 +6017,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                     source: "RECOMMENDATION",
                     createdAt: new Date(),
                 }));
-                await safeInsertRecommendationHistory(historyDocs);
+                await safeInsertRecommendationHistory(historyDocs, operationId);
 
                 const statusBulkOps = successfulItems.map(item => ({
                     updateOne: {

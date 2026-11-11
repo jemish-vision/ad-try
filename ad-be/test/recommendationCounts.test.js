@@ -19,7 +19,13 @@ function fixture({ campaigns = [{ campaignId: 1, status: 'ENABLED' }], adGroups 
     let rules = Array.from({ length: ruleCount }, (_, i) => ({ _id: new mongoose.Types.ObjectId(), configId: new mongoose.Types.ObjectId(configId), profileId, gridName: 'Targeting', reportDate: 'LAST_7_DAYS', timezone: 'Asia/Kolkata', ruleName: 'rule' + i }));
     const find = (kind, rows) => (filter) => { queries.push({ kind, filter }); const res = { sort: () => res, lean: async () => typeof rows === 'function' ? rows(filter) : rows }; return res; };
     const models = {
-        adTypeCampaignSchema: { find: find('campaign', campaigns) }, adTypeAdGroupSchema: { find: find('adGroup', adGroups) }, adTypeTargetingSchema: {
+        adTypeCampaignSchema: {
+            find: find('campaign', campaigns),
+            aggregate(pipeline) {
+                assert.ok(pipeline.some(stage => stage.$replaceRoot), "Campaign aggregate reads current metadata");
+                return { allowDiskUse: async () => campaigns };
+            },
+        }, adTypeAdGroupSchema: { find: find('adGroup', adGroups) }, adTypeTargetingSchema: {
             find: find('target', targets), aggregate(pipeline) {
                 aggregateCount++;
                 pipelines.push(pipeline);
@@ -71,6 +77,7 @@ function fixture({ campaigns = [{ campaignId: 1, status: 'ENABLED' }], adGroups 
         }
     };
     const mockedRequire = name => {
+        if (name === 'crypto') return require('node:crypto');
         if (name === 'mongoose')
             return mongoose;
         if (name === 'moment')
@@ -100,10 +107,16 @@ function fixture({ campaigns = [{ campaignId: 1, status: 'ENABLED' }], adGroups 
             };
         if (name === '../models/recommandationStatus.model')
             return { find: find('status', statuses), exists: async () => false, bulkWrite: async (ops) => { writes.push(ops); return { modifiedCount: 0 }; } };
+        if (name === '../helper/targetingMetricsPipeline') return require('../api-server/helper/targetingMetricsPipeline');
         if (name === '../helper/sanitizeQuery')
             return require('../api-server/helper/sanitizeQuery');
         if (name === '../helper/adTypeCollections')
             return { SP: { campaign: 'campaigns', adGroup: 'ad_groups', targeting: 'targetings', placement: 'placements' } };
+        if (name === '../services/outOfBudgetHistory.service')
+            return {
+                getCampaignBudgetHistoryDays: async () => new Map(),
+                getLatestCampaignBudgetEvents: async () => new Map(),
+            };
         if (name.includes('logger'))
             return { recommendation_logs: () => { } };
         if (name.includes('redis'))

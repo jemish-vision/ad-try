@@ -1,3 +1,4 @@
+import { BID_TO_BID, BidAcosRange } from "./bidAcos";
 import { SYSTEM_PAGES, PAGE_ACTIONS } from "src/common/constants";
 import { useContext, useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
@@ -431,12 +432,13 @@ function History(props) {
   const [dailyStats, setDailyStats] = useState(null);
   const [profileTimezone, setProfileTimezone] = useState("UTC");
   const [loadingGrid, setLoadingGrid] = useState(false);
+  const historyRequest = useRef(0);
 
   // Old ACoS Lookback Period states
   const [acosPeriod, setAcosPeriod] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_OLD_ACOS_PERIOD);
-      if (saved && ["7", "14", "30", "custom_days"].includes(saved)) {
+      if (saved && ["7", "14", "30", "custom_days", BID_TO_BID].includes(saved)) {
         return saved;
       }
     } catch (e) {
@@ -444,6 +446,8 @@ function History(props) {
     }
     return "7";
   });
+
+  const bidToBid = acosPeriod === BID_TO_BID;
 
   const [customDays, setCustomDays] = useState(() => {
     try {
@@ -786,8 +790,9 @@ function History(props) {
         const val = row?.oldAcos !== undefined && row?.oldAcos !== null ? Number(row.oldAcos) : null;
         if (val === null || isNaN(val)) {
           return (
-            <div className="flex items-center h-full">
+            <div className="flex flex-col justify-center h-full leading-tight">
               <span style={{ color: isDark ? "#94a3b8" : "#64748b" }}>—</span>
+              {bidToBid && <BidAcosRange row={row} />}
             </div>
           );
         }
@@ -799,17 +804,18 @@ function History(props) {
             : val <= 50
             ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border-amber-200 dark:border-amber-800/60"
             : "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border-rose-200 dark:border-rose-800/60";
-        const tooltipText = row?.dateRange
+        const tooltipText = !bidToBid && row?.dateRange
           ? `Spend: ${CurrencyFormat(row.spend ?? 0)} | Sales: ${CurrencyFormat(row.sales ?? 0)} (${row.dateRange.startDate} to ${row.dateRange.endDate})`
           : t("ACoS prior to change");
         return (
-          <div className="flex items-center h-full">
+          <div className="flex flex-col items-start justify-center h-full leading-tight">
             <span
               className={`inline-block px-2.5 py-0.5 rounded-md font-semibold text-xs border ${badgeClass}`}
               title={tooltipText}
             >
               {val.toFixed(2)}%
             </span>
+            {bidToBid && <BidAcosRange row={row} />}
           </div>
         );
       },
@@ -1009,11 +1015,13 @@ function History(props) {
         );
       },
     },
-  ], [isDark, t, showAllTypes]);
+  ], [isDark, t, showAllTypes, bidToBid]);
 
   useEffect(() => {
-    HistoryList(arg);
-  }, [date, profileId?.value, selectedAdType, types, sources, debouncedSearchName, debouncedTargetingSearch]);
+    const firstPage = { ...arg, pageNo: 1 };
+    setArg(firstPage);
+    HistoryList(firstPage);
+  }, [date, profileId?.value, selectedAdType, types, sources, debouncedSearchName, debouncedTargetingSearch, bidToBid]);
 
   const handlePageChange = (page) => {
     setArg({
@@ -1133,17 +1141,19 @@ function History(props) {
 
       return {
         ...item,
-        oldAcos: calculatedOldAcos,
-        spend: Number(oldSpend.toFixed(2)),
-        sales: Number(oldSales.toFixed(2)),
-        dateRange: { startDate: oldStartDate, endDate: oldEndDate },
+        ...(bidToBid ? {} : {
+          oldAcos: calculatedOldAcos,
+          spend: Number(oldSpend.toFixed(2)),
+          sales: Number(oldSales.toFixed(2)),
+          dateRange: { startDate: oldStartDate, endDate: oldEndDate },
+        }),
         currentAcos: calculatedCurrAcos,
         currentSpend: Number(currSpend.toFixed(2)),
         currentSales: Number(currSales.toFixed(2)),
         currentDateRange: { startDate: currStartDate, endDate: currEndDate },
       };
     });
-  }, [tableData, dailyStats, acosPeriod, customDays, currentAcosDate, profileTimezone]);
+  }, [tableData, dailyStats, acosPeriod, customDays, currentAcosDate, profileTimezone, bidToBid]);
 
   const HistoryList = async (argOverride) => {
     if (!profileId?.value || !selectedAdType) return;
@@ -1161,7 +1171,8 @@ function History(props) {
       targeting: argOverride?.hasOwnProperty("targeting") ? argOverride.targeting : debouncedTargetingSearch,
       fieldName: "createdAt",
       sortType: "DESC",
-      acosLookbackMode: acosPeriod,
+      acosLookbackMode: bidToBid ? "7" : acosPeriod,
+      oldAcosMode: bidToBid ? BID_TO_BID : undefined,
       acosLookbackDays: lookbackDays,
       currentAcosFromDate: currentAcosDate?.[0] ? moment(currentAcosDate[0]).format("YYYY-MM-DD") : undefined,
       currentAcosToDate: currentAcosDate?.[1] ? moment(currentAcosDate[1]).format("YYYY-MM-DD") : undefined,
@@ -1172,9 +1183,11 @@ function History(props) {
       }),
       ...argOverride,
     };
+    const request = ++historyRequest.current;
     setLoadingGrid(true);
     try {
       const e = await ApiHistory(data);
+      if (request !== historyRequest.current) return;
       if (e?.isSuccess) {
         dispatch(handleLoader(false));
         setTableData(e.data || []);
@@ -1187,9 +1200,9 @@ function History(props) {
         Toast.error(e?.message);
       }
     } catch (err) {
-      Toast.error(t("Something went wrong"));
+      if (request === historyRequest.current) Toast.error(t("Something went wrong"));
     } finally {
-      setLoadingGrid(false);
+      if (request === historyRequest.current) setLoadingGrid(false);
     }
   };
 
@@ -1301,7 +1314,13 @@ function History(props) {
                       {t("Old ACoS")}:
                     </span>
                     <div style={{ width: "135px" }}>
-                      <Select value={acosPeriod} onValueChange={(val) => setAcosPeriod(val)}>
+                      <Select value={acosPeriod} onValueChange={(val) => {
+                        if ((val === BID_TO_BID) !== bidToBid) {
+                          historyRequest.current++;
+                          setTableData([]);
+                        }
+                        setAcosPeriod(val);
+                      }}>
                         <SelectTrigger className="h-8 w-full text-xs font-medium bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700 rounded-lg shadow-none">
                           <SelectValue placeholder={t("Last 7 Days")} />
                         </SelectTrigger>
@@ -1314,6 +1333,9 @@ function History(props) {
                           </SelectItem>
                           <SelectItem value="30" className="text-xs py-1.5 cursor-pointer">
                             {t("Last 30 Days")}
+                          </SelectItem>
+                          <SelectItem value={BID_TO_BID} className="text-xs py-1.5 cursor-pointer">
+                            {t("Bid-to-Bid")}
                           </SelectItem>
                           <SelectItem value="custom_days" className="text-xs py-1.5 cursor-pointer">
                             {t("Custom Days")}

@@ -9,4 +9,8 @@ router.post("/getColumns", verifyToken, customColumnsController.getCustomColumns
 // Update or insert configuration
 router.post("/updateColumns", verifyToken, customColumnsController.updateCustomColumns);
 
+// Chart settings configuration
+router.post("/getChartSettings", verifyToken, customColumnsController.getChartSettings);
+router.post("/updateChartSettings", verifyToken, customColumnsController.updateChartSettings);
+
 module.exports = router;

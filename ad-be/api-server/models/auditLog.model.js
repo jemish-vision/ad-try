@@ -39,6 +39,7 @@ const auditLogSchema = new mongoose.Schema(
         "SELLER_CONFIG_DISCONNECT",
         "SELLER_CONFIG_SUBSCRIPTIONS",
         "SELLER_CONFIG_LINK_EXISTING",
+        "SELLER_CONNECTION_NOTIFICATION_SENT",
 
         "CSRF_ATTEMPT_EXPIRE",
         "CSRF_ATTEMPT_INVALID",

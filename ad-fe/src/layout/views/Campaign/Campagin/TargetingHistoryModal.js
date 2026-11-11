@@ -1,3 +1,4 @@
+import { BID_TO_BID, BidAcosRange } from "../../History/bidAcos";
 import React, { useEffect, useState, useCallback, useContext, useRef, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../../components/ui/dialog";
@@ -15,6 +16,7 @@ import { MdOutlineClose } from "react-icons/md";
 import moment from "moment-timezone";
 import { ProfileContext } from "../../../../helper/usecontext/useContext";
 import { getNormalizedTargetingType } from "../../../../utility/targetingUtils";
+import AgTable from "../../../../common/grid/AgTable";
 
 const STORAGE_KEY_PERIOD = "targeting_bid_history_acos_period";
 const STORAGE_KEY_CUSTOM_DAYS = "targeting_bid_history_acos_custom_days";
@@ -39,10 +41,13 @@ const TargetingHistoryModal = ({
   const [dailyStats, setDailyStats] = useState(null);
   const [profileTimezone, setProfileTimezone] = useState("UTC");
 
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
+
   const [acosPeriod, setAcosPeriod] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_PERIOD);
-      if (saved && ["7", "14", "30", "custom_days"].includes(saved)) {
+      if (saved && ["7", "14", "30", "custom_days", BID_TO_BID].includes(saved)) {
         return saved;
       }
     } catch (e) {
@@ -63,7 +68,8 @@ const TargetingHistoryModal = ({
     return 7;
   });
 
-  const tableContainerRef = useRef(null);
+  const gridRef = useRef(null);
+  const gridApiRef = useRef(null);
   const acosPeriodRef = useRef(acosPeriod);
   const customDaysRef = useRef(customDays);
 
@@ -100,6 +106,8 @@ const TargetingHistoryModal = ({
     }
   }, [customDays]);
 
+  const historyRequest = useRef(0);
+
   const fetchHistory = useCallback(
     async (overridePeriod, overrideDays) => {
       if (!targetId && !campaignId) return;
@@ -110,6 +118,7 @@ const TargetingHistoryModal = ({
           ? Math.max(1, Number(activeDays) || 7)
           : Number(activePeriod) || 7;
 
+      const request = ++historyRequest.current;
       setLoading(true);
       try {
         const effectiveMatchType = isAutoTarget ? undefined : matchType;
@@ -122,10 +131,12 @@ const TargetingHistoryModal = ({
           adType,
           fromDate,
           toDate,
-          acosLookbackMode: activePeriod,
+          acosLookbackMode: activePeriod === BID_TO_BID ? "7" : activePeriod,
+          oldAcosMode: activePeriod === BID_TO_BID ? BID_TO_BID : undefined,
           acosLookbackDays: lookbackDays,
         };
         const res = await ApiGetTargetingHistory(payload);
+        if (request !== historyRequest.current) return;
         if (res?.isSuccess) {
           setHistoryList(res?.data || []);
           setDailyStats(Array.isArray(res?.dailyStats) ? res.dailyStats : null);
@@ -137,22 +148,25 @@ const TargetingHistoryModal = ({
           setDailyStats(null);
         }
       } catch (err) {
+        if (request !== historyRequest.current) return;
         console.error("Failed to fetch targeting history", err);
         setHistoryList([]);
         setDailyStats(null);
       } finally {
-        setLoading(false);
+        if (request === historyRequest.current) setLoading(false);
       }
     },
-    [profileId, campaignId, targetId, targetText, matchType, adType, fromDate, toDate]
+    [profileId, campaignId, targetId, targetText, matchType, adType, fromDate, toDate, isAutoTarget]
   );
 
   useEffect(() => {
     if (show) {
+      setPage(1);
       fetchHistory();
     } else {
       setHistoryList([]);
       setDailyStats(null);
+      setPage(1);
     }
   }, [show, fetchHistory]);
 
@@ -233,6 +247,7 @@ const TargetingHistoryModal = ({
 
   // Recalculate Old Bid ACOS in memory whenever lookback days change (0ms latency)
   const computedHistoryList = useMemo(() => {
+    if (acosPeriod === BID_TO_BID) return historyList;
     if (!deduplicatedHistoryList.length) return [];
     if (!Array.isArray(dailyStats)) return deduplicatedHistoryList;
 
@@ -280,40 +295,15 @@ const TargetingHistoryModal = ({
         dateRange: { startDate, endDate },
       };
     });
-  }, [historyList, dailyStats, acosPeriod, customDays, profileTimezone]);
+  }, [historyList, deduplicatedHistoryList, dailyStats, acosPeriod, customDays, profileTimezone]);
 
   const handleAcosPeriodChange = (val) => {
+    acosPeriodRef.current = val;
     setAcosPeriod(val);
-    // Fallback if backend did not supply dailyStats array
-    if (!Array.isArray(dailyStats) && val !== "custom_days") {
+    setPage(1);
+    if (val === BID_TO_BID || acosPeriod === BID_TO_BID || (!Array.isArray(dailyStats) && val !== "custom_days")) {
       fetchHistory(val, customDays);
     }
-  };
-
-  // Support Shift + Mouse Scroll for horizontal scrolling
-  useEffect(() => {
-    const el = tableContainerRef.current;
-    if (!el) return;
-
-    const handleWheel = (e) => {
-      if (e.shiftKey && e.deltaY !== 0) {
-        el.scrollLeft += e.deltaY;
-        e.preventDefault();
-      } else if (Math.abs(e.deltaX) > 0) {
-        el.scrollLeft += e.deltaX;
-      }
-    };
-
-    el.addEventListener("wheel", handleWheel, { passive: false });
-    return () => {
-      el.removeEventListener("wheel", handleWheel);
-    };
-  }, [loading, computedHistoryList.length, show]);
-
-  const formatDateTime = (dateStr) => {
-    if (!dateStr) return "—";
-    const m = moment(dateStr);
-    return m.isValid() ? m.format("DD/MM/YYYY, hh:mm A") : dateStr;
   };
 
   const formatBid = (val) => {
@@ -321,11 +311,257 @@ const TargetingHistoryModal = ({
     return CurrencyCode(Number(val));
   };
 
+  const totalRecords = computedHistoryList.length;
+  const paginatedHistoryList = useMemo(() => {
+    if (!computedHistoryList || !computedHistoryList.length) return [];
+    const start = (page - 1) * perPage;
+    return computedHistoryList.slice(start, start + perPage);
+  }, [computedHistoryList, page, perPage]);
+
+  const gridHeight = useMemo(() => {
+    if (loading) return "220px";
+    const count = paginatedHistoryList.length;
+    if (count === 0) return "220px";
+    const calculated = 48 + count * 48 + 2 + 16;
+    return `min(${calculated}px, 52vh)`;
+  }, [paginatedHistoryList.length, loading]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (gridApiRef.current && typeof gridApiRef.current.sizeColumnsToFit === "function") {
+        gridApiRef.current.sizeColumnsToFit();
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // ── AG-Grid Column Definitions matching Recommendation History UI ─────────────
+  const columns = useMemo(() => [
+    {
+      headerName: t("Last Updated Time"),
+      field: "lastChangeDate",
+      colId: "lastChangeDate",
+      lockPosition: "left",
+      minWidth: 160,
+      width: 175,
+      flex: 1.1,
+      sortable: false,
+      resizable: true,
+      cellRenderer: (params) => {
+        const item = params.data;
+        if (!item) return null;
+        const dateVal = item.lastChangeDate || item.createdAt;
+        const formattedDate = dateVal ? moment(dateVal).format("DD/MM/YYYY, hh:mm A") : "—";
+        const dateParts = formattedDate.split(", ");
+        const datePart = dateParts[0] || "";
+        const timePart = dateParts[1] || "";
+        return (
+          <div className="flex flex-col justify-center h-full leading-tight">
+            <div className="flex items-center gap-1 font-semibold text-[12px] text-slate-700 dark:text-slate-200">
+              <FiClock size={12} className="opacity-60 text-slate-400 flex-shrink-0" />
+              <span>{datePart}</span>
+            </div>
+            {timePart && (
+              <span className="text-[10px] text-slate-400 pl-[16px]">{timePart}</span>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      headerName: t("Old Bid"),
+      field: "oldBid",
+      colId: "oldBid",
+      minWidth: 95,
+      width: 105,
+      flex: 0.7,
+      sortable: false,
+      resizable: true,
+      cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      cellRenderer: (params) => {
+        const item = params.data;
+        if (!item) return null;
+        const hasChange =
+          item.oldBid !== null &&
+          item.oldBid !== undefined &&
+          Number(item.oldBid) !== Number(item.bidAmount);
+        if (!hasChange) {
+          return <span className="text-slate-400 font-medium">—</span>;
+        }
+        return (
+          <span className="font-semibold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[12px]">
+            {formatBid(item.oldBid)}
+          </span>
+        );
+      },
+    },
+    {
+      headerName: t("New Bid"),
+      field: "bidAmount",
+      colId: "bidAmount",
+      minWidth: 105,
+      width: 115,
+      flex: 0.8,
+      sortable: false,
+      resizable: true,
+      cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      cellRenderer: (params) => {
+        const item = params.data;
+        if (!item) return null;
+        const hasChange =
+          item.oldBid !== null &&
+          item.oldBid !== undefined &&
+          Number(item.oldBid) !== Number(item.bidAmount);
+        const isIncrease = hasChange && Number(item.bidAmount) > Number(item.oldBid);
+
+        if (hasChange) {
+          return (
+            <span
+              className={`inline-flex items-center gap-1 font-semibold px-2.5 py-0.5 rounded-md border text-[12px] ${
+                isIncrease
+                  ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-200/50 dark:border-emerald-800/40"
+                  : "bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 border-amber-200/50 dark:border-amber-800/40"
+              }`}
+            >
+              <span>{formatBid(item.bidAmount)}</span>
+              <span className="text-[10px] font-normal">{isIncrease ? "↑" : "↓"}</span>
+            </span>
+          );
+        }
+        return (
+          <span className="inline-block font-semibold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-200/50 dark:border-blue-800/40 text-[12px]">
+            {formatBid(item.bidAmount)}
+          </span>
+        );
+      },
+    },
+    {
+      headerName: t("Old Bid ACOS"),
+      field: "oldAcos",
+      colId: "oldAcos",
+      minWidth: 125,
+      width: 135,
+      flex: 0.95,
+      sortable: false,
+      resizable: true,
+      cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      cellRenderer: (params) => {
+        const item = params.data;
+        if (!item) return null;
+        const displayAcos =
+          item.oldAcos !== undefined && item.oldAcos !== null
+            ? Number(item.oldAcos)
+            : acosPeriod !== BID_TO_BID && item.acos !== undefined && item.acos !== null
+            ? Number(item.acos)
+            : null;
+
+        return (
+          <div className="flex flex-col items-center justify-center h-full leading-tight text-center">
+            {displayAcos !== null ? (
+              <span
+                className={`inline-block px-2.5 py-0.5 rounded-md font-semibold text-xs border ${
+                  displayAcos === 0
+                    ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700"
+                    : displayAcos <= 30
+                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60"
+                    : displayAcos <= 50
+                    ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border-amber-200 dark:border-amber-800/60"
+                    : "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border-rose-200 dark:border-rose-800/60"
+                }`}
+                title={
+                  acosPeriod !== BID_TO_BID && item.dateRange
+                    ? `Spend: ${formatBid(item.spend)} | Sales: ${formatBid(item.sales)} (${item.dateRange.startDate} to ${item.dateRange.endDate})`
+                    : t("ACOS when old bid was active")
+                }
+              >
+                {displayAcos.toFixed(2)}%
+              </span>
+            ) : (
+              <span className="text-slate-400">—</span>
+            )}
+            {acosPeriod === BID_TO_BID && <BidAcosRange row={item} />}
+          </div>
+        );
+      },
+    },
+    {
+      headerName: t("Source / Change Details"),
+      field: "source",
+      colId: "source",
+      minWidth: 190,
+      flex: 1.35,
+      sortable: false,
+      resizable: true,
+      cellRenderer: (params) => {
+        const item = params.data;
+        if (!item) return null;
+        const rawSource =
+          item?.triggerSource ||
+          (item?.source === "DAYPARTING"
+            ? "Dayparting"
+            : item?.source === "RECOMMENDATION"
+            ? "Recommendation"
+            : item?.source === "AMAZON_SQS" || item?.source === "AMAZON_API"
+            ? "Amazon API"
+            : item?.source === "RULE"
+            ? "Rule"
+            : item?.source === "MANUAL"
+            ? "Manual"
+            : item?.updatedFrom === "Amazon Stream"
+            ? "Amazon API"
+            : (item?.changeType || "").toLowerCase().includes("dayparting")
+            ? "Dayparting"
+            : (item?.changeType || "").toLowerCase().match(/^update (targeting bid|camapign budget|campaign budget|placement bid|product pages placement bid|rest of search placement bid|top of search placement bid|targeting status|camapign status|campaign status)$/)
+            ? "Recommendation"
+            : (item?.changeType || "").toLowerCase().match(/rule|cron/)
+            ? "Rule"
+            : "Manual");
+
+        const badgeClass =
+          rawSource === "Dayparting"
+            ? "bg-violet-500/10 text-violet-700 dark:text-violet-300 border-violet-500/25"
+            : rawSource === "Recommendation"
+            ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/25"
+            : rawSource === "Amazon API"
+            ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/25"
+            : rawSource === "Rule"
+            ? "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/25"
+            : "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/25";
+
+        const dotColor =
+          rawSource === "Dayparting"
+            ? "bg-violet-500"
+            : rawSource === "Recommendation"
+            ? "bg-emerald-500"
+            : rawSource === "Amazon API"
+            ? "bg-amber-500"
+            : rawSource === "Rule"
+            ? "bg-indigo-500"
+            : "bg-blue-500";
+
+        const label = item?.source || rawSource;
+
+        return (
+          <div className="flex items-center h-full">
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${badgeClass}`}
+              title={label}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
+              <span>{label}</span>
+            </span>
+          </div>
+        );
+      },
+    },
+  ], [t, acosPeriod]);
+
   return (
     <Dialog open={show} onOpenChange={setShow}>
       <DialogContent
         hideCloseButton={true}
-        className="max-w-[1050px] w-[95vw] p-0 gap-0 overflow-hidden border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-2xl bg-white dark:bg-[#0f172a] text-slate-800 dark:text-slate-100 z-[1050] flex flex-col max-h-[90vh]"
+        className="max-w-[1100px] w-[95vw] p-0 gap-0 overflow-hidden border border-slate-200/90 dark:border-white/10 rounded-2xl shadow-2xl bg-white dark:bg-[#0c1322] text-slate-800 dark:text-slate-100 z-[1050] flex flex-col max-h-[90vh]"
       >
         {/* Header */}
         <DialogHeader className="px-6 py-4 border-b border-slate-200 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-900/60 flex-shrink-0">
@@ -390,6 +626,9 @@ const TargetingHistoryModal = ({
                       <SelectItem value="30" className="text-xs py-1.5 cursor-pointer">
                         {t("Last 30 Days")}
                       </SelectItem>
+                      <SelectItem value={BID_TO_BID} className="text-xs py-1.5 cursor-pointer">
+                        {t("Bid-to-Bid")}
+                      </SelectItem>
                       <SelectItem value="custom_days" className="text-xs py-1.5 cursor-pointer">
                         {t("Custom Days")}
                       </SelectItem>
@@ -449,161 +688,50 @@ const TargetingHistoryModal = ({
           </div>
         </DialogHeader>
 
-        {/* Content Body */}
-        <div className="p-6 overflow-hidden flex-1 flex flex-col min-h-0">
-          {loading ? (
-            <div className="py-16 flex flex-col items-center justify-center gap-3">
-              <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin" />
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                {t("Fetching targeting history...")}
-              </p>
-            </div>
-          ) : computedHistoryList.length === 0 ? (
-            <div className="py-16 text-center">
-              <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3 text-slate-400">
-                <FiClock size={24} />
-              </div>
-              <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                {t("No Targeting History Found")}
-              </h4>
-              <p className="text-xs text-slate-400 mt-1">
-                {t("No bid changes or historical snapshots recorded for this target yet.")}
-              </p>
-            </div>
-          ) : (
-            <div
-              ref={tableContainerRef}
-              className="overflow-x-auto overflow-y-auto max-h-[60vh] w-full max-w-full border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm bg-white dark:bg-[#0f172a]"
-              style={{ WebkitOverflowScrolling: "touch" }}
-            >
-              <table className="w-full text-left border-collapse text-xs min-w-[950px]">
-                <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-sm">
-                  <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 font-semibold uppercase tracking-wider text-[11px]">
-                    <th className="py-3 px-4 whitespace-nowrap min-w-[190px] bg-slate-50 dark:bg-slate-900">
-                      {t("Last Updated Time")}
-                    </th>
-                    <th className="py-3 px-4 text-center whitespace-nowrap min-w-[120px] bg-slate-50 dark:bg-slate-900">
-                      {t("Old Bid")}
-                    </th>
-                    <th className="py-3 px-4 text-center whitespace-nowrap min-w-[130px] bg-slate-50 dark:bg-slate-900">
-                      {t("New Bid")}
-                    </th>
-                    <th className="py-3 px-4 text-center whitespace-nowrap min-w-[130px] bg-slate-50 dark:bg-slate-900">
-                      {t("Old Bid ACOS")}
-                    </th>
-                    <th className="py-3 px-4 text-left whitespace-nowrap min-w-[340px] bg-slate-50 dark:bg-slate-900">
-                      {t("Source / Change Details")}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
-                  {computedHistoryList.map((item, idx) => {
-                    const hasChange =
-                      item.oldBid !== null &&
-                      item.oldBid !== undefined &&
-                      Number(item.oldBid) !== Number(item.bidAmount);
-
-                    const isIncrease = hasChange && Number(item.bidAmount) > Number(item.oldBid);
-                    const displayAcos =
-                      item.oldAcos !== undefined && item.oldAcos !== null
-                        ? Number(item.oldAcos)
-                        : item.acos !== undefined && item.acos !== null
-                        ? Number(item.acos)
-                        : null;
-
-                    return (
-                      <tr
-                        key={item._id || idx}
-                        className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors"
-                      >
-                        {/* Last Updated Date & Time */}
-                        <td className="py-3.5 px-4 whitespace-nowrap font-medium text-slate-900 dark:text-slate-200">
-                          {formatDateTime(item.lastChangeDate)}
-                        </td>
-
-                        {/* Old Bid */}
-                        <td className="py-3.5 px-4 text-center whitespace-nowrap font-medium text-slate-500 dark:text-slate-400">
-                          {hasChange ? (
-                            <span className="font-semibold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                              {formatBid(item.oldBid)}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400">—</span>
-                          )}
-                        </td>
-
-                        {/* New Bid */}
-                        <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                          {hasChange ? (
-                            <span
-                              className={`inline-flex items-center gap-1 font-semibold px-2.5 py-0.5 rounded-md border ${
-                                isIncrease
-                                  ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-200/50 dark:border-emerald-800/40"
-                                  : "bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 border-amber-200/50 dark:border-amber-800/40"
-                              }`}
-                            >
-                              <span>{formatBid(item.bidAmount)}</span>
-                              <span className="text-[10px] font-normal">
-                                {isIncrease ? "↑" : "↓"}
-                              </span>
-                            </span>
-                          ) : (
-                            <span className="inline-block font-semibold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-200/50 dark:border-blue-800/40">
-                              {formatBid(item.bidAmount)}
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Old Bid ACOS at time of change */}
-                        <td className="py-3.5 px-4 text-center whitespace-nowrap font-medium">
-                          {displayAcos !== null ? (
-                            <span
-                              className={`inline-block px-2.5 py-0.5 rounded-md font-semibold text-xs border ${
-                                displayAcos === 0
-                                  ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700"
-                                  : displayAcos <= 30
-                                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60"
-                                  : displayAcos <= 50
-                                  ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border-amber-200 dark:border-amber-800/60"
-                                  : "bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border-rose-200 dark:border-rose-800/60"
-                              }`}
-                              title={
-                                item.dateRange
-                                  ? `Spend: ${formatBid(item.spend)} | Sales: ${formatBid(item.sales)} (${item.dateRange.startDate} to ${item.dateRange.endDate})`
-                                  : t("ACOS when old bid was active")
-                              }
-                            >
-                              {displayAcos.toFixed(2)}%
-                            </span>
-                          ) : (
-                            <span className="text-slate-400">—</span>
-                          )}
-                        </td>
-
-                        {/* Source / Change Details */}
-                        <td className="py-3.5 px-4 text-left whitespace-nowrap">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-medium border ${
-                              item.changeSource === "Dayparting"
-                                ? "bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border-purple-200/60 dark:border-purple-800/60"
-                                : item.changeSource === "Rule"
-                                ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200/60 dark:border-amber-800/60"
-                                : item.changeSource === "Manual"
-                                ? "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200/60 dark:border-blue-800/60"
-                                : "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border-indigo-200/60 dark:border-indigo-800/60"
-                            }`}
-                            title={item.source || "Amazon Marketing Stream"}
-                          >
-                            <span>{item.source || "Amazon Marketing Stream"}</span>
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+        {/* Content Body / AgTable */}
+        <div className="overflow-hidden px-5 pt-2 pb-3 w-full max-w-full flex flex-col min-h-0">
+          <div
+            className="data_table flex flex-col min-h-0 [&_.glass-grid-container]:!rounded-xl [&_.iq-ag-table]:!rounded-t-xl [&_.ag-root-wrapper]:!rounded-t-xl [&_.iq-pagination]:!rounded-b-xl [&_.iq-pagination]:!flex-shrink-0"
+            id="targeting-bid-history-modal-grid-wrapper"
+          >
+            <AgTable
+              ref={gridRef}
+              tableId="targeting-bid-history-modal-grid"
+              height={gridHeight}
+              minHeight={computedHistoryList.length === 0 || loading ? "220px" : "auto"}
+              rowHeight={48}
+              rowData={paginatedHistoryList}
+              columnDefs={columns}
+              totalRecords={totalRecords}
+              perPage={perPage}
+              currentPage={page}
+              onPageChange={(p) => setPage(p)}
+              onPerPageChange={(size) => {
+                setPerPage(size);
+                setPage(1);
+              }}
+              paginationOptions={[10, 25, 50]}
+              isCustomSaveColumns={false}
+              enableCustomizeColumns={false}
+              loading={loading}
+              onRefresh={() => fetchHistory(acosPeriod, customDays)}
+              defaultColDef={{ resizable: true, suppressSizeToFit: false, sortable: false }}
+              onGridReady={(params) => {
+                gridApiRef.current = params?.api;
+                setTimeout(() => {
+                  if (params?.api && typeof params.api.sizeColumnsToFit === "function") {
+                    params.api.sizeColumnsToFit();
+                  }
+                }, 100);
+              }}
+              onFirstDataRendered={(params) => {
+                params?.api?.sizeColumnsToFit?.();
+              }}
+              onRowDataUpdated={(params) => {
+                params?.api?.sizeColumnsToFit?.();
+              }}
+            />
+          </div>
         </div>
       </DialogContent>
     </Dialog>

@@ -1,3 +1,4 @@
+import { useHourlyChartSettings } from "../../../../helper/hooks/useHourlyChartSettings";
 import moment from "moment-timezone";
 import {
     Dialog,
@@ -22,14 +23,15 @@ import loaderGif from "../../../../common/loader/logo_loader.gif";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const hours = [...Array(24).keys()].map((h) => h.toString().padStart(2, "0"));
-const METRICS = ["Impressions", "Clicks", "Spend", "Orders", "Sales", "CTR", "CPC", "ACOS", "ROAS"];
-const INT_METRICS = ["Orders", "Clicks", "Impressions"];
+const METRICS = ["Impressions", "Clicks", "Spend", "Purchases", "Sales", "CTR", "CPC", "ACOS", "ROAS"];
+const INT_METRICS = ["Purchases", "Clicks", "Impressions"];
 
 const METRIC_FIELDS = {
     Impressions: "impressions",
     Clicks: "clicks",
     Spend: "spends",
-    Orders: "orders",
+    Purchases: "orders",
+
     Sales: "sales",
     CTR: "ctr",
     CPC: "cpc",
@@ -39,7 +41,8 @@ const METRIC_FIELDS = {
 
 const LINE_COLORS = {
     Sales: "#16a34a",
-    Orders: "#2563eb",
+    Purchases: "#2563eb",
+
     Clicks: "#d97706",
     Impressions: "#7c3aed",
     Spend: "#dc2626",
@@ -366,7 +369,7 @@ const DateHourHeatmap = ({ hourlyData, metric, currencyCode, isDark = false }) =
                 else if (metric === "Clicks") matrix[d][h] = r.clicks;
                 else if (metric === "Spend") matrix[d][h] = r.spends;
                 else if (metric === "Sales") matrix[d][h] = r.sales;
-                else if (metric === "Orders") matrix[d][h] = r.orders;
+                else if (metric === "Purchases") matrix[d][h] = r.orders;
                 else matrix[d][h] = 0;
             }
         });
@@ -607,7 +610,8 @@ const computeTotalStats = (data) => {
         Impressions: data.reduce((a, r) => a + (r.impressions || 0), 0),
         Clicks: data.reduce((a, r) => a + (r.clicks || 0), 0),
         Spend: data.reduce((a, r) => a + (r.spends || 0), 0),
-        Orders: data.reduce((a, r) => a + (r.adsOrders || r.orders || 0), 0),
+        Purchases: data.reduce((a, r) => a + (r.adsOrders || r.orders || 0), 0),
+
         Sales: data.reduce((a, r) => a + (r.adsSales || r.sales || 0), 0),
     };
     s.CTR = s.Impressions ? (s.Clicks / s.Impressions) * 100 : 0;
@@ -618,7 +622,7 @@ const computeTotalStats = (data) => {
 };
 
 // ─── Placement Content Panel ──────────────────────────────────────────────────
-const PlacementPanel = ({ data, currencyCode, isDark = false }) => {
+const PlacementPanel = ({ data, currencyCode, placementKey, isDark = false }) => {
     const { t } = useTranslation();
     const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
 
@@ -628,8 +632,9 @@ const PlacementPanel = ({ data, currencyCode, isDark = false }) => {
         return () => window.removeEventListener("resize", handleResize);
     }, []);
 
-    const [heatMetric, setHeatMetric] = useState("Sales");
-    const [lineMetrics, setLineMetrics] = useState(["Sales", "Orders"]);
+    const { heatMetric, setHeatMetric, lineMetrics, setLineMetrics } = useHourlyChartSettings(
+        "PlacementHourlyTracking:" + placementKey, METRICS, "Sales", ["Sales","Purchases"]
+    );
 
     const toggleLineMetric = (m) =>
         setLineMetrics((prev) =>
@@ -679,7 +684,7 @@ const PlacementPanel = ({ data, currencyCode, isDark = false }) => {
                 gap: 10,
                 marginBottom: 14
             }}>
-                {["Impressions", "Clicks", "Spend", "Orders", "Sales", "CTR", "CPC", "ROAS", "ACOS"].map((m) => (
+                {["Impressions", "Clicks", "Spend", "Purchases", "Sales", "CTR", "CPC", "ROAS", "ACOS"].map((m) => (
                     <div key={m} style={statCardStyle}>
                         <div style={{ fontSize: 11, color: isDark ? "#9CA3AF" : "#9ca3af", fontWeight: 600, marginBottom: 2 }}>{t(m)}</div>
                         <div style={{ fontSize: 15, fontWeight: 700, color: isDark ? "#F9FAFB" : "#111827" }}>{fmt(totalStats[m], m, currencyCode)}</div>
@@ -928,8 +933,8 @@ export const HourlyPlacementTrackingModal = ({ showModal, setShowModal, campaign
                             <div className="hidden sm:block h-6 w-[1px]" style={{ background: isDark ? "rgba(255, 255, 255, 0.1)" : "#e5e7eb" }} />
 
                             <div className="flex items-center gap-2">
-                                <Button variant="outline" size="sm" onClick={fetchPlacementData} disabled={loading} className="gap-1.5 h-8 px-3 text-xs font-semibold bg-transparent dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800" title={t("Refresh data")}>
-                                    <FiRefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-sky-500" : ""}`} />
+                                <Button variant="outline" size="sm" onClick={fetchPlacementData} disabled={chartLoading} className="gap-1.5 h-8 px-3 text-xs font-semibold bg-transparent dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800" title={t("Refresh data")}>
+                                    <FiRefreshCw className={`w-3.5 h-3.5 ${chartLoading ? "animate-spin text-sky-500" : ""}`} />
                                     {t("Refresh")}
                                 </Button>
                                 <Button variant="outline" size="sm" onClick={exportCSV} className="gap-1.5 h-8 px-3 text-xs font-semibold bg-transparent dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800">
@@ -1027,7 +1032,7 @@ export const HourlyPlacementTrackingModal = ({ showModal, setShowModal, campaign
                         ) : (
                             PLACEMENT_TABS.map((tab) =>
                                 tab.key === activeTab ? (
-                                    <PlacementPanel key={tab.key} data={placementData[tab.key]} currencyCode={currencyCode} isDark={isDark} />
+                                    <PlacementPanel key={tab.key} placementKey={tab.key} data={placementData[tab.key]} currencyCode={currencyCode} isDark={isDark} />
                                 ) : null
                             )
                         )}

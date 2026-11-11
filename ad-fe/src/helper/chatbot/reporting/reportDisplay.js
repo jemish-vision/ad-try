@@ -1,5 +1,5 @@
 const LABELS = {
-  spend: "Ad spend", sales: "Ad sales", orders: "Orders", clicks: "Clicks",
+  spend: "Ad spend", sales: "Ad sales", orders: "Purchases", clicks: "Clicks",
   impressions: "Impressions", acos: "ACOS", roas: "ROAS", cpc: "Cost per click",
   cvr: "Conversion rate", ctr: "Click-through rate", aov: "Average order value",
   tacos: "TACOS", profit: "Profit after ads", stock: "Available stock",

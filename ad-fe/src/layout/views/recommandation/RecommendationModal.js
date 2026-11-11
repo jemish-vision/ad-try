@@ -138,6 +138,13 @@ const getRelativeDaysText = (dateStr) => {
     }
 };
 
+const isAutomaticTarget = (targeting, matchType) => {
+    const label = String(targeting || "").trim().toLowerCase();
+    const type = String(matchType || "").trim().toUpperCase();
+    return ["close-match", "loose-match", "complements", "substitutes", "similar-product", "(_targeting_auto_)"].includes(label) ||
+        type === "AUTO" || type.includes("PREDEFINED") || type.startsWith("AUTOMATIC");
+};
+
 export const getTargetHistoryKey = (cid, targeting, matchType) => {
     if (!cid || !targeting) return null;
     const cleanCid = String(cid);
@@ -160,6 +167,20 @@ export const getTargetHistoryKey = (cid, targeting, matchType) => {
         return `${cleanCid}_${cleanTarget}_${cleanMatch}`;
     }
     return `${cleanCid}_${cleanTarget}`;
+};
+
+const normalizeHistoryTargetId = (id) => String(id || "").replace(/^[TK]-/, "").trim();
+
+const getTargetHistoryInfo = (history, cid, targeting, matchType, rawTargetId) => {
+    const targetId = normalizeHistoryTargetId(rawTargetId);
+    const exact = targetId && history[`${cid}_id_${targetId}`];
+    if (exact) return exact;
+
+    const matchKey = getTargetHistoryKey(cid, targeting, matchType);
+    const textKey = `${cid}_${String(targeting).toLowerCase().trim()}`;
+    return [history[matchKey], history[textKey]].find((entry) =>
+        entry && (!targetId || !normalizeHistoryTargetId(entry.targetId))
+    ) || null;
 };
 
 export const getPlacementHistoryKey = (cid, placement) => {
@@ -245,15 +266,27 @@ export const getUpdatedNumericValue = (item, actions = [], gridName = "") => {
 
 // ─── Column Definitions for each Grid Type ─────────────────────────────────────
 
+const TAG_COLUMN = {
+    field: "isNew",
+    headerName: "Tag",
+    minWidth: 75,
+    width: 80,
+    maxWidth: 90,
+    isDefault: true,
+    lockVisible: true,
+    cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+    cellRenderer: "isNewCell"
+};
+
 const CAMPAIGN_COLUMNS = [
-    { field: "isNew", headerName: "Tag", minWidth: 80, width: 85, maxWidth: 95, cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" }, cellRenderer: "isNewCell" },
     { field: "campaignName", headerName: "Campaign Name", minWidth: 200, flex: 2, cellRenderer: "campaignNameCell" },
+    TAG_COLUMN,
     { field: "campaignStatus", headerName: "Status", minWidth: 110, maxWidth: 170, cellRenderer: "campaignStatusCell" },
     { field: "budget", headerName: "Budget", minWidth: 130, cellRenderer: "budgetChangeCell" },
     { field: "impressions", headerName: "Impressions", minWidth: 110, cellRenderer: "numberCell" },
     { field: "clicks", headerName: "Clicks", minWidth: 90, cellRenderer: "numberCell" },
     { field: "spend", headerName: "Spend", minWidth: 100, cellRenderer: "currencyCell" },
-    { field: "orders", headerName: "Orders", minWidth: 90, cellRenderer: "numberCell" },
+    { field: "orders", headerName: "Purchases", minWidth: 90, cellRenderer: "numberCell" },
     { field: "sales", headerName: "Sales", minWidth: 100, cellRenderer: "currencyCell" },
     { field: "acos", headerName: "ACoS", minWidth: 90, maxWidth: 100, cellRenderer: "acosCell" },
     { field: "roas", headerName: "ROAS", minWidth: 90, maxWidth: 100, cellRenderer: "roasCell" },
@@ -262,15 +295,15 @@ const CAMPAIGN_COLUMNS = [
 ];
 
 const PLACEMENT_COLUMNS = [
-    { field: "isNew", headerName: "Tag", minWidth: 80, width: 85, maxWidth: 95, cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" }, cellRenderer: "isNewCell" },
     { field: "campaignName", headerName: "Campaign Name", minWidth: 200, flex: 1.5, cellRenderer: "campaignNameCell" },
+    TAG_COLUMN,
     { field: "campaignStatus", headerName: "Status", minWidth: 100, maxWidth: 120, cellRenderer: "statusCell" },
     { field: "placement", headerName: "Placement", minWidth: 140 },
     { field: "placementBid", headerName: "Placement Bid", minWidth: 140, cellRenderer: "placementBidChangeCell" },
     { field: "impressions", headerName: "Impressions", minWidth: 110, cellRenderer: "numberCell" },
     { field: "clicks", headerName: "Clicks", minWidth: 90, cellRenderer: "numberCell" },
     { field: "spend", headerName: "Spend", minWidth: 100, cellRenderer: "currencyCell" },
-    { field: "orders", headerName: "Orders", minWidth: 90, cellRenderer: "numberCell" },
+    { field: "orders", headerName: "Purchases", minWidth: 90, cellRenderer: "numberCell" },
     { field: "sales", headerName: "Sales", minWidth: 100, cellRenderer: "currencyCell" },
     { field: "acos", headerName: "ACoS", minWidth: 90, maxWidth: 100, cellRenderer: "acosCell" },
     { field: "roas", headerName: "ROAS", minWidth: 90, maxWidth: 100, cellRenderer: "roasCell" },
@@ -279,19 +312,19 @@ const PLACEMENT_COLUMNS = [
 ];
 
 const TARGETING_COLUMNS = [
-    { field: "isNew", headerName: "Tag", minWidth: 80, width: 85, maxWidth: 95, cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" }, cellRenderer: "isNewCell" },
     { field: "campaignName", headerName: "Campaign Name", minWidth: 180, flex: 1, cellRenderer: "campaignNameCell" },
+    TAG_COLUMN,
     { field: "campaignStatus", headerName: "Campaign Status", minWidth: 110, maxWidth: 130, cellRenderer: "statusCell" },
     { field: "adGroupName", headerName: "Ad Group Name", minWidth: 160, flex: 1 },
     { field: "adGroupStatus", headerName: "Ad Group Status", minWidth: 110, maxWidth: 130, cellRenderer: "statusCell" },
-    { field: "targeting", headerName: "Targeting", minWidth: 180, flex: 1 },
-    { field: "matchType", headerName: "Target Type", minWidth: 110 },
+    { field: "targeting", headerName: "Targeting", minWidth: 180, flex: 1, cellRenderer: "targetingNameCell" },
+    { field: "matchType", headerName: "Target Type", minWidth: 110, cellRenderer: "targetTypeCell" },
     { field: "targetingBid", headerName: "Keyword Bid", minWidth: 140, cellRenderer: "targetingBidChangeCell" },
     { field: "keywordStatus", headerName: "Status", minWidth: 110, maxWidth: 170, cellRenderer: "targetingStatusCell" },
     { field: "impressions", headerName: "Impressions", minWidth: 110, cellRenderer: "numberCell" },
     { field: "clicks", headerName: "Clicks", minWidth: 90, cellRenderer: "numberCell" },
     { field: "spend", headerName: "Spend", minWidth: 100, cellRenderer: "currencyCell" },
-    { field: "orders", headerName: "Orders", minWidth: 90, cellRenderer: "numberCell" },
+    { field: "orders", headerName: "Purchases", minWidth: 90, cellRenderer: "numberCell" },
     { field: "sales", headerName: "Sales", minWidth: 100, cellRenderer: "currencyCell" },
     { field: "acos", headerName: "ACoS", minWidth: 90, maxWidth: 100, cellRenderer: "acosCell" },
     { field: "roas", headerName: "ROAS", minWidth: 90, maxWidth: 100, cellRenderer: "roasCell" },
@@ -300,8 +333,8 @@ const TARGETING_COLUMNS = [
 ];
 
 const SEARCH_TERM_COLUMNS = [
-    { field: "isNew", headerName: "Tag", minWidth: 80, width: 85, maxWidth: 95, cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" }, cellRenderer: "isNewCell" },
     { field: "campaignName", headerName: "Campaign Name", minWidth: 180, flex: 1, cellRenderer: "campaignNameCell" },
+    TAG_COLUMN,
     { field: "campaignStatus", headerName: "Campaign Status", minWidth: 110, maxWidth: 130, cellRenderer: "statusCell" },
     { field: "adGroupName", headerName: "Ad Group Name", minWidth: 160, flex: 1 },
     { field: "adGroupStatus", headerName: "Ad Group Status", minWidth: 110, maxWidth: 130, cellRenderer: "statusCell" },
@@ -310,7 +343,7 @@ const SEARCH_TERM_COLUMNS = [
     { field: "impressions", headerName: "Impressions", minWidth: 110, cellRenderer: "numberCell" },
     { field: "clicks", headerName: "Clicks", minWidth: 90, cellRenderer: "numberCell" },
     { field: "spend", headerName: "Spend", minWidth: 100, cellRenderer: "currencyCell" },
-    { field: "orders", headerName: "Orders", minWidth: 90, cellRenderer: "numberCell" },
+    { field: "orders", headerName: "Purchases", minWidth: 90, cellRenderer: "numberCell" },
     { field: "sales", headerName: "Sales", minWidth: 100, cellRenderer: "currencyCell" },
     { field: "acos", headerName: "ACoS", minWidth: 90, maxWidth: 100, cellRenderer: "acosCell" },
     { field: "roas", headerName: "ROAS", minWidth: 90, maxWidth: 100, cellRenderer: "roasCell" },
@@ -329,6 +362,7 @@ const GRID_COLUMN_CONFIG = {
 // Default columns if grid type not found
 const DEFAULT_COLUMNS = [
     { field: "campaignName", headerName: "Campaign Name", minWidth: 200, flex: 1, cellRenderer: "campaignNameCell" },
+    TAG_COLUMN,
     { field: "impressions", headerName: "Impressions", cellRenderer: "numberCell" },
     { field: "clicks", headerName: "Clicks", cellRenderer: "numberCell" },
     { field: "spend", headerName: "Spend", cellRenderer: "currencyCell" },
@@ -420,23 +454,20 @@ const DecimalCell = ({ value }) => (
 
 const IsNewCell = ({ value }) => {
     const isNew = Boolean(value);
+    if (isNew) {
+        return (
+            <span
+                className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider inline-flex items-center justify-center whitespace-nowrap leading-tight select-none shadow-sm"
+            >
+                NEW
+            </span>
+        );
+    }
     return (
-        <span style={{
-            background: isNew ? "rgba(34, 197, 94, 0.15)" : "rgba(148, 163, 184, 0.15)",
-            color: isNew ? "#22c55e" : "#94a3b8",
-            border: `1px solid ${isNew ? "rgba(34, 197, 94, 0.35)" : "rgba(148, 163, 184, 0.3)"}`,
-            padding: "2px 8px",
-            borderRadius: 20,
-            fontSize: 10,
-            fontWeight: 700,
-            letterSpacing: "0.5px",
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            whiteSpace: "nowrap",
-            lineHeight: "normal"
-        }}>
-            {isNew ? "NEW" : "OLD"}
+        <span
+            className="bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-white/10 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider inline-flex items-center justify-center whitespace-nowrap leading-tight select-none"
+        >
+            OLD
         </span>
     );
 };
@@ -672,8 +703,8 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
 
         const currentRule = snapshot?.rule || {};
         setInternalRule(currentRule);
-        const from = currentRule?.fromDate ? new Date(currentRule.fromDate) : null;
-        const to = currentRule?.toDate ? new Date(currentRule.toDate) : null;
+        const from = currentRule?.fromDate ? moment(currentRule.fromDate).toDate() : null;
+        const to = currentRule?.toDate ? moment(currentRule.toDate).toDate() : null;
         setDateRange([from, to]);
         setInternalData(snapshot?.data || []);
         const total = snapshot?.totalRecords ?? snapshot?.count ?? (snapshot?.data?.length || 0);
@@ -706,6 +737,14 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
 
         return list;
     }, [internalData, gridName, actions]);
+
+    const displayNewCount = useMemo(() => {
+        const fromData = (transformedData || []).filter((item) => Boolean(item.isNew)).length;
+        if (fromData > 0) return fromData;
+        if (snapshot?.newCount != null && snapshot.newCount > 0) return snapshot.newCount;
+        if (internalRule?.newCount != null && internalRule.newCount > 0) return internalRule.newCount;
+        return 0;
+    }, [transformedData, snapshot?.newCount, internalRule?.newCount]);
 
     const [selectedRows, setSelectedRows] = useState([]);
     const [showReviewModal, setShowReviewModal] = useState(false);
@@ -777,17 +816,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
             const targeting = item?.targeting || item?.keywordText || item?.keyword || item?.targetName || item?.searchTerm;
             const matchType = item?.matchType || item?.targetType;
             if (targeting) {
-                const rawTargetId = item?.targetId || item?._id?.targetId;
-                const cleanTId = rawTargetId ? String(rawTargetId).replace(/^[TK]-/, "").trim() : "";
-                if (cleanTId && latestHistoryMap[`${cid}_id_${cleanTId}`]) {
-                    return latestHistoryMap[`${cid}_id_${cleanTId}`];
-                }
-                const matchKey = getTargetHistoryKey(cid, targeting, matchType);
-                if (matchKey && latestHistoryMap[matchKey]) {
-                    return latestHistoryMap[matchKey];
-                }
-                const targetKey = `${cid}_${String(targeting).toLowerCase().trim()}`;
-                return latestHistoryMap[targetKey] || null;
+                return getTargetHistoryInfo(latestHistoryMap, cid, targeting, matchType, item?.targetId || item?._id?.targetId);
             }
 
             // 3. Campaign Grid / Row (Campaign budget/status)
@@ -795,6 +824,10 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         };
 
         if (historyFilter === "all") return nonLessThanOneList;
+
+        if (historyFilter === "new_only") {
+            return nonLessThanOneList.filter((item) => Boolean(item.isNew));
+        }
 
         if (historyFilter === "unchanged") {
             return nonLessThanOneList.filter((item) => {
@@ -1219,6 +1252,28 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         numberCell: NumberCell,
         decimalCell: DecimalCell,
         isNewCell: IsNewCell,
+        targetTypeCell: ({ value, data }) => {
+            const type = String(value || "").trim().replace(/^keyword\s*[-:]\s*/i, "").toLowerCase();
+            if (["broad", "phrase", "exact"].includes(type)) {
+                return type[0].toUpperCase() + type.slice(1);
+            }
+            return isAutomaticTarget(data?.targeting, value) || isAutomaticTarget("", data?.keywordType)
+                ? "Auto"
+                : value;
+        },
+        targetingNameCell: ({ value, data }) => {
+            const adGroupName = data?.adGroupName || data?.adGroupDetails?.name;
+            return (
+                <div className="flex h-full min-w-0 flex-col justify-center leading-tight">
+                    <span className="truncate" title={value}>{value || "—"}</span>
+                    {adGroupName && (
+                        <span className="truncate text-xs text-slate-600 dark:text-slate-400" title={adGroupName}>
+                            <strong>Ad Group:</strong> {adGroupName}
+                        </span>
+                    )}
+                </div>
+            );
+        },
 
         // Clickable Campaign Name navigation - Opens Campaign View in a new tab
         campaignNameCell: ({ value, data }) => {
@@ -1229,7 +1284,11 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
             const handleCampaignClick = (e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                openCampaignViewInNewTab(data, campaignName, { campaignId });
+                openCampaignViewInNewTab(data, campaignName, {
+                    campaignId,
+                    fromDate: toYMD(dateRange?.[0]),
+                    toDate: toYMD(dateRange?.[1]),
+                });
             };
 
             return (
@@ -1474,20 +1533,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                     historyInfo = historyMap[`${cid}_placement`] || null;
                 }
             } else if (targeting) {
-                const rawTargetId = data?.targetId || data?._id?.targetId;
-                const cleanTId = rawTargetId ? String(rawTargetId).replace(/^[TK]-/, "").trim() : "";
-                if (cleanTId && historyMap[`${cid}_id_${cleanTId}`]) {
-                    historyInfo = historyMap[`${cid}_id_${cleanTId}`];
-                } else {
-                    const matchKey = getTargetHistoryKey(cid, targeting, matchType);
-                    if (matchKey && historyMap[matchKey]) {
-                        historyInfo = historyMap[matchKey];
-                    }
-                    if (!historyInfo) {
-                        const targetKey = `${cid}_${String(targeting).toLowerCase().trim()}`;
-                        historyInfo = historyMap[targetKey] || null;
-                    }
-                }
+                historyInfo = getTargetHistoryInfo(historyMap, cid, targeting, matchType, data?.targetId || data?._id?.targetId);
             } else {
                 historyInfo = historyMap[String(cid)] || historyMap[Number(cid)] || null;
             }
@@ -1555,7 +1601,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                 </button>
             );
         },
-    }), [actions, navigate, onHide, t, adType, profileId, snapshot]);
+    }), [actions, navigate, onHide, t, adType, profileId, snapshot, dateRange]);
 
     const canUpdate = PermissionCheck(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.UPDATE);
 
@@ -1611,8 +1657,10 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                 pinned: col.pinned || undefined,
                 suppressMovable: col.suppressMovable || (col.pinned ? true : undefined),
                 lockPinned: col.lockPinned || (col.pinned ? true : undefined),
-                lockPosition: col.lockPosition || (col.pinned ? "right" : undefined),
+                lockPosition: col.lockPosition || (col.pinned === "right" ? "right" : col.pinned === "left" ? "left" : undefined),
                 cellStyle: col.cellStyle || undefined,
+                lockVisible: col.lockVisible || undefined,
+                isDefault: col.isDefault || undefined,
             };
 
             if (col.wrapText) base.wrapText = true;
@@ -1640,10 +1688,13 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         };
 
         const hasActions = actions && actions.length > 0;
+        const firstTwo = mappedColumns.slice(0, 2);
+        const rest = mappedColumns.slice(2);
         return [
             ...(canUpdate && hasActions ? [checkboxColumn] : []),
+            ...firstTwo,
             ...(adType === "All" ? [adTypeColumn] : []),
-            ...mappedColumns
+            ...rest
         ];
     }, [gridName, cellRendererMap, canUpdate, getRowId, toggleAll, headerCheckboxEvents, toggleRow, actions, adType]);
 
@@ -1667,6 +1718,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
     };
 
     const isApplyingRef = useRef(false);
+    const applyOperationRef = useRef(null);
 
     const handleApplyClick = () => {
         if (applyLoading || isApplyingRef.current) return;
@@ -1674,6 +1726,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
             Toast.error(t("Please select at least one campaign to apply."));
             return;
         }
+        applyOperationRef.current = null;
         setShowReviewModal(true);
     };
 
@@ -1697,10 +1750,15 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         setApplyLoading(true);
 
         try {
+            const signature = JSON.stringify([ruleId, profileId, adType, selectedRows]);
+            if (applyOperationRef.current?.signature !== signature) {
+                applyOperationRef.current = { signature, operationId: crypto.randomUUID() };
+            }
+            const { operationId } = applyOperationRef.current;
             const applyOne = (items, headerType) =>
                 ApiApplyRuleRecommendation(
                     ruleId,
-                    { profileId, items },
+                    { profileId, items, operationId },
                     headerType && ["SP", "SB", "SD"].includes(headerType) ? { headers: { adType: headerType } } : {}
                 );
 
@@ -1716,7 +1774,10 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                     return acc;
                 }, {});
                 const entries = Object.entries(groups);
-                const results = await Promise.all(entries.map(([t, items]) => applyOne(items, t)));
+                const settled = await Promise.allSettled(entries.map(([t, items]) => applyOne(items, t)));
+                const rejected = settled.find(result => result.status === "rejected");
+                if (rejected) throw rejected.reason;
+                const results = settled.map(result => result.value);
                 const okFor = (r) => r?.isSuccess && (r?.data?.isSuccess ?? true);
                 res = results.every(okFor)
                     ? { isSuccess: true, data: { isSuccess: true, message: `Recommendation applied (${entries.map(([t]) => t).join(", ")})` } }
@@ -1726,6 +1787,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
             }
 
             if (res?.isSuccess && (res?.data?.isSuccess ?? true)) {
+                applyOperationRef.current = null;
                 Toast.success(res?.data?.message || "Recommendation applied successfully");
                 setShowReviewModal(false);
                 const appliedRowIds = new Set(selectedRows.map((r) => getRowId(r)));
@@ -1785,6 +1847,21 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                 <span className="bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/8 px-3 py-1 rounded-full text-xs font-semibold">
                                     Total: {totalRecords || transformedData.length} items
                                 </span>
+                                {displayNewCount > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setHistoryFilter((prev) => (prev === "new_only" ? "all" : "new_only"))}
+                                        title={historyFilter === "new_only" ? t("Show all recommendations") : t("Filter to show only new recommendations")}
+                                        className={`px-3 py-1 rounded-full text-xs font-semibold cursor-pointer transition-all flex items-center gap-1 ${
+                                            historyFilter === "new_only"
+                                                ? "bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/40"
+                                                : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25"
+                                        }`}
+                                    >
+                                        <span>+{displayNewCount} {t("new")}</span>
+                                        {historyFilter === "new_only" && <span className="text-[10px] opacity-80">✕</span>}
+                                    </button>
+                                )}
                                 {selectedRows.length > 0 && (
                                     <span className="bg-emerald-500/10 dark:bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 dark:border-emerald-500/25 px-3 py-1 rounded-full text-xs font-semibold">
                                         Selected: {selectedRows.length}
@@ -2070,7 +2147,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
 
                             {/* Campaign / History Filter */}
                             <Select
-                                value={historyFilter}
+                                value={historyFilter === "new_only" ? "all" : historyFilter}
                                 onValueChange={(val) => handleFilterChange(val)}
                             >
                                 <SelectTrigger
@@ -2080,10 +2157,10 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                     <div className="flex items-center gap-2 truncate">
                                         <FiFilter size={13} className="text-slate-400 dark:text-slate-400 shrink-0" />
                                         <SelectValue>
-                                            {historyFilter === "all"
+                                            {historyFilter === "all" || historyFilter === "new_only"
                                                 ? t("All Campaigns")
                                                 : historyFilter === "less_than_one"
-                                                    ? t("Show Data Less Than 1")
+                                                    ? t("Bids Under 1.00")
                                                     : historyFilter === "unchanged"
                                                         ? t("Unchanged Campaigns (No History)")
                                                         : historyFilter === "before_days"
@@ -2099,7 +2176,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                         {t("All Campaigns")}
                                     </SelectItem>
                                     <SelectItem value="less_than_one" className="text-xs font-medium cursor-pointer">
-                                        {t("Show Data Less Than 1")}
+                                        {t("Bids Under 1.00")}
                                     </SelectItem>
                                     <SelectItem value="unchanged" className="text-xs font-medium cursor-pointer">
                                         {t("Unchanged Campaigns (No History)")}
@@ -2152,6 +2229,15 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
 
                     {/* ── Body ── */}
                     <div className="flex-1 overflow-hidden py-1 flex flex-col min-h-0">
+                        {/* Note when "Bids Under 1.00" is selected */}
+                        {historyFilter === "less_than_one" && (
+                            <div className="mb-2 px-3.5 py-2.5 rounded-xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs flex items-center gap-2.5 shadow-sm animate-in fade-in duration-200 shrink-0">
+                                <FiInfo className="text-amber-500 shrink-0" size={16} />
+                                <span className="font-medium">
+                                    {t("Note: Minimum bid for India is ₹1.00. Lower bids will be set to ₹1.00 when applied.")}
+                                </span>
+                            </div>
+                        )}
                         {(externalLoading || (dateLoading && displayData.length === 0)) ? (
                             <div className="text-center py-12 flex flex-col items-center justify-center">
                                 <div className="w-8 h-8 border-3 border-slate-100 border-t-sky-500 dark:border-white/5 dark:border-t-[#38bdf8] rounded-full animate-spin mb-3" />

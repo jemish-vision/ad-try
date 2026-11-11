@@ -68,15 +68,18 @@ test("manual revert records restore oldValue; lifecycle reversion records restor
 });
 
 for (const type of ["SP", "SB", "SD"]) {
-    test(`${type} first execution freezes observed bid before future observations drift`, async () => {
+    test(`${type} first execution rejects report-only bids until a baseline is verified`, async () => {
         const h = harness();
-        assert.equal(await resolve({ ...args, type, targeting: { ...targeting, keywordBid: 3.59 } }, h), 3.59);
+        const scoped = { ...args, type };
+        await assert.rejects(resolve(scoped, h), /No verified hourly targeting baseline/);
+        assert.equal(h.store.size, 0);
+        h.store.set(identityFor(scoped)._id, { baselineBid: 3.59, bootstrapSource: "VERIFIED_OPERATOR_BID" });
         assert.equal(await resolve({ ...args, type }, h), 3.59);
     });
 }
 
 test("concurrent candidates converge on the same durable first-writer baseline", async () => {
-    const h = harness();
+    const h = harness([initial]);
     const result = await Promise.all([
         resolve({ ...args, targeting: { ...targeting, keywordBid: 3.59 } }, h),
         resolve({ ...args, targeting: { ...targeting, keywordBid: 3.95 } }, h),
@@ -86,7 +89,7 @@ test("concurrent candidates converge on the same durable first-writer baseline",
 });
 
 test("handles Mongo duplicate-key upsert race by reading winner", async () => {
-    const h = harness();
+    const h = harness([initial]);
     h.baselineModel.findOneAndUpdate = (q) => ({ lean: async () => {
         h.store.set(q._id, { baselineBid: 3.59 });
         throw Object.assign(new Error("duplicate key"), { code: 11000 });
@@ -105,8 +108,10 @@ test("manual and non-hourly preserve legacy arithmetic without any baseline/hist
 });
 
 test("rejects invalid bids and persistence errors rather than submitting an unfrozen action", async () => {
-    await assert.rejects(resolve({ ...args, targeting: { ...targeting, keywordBid: null } }, harness()), /invalid bids/);
-    const h = harness();
+    const unverified = harness();
+    unverified.store.set(identityFor(args)._id, { baselineBid: 3.95, bootstrapSource: "FIRST_OBSERVED_BID" });
+    await assert.rejects(resolve(args, unverified), /unverified report bid/);
+    const h = harness([initial]);
     h.baselineModel.findOneAndUpdate = () => ({ lean: async () => { throw new Error("DB unavailable"); } });
     await assert.rejects(resolve(args, h), /DB unavailable/);
 });
@@ -127,7 +132,7 @@ test("identity isolates rules, accounts, profiles, ad types, campaigns, ad group
 
 test("prefixed entity bootstrap never queries ambiguous raw or opposite-namespace IDs", async () => {
     for (const prefix of ["T", "K"]) {
-        const h = harness();
+        const h = harness([initial]);
         await resolve({ ...args, targeting: { ...targeting, targetId: `${prefix}-65636579401743` } }, h);
         const query = h.calls.find(c => typeof c === "object");
         assert.deepEqual(query.targetId.$in, [`${prefix}-65636579401743`]);

@@ -1169,66 +1169,7 @@ const getDatesBetween = (startDate, endDate) => {
   return dates;
 }
 
-const parallelBulkWrite = async (model, ops, BULK_BATCH = Number(process.env.BATCH) || 1000) => {
-  if (!ops || ops.length === 0) return { insertedCount: 0, modifiedCount: 0, upsertedCount: 0 };
-
-  const chunks = [];
-  while (ops.length) {
-    chunks.push(ops.splice(0, BULK_BATCH));
-  }
-
-  const CONCURRENCY = 5;
-  for (let i = 0; i < chunks.length; i += CONCURRENCY) {
-    const chunkGroup = chunks.slice(i, i + CONCURRENCY);
-    await Promise.all(
-      chunkGroup.map(async (chunk) => {
-        try {
-          return await model.bulkWrite(chunk, { ordered: false });
-        } catch (err) {
-          const modelName = model?.modelName || model?.collection?.collectionName || 'UnknownModel';
-
-          // Extract specific write errors from MongoBulkWriteError
-          const writeErrors = err.writeErrors || [];
-          const nonDuplicateErrors = writeErrors.filter(e => e.code !== 11000);
-
-          if (nonDuplicateErrors.length > 0 || (writeErrors.length === 0 && err.code !== 11000)) {
-            // Detailed diagnostic logging for non-duplicate errors (e.g. code 121 validation, type mismatch, disk/network)
-            const errorDetails = nonDuplicateErrors.slice(0, 5).map(e => ({
-              code: e.code,
-              message: e.errmsg || e.message,
-              opFilter: e.op?.filter || e.op?.q || (e.op?.insertOne ? e.op.document?._id : undefined)
-            }));
-
-            write_logs({
-              message: `[BulkWrite Error] ${modelName} failed with ${nonDuplicateErrors.length} write errors. Sample errors: ${JSON.stringify(errorDetails)}. Underlying: ${err.message}`,
-              log_type: "error"
-            });
-
-            // STRICT: Propagate failure so report importer knows writes failed!
-            throw err;
-          }
-
-          // If every write error is strictly a duplicate key (11000), log warning and continue
-          if (writeErrors.length > 0 && nonDuplicateErrors.length === 0) {
-            write_logs({
-              message: `[BulkWrite DuplicateKey Notice] ${modelName} encountered ${writeErrors.length} duplicate keys (E11000) during unordered bulk write. Skipping duplicates.`,
-              log_type: "warn"
-            });
-            return err.result;
-          }
-
-          // Any other error (network down, pool exhausted, authentication, validation) must throw!
-          write_logs({
-            message: `[BulkWrite Critical Failure] ${modelName} failed: ${err.message}`,
-            log_type: "error"
-          });
-          throw err;
-        }
-      })
-    );
-  }
-};
-
+const { parallelBulkWrite } = require("./parallelBulkWrite");
 
 const parseStrictMetric = (rawValue, fieldName, context = "") => {
   if (rawValue === undefined || rawValue === null) {

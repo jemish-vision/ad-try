@@ -111,7 +111,7 @@ function Product() {
 
   // ── Column visibility / ordering helper ──────────────────────────────────
   const checkOrderColumns = (title) => {
-    const matched = visibleColumns?.find((col) => col?.title === title);
+    const matched = visibleColumns?.find((col) => col?.title === title || (title === "Purchases" && col?.title === "Orders"));
     return {
       width: matched?.width ?? 200,
       hide: Boolean(visibleColumns?.length && !matched),
@@ -338,10 +338,10 @@ function Product() {
 
     // ── Orders ────────────────────────────────────────────────────────────
     {
-      headerName: t("Orders"),
+      headerName: t("Purchases"),
       field: "orders",
-      title: "Orders",
-      ...(checkOrderColumns("Orders")),
+      title: "Purchases",
+      ...(checkOrderColumns("Purchases")),
       sortable: true,
       resizable: true,
       cellRenderer: (params) => <>{CurrencyFormat(params.value ?? 0)}</>,

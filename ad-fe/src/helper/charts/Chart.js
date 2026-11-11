@@ -9,6 +9,7 @@ import {
 import { useTranslation } from "react-i18next";
 import CurrencyFormat from "../currencyCode/CurrencyFormat";
 import CurrencyCode from "../currencyCode/CurrencyCode";
+import { useChartSettings } from "../hooks/useChartSettings";
 
 /* ─────────────────────────────────────────────────────────────
    PALETTE
@@ -42,7 +43,7 @@ const getSolidColor = (m) => {
 const ALL_METRICS = [
     { key: "spend", label: "Spend", color: P.barSpend, stroke: P.barSpendBorder, side: "right", format: "currency" },
     { key: "sales", label: "Sales", color: P.barSales, stroke: P.barSalesBorder, side: "right", format: "currency" },
-    { key: "orders", label: "Orders", color: "#2374F2", side: "left", format: "number" },
+    { key: "orders", label: "Purchases", color: "#2374F2", side: "left", format: "number" },
     { key: "acos", label: "ACOS", color: "#F07070", side: "right", format: "percent" },
     { key: "roas", label: "ROAS", color: "#3ECFA8", side: "left", format: "number" },
     { key: "impressions", label: "Impressions", color: "#8B5CF6", side: "right", format: "number" },
@@ -54,6 +55,8 @@ const FREQ_KEYS = ["spend", "sales", "orders", "acos", "roas", "impressions", "c
 
 // Default metrics shown in chart and cards
 const DEFAULT_ACTIVE = ["impressions", "spend", "orders", "sales"];
+const DEFAULT_CHART_TYPES = { sales: "bar", spend: "bar" };
+const VALID_METRIC_KEYS = ALL_METRICS.map((metric) => metric.key);
 const MIN_METRICS = 2;
 const MAX_METRICS = 6;
 const AXIS_WIDTH_DESKTOP = 65;
@@ -1026,8 +1029,23 @@ const TopCards = ({ sumOfValues, activeMetrics, activeKeys, toggleMetric, openDD
      chartData     — array of objects with { reportDate, ...metric keys }
      totalRow      — object with aggregated totals (same shape as before)
 ───────────────────────────────────────────────────────────── */
-const Chart = ({ chartLoading = false, isTotalsLoading = false, chartData = [], totalRow = {}, id }) => {
+const Chart = ({
+    chartLoading = false,
+    isTotalsLoading = false,
+    chartData = [],
+    totalRow = {},
+    id,
+    chartId,
+    customSaveChartName,
+}) => {
     const { t } = useTranslation();
+
+    const savePageName =
+        chartId ||
+        customSaveChartName ||
+        (id && id !== "chart" ? id : null) ||
+        (id === "chart" ? "Campaign" : null) ||
+        "default-chart";
 
     /* ── theme observer to repaint chart reactively ── */
     const [theme, setTheme] = useState(document.documentElement.getAttribute("data-theme") || "light");
@@ -1042,13 +1060,32 @@ const Chart = ({ chartLoading = false, isTotalsLoading = false, chartData = [], 
 
     const isDark = theme === "dark";
 
-    /* ── CHART PANEL STATE ── */
-    const [granularity, setGranularity] = useState("Daily");
-    const [activeKeys, setActiveKeys] = useState(DEFAULT_ACTIVE);
-    const [chartTypes, setChartTypes] = useState({ sales: "bar", spend: "bar" });
-    const [showDataLabels, setShowDataLabels] = useState(false);
-    const [showChanges, setShowChanges] = useState(false);
-    const [viewMode, setViewMode] = useState("chart");
+    /* ── PERSISTENT CHART DISPLAY SETTINGS & CUSTOMIZATION PREFERENCES ── */
+    const {
+        granularity,
+        setGranularity,
+        activeKeys,
+        setActiveKeys,
+        chartTypes,
+        setChartTypes,
+        showDataLabels,
+        setShowDataLabels,
+        showChanges,
+        setShowChanges,
+        viewMode,
+        setViewMode,
+        toggleMetric,
+        replaceMetric,
+        setChartType,
+    } = useChartSettings({
+        savePageName,
+        defaultActiveKeys: DEFAULT_ACTIVE,
+        defaultChartTypes: DEFAULT_CHART_TYPES,
+        minMetrics: MIN_METRICS,
+        maxMetrics: MAX_METRICS,
+        validMetricKeys: VALID_METRIC_KEYS,
+    });
+
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [openDD, setOpenDD] = useState(null);
 
@@ -1058,30 +1095,15 @@ const Chart = ({ chartLoading = false, isTotalsLoading = false, chartData = [], 
         return () => { document.body.style.overflow = ""; };
     }, [isFullscreen]);
 
-    // Toggle metric - sync between chart and cards
-    const toggleMetric = useCallback((key) => {
-        setActiveKeys(prev => {
-            const isActive = prev.includes(key);
-            // Enforce min/max limits
-            if ((isActive && prev.length <= MIN_METRICS) || (!isActive && prev.length >= MAX_METRICS)) return prev;
-            return isActive ? prev.filter(k => k !== key) : [...prev, key];
-        });
-        // Close any open dropdowns after toggling
+    const handleToggleMetric = useCallback((key) => {
+        toggleMetric(key);
         setOpenDD(null);
-    }, []);
+    }, [toggleMetric]);
 
-    // Replace metric (for card dropdown replacement)
-    const replaceMetric = useCallback((oldKey, newKey) => {
-        setActiveKeys(prev => {
-            if (!prev.includes(oldKey) || prev.includes(newKey)) return prev;
-            return prev.map(k => k === oldKey ? newKey : k);
-        });
+    const handleReplaceMetric = useCallback((oldKey, newKey) => {
+        replaceMetric(oldKey, newKey);
         setOpenDD(null);
-    }, []);
-
-    const setChartType = useCallback((key, type) => {
-        setChartTypes(prev => ({ ...prev, [key]: type }));
-    }, []);
+    }, [replaceMetric]);
 
     /* ── ACTIVE METRICS (derived from activeKeys) ── */
     const activeMetrics = useMemo(() => {
@@ -1151,7 +1173,7 @@ const Chart = ({ chartLoading = false, isTotalsLoading = false, chartData = [], 
     };
     const footerProps = {
         activeMetrics, activeKeys, openDD, setOpenDD,
-        toggleMetric, setChartType,
+        toggleMetric: handleToggleMetric, setChartType,
         showDataLabels, setShowDataLabels,
         showChanges, setShowChanges, isFullscreen,
         onToggleFullscreen: () => setIsFullscreen(f => !f),
@@ -1199,8 +1221,8 @@ const Chart = ({ chartLoading = false, isTotalsLoading = false, chartData = [], 
                 sumOfValues={sumOfValues}
                 activeMetrics={activeMetrics}
                 activeKeys={activeKeys}
-                toggleMetric={toggleMetric}
-                replaceMetric={replaceMetric}
+                toggleMetric={handleToggleMetric}
+                replaceMetric={handleReplaceMetric}
                 openDD={openDD}
                 setOpenDD={setOpenDD}
                 isDark={isDark}

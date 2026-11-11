@@ -9,7 +9,16 @@ export const createTourEngine = (state, dispatch, activeSteps) => {
     const currentTourConfig = tourRegistry.getTour(activeTourId);
     const steps = activeSteps && activeSteps.length > 0 ? activeSteps : (currentTourConfig ? currentTourConfig.steps : []);
 
+    const clearRipples = () => {
+        try {
+            document.querySelectorAll('.tour-target-ripple').forEach(el => el.classList.remove('tour-target-ripple'));
+        } catch {
+            // no-op
+        }
+    };
+
     const handleJoyrideCallback = async (data) => {
+        clearRipples();
         const { status, type, action, index, step } = data;
 
         if (type === EVENTS.STEP_BEFORE) {

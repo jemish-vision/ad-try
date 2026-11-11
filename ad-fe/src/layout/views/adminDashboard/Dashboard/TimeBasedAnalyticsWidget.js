@@ -162,7 +162,11 @@ export function useTimeBasedAnalyticsData({ profileId, adType = "SP", date }) {
 
   const fetchData = useCallback(async (force = false) => {
     const pid = currentPid || getProfileIdString(profileId) || getStoredProfileId();
-    if (!pid) return;
+    if (!pid) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
 
     const paramsKey = `${pid}_${adType}_${fromDate}_${toDate}`;
     if (!force && timeDataCache.has(paramsKey)) {
@@ -263,7 +267,7 @@ function CustomChartTooltip({
       </div>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "14px", marginBottom: "4px" }}>
-        <span style={{ color: isDark ? "#94a3b8" : "#64748b", fontWeight: 500 }}>Orders:</span>
+        <span style={{ color: isDark ? "#94a3b8" : "#64748b", fontWeight: 500 }}>Purchases:</span>
         <span style={{ fontWeight: 700, color: "#2374F2", fontVariantNumeric: "tabular-nums" }}>
           {formatFullRegionalNumber(orders, marketplace, 0)}
         </span>
@@ -393,7 +397,7 @@ function ViewModeDropdown({ viewMode, metric, onSelectView }) {
             >
               <span className="flex items-center gap-2">
                 <BarChart2 className="w-3.5 h-3.5 text-blue-500" />
-                <span>{t("Bar Chart (Orders)")}</span>
+                <span>{t("Bar Chart (Purchases)")}</span>
               </span>
               {viewMode === "chart" && metric === "orders" && (
                 <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
@@ -517,7 +521,7 @@ export function OrdersByDayWidget({
             <Calendar className="w-4 h-4" />
           </div>
           <h3 className="text-[14.5px] font-bold text-slate-900 dark:text-white tracking-tight truncate">
-            {t("Orders by Day of Week")}
+            {t("Purchases by Day of Week")}
           </h3>
         </div>
 
@@ -554,7 +558,7 @@ export function OrdersByDayWidget({
                   <strong className="text-slate-800 dark:text-slate-100 font-bold">
                     {peakDay.dayName}
                   </strong>{" "}
-                  ({formatFullRegionalNumber(peakDay.orders || 0, marketplace, 0)} {t("orders")})
+                  ({formatFullRegionalNumber(peakDay.orders || 0, marketplace, 0)} {t("purchases")})
                 </span>
               </span>
             ) : (
@@ -572,7 +576,7 @@ export function OrdersByDayWidget({
                     : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
                 }`}
               >
-                {t("Orders")}
+                {t("Purchases")}
               </button>
               <button
                 type="button"
@@ -704,7 +708,7 @@ export function OrdersByDayWidget({
             <thead className="sticky top-0 bg-white dark:bg-slate-900 z-10">
               <tr className="border-b border-slate-100 dark:border-white/5 text-[12px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
                 <th className="py-2 px-2.5 font-semibold">{t("DAY")}</th>
-                <th className="py-2 px-2.5 text-right font-semibold">{t("ORDERS")}</th>
+                <th className="py-2 px-2.5 text-right font-semibold">{t("PURCHASES")}</th>
                 <th className="py-2 px-2.5 text-right font-semibold">{t("REVENUE")}</th>
                 <th className="py-2 px-2.5 text-right font-semibold">{t("AOV")}</th>
               </tr>
@@ -880,7 +884,7 @@ export function PeakHoursWidget({
                   <strong className="text-slate-800 dark:text-slate-100 font-bold">
                     {topPeak.label}
                   </strong>{" "}
-                  ({formatFullRegionalNumber(topPeak.orders || 0, marketplace, 0)} {t("orders")})
+                  ({formatFullRegionalNumber(topPeak.orders || 0, marketplace, 0)} {t("purchases")})
                 </span>
               </span>
             ) : (
@@ -898,7 +902,7 @@ export function PeakHoursWidget({
                     : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
                 }`}
               >
-                {t("Orders")}
+                {t("Purchases")}
               </button>
               <button
                 type="button"
@@ -1030,7 +1034,7 @@ export function PeakHoursWidget({
             <thead className="sticky top-0 bg-white dark:bg-slate-900 z-10">
               <tr className="border-b border-slate-100 dark:border-white/5 text-[12px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
                 <th className="py-2 px-2.5 font-semibold">{t("HOUR")}</th>
-                <th className="py-2 px-2.5 text-right font-semibold">{t("ORDERS")}</th>
+                <th className="py-2 px-2.5 text-right font-semibold">{t("PURCHASES")}</th>
                 <th className="py-2 px-2.5 text-right font-semibold">{t("REVENUE")}</th>
               </tr>
             </thead>

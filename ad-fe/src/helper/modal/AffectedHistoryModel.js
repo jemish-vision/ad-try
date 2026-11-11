@@ -345,7 +345,7 @@ const formatAmazonChangeType = (row) => {
     }
 
     // 2. Keyword / Target Bid
-    const isRestoration = row.isReverted || /revert/i.test(row.notes || "") || (row.metricsHistory || []).some(m => m.eventType === "REVERT_TO_BASELINE");
+    const isRestoration = row.returnedToBaseline === true || row.metricsHistory?.some(m => m.eventType === "REVERT_TO_BASELINE");
     const restoreSuffix = isRestoration ? " [Restored to Baseline]" : "";
     if (changed === "bid" || (target && /bid/i.test(changed))) {
         if (target) return `${entityName} bid${matchStr} - ${target}${restoreSuffix}`;
@@ -744,7 +744,7 @@ const AffectedHistoryModel = ({ show, onClose, data = [], onRevert, onRefresh, l
         data.forEach(item => {
             const uid = item.targetId || item.keywordId || (item.placement ? `${item.campaignId}_${item.placement}` : item.campaignId) || item._id;
             if (uid) uniqueSet.add(uid);
-            if (item.isReverted || item.notes?.includes("Revert") || item.metricsHistory?.some(m => m.eventType === "REVERT_TO_BASELINE")) {
+            if (item.returnedToBaseline === true || item.metricsHistory?.some(m => m.eventType === "REVERT_TO_BASELINE")) {
                 counts.restores++;
             }
             const info = getSettingInfo(item);
@@ -888,6 +888,8 @@ const AffectedHistoryModel = ({ show, onClose, data = [], onRevert, onRefresh, l
                                             row={row}
                                             name={campaignName}
                                             campaignId={campaignId}
+                                            fromDate={row.ruleDateRange?.fromDate}
+                                            toDate={row.ruleDateRange?.toDate}
                                         />
                                     </div>
                                 </div>
@@ -906,6 +908,8 @@ const AffectedHistoryModel = ({ show, onClose, data = [], onRevert, onRefresh, l
                                 row={row}
                                 name={campaignName || "—"}
                                 campaignId={campaignId}
+                                fromDate={row.ruleDateRange?.fromDate}
+                                toDate={row.ruleDateRange?.toDate}
                             />
                         </div>
                     </div>

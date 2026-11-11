@@ -549,6 +549,8 @@ function Campaign() {
     params.delete("budgetType");
     params.delete("startDate");
     params.delete("endDate");
+    params.delete("fromDate");
+    params.delete("toDate");
     const remaining = params.toString();
     navigate(remaining ? `/campaigns?${remaining}` : "/campaigns", { replace: false });
   };
@@ -635,7 +637,7 @@ function Campaign() {
   }, [selectedRows, tableData]);
 
   const checkOrderColumns = useCallback((title) => {
-    const matchedIndex = visibleColumns?.findIndex((col) => col?.title === title);
+    const matchedIndex = visibleColumns?.findIndex((col) => col?.title === title || (title === "Purchases" && col?.title === "Orders") || (title === "Orders" && col?.title === "Purchases"));
     const matched = matchedIndex !== undefined && matchedIndex !== -1 ? visibleColumns?.[matchedIndex] : undefined;
     return {
       width: matched?.width ?? 200,
@@ -732,7 +734,9 @@ function Campaign() {
       field: "action",
       title: "Action",
       ...(checkOrderColumns("Action")),
-      maxWidth: 70,
+      width: 95,
+      minWidth: 90,
+      maxWidth: 120,
       pinned: disablePinning ? null : "left",
       lockPinned: !disablePinning,
       sortable: false,
@@ -1005,10 +1009,10 @@ function Campaign() {
     },
     // ── Orders ────────────────────────────────────────────────────────────
     {
-      headerName: t("Orders"),
+      headerName: t("Purchases"),
       field: "orders",
-      title: "Orders",
-      ...(checkOrderColumns("Orders")),
+      title: "Purchases",
+      ...(checkOrderColumns("Purchases")),
       sortable: true,
       resizable: true,
       cellRenderer: (params) => <>{CurrencyFormat(params.value ?? 0)}</>,
@@ -1283,6 +1287,20 @@ function Campaign() {
     return () => clearTimeout(debounce);
   }, [targetACOS]);
 
+  const campaignViewDate = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    const queryFrom = params.get("fromDate");
+    const queryTo = params.get("toDate");
+    const [from, to] = queryFrom && queryTo
+      ? [queryFrom, queryTo]
+      : [location.state?.fromDate, location.state?.toDate];
+    const start = moment(from, "YYYY-MM-DD", true);
+    const end = moment(to, "YYYY-MM-DD", true);
+    return start.isValid() && end.isValid() && !start.isAfter(end)
+      ? [start.toDate(), end.toDate()]
+      : null;
+  }, [location.search, location.state?.fromDate, location.state?.toDate]);
+
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
     const paramCampaignId = searchParams.get("campaignId") || location.state?.campaignId;
@@ -1302,11 +1320,6 @@ function Campaign() {
         targetingType: searchParams.get("targetingType") || location.state?.targetingType,
       });
       setViewPress(true);
-      if (searchParams.get("fromDate") && searchParams.get("toDate")) {
-        setDate([new Date(searchParams.get("fromDate")), new Date(searchParams.get("toDate"))]);
-      } else if (location.state?.fromDate && location.state?.toDate) {
-        setDate([new Date(location.state.fromDate), new Date(location.state.toDate)]);
-      }
       return;
     } else {
       setViewPress(false);
@@ -1469,6 +1482,14 @@ function Campaign() {
   };
 
   const ApiListing = async (arg) => {
+    if (!profileId?.value || !selectedAdType || !date || date.length === 0) {
+      setLoading(false);
+      setChartLoading(false);
+      setTableData([]);
+      setCampaignData({});
+      return;
+    }
+
     if (profileId?.value && selectedAdType && date?.length != 0) {
       const isReload = !!arg?.skipLoader || !!arg?.isReload;
 
@@ -1879,7 +1900,7 @@ function Campaign() {
               "budget": "Budget",
               "impressions": "Impressions",
               "clicks": "Clicks",
-              "orders": "Orders",
+              "orders": "Purchases",
               "sales": "Sales",
               "roas": "ROAS",
               "acos": "ACOS",
@@ -1888,7 +1909,7 @@ function Campaign() {
             };
 
             const filterType = reverseFieldMap[key] || key;
-            const filterOption = filterOptions.find(opt => opt.value === filterType);
+            const filterOption = filterOptions.find(opt => opt.value === filterType || (filterType === "Orders" && opt.value === "Purchases") || (filterType === "Purchases" && opt.value === "Orders"));
 
             if (filterOption) {
               // Get the proper label for the condition
@@ -2022,7 +2043,7 @@ function Campaign() {
           viewPress={viewPress}
           setViewPress={setViewPress}
           campaignDetails={campaignDetails}
-          campaignDate={date}
+          campaignDate={campaignViewDate || date}
           handleBack={handleCloseViewCampaign}
         />
       ) : (
@@ -2207,7 +2228,31 @@ function Campaign() {
               </div>
             </div>
 
-            <Chart chartLoading={chartLoading} isTotalsLoading={loading} chartData={chartData} totalRow={totalRow} id="chart" />
+            {!profileId?.value && (
+              <div className="w-full mb-4 p-4 rounded-xl border border-sky-200 dark:border-sky-800/60 bg-sky-50 dark:bg-sky-950/30 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center text-sky-600 dark:text-sky-400 shrink-0">
+                    <InfoIcon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h6 className="font-bold text-slate-800 dark:text-slate-100 text-sm mb-0.5">
+                      {t("No Amazon Ads Profile Connected")}
+                    </h6>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-0">
+                      {t("Please connect your Amazon Advertising account in Settings or choose an active profile from the top header.")}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  onClick={() => navigate("/settings")}
+                  className="btn custom-primary-btn text-xs h-9 shrink-0"
+                >
+                  {t("Connect Account")}
+                </Button>
+              </div>
+            )}
+
+            <Chart chartLoading={chartLoading} isTotalsLoading={loading} chartData={chartData} totalRow={totalRow} id="chart" chartId="Campaign" />
 
             {showAllTypes && (
               <div style={{ padding: "0 0 10px 0" }}>

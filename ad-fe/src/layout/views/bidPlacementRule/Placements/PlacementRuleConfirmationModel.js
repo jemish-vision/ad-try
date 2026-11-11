@@ -250,7 +250,7 @@ function PlacementRuleConfirmationModel({
             width: "110px"
         },
         {
-            name: t("Orders"),
+            name: t("Purchases"),
             selector: (row) => row.orders ?? 0,
             right: true,
             width: "100px"

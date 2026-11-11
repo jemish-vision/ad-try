@@ -490,16 +490,16 @@ function Inventory() {
 
     // ── Min Orders (inline editable, FBA only) ────────────────────────
     {
-      headerName: "Min Orders",
+      headerName: "Min Purchases",
       field: "agingMinOrders",
-      title: "Min Orders",
+      title: "Min Purchases",
       isDisplay: true,
       sortable: false,
       resizable: true,
       width: 140,
       headerComponent: CustomHeader,
       headerComponentParams: {
-        tooltipText: t("Minimum number of orders required within the selected lookback period to consider inventory healthy.")
+        tooltipText: t("Minimum number of purchases required within the selected lookback period to consider inventory healthy.")
       },
       cellRenderer: (params) => {
         const row = params.data;
@@ -507,8 +507,8 @@ function Inventory() {
         return (
           <InlineEditPopup
             value={row?.agingMinOrders ?? 10}
-            title={t("Min Orders")}
-            append="orders"
+            title={t("Min Purchases")}
+            append="purchases"
             onSave={async (v) => await handleSaveAgingThreshold(row.sku, row.asin, v, row.agingLookbackDays, row.agingEnabled)}
             disabled={!PermissionCheck(SYSTEM_PAGES.INVENTORY, PAGE_ACTIONS.UPDATE)}
           />

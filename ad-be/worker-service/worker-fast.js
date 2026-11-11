@@ -1,3 +1,4 @@
+const { createRunJobSafely } = require("./runJobSafely.helper");
 const pLimit = require("p-limit").default;
 const cron = require("node-cron");
 const mongoose = require("mongoose");
@@ -19,6 +20,7 @@ const { cronRequestReview } = require("../api-server/controllers/order.controlle
 const { cronNegativeListingFromAmazon } = require("../api-server/controllers/keyword.controller");
 const { cronProductUnavailabilityCheck } = require("../api-server/controllers/productAds.controller");
 const { cronReminderForReimbursement } = require("../api-server/controllers/reconciliationReimbursement.controller");
+const { cronDailySystemHealthAudit } = require("../api-server/controllers/systemHealthAudit.controller");
 const { pingHeartbeat, sendThrottledCronAlert } = require("../api-server/helper/heartbeat.helper");
 const { processStagedReportBatches } = require("../api-server/services/reportBatchWriter.service");
 
@@ -66,6 +68,7 @@ const taskHandlers = {
 
     DisconnectReminder: async () => { await runJobSafely("Disconnect Reminder", cronDisconnectReminder); },
     StuckSyncReset: async () => { await runJobSafely("Stuck Sync Reset", resetStuckSyncRecords); },
+    DailySystemHealthAudit: async () => { await runJobSafely("Daily System Health Audit", cronDailySystemHealthAudit); },
 
     // --- Migrated to BullMQ hourly-sync-queue (hourlySync.worker.js) ---
     // ReportBatchWriter: async () => {
@@ -81,13 +84,11 @@ const JOB_TIMEOUT_MS = {
     default: 10 * 60 * 1000,
 };
 
-const withTimeout = (promise, ms, name) => {
-    let timer;
-    const timeout = new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`Job ${name} exceeded ${ms}ms timeout`)), ms);
-    });
-    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
-};
+const { withDrainingTimeout } = require("./drainingTimeout.helper");
+const withTimeout = (promise, ms, name) => withDrainingTimeout(promise, ms, name, error => {
+    cron_logs({ message: `[worker-fast] ${error.message}; retaining task guard and worker slot until execution settles`, log_type: "error" });
+    return sendThrottledCronAlert(name, error);
+});
 
 function scheduleJobs(jobList) {
     jobList.forEach(job => {
@@ -135,17 +136,7 @@ function scheduleJobs(jobList) {
     });
 }
 
-const runJobSafely = async (taskName, fn) => {
-    if (typeof fn !== "function") return;
-    try {
-        cron_logs({ message: `[worker-fast] Started: ${taskName}`, log_type: "info" });
-        await fn();
-        cron_logs({ message: `[worker-fast] Ended: ${taskName}`, log_type: "info" });
-    } catch (error) {
-        cron_logs({ message: `[worker-fast] Failed: ${taskName}, Error:${error.message || error}`, log_type: "error" });
-        await sendThrottledCronAlert(taskName, error);
-    }
-};
+const runJobSafely = createRunJobSafely("worker-fast");
 
 const startCronChangeStream = () => {
     if (mongoose.connection.readyState !== 1) {

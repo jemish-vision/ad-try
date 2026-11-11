@@ -304,7 +304,7 @@ function LifetimeTracker() {
   const [defaultColumns] = useState(["Targeting"]);
 
   const checkOrderColumns = useCallback((title) => {
-    const matched = visibleColumns?.find(col => col?.title === title);
+    const matched = visibleColumns?.find(col => col?.title === title || (title === "Purchases" && col?.title === "Orders"));
     return {
       width: matched?.width ?? 200,
       hide: Boolean(visibleColumns?.length && !matched),
@@ -449,11 +449,11 @@ function LifetimeTracker() {
       cellRenderer: (params) => <>{params.value != 0 ? `${CurrencyCode(params.value)}` : "—"}</>,
     },
     {
-      headerName: t("Orders"),
+      headerName: t("Purchases"),
       field: "orders",
-      title: "Orders",
+      title: "Purchases",
       width: 130,
-      ...(checkOrderColumns("Orders")),
+      ...(checkOrderColumns("Purchases")),
       sortable: true,
       resizable: true,
       headerComponent: CustomHeader,
@@ -1051,7 +1051,7 @@ function LifetimeTracker() {
             const reverseFieldMap = {
               "impressions": "Impressions",
               "clicks": "Clicks",
-              "orders": "Orders",
+              "orders": "Purchases",
               "sales": "Sales",
               "roas": "ROAS",
               "acos": "ACOS",

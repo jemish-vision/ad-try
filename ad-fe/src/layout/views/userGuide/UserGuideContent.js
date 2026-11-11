@@ -273,6 +273,13 @@ Analyze the current performance and health of all active and paused targeting it
 Identifies new targeting opportunities from your high-performing search terms.
 - **Add As Keyword**: Graduate profitable terms into your campaigns.
 - **Add As Negative Keyword**: Quickly eliminate wasteful spend by adding low-performing suggestions as negatives.
+
+### Campaign Detail Targeting & Ad Group Grouping
+Within individual campaign targeting views, advanced sorting and grouping options give you granular oversight:
+- **Group by Ad Group Toggle**: Switch the toggle ON to group targeting records by their parent Ad Group, keeping all keywords and targets within the same Ad Group together.
+- **Ad Group Sorting**: When grouped, sorting by metrics (Spend, ACoS, Clicks, Bid) sorts records within each respective Ad Group cluster.
+- **Persistent Total Row**: The summary Total row remains fixed at the bottom of the table during sorting for continuous KPI tracking.
+- **Targeting Bid History Modal**: Click the "History" button on any target row to view complete historical bid changes, timestamps, old bids, new bids, old ACoS, and change sources (e.g., Update Targeting Bid, Amazon Marketing Stream).
     `
   },
   {
@@ -540,6 +547,11 @@ Manage your Amazon Advertising API authorizations.
 ![Seller Configuration Dashboard](/guide-images/seller_config_dashboard.png)
 Manage the connection to the Amazon Selling Partner (SP) API for inventory, orders, and P/L data.
 - **Identity Mapping**: Monitor Marketplace ID, Seller ID, and SP Refresh Token health.
+- **Amazon Appstore Connection**: Authorize directly via the official Amazon Selling Partner Appstore by clicking "Authorize Now" on the AdvertiseIQ listing.
+- **Automated Connection Notification**: Upon first-time authorization, AdvertiseIQ immediately dispatches a formatted notification email with full seller, user, organization, and profile metadata.
+- **Automatic Account Linking**: The system automatically pairs your Selling Partner Seller ID with matching Advertising profiles to keep analytics synchronized.
+- **Duplicate Prevention**: Re-authorizations and automatic token refreshes are safeguarded to prevent duplicate alerts.
+- **Data Protection & Deletion Guard**: If disconnected, data enters a 30-day protected grace period with automated reminders before permanent purging.
 
 ### 3. Campaign Setting
 ![Campaign Global Settings](/guide-images/campaign_settings.png)
@@ -998,6 +1010,15 @@ The Recommendation modal now supports dynamic cell renderers, allowing direct in
 
 ### Minimum Bid Validation
 When applying bid changes through recommendations, the system validates against a minimum bid threshold with currency-aware handling, preventing invalid bid submissions.
+
+### Bids Under 1.00 Filter
+The Recommendations module includes a dedicated Bids Under 1.00 filter in the performance filter dropdown:
+- **Low Bid Identification**: Quickly isolates targets with proposed bids below 1.00 for careful review.
+- **Marketplace Threshold Notice**: Displays contextual notices for regional minimum bid thresholds (e.g., minimum bid requirement of ₹1.00 for Amazon India).
+
+### Recommendation History & Review Datatable
+- **Dark-Themed Datatable UI**: Matches the modern dark table styling with status tags, bid transition badges (Old Bid → New Bid), ACoS, spend, and relative change timestamps.
+- **Audit Traceability**: Review past recommendation actions, approval states, and execution history directly within the modal.
     `
   },
   {

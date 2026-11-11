@@ -32,7 +32,7 @@ const {
 } = require("../helper/common");
 const { stageReportFileInRedis } = require("../services/reportFileStager.service");
 const { processStagedReportBatches } = require("../services/reportBatchWriter.service");
-const { linkReportHistory } = require("../services/reportHistoryCompletion.service");
+const { linkReportHistory, finalizeReportHistory } = require("../services/reportHistoryCompletion.service");
 
 const { cron_logs } = require("../../winston/cronAutomation/logger");
 const { write_logs } = require("../../winston/adGroups/logger");
@@ -548,7 +548,7 @@ exports.cronGenerateAdGroupReport = async (generateWeeklyReport = false, generat
     const { profileId, configId, cronjobid, recurring = true } = pastSyncObj ?? {};
     const cronName = generateBiWeeklyReport
       ? "BiWeekly Report"
-      : generateWeeklyReport || pastSyncObj != null
+      : generateWeeklyReport || pastSyncObj?.isWeekly
       ? "Weekly Report"
       : "AdGroups Report";
 
@@ -587,23 +587,29 @@ exports.cronGenerateAdGroupReport = async (generateWeeklyReport = false, generat
             if (pastSyncObj.endDate) endDate = pastSyncObj.endDate;
           }
 
-          let getCronData;
-          if (recurring) {
-            getCronData = await cronJobHistorySchema.findOneAndUpdate(
-              {
-                configId: profile.configId,
-                profileId: profile.profileId,
-                cronName: cronName,
-                historyDate: currentDate,
-              },
-              {
-                $set: {
-                  status: "PENDING",
+          let getCronData = null;
+              if (recurring) {
+                try {
+                  getCronData = new cronJobHistorySchema({
+                    configId: profile.configId,
+                    profileId: profile.profileId,
+                    cronName: cronName,
+                    historyDate: currentDate,
+                    status: "PENDING",
+                    details: {
+                      startedAt: new Date().toISOString(),
+                      startDate,
+                      endDate,
+                    },
+                  });
+                  await getCronData.save();
+                } catch (saveErr) {
+                  cron_logs({
+                    message: `[${cronName}] Failed to create cron history for profile ${profile.profileId}: ${saveErr.message}`,
+                    log_type: "warn",
+                  });
                 }
-              },
-              { new: true, upsert: true }
-            ).lean();
-          }
+              }
 
           const reportSpResponse = await spGenerateReport(
             profile.profileId,
@@ -666,15 +672,8 @@ exports.cronGenerateAdGroupReport = async (generateWeeklyReport = false, generat
               );
             }
             return "ERROR";
-          } else if ([reportSpResponse, reportSbResponse, reportSdResponse].every(status => status === "COMPLETED") && recurring) {
-            if (getCronData?._id) {
-              await cronJobHistorySchema.findByIdAndUpdate(
-                getCronData._id,
-                { status: "COMPLETED" },
-                { new: true },
-              );
-            }
-            return "COMPLETED";
+          } else if (recurring && getCronData?._id) {
+            await finalizeReportHistory(getCronData._id);
           }
           if (!recurring && cronjobid && reportSpResponse == "COMPLETED" && reportSbResponse == "COMPLETED" && reportSdResponse == "COMPLETED") {
             await cronJobHistorySchema.findByIdAndUpdate(
@@ -739,6 +738,7 @@ async function spGenerateReport(
           reportTypeId: "spCampaigns",
           reportName: "AD_GROUPS",
         })
+        .sort({ createdAt: -1 })
         .lean();
 
       if (existing && existing.status == "COMPLETED") return "COMPLETED";
@@ -838,6 +838,12 @@ async function spGenerateReport(
     }));
 
     if (statusResp.data.status !== "COMPLETED") {
+      if (["FAILED", "FATAL", "EXPIRED", "CANCELLED", "CANCELED"].includes(statusResp.data.status)) {
+        await reportsSchema.updateOne(
+          { _id: existing._id },
+          { $set: { status: statusResp.data.status } }
+        );
+      }
       return statusResp.data.status;
     }
 
@@ -945,6 +951,7 @@ async function sbGenerateReport(
         reportTypeId: "sbAdGroup",
         reportName: "AD_GROUPS",
       })
+      .sort({ createdAt: -1 })
       .lean();
 
     if (existing && existing.status == "COMPLETED") return "COMPLETED";
@@ -1048,6 +1055,12 @@ async function sbGenerateReport(
   }));
 
   if (statusResp.data.status !== "COMPLETED") {
+    if (["FAILED", "FATAL", "EXPIRED", "CANCELLED", "CANCELED"].includes(statusResp.data.status)) {
+      await reportsSchema.updateOne(
+        { _id: existing._id },
+        { $set: { status: statusResp.data.status } }
+      );
+    }
     return statusResp.data.status;
   }
 
@@ -2905,23 +2918,18 @@ exports.manualGenerateReport = async (req, res) => {
     const endDate = moment().tz(getProfile.timezone).format("YYYY-MM-DD");
     const checkConfigAds = await getAccessToken(getProfile.configId);
     if (checkConfigAds && checkConfigAds.adsAccessToken) {
-      const getCronData = await cronJobHistorySchema.findOne({
+      const createCronHistory = new cronJobHistorySchema({
         configId: getProfile.configId,
         profileId: getProfile.profileId,
         cronName: "AdGroup Report",
         status: "PENDING",
         historyDate: startDate,
-      }).lean();
-      if (!getCronData) {
-        const createCronHistory = new cronJobHistorySchema({
-          configId: getProfile.configId,
-          profileId: getProfile.profileId,
-          cronName: "AdGroup Report",
-          status: "PENDING",
-          historyDate: startDate,
-        });
-        await createCronHistory.save();
-      }
+        details: {
+          startedAt: new Date().toISOString(),
+          manual: true,
+        },
+      });
+      await createCronHistory.save();
       let responseSPStatus = "PENDING";
       while (
         responseSPStatus != "COMPLETED"
@@ -2948,18 +2956,12 @@ exports.manualGenerateReport = async (req, res) => {
           }
         }
       }
-      const getUpdateCronData = await cronJobHistorySchema.findOne({
-        configId: configId,
-        profileId: profileId,
-        cronName: "AdGroup Report",
-        status: "PENDING",
-        historyDate: startDate,
-      }).lean();
-      if (getUpdateCronData) {
+      if (createCronHistory?._id) {
         await cronJobHistorySchema.findByIdAndUpdate(
-          { _id: getUpdateCronData._id },
+          createCronHistory._id,
           {
             status: "COMPLETED",
+            "details.completedAt": new Date().toISOString(),
           },
           { new: true }
         );

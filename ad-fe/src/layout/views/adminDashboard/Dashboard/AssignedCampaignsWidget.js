@@ -208,7 +208,7 @@ export default function AssignedCampaignsWidget({
               </strong>
             </span>
             <span>
-              <span>{t("Orders")}:</span>{" "}
+              <span>{t("Purchases")}:</span>{" "}
               <strong className="text-slate-800 dark:text-slate-200 font-bold tabular-nums">
                 {formatRegionalNumber(assigned.orders, marketplace)}
               </strong>
@@ -309,7 +309,7 @@ export default function AssignedCampaignsWidget({
               </strong>
             </span>
             <span>
-              <span>{t("Orders")}:</span>{" "}
+              <span>{t("Purchases")}:</span>{" "}
               <strong className="text-slate-800 dark:text-slate-200 font-bold tabular-nums">
                 {formatRegionalNumber(unassigned.orders, marketplace)}
               </strong>

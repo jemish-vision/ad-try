@@ -8,6 +8,7 @@ import {
 import { Card } from "../../../../components/ui/card";
 import { AppTooltip } from "../../../../components/ui/AppTooltip";
 import { formatRegionalCurrency } from "../../../../utility/regionalNumberFormat";
+import { useChartSettings } from "../../../../helper/hooks/useChartSettings";
 
 // Portal-based tooltip immune to AG-Grid CSS transform offsets
 
@@ -37,7 +38,7 @@ const getSolidColor = (m) => {
 const ALL_METRICS = [
     { key: "totalSales", label: "Total Sales", color: P.barTotalSales, stroke: P.barTotalSalesBorder, side: "right", format: "currency", chartType: "bar" },
     { key: "spend", label: "Ad Spend", color: P.barAdSpend, stroke: P.barAdSpendBorder, side: "right", format: "currency", chartType: "bar" },
-    { key: "orders", label: "Orders", color: "#2374F2", side: "left", format: "number" },
+    { key: "orders", label: "Purchases", color: "#2374F2", side: "left", format: "number" },
     { key: "acos", label: "ACOS", color: "#F07070", side: "right", format: "percent" },
     { key: "adSales", label: "Ad Revenue", color: "#F0B04A", side: "right", format: "currency" },
     { key: "tacos", label: "Total ACOS (TACOS)", color: "#F07070", side: "left", format: "percent" },
@@ -48,7 +49,7 @@ const ALL_METRICS = [
     { key: "cpc", label: "Avg CPC", color: "#3ECFA8", side: "right", format: "currency" },
     { key: "profit", label: "Profit", color: "#3ECFA8", side: "right", format: "currency" },
     { key: "organicSales", label: "Organic Sales", color: "#F0B04A", side: "right", format: "currency" },
-    { key: "adOrders", label: "Ad Orders", color: "#2374F2", side: "left", format: "number" },
+    { key: "adOrders", label: "Ad Purchases", color: "#2374F2", side: "left", format: "number" },
 ];
 
 const FREQ_KEYS = ["spend", "adSales", "acos", "roas", "impressions", "clicks", "ctr", "cpc", "totalSales"];
@@ -516,7 +517,7 @@ const GranularityDropdown = ({ value, onChange, isMobile }) => {
 /* ─────────────────────────────────────────────────────────────
    TABLE VIEW
 ───────────────────────────────────────────────────────────── */
-const TableView = ({ data, activeMetrics, isFullscreen, isDark }) => {
+const TableView = ({ data, activeMetrics, isFullscreen }) => {
     const { t } = useTranslation();
     return (
         <div style={{
@@ -534,7 +535,7 @@ const TableView = ({ data, activeMetrics, isFullscreen, isDark }) => {
                         position: "sticky",
                         top: 0,
                         zIndex: 10,
-                        background: isDark ? "rgba(15, 23, 42, 0.98)" : "rgba(255, 255, 255, 0.98)",
+                        background: "var(--chart-table-bg)",
                         backdropFilter: "blur(8px)",
                         WebkitBackdropFilter: "blur(8px)",
                     }}>
@@ -578,7 +579,7 @@ const TableView = ({ data, activeMetrics, isFullscreen, isDark }) => {
                         position: "sticky",
                         bottom: 0,
                         zIndex: 10,
-                        background: isDark ? "rgba(15, 23, 42, 0.98)" : "rgba(255, 255, 255, 0.98)",
+                        background: "var(--chart-table-bg)",
                         backdropFilter: "blur(8px)",
                         WebkitBackdropFilter: "blur(8px)",
                         boxShadow: "0 -2px 6px rgba(0,0,0,0.06)",
@@ -620,7 +621,7 @@ const Skeleton = () => (
 ───────────────────────────────────────────────────────────── */
 const ChartInner = ({
     aggData, activeMetrics, axisMap, leftCount, rightCount,
-    showChanges, showDataLabels, chartHeight, isMobile, isDark
+    showChanges, showDataLabels, chartHeight, isMobile
 }) => {
     const { t } = useTranslation();
     const lineMetrics = activeMetrics.filter(m => m.type !== "bar");
@@ -652,13 +653,13 @@ const ChartInner = ({
                     ))}
                 </defs>
                 <CartesianGrid
-                    stroke={isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.05)"}
+                    stroke={"var(--chart-grid-stroke)"}
                     vertical={false}
                     yAxisId={leftCount > 0 ? "L1" : "R1"}
                 />
                 <XAxis
                     dataKey="label"
-                    tick={{ fontSize: isMobile ? 10 : 12.5, fill: isDark ? "#9CA3AF" : "#475569", fontWeight: 600 }}
+                    tick={{ fontSize: isMobile ? 10 : 12.5, fill: "var(--chart-axis-text)", fontWeight: 600 }}
                     axisLine={false} tickLine={false} dy={7}
                 />
 
@@ -928,47 +929,49 @@ const ChartFooter = ({ activeMetrics, activeKeys, openDD, setOpenDD, toggleMetri
 /* ─────────────────────────────────────────────────────────────
    MAIN COMPONENT
 ───────────────────────────────────────────────────────────── */
-const DashboardGraph = ({ isChartLoading = false, chartData = [] }) => {
-    const [granularity, setGranularity] = useState("Daily");
-    const [activeKeys, setActiveKeys] = useState(DEFAULT_ACTIVE);
-    const [chartTypes, setChartTypes] = useState({ totalSales: "bar", spend: "bar" });
-    const [showDataLabels, setShowDataLabels] = useState(false);
-    const [showChanges, setShowChanges] = useState(false);
-    const [viewMode, setViewMode] = useState("chart");
-    const [isFullscreen, setIsFullscreen] = useState(false);
-    const [openDD, setOpenDD] = useState(null);
-    const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-    const [isDark, setIsDark] = useState(document.documentElement.getAttribute("data-theme") === "dark");
+const DashboardGraph = ({ isChartLoading = false, chartData = [], chartId = "Dashboard" }) => {
     const { t } = useTranslation();
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
     useEffect(() => {
         const h = () => setIsMobile(window.innerWidth < 768);
         window.addEventListener("resize", h);
         return () => window.removeEventListener("resize", h);
     }, []);
 
-    useEffect(() => {
-        const h = () => setIsDark(document.documentElement.getAttribute("data-theme") === "dark");
-        window.addEventListener("themeChanged", h);
-        return () => window.removeEventListener("themeChanged", h);
-    }, []);
+    /* ── PERSISTENT CHART DISPLAY SETTINGS & CUSTOMIZATION PREFERENCES ── */
+    const {
+        granularity,
+        setGranularity,
+        activeKeys,
+        setActiveKeys,
+        chartTypes,
+        setChartTypes,
+        showDataLabels,
+        setShowDataLabels,
+        showChanges,
+        setShowChanges,
+        viewMode,
+        setViewMode,
+        toggleMetric,
+        setChartType,
+    } = useChartSettings({
+        savePageName: chartId || "Dashboard",
+        defaultActiveKeys: DEFAULT_ACTIVE,
+        defaultChartTypes: { totalSales: "bar", spend: "bar" },
+        minMetrics: MIN_METRICS,
+        maxMetrics: MAX_METRICS,
+        validMetricKeys: ALL_METRICS.map((m) => m.key),
+    });
+
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [openDD, setOpenDD] = useState(null);
 
     // Lock body scroll when fullscreen
     useEffect(() => {
         document.body.style.overflow = isFullscreen ? "hidden" : "";
         return () => { document.body.style.overflow = ""; };
     }, [isFullscreen]);
-
-    const toggleMetric = useCallback((key) => {
-        setActiveKeys(prev => {
-            const isActive = prev.includes(key);
-            if ((isActive && prev.length <= MIN_METRICS) || (!isActive && prev.length >= MAX_METRICS)) return prev;
-            return isActive ? prev.filter(k => k !== key) : [...prev, key];
-        });
-    }, []);
-
-    const setChartType = useCallback((key, type) => {
-        setChartTypes(prev => ({ ...prev, [key]: type }));
-    }, []);
 
     /* Aggregated data */
     const aggData = useMemo(() => {
@@ -1016,7 +1019,7 @@ const DashboardGraph = ({ isChartLoading = false, chartData = [] }) => {
 
     const sharedChartProps = {
         aggData, activeMetrics, axisMap, leftCount, rightCount,
-        showChanges, showDataLabels, isMobile, isDark,
+        showChanges, showDataLabels, isMobile,
     };
 
     const headerProps = {
@@ -1060,7 +1063,6 @@ const DashboardGraph = ({ isChartLoading = false, chartData = [] }) => {
                         data={aggData}
                         activeMetrics={activeMetrics}
                         isFullscreen={fullscreen}
-                        isDark={isDark}
                     />
                 </div>
             ) : (
@@ -1093,7 +1095,7 @@ const DashboardGraph = ({ isChartLoading = false, chartData = [] }) => {
                 <div className="dg-root chart-fullscreen-container" style={{
                     position: "fixed", inset: 0, zIndex: 99999,
                     background: "var(--canvas-bg)",
-                    backgroundColor: isDark ? "#0A0E1A" : "#F4F7FA",
+                    backgroundColor: "var(--chart-canvas-bg)",
                     display: "flex", flexDirection: "column",
                     animation: "fsIn 0.2s ease",
                     overflow: "hidden",
@@ -1110,4 +1112,4 @@ const DashboardGraph = ({ isChartLoading = false, chartData = [] }) => {
     );
 };
 
-export default DashboardGraph;
+export default React.memo(DashboardGraph);

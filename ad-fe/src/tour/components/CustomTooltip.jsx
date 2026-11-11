@@ -32,7 +32,10 @@ export const CustomTooltip = ({
         }
 
         return () => {
-            targetEl.classList.remove('tour-target-ripple');
+            targetEl?.classList?.remove('tour-target-ripple');
+            try {
+                document.querySelectorAll('.tour-target-ripple').forEach(el => el.classList.remove('tour-target-ripple'));
+            } catch {}
         };
     }, [step]);
 

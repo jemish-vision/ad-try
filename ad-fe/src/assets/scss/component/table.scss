@@ -628,6 +628,9 @@
   --ag-row-hover-color: #e8f4fd;
   --ag-selected-row-background-color: #cce8f8;
   --ag-background-color: #ffffff;
+  --ag-control-panel-background-color: #ffffff;
+  --ag-subheader-background-color: #f8fafc;
+  --ag-menu-background-color: #ffffff;
   --ag-font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
   --ag-font-size: 13px;
   --ag-cell-horizontal-padding: 14px;
@@ -676,6 +679,9 @@
   --ag-selected-row-background-color: rgba(59, 130, 246, 0.25);
   --ag-background-color: #0B1120;
   --ag-data-background-color: #0B1120;
+  --ag-control-panel-background-color: #111827;
+  --ag-subheader-background-color: #0F172A;
+  --ag-menu-background-color: #111827;
 
   /* Custom sub-selector variables for Dark Theme */
   --ag-data-color: #E5E7EB;
@@ -723,6 +729,9 @@
 /* Set --ag-data-background-color for inner table too */
 [data-theme="dark"] #campaign-inner-table {
   --ag-data-background-color: #0B1120;
+  --ag-control-panel-background-color: #111827;
+  --ag-subheader-background-color: #0F172A;
+  --ag-menu-background-color: #111827;
   --ag-background-color: #0B1120;
   --ag-odd-row-background-color: #111827;
 }
@@ -892,6 +901,16 @@
   color: var(--ag-selected-row-text-color);
 }
 
+.iq-ag-table .ag-row-selected .ag-pinned-left-cols-container .ag-cell {
+  background-color: var(--ag-selected-row-background-color) !important;
+  color: var(--ag-selected-row-text-color) !important;
+}
+
+[data-theme="dark"] .iq-ag-table .ag-row-selected .ag-pinned-left-cols-container .ag-cell {
+  background-color: rgba(59, 130, 246, 0.25) !important;
+  color: #ffffff !important;
+}
+
 /* ── Pinned left column ── */
 .iq-ag-table .ag-pinned-left-cols-container .ag-cell {
   background-color: var(--ag-pinned-cell-bg) !important;
@@ -963,6 +982,136 @@
 .iq-ag-table .ag-column-panel .ag-column-tool-panel-column-label {
   font-size: 13px;
   color: var(--ag-tool-panel-text);
+}
+
+/* ══ AG Grid Context / Column Menu & Popups ═════════════════════════════ */
+.ag-theme-alpine .ag-menu,
+.ag-popup .ag-menu,
+.ag-popup-child .ag-menu,
+.iq-ag-table .ag-menu {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.12), 0 8px 10px -6px rgba(15, 23, 42, 0.08) !important;
+  color: #1e293b !important;
+  padding: 6px 0 !important;
+  overflow: hidden !important;
+  z-index: 9999 !important;
+}
+
+.ag-theme-alpine .ag-menu-list,
+.ag-popup .ag-menu-list,
+.ag-popup-child .ag-menu-list {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+}
+
+.ag-theme-alpine .ag-menu-option,
+.ag-popup .ag-menu-option,
+.ag-popup-child .ag-menu-option {
+  color: #334155 !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  padding: 8px 14px !important;
+  cursor: pointer !important;
+  transition: background-color 0.15s ease, color 0.15s ease !important;
+}
+
+.ag-theme-alpine .ag-menu-option:hover,
+.ag-theme-alpine .ag-menu-option-active,
+.ag-popup .ag-menu-option:hover,
+.ag-popup .ag-menu-option-active {
+  background-color: #f1f5f9 !important;
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+.ag-theme-alpine .ag-menu-option-icon,
+.ag-popup .ag-menu-option-icon {
+  color: #64748b !important;
+}
+
+.ag-theme-alpine .ag-menu-option:hover .ag-menu-option-icon,
+.ag-theme-alpine .ag-menu-option-active .ag-menu-option-icon,
+.ag-popup .ag-menu-option:hover .ag-menu-option-icon,
+.ag-popup .ag-menu-option-active .ag-menu-option-icon {
+  color: #0284c7 !important;
+}
+
+.ag-theme-alpine .ag-menu-separator,
+.ag-popup .ag-menu-separator {
+  border-top: 1px solid #e2e8f0 !important;
+  margin: 4px 0 !important;
+  padding: 0 !important;
+}
+
+.ag-theme-alpine .ag-menu-header,
+.ag-popup .ag-menu-header {
+  background-color: #ffffff !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+.ag-theme-alpine .ag-column-select,
+.ag-popup .ag-column-select {
+  background-color: #ffffff !important;
+  color: #1e293b !important;
+}
+
+/* ── Dark Theme Menu & Popup Overrides ── */
+[data-theme="dark"] .ag-theme-alpine .ag-menu,
+[data-theme="dark"] .ag-popup .ag-menu,
+[data-theme="dark"] .ag-popup-child .ag-menu,
+[data-theme="dark"] .iq-ag-table .ag-menu {
+  background-color: #111827 !important;
+  background: #111827 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4) !important;
+  color: #f9fafb !important;
+}
+
+[data-theme="dark"] .ag-theme-alpine .ag-menu-list,
+[data-theme="dark"] .ag-popup .ag-menu-list,
+[data-theme="dark"] .ag-popup-child .ag-menu-list {
+  background-color: #111827 !important;
+  background: #111827 !important;
+}
+
+[data-theme="dark"] .ag-theme-alpine .ag-menu-option,
+[data-theme="dark"] .ag-popup .ag-menu-option,
+[data-theme="dark"] .ag-popup-child .ag-menu-option {
+  color: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .ag-theme-alpine .ag-menu-option:hover,
+[data-theme="dark"] .ag-theme-alpine .ag-menu-option-active,
+[data-theme="dark"] .ag-popup .ag-menu-option:hover,
+[data-theme="dark"] .ag-popup .ag-menu-option-active {
+  background-color: rgba(59, 130, 246, 0.2) !important;
+  background: rgba(59, 130, 246, 0.2) !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .ag-theme-alpine .ag-menu-option-icon,
+[data-theme="dark"] .ag-popup .ag-menu-option-icon {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .ag-theme-alpine .ag-menu-separator,
+[data-theme="dark"] .ag-popup .ag-menu-separator {
+  border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="dark"] .ag-theme-alpine .ag-menu-header,
+[data-theme="dark"] .ag-popup .ag-menu-header {
+  background-color: #111827 !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="dark"] .ag-theme-alpine .ag-column-select,
+[data-theme="dark"] .ag-popup .ag-column-select {
+  background-color: #111827 !important;
+  color: #f9fafb !important;
 }
 
 /* ══ Pagination bar ══════════════════════════════════════════════════════ */

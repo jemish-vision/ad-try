@@ -2,6 +2,7 @@ const { validateCampaignAssignment } = require("../helper/ruleCampaignAssignment
 const mongoose = require("mongoose");
 const { retryWithBackoff } = require("../helper/retryHelper");
 const crypto = require("crypto");
+const { insertOperationHistory, historyPersistenceError } = require("../helper/operationHistory");
 
 const moment = require("moment-timezone");
 const pLimit = require("p-limit").default;
@@ -36,59 +37,24 @@ const AD_TYPE_COLLECTIONS = require("../helper/adTypeCollections");
 const { logAudit } = require("../helpers/auditHelper");
 const { write_logs } = require("../../winston/utility/logger");
 
-const safeInsertHistoryDocs = async (docs) => {
-  if (!docs || !docs.length) return;
-  try {
-    const configId = docs[0]?.configId;
-    const profileId = docs[0]?.profileId;
-    if (!configId || !profileId) {
-      await campaignChangeHistorySchema.insertMany(docs, { ordered: false });
-      return;
-    }
+const safeInsertHistoryDocs = (docs, operationId) =>
+  insertOperationHistory(campaignChangeHistorySchema, docs, operationId);
 
-    // Filter out no-op changes (oldValue equals newValue)
-    const validDocs = docs.filter((d) => {
-      if (d.oldValue !== undefined && d.oldValue !== null && d.oldValue !== "—" && d.newValue !== undefined && d.newValue !== null) {
-        const oldValStr = String(d.oldValue).trim();
-        const newValStr = String(d.newValue).trim();
-        if (oldValStr && newValStr && oldValStr === newValStr) return false;
-      }
-      return true;
-    });
-
-    if (!validDocs.length) return;
-
-    // Check for identical changes within the last 15 minutes
-    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
-    const changeLevels = [...new Set(validDocs.map((d) => d.changeLevel).filter(Boolean))];
-
-    const existing = await campaignChangeHistorySchema.find({
-      configId,
-      profileId,
-      changeLevel: { $in: changeLevels },
-      createdAt: { $gte: fifteenMinutesAgo },
-    }).select("changeLevel changeType targeting matchType newValue").lean();
-
-    const makeKey = (e) => `${e.changeLevel}_${e.changeType}_${(e.targeting || "").toLowerCase().trim()}_${(e.matchType || "").toLowerCase().trim()}_${String(e.newValue || "").trim()}`;
-    const existingKeys = new Set(existing.map(makeKey));
-
-    const deduplicated = [];
-    const seenInBatch = new Set();
-    for (const d of validDocs) {
-      const key = makeKey(d);
-      if (!existingKeys.has(key) && !seenInBatch.has(key)) {
-        seenInBatch.add(key);
-        deduplicated.push(d);
-      }
-    }
-
-    if (deduplicated.length > 0) {
-      await campaignChangeHistorySchema.insertMany(deduplicated, { ordered: false });
-    }
-  } catch (err) {
-    console.error("Error in safeInsertHistoryDocs:", err?.message || err);
-    await campaignChangeHistorySchema.insertMany(docs, { ordered: false }).catch(() => {});
+// Each configured slot occurrence is one apply operation. A revert belongs to
+// the persisted run being undone, including a revert before the next slot.
+const daypartingHistoryOperation = (rule, now, activeSlot, history, phase) => {
+  if (!rule?._id) throw historyPersistenceError("Dayparting rule identity is required");
+  if (phase === "revert") {
+    if (!history?._id) throw historyPersistenceError("Dayparting revert history identity is required");
+    return ["dayparting", String(rule._id), String(history._id), phase].join(":");
   }
+  if (phase !== "apply" || !now?.isValid?.() || !activeSlot ||
+    [activeSlot.startTime, activeSlot.endTime, activeSlot.multiplier]
+      .some(value => value === null || value === undefined || value === "")) {
+    throw historyPersistenceError("Dayparting apply slot identity is required");
+  }
+  return JSON.stringify(["dayparting", String(rule._id), now.format("YYYY-MM-DD"),
+    rule.bidChangeType, activeSlot.startTime, activeSlot.endTime, activeSlot.multiplier, phase]);
 };
 
 exports.getAllDayparting = async (req, res) => {
@@ -611,7 +577,7 @@ exports.deleteDayparting = async (req, res) => {
   }
 };
 
-const updateSPTargetingBidInternal = async (profile, rule, targetingList, bidMap, reportDate) => {
+const updateSPTargetingBidInternal = async (profile, rule, targetingList, bidMap, reportDate, operationId) => {
   const checkConfigAds = await getAccessToken(rule?.configId);
 
   try {
@@ -711,6 +677,9 @@ const updateSPTargetingBidInternal = async (profile, rule, targetingList, bidMap
           changeLevel: t.campaignId,
           changeType: "Cron Job: Dayparting rule updated a targeting bid",
           targeting: t.targeting,
+          matchType: t.matchType || t.match_type,
+          targetId: t.targetId,
+          adGroupId: t.adGroupId,
           oldValue,
           newValue,
           updatedFrom: "Targeting",
@@ -735,7 +704,7 @@ const updateSPTargetingBidInternal = async (profile, rule, targetingList, bidMap
 
       /* ---------- EXECUTE WRITES ---------- */
       if (historyDocs.length) {
-        await safeInsertHistoryDocs(historyDocs);
+        await safeInsertHistoryDocs(historyDocs, operationId);
       }
 
       if (bulkUpdates.length) {
@@ -749,6 +718,7 @@ const updateSPTargetingBidInternal = async (profile, rule, targetingList, bidMap
     }
 
   } catch (err) {
+    if (err?.historyPersistenceFailure) throw err;
     cron_logs({
       message: `Targeting bid update failed - ${err}`,
       log_type: "error",
@@ -800,7 +770,7 @@ async function sponsoredProductTargtingDayparting({ rule, profile, campaignIds, 
     if (eligibleTargeting.length > 0) {
 
       if (activeSlot.multiplier === 1) {
-        await updateSPTargetingBidInternal(profile, rule, eligibleTargeting, history?.baseTargetingBid?.SP, currentDate);
+        await updateSPTargetingBidInternal(profile, rule, eligibleTargeting, history?.baseTargetingBid?.SP, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "revert"));
       } else {
         Object.entries(history.baseTargetingBid.SP).forEach(([k, v]) => {
           if (eligibleTargeting.filter(r => r.targetId == k)?.length > 0) {
@@ -808,7 +778,7 @@ async function sponsoredProductTargtingDayparting({ rule, profile, campaignIds, 
           }
         });
 
-        await updateSPTargetingBidInternal(profile, rule, eligibleTargeting, appliedBidMap, currentDate);
+        await updateSPTargetingBidInternal(profile, rule, eligibleTargeting, appliedBidMap, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "apply"));
       }
 
     }
@@ -833,7 +803,7 @@ async function sponsoredProductTargtingDayparting({ rule, profile, campaignIds, 
     });
 
     if (activeSlot.multiplier !== 1) {
-      await updateSPTargetingBidInternal(profile, rule, eligibleTargeting, appliedBidMap, currentDate);
+      await updateSPTargetingBidInternal(profile, rule, eligibleTargeting, appliedBidMap, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "apply"));
     }
 
     return {
@@ -848,7 +818,7 @@ async function sponsoredProductTargtingDayparting({ rule, profile, campaignIds, 
   /* ---------- REVERT ---------- */
   else if (!activeSlot && history) {
     if (history.multiplier !== 1 && history.multiplier !== 0) {
-      await updateSPTargetingBidInternal(profile, rule, targetingList, history.baseTargetingBid.SP, currentDate);
+      await updateSPTargetingBidInternal(profile, rule, targetingList, history.baseTargetingBid.SP, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "revert"));
     }
     return {
       spExecutionState: null,
@@ -869,7 +839,7 @@ async function sponsoredProductTargtingDayparting({ rule, profile, campaignIds, 
 
 }
 
-const updateSBTargetingBidInternal = async (profile, rule, targetingList, bidMap, reportDate) => {
+const updateSBTargetingBidInternal = async (profile, rule, targetingList, bidMap, reportDate, operationId) => {
   const checkConfigAds = await getAccessToken(rule?.configId);
 
   try {
@@ -968,6 +938,9 @@ const updateSBTargetingBidInternal = async (profile, rule, targetingList, bidMap
           changeLevel: t.campaignId,
           changeType: "Cron Job: Dayparting rule updated a targeting bid",
           targeting: t.targeting,
+          matchType: t.matchType || t.match_type,
+          targetId: t.targetId,
+          adGroupId: t.adGroupId,
           oldValue,
           newValue,
           updatedFrom: "Targeting",
@@ -992,7 +965,7 @@ const updateSBTargetingBidInternal = async (profile, rule, targetingList, bidMap
 
       /* ---------- EXECUTE WRITES ---------- */
       if (historyDocs.length) {
-        await safeInsertHistoryDocs(historyDocs);
+        await safeInsertHistoryDocs(historyDocs, operationId);
       }
 
       if (bulkUpdates.length) {
@@ -1006,6 +979,7 @@ const updateSBTargetingBidInternal = async (profile, rule, targetingList, bidMap
     }
 
   } catch (err) {
+    if (err?.historyPersistenceFailure) throw err;
     cron_logs({
       message: `Targeting bid update failed - ${err}`,
       log_type: "error",
@@ -1055,7 +1029,7 @@ async function sponsoredBrandTargtingDayparting({ rule, profile, campaignIds, ac
     if (targetingList.length > 0) {
 
       if (activeSlot.multiplier === 1) {
-        await updateSBTargetingBidInternal(profile, rule, targetingList, history?.baseTargetingBid?.SB, currentDate);
+        await updateSBTargetingBidInternal(profile, rule, targetingList, history?.baseTargetingBid?.SB, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "revert"));
       } else {
         Object.entries(history.baseTargetingBid.SB).forEach(([k, v]) => {
           if (targetingList.filter(r => r.targetId == k)?.length > 0) {
@@ -1063,7 +1037,7 @@ async function sponsoredBrandTargtingDayparting({ rule, profile, campaignIds, ac
           }
         });
 
-        await updateSBTargetingBidInternal(profile, rule, targetingList, appliedBidMap, currentDate);
+        await updateSBTargetingBidInternal(profile, rule, targetingList, appliedBidMap, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "apply"));
       }
 
     }
@@ -1088,7 +1062,7 @@ async function sponsoredBrandTargtingDayparting({ rule, profile, campaignIds, ac
     });
 
     if (activeSlot.multiplier !== 1) {
-      await updateSBTargetingBidInternal(profile, rule, targetingList, appliedBidMap, currentDate);
+      await updateSBTargetingBidInternal(profile, rule, targetingList, appliedBidMap, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "apply"));
     }
 
     return {
@@ -1103,7 +1077,7 @@ async function sponsoredBrandTargtingDayparting({ rule, profile, campaignIds, ac
   /* ---------- REVERT ---------- */
   else if (!activeSlot && history) {
     if (history.multiplier !== 1 && history.multiplier !== 0) {
-      await updateSBTargetingBidInternal(profile, rule, targetingList, history.baseTargetingBid.SB, currentDate);
+      await updateSBTargetingBidInternal(profile, rule, targetingList, history.baseTargetingBid.SB, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "revert"));
     }
     return {
       sbExecutionState: null,
@@ -1123,7 +1097,7 @@ async function sponsoredBrandTargtingDayparting({ rule, profile, campaignIds, ac
 
 }
 
-const updateSDTargetingBidInternal = async (profile, rule, targetingList, bidMap, reportDate) => {
+const updateSDTargetingBidInternal = async (profile, rule, targetingList, bidMap, reportDate, operationId) => {
   const checkConfigAds = await getAccessToken(rule?.configId);
 
   try {
@@ -1196,6 +1170,9 @@ const updateSDTargetingBidInternal = async (profile, rule, targetingList, bidMap
           changeLevel: t.campaignId,
           changeType: "Cron Job: Dayparting rule updated a targeting bid",
           targeting: t.targeting,
+          matchType: t.matchType || t.match_type,
+          targetId: t.targetId,
+          adGroupId: t.adGroupId,
           oldValue,
           newValue,
           updatedFrom: "Targeting",
@@ -1220,7 +1197,7 @@ const updateSDTargetingBidInternal = async (profile, rule, targetingList, bidMap
 
       /* ---------- EXECUTE WRITES ---------- */
       if (historyDocs.length) {
-        await safeInsertHistoryDocs(historyDocs);
+        await safeInsertHistoryDocs(historyDocs, operationId);
       }
 
       if (bulkUpdates.length) {
@@ -1234,6 +1211,7 @@ const updateSDTargetingBidInternal = async (profile, rule, targetingList, bidMap
     }
 
   } catch (err) {
+    if (err?.historyPersistenceFailure) throw err;
     cron_logs({
       message: `Targeting bid update failed - ${err}`,
       log_type: "error",
@@ -1283,7 +1261,7 @@ async function sponsoredDisplayTargtingDayparting({ rule, profile, campaignIds, 
     if (targetingList.length > 0) {
 
       if (activeSlot.multiplier === 1) {
-        await updateSDTargetingBidInternal(profile, rule, targetingList, history?.baseTargetingBid?.SD, currentDate);
+        await updateSDTargetingBidInternal(profile, rule, targetingList, history?.baseTargetingBid?.SD, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "revert"));
       } else {
         Object.entries(history.baseTargetingBid.SD).forEach(([k, v]) => {
           if (targetingList.filter(r => r.targetId == k)?.length > 0) {
@@ -1291,7 +1269,7 @@ async function sponsoredDisplayTargtingDayparting({ rule, profile, campaignIds, 
           }
         });
 
-        await updateSDTargetingBidInternal(profile, rule, targetingList, appliedBidMap, currentDate);
+        await updateSDTargetingBidInternal(profile, rule, targetingList, appliedBidMap, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "apply"));
       }
 
     }
@@ -1316,7 +1294,7 @@ async function sponsoredDisplayTargtingDayparting({ rule, profile, campaignIds, 
     });
 
     if (activeSlot.multiplier !== 1) {
-      await updateSDTargetingBidInternal(profile, rule, targetingList, appliedBidMap, currentDate);
+      await updateSDTargetingBidInternal(profile, rule, targetingList, appliedBidMap, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "apply"));
     }
 
     return {
@@ -1331,7 +1309,7 @@ async function sponsoredDisplayTargtingDayparting({ rule, profile, campaignIds, 
   /* ---------- REVERT ---------- */
   else if (!activeSlot && history) {
     if (history.multiplier !== 1 && history.multiplier !== 0) {
-      await updateSDTargetingBidInternal(profile, rule, targetingList, history.baseTargetingBid.SD, currentDate);
+      await updateSDTargetingBidInternal(profile, rule, targetingList, history.baseTargetingBid.SD, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "revert"));
     }
     return {
       sdExecutionState: null,
@@ -1416,7 +1394,7 @@ async function handleTargetingDayparting({ rule, profile, activeSlot, now }) {
 
 }
 
-const updateSPCampaignBudgetInternal = async (profile, rule, campaignList, campaignMap, reportDate) => {
+const updateSPCampaignBudgetInternal = async (profile, rule, campaignList, campaignMap, reportDate, operationId) => {
   const checkConfigAds = await getAccessToken(rule?.configId);
 
   const campaignIdSet = new Set(campaignList.map(c => c.campaignId));
@@ -1493,7 +1471,7 @@ const updateSPCampaignBudgetInternal = async (profile, rule, campaignList, campa
 
       /* ---------- EXECUTE WRITES ---------- */
       if (historyDocs.length) {
-        await safeInsertHistoryDocs(historyDocs);
+        await safeInsertHistoryDocs(historyDocs, operationId);
       }
 
       if (bulkUpdates.length) {
@@ -1506,6 +1484,7 @@ const updateSPCampaignBudgetInternal = async (profile, rule, campaignList, campa
       });
 
   } catch (err) {
+    if (err?.historyPersistenceFailure) throw err;
     cron_logs({
       message: `Campaign budget update failed - ${err}`,
       log_type: "error",
@@ -1552,7 +1531,7 @@ async function sponsoredProductBudgetDayparting({ rule, profile, campaignIds, ac
     if (eligibleCampaign.length > 0) {
 
       if (activeSlot.multiplier === 1) {
-        await updateSPCampaignBudgetInternal(profile, rule, eligibleCampaign, history?.baseBudget?.SP, currentDate);
+        await updateSPCampaignBudgetInternal(profile, rule, eligibleCampaign, history?.baseBudget?.SP, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "revert"));
       } else {
         Object.entries(history.baseBudget.SP).forEach(([k, v]) => {
           if (eligibleCampaign.filter(r => r.campaignId == k)?.length > 0) {
@@ -1560,7 +1539,7 @@ async function sponsoredProductBudgetDayparting({ rule, profile, campaignIds, ac
           }
         });
 
-        await updateSPCampaignBudgetInternal(profile, rule, eligibleCampaign, appliedBudget, currentDate);
+        await updateSPCampaignBudgetInternal(profile, rule, eligibleCampaign, appliedBudget, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "apply"));
       }
 
     }
@@ -1585,7 +1564,7 @@ async function sponsoredProductBudgetDayparting({ rule, profile, campaignIds, ac
     });
 
     if (activeSlot.multiplier !== 1) {
-      await updateSPCampaignBudgetInternal(profile, rule, eligibleCampaign, appliedBudget, currentDate);
+      await updateSPCampaignBudgetInternal(profile, rule, eligibleCampaign, appliedBudget, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "apply"));
     }
 
     return {
@@ -1601,7 +1580,7 @@ async function sponsoredProductBudgetDayparting({ rule, profile, campaignIds, ac
   /* ---------- SLOT ENDED (REVERT) ---------- */
   else if (!activeSlot && history) {
     if (history.multiplier !== 1 && history.multiplier !== 0) {
-      await updateSPCampaignBudgetInternal(profile, rule, campaignList, history.baseBudget.SP, currentDate);
+      await updateSPCampaignBudgetInternal(profile, rule, campaignList, history.baseBudget.SP, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "revert"));
     }
     return {
       spExecutionState: null,
@@ -1618,7 +1597,7 @@ async function sponsoredProductBudgetDayparting({ rule, profile, campaignIds, ac
   }
 }
 
-const updateSBCampaignBudgetInternal = async (profile, rule, campaignList, campaignMap, reportDate) => {
+const updateSBCampaignBudgetInternal = async (profile, rule, campaignList, campaignMap, reportDate, operationId) => {
   const checkConfigAds = await getAccessToken(rule?.configId);
 
   const campaignIdSet = new Set(campaignList.map(c => c.campaignId));
@@ -1695,7 +1674,7 @@ const updateSBCampaignBudgetInternal = async (profile, rule, campaignList, campa
 
       /* ---------- EXECUTE WRITES ---------- */
       if (historyDocs.length) {
-        await safeInsertHistoryDocs(historyDocs);
+        await safeInsertHistoryDocs(historyDocs, operationId);
       }
 
       if (bulkUpdates.length) {
@@ -1708,6 +1687,7 @@ const updateSBCampaignBudgetInternal = async (profile, rule, campaignList, campa
       });
 
   } catch (err) {
+    if (err?.historyPersistenceFailure) throw err;
     cron_logs({
       message: `Campaign budget update failed - ${err}`,
       log_type: "error",
@@ -1749,7 +1729,7 @@ async function sponsoredBrandBudgetDayparting({ rule, profile, campaignIds, acti
     if (campaignList.length > 0) {
 
       if (activeSlot.multiplier === 1) {
-        await updateSBCampaignBudgetInternal(profile, rule, campaignList, history?.baseBudget?.SB, currentDate);
+        await updateSBCampaignBudgetInternal(profile, rule, campaignList, history?.baseBudget?.SB, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "revert"));
       } else {
         Object.entries(history.baseBudget.SB).forEach(([k, v]) => {
           if (campaignList.filter(r => r.campaignId == k)?.length > 0) {
@@ -1757,7 +1737,7 @@ async function sponsoredBrandBudgetDayparting({ rule, profile, campaignIds, acti
           }
         });
 
-        await updateSBCampaignBudgetInternal(profile, rule, campaignList, appliedBudget, currentDate);
+        await updateSBCampaignBudgetInternal(profile, rule, campaignList, appliedBudget, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "apply"));
       }
 
     }
@@ -1783,7 +1763,7 @@ async function sponsoredBrandBudgetDayparting({ rule, profile, campaignIds, acti
     });
 
     if (activeSlot.multiplier !== 1) {
-      await updateSBCampaignBudgetInternal(profile, rule, campaignList, appliedBudget, currentDate);
+      await updateSBCampaignBudgetInternal(profile, rule, campaignList, appliedBudget, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "apply"));
     }
 
     return {
@@ -1799,7 +1779,7 @@ async function sponsoredBrandBudgetDayparting({ rule, profile, campaignIds, acti
   /* ---------- SLOT ENDED (REVERT) ---------- */
   else if (!activeSlot && history) {
     if (history.multiplier !== 1 && history.multiplier !== 0) {
-      await updateSBCampaignBudgetInternal(profile, rule, campaignList, history.baseBudget.SB, currentDate);
+      await updateSBCampaignBudgetInternal(profile, rule, campaignList, history.baseBudget.SB, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "revert"));
     }
     return {
       sbExecutionState: null,
@@ -1818,7 +1798,7 @@ async function sponsoredBrandBudgetDayparting({ rule, profile, campaignIds, acti
 }
 
 
-const updateSDCampaignBudgetInternal = async (profile, rule, campaignList, campaignMap, reportDate) => {
+const updateSDCampaignBudgetInternal = async (profile, rule, campaignList, campaignMap, reportDate, operationId) => {
   const checkConfigAds = await getAccessToken(rule?.configId);
 
   const campaignIdSet = new Set(campaignList.map(c => c.campaignId));
@@ -1895,7 +1875,7 @@ const updateSDCampaignBudgetInternal = async (profile, rule, campaignList, campa
 
       /* ---------- EXECUTE WRITES ---------- */
       if (historyDocs.length) {
-        await safeInsertHistoryDocs(historyDocs);
+        await safeInsertHistoryDocs(historyDocs, operationId);
       }
 
       if (bulkUpdates.length) {
@@ -1908,6 +1888,7 @@ const updateSDCampaignBudgetInternal = async (profile, rule, campaignList, campa
       });
 
   } catch (err) {
+    if (err?.historyPersistenceFailure) throw err;
     cron_logs({
       message: `Campaign budget update failed - ${err}`,
       log_type: "error",
@@ -1949,7 +1930,7 @@ async function sponsoredDisplayBudgetDayparting({ rule, profile, campaignIds, ac
     if (campaignList.length > 0) {
 
       if (activeSlot.multiplier === 1) {
-        await updateSDCampaignBudgetInternal(profile, rule, campaignList, history?.baseBudget?.SD, currentDate);
+        await updateSDCampaignBudgetInternal(profile, rule, campaignList, history?.baseBudget?.SD, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "revert"));
       } else {
         Object.entries(history.baseBudget.SD).forEach(([k, v]) => {
           if (campaignList.filter(r => r.campaignId == k)?.length > 0) {
@@ -1957,7 +1938,7 @@ async function sponsoredDisplayBudgetDayparting({ rule, profile, campaignIds, ac
           }
         });
 
-        await updateSDCampaignBudgetInternal(profile, rule, campaignList, appliedBudget, currentDate);
+        await updateSDCampaignBudgetInternal(profile, rule, campaignList, appliedBudget, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "apply"));
       }
 
     }
@@ -1982,7 +1963,7 @@ async function sponsoredDisplayBudgetDayparting({ rule, profile, campaignIds, ac
     });
 
     if (activeSlot.multiplier !== 1) {
-      await updateSDCampaignBudgetInternal(profile, rule, campaignList, appliedBudget, currentDate);
+      await updateSDCampaignBudgetInternal(profile, rule, campaignList, appliedBudget, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "apply"));
     }
 
     return {
@@ -1998,7 +1979,7 @@ async function sponsoredDisplayBudgetDayparting({ rule, profile, campaignIds, ac
   /* ---------- SLOT ENDED (REVERT) ---------- */
   else if (!activeSlot && history) {
     if (history.multiplier !== 1 && history.multiplier !== 0) {
-      await updateSDCampaignBudgetInternal(profile, rule, campaignList, history.baseBudget.SD, currentDate);
+      await updateSDCampaignBudgetInternal(profile, rule, campaignList, history.baseBudget.SD, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "revert"));
     }
     return {
       sdExecutionState: null,
@@ -2068,7 +2049,7 @@ async function handleBudgetDayparting({ rule, profile, activeSlot, now }) {
 
 }
 
-const updateSPPlacementModifierInternal = async (profile, rule, PlacementList, placementMap, reportDate) => {
+const updateSPPlacementModifierInternal = async (profile, rule, PlacementList, placementMap, reportDate, operationId) => {
   const checkConfigAds = await getAccessToken(rule?.configId);
 
   const campaignIdSet = new Set(PlacementList.map(c => c.campaignId));
@@ -2153,7 +2134,7 @@ const updateSPPlacementModifierInternal = async (profile, rule, PlacementList, p
 
       /* ---------- EXECUTE WRITES ---------- */
       if (historyDocs.length) {
-        await safeInsertHistoryDocs(historyDocs);
+        await safeInsertHistoryDocs(historyDocs, operationId);
       }
 
       if (bulkUpdates.length) {
@@ -2166,6 +2147,7 @@ const updateSPPlacementModifierInternal = async (profile, rule, PlacementList, p
       });
 
   } catch (err) {
+    if (err?.historyPersistenceFailure) throw err;
     cron_logs({
       message: `Placement modifier update failed - ${err}`,
       log_type: "error",
@@ -2220,7 +2202,7 @@ async function sponsoredProductPlacementDayparting({ rule, profile, campaignIds,
     if (eligiblePlacement.length > 0) {
 
       if (activeSlot.multiplier === 1) {
-        await updateSPPlacementModifierInternal(profile, rule, eligiblePlacement, history?.basePlacementBid?.SP, currentDate);
+        await updateSPPlacementModifierInternal(profile, rule, eligiblePlacement, history?.basePlacementBid?.SP, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "revert"));
       } else {
         Object.entries(history.basePlacementBid.SP).forEach(([campaignId, placements]) => {
           if (eligiblePlacement.filter(r => r.campaignId == campaignId)?.length > 0) {
@@ -2232,7 +2214,7 @@ async function sponsoredProductPlacementDayparting({ rule, profile, campaignIds,
           }
         });
 
-        await updateSPPlacementModifierInternal(profile, rule, eligiblePlacement, appliedPlacementMap, currentDate);
+        await updateSPPlacementModifierInternal(profile, rule, eligiblePlacement, appliedPlacementMap, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "apply"));
       }
     }
 
@@ -2259,7 +2241,7 @@ async function sponsoredProductPlacementDayparting({ rule, profile, campaignIds,
     });
 
     if (activeSlot.multiplier !== 1) {
-      await updateSPPlacementModifierInternal(profile, rule, eligiblePlacement, appliedPlacementMap, currentDate);
+      await updateSPPlacementModifierInternal(profile, rule, eligiblePlacement, appliedPlacementMap, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "apply"));
     }
 
     return {
@@ -2273,7 +2255,7 @@ async function sponsoredProductPlacementDayparting({ rule, profile, campaignIds,
   }
   else if (!activeSlot && history) {
     if (history.multiplier !== 1 && history.multiplier !== 0) {
-      await updateSPPlacementModifierInternal(profile, rule, placementList, history.basePlacementBid.SP, currentDate);
+      await updateSPPlacementModifierInternal(profile, rule, placementList, history.basePlacementBid.SP, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "revert"));
     }
     return {
       spExecutionState: null,
@@ -2291,7 +2273,7 @@ async function sponsoredProductPlacementDayparting({ rule, profile, campaignIds,
 
 }
 
-const updateSBPlacementModifierInternal = async (profile, rule, PlacementList, placementMap, reportDate) => {
+const updateSBPlacementModifierInternal = async (profile, rule, PlacementList, placementMap, reportDate, operationId) => {
   const checkConfigAds = await getAccessToken(rule?.configId);
 
   const campaignIdSet = new Set(PlacementList.map(c => c.campaignId));
@@ -2377,7 +2359,7 @@ const updateSBPlacementModifierInternal = async (profile, rule, PlacementList, p
 
       /* ---------- EXECUTE WRITES ---------- */
       if (historyDocs.length) {
-        await safeInsertHistoryDocs(historyDocs);
+        await safeInsertHistoryDocs(historyDocs, operationId);
       }
 
       if (bulkUpdates.length) {
@@ -2390,6 +2372,7 @@ const updateSBPlacementModifierInternal = async (profile, rule, PlacementList, p
       });
 
   } catch (err) {
+    if (err?.historyPersistenceFailure) throw err;
     cron_logs({
       message: `Placement modifier update failed - ${err}`,
       log_type: "error",
@@ -2440,7 +2423,7 @@ async function sponsoredBrandPlacementDayparting({ rule, profile, campaignIds, a
     if (placementList.length > 0) {
 
       if (activeSlot.multiplier === 1) {
-        await updateSBPlacementModifierInternal(profile, rule, placementList, history?.basePlacementBid?.SB, currentDate);
+        await updateSBPlacementModifierInternal(profile, rule, placementList, history?.basePlacementBid?.SB, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "revert"));
       } else {
         Object.entries(history.basePlacementBid.SB).forEach(([campaignId, placements]) => {
           if (placementList.filter(r => r.campaignId == campaignId)?.length > 0) {
@@ -2452,7 +2435,7 @@ async function sponsoredBrandPlacementDayparting({ rule, profile, campaignIds, a
           }
         });
 
-        await updateSBPlacementModifierInternal(profile, rule, placementList, appliedPlacementMap, currentDate);
+        await updateSBPlacementModifierInternal(profile, rule, placementList, appliedPlacementMap, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "apply"));
       }
     }
 
@@ -2479,7 +2462,7 @@ async function sponsoredBrandPlacementDayparting({ rule, profile, campaignIds, a
     });
 
     if (activeSlot.multiplier !== 1) {
-      await updateSBPlacementModifierInternal(profile, rule, placementList, appliedPlacementMap, currentDate);
+      await updateSBPlacementModifierInternal(profile, rule, placementList, appliedPlacementMap, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "apply"));
     }
 
     return {
@@ -2493,7 +2476,7 @@ async function sponsoredBrandPlacementDayparting({ rule, profile, campaignIds, a
   }
   else if (!activeSlot && history) {
     if (history.multiplier !== 1 && history.multiplier !== 0) {
-      await updateSBPlacementModifierInternal(profile, rule, placementList, history.basePlacementBid.SB, currentDate);
+      await updateSBPlacementModifierInternal(profile, rule, placementList, history.basePlacementBid.SB, currentDate, daypartingHistoryOperation(rule, now, activeSlot, history, "revert"));
     }
     return {
       sbExecutionState: null,

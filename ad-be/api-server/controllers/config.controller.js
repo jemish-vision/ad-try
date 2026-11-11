@@ -63,6 +63,7 @@ const { logAudit } = require("../helpers/auditHelper");
 const { sendEmailHelper } = require("../helper/emailHelper");
 const { buildDisconnectEmail } = require("../../emailTemplate/buildDisconnectEmail");
 const { buildDisconnectReminderEmail } = require("../../emailTemplate/buildDisconnectReminderEmail");
+const { notifyNewSellerConnection } = require("../helper/sellerNotification.helper");
 const { cronDeleteExpiredAccountsData } = require("../services/accountDataCleanup.service");
 const { ROLES } = require("../constants/roles");
 const amazonAxios = require("../helper/amazonAxios");
@@ -946,6 +947,8 @@ exports.amazonCallback = async (req, res) => {
         sellerConfig = await sellerConfigSchema.findOne({ userId, sellerId: { $in: [null, "", finalSellerId] } });
       }
 
+      const isBrandNewSeller = !sellerConfig || !sellerConfig.newConnectionEmailSentAt;
+
       if (sellerConfig) {
         sellerConfig.spClientId = clientId;
         sellerConfig.spClientSecret = clientSecret;
@@ -981,6 +984,18 @@ exports.amazonCallback = async (req, res) => {
           spTokenExpiresAt: tokenExpiresAt,
           isActive: true,
         });
+      }
+
+      if (isBrandNewSeller) {
+        await notifyNewSellerConnection({
+          sellerId: finalSellerId,
+          userId: userId || authState.userId,
+          organizationId: organizationId || authState.organizationId,
+          source: "Amazon Selling Partner Appstore",
+          req,
+        });
+        sellerConfig.newConnectionEmailSentAt = new Date();
+        await sellerConfig.save();
       }
 
       await auditLogSchema.create({
@@ -1407,6 +1422,20 @@ exports.amazonSPCallback = async (req, res) => {
         { profileId: Number(profileId), configId: profile?.configId },
         { $set: { isSpSyncEnabled: true } }
       );
+    }
+
+    if (!config.newConnectionEmailSentAt) {
+      const linkedProf = await profileSchema.findOne({ profileId: Number(profileId || config.profileId) }).lean();
+      await notifyNewSellerConnection({
+        sellerId: finalSellerId,
+        userId: authState.userId,
+        organizationId: authState.organizationId,
+        source: "In-App Seller Connect (Settings)",
+        profiles: linkedProf ? [linkedProf] : [],
+        req,
+      });
+      config.newConnectionEmailSentAt = new Date();
+      await config.save();
     }
 
     /* ----------------------------- CLEANUP ------------------------------ */
@@ -2341,32 +2370,65 @@ exports.SyncPastData = async () => {
             dates: getDatesBetween(p.startDate, p.endDate)
           }
 
-          let getCronData = await cronJobHistorySchema.findOneAndUpdate(
-            {
+          let getCronData = null;
+          try {
+            getCronData = new cronJobHistorySchema({
               configId: p.configId,
               profileId: p.profileId,
               cronName: "Sync Past Data",
               historyDate: currentDate,
-            },
-            {
-              $set: {
-                status: "PENDING",
-              }
-            },
-            { new: true, upsert: true }
-          ).lean();
-
-          if (p.sync == "N") {
-            await cronListCampaignsFromAmazon(pastSyncObj);
-            await cronListAdGroupsFromAmazon(pastSyncObj);
-            await cronListTargetingFromAmazon(pastSyncObj);
-            await cronListProductAdsFromAmazon(pastSyncObj);
-            await cronListProductFromAmazon(pastSyncObj);
-
-            cron_logs({
-              message: `SyncPastData: Listing completed for profile ${p.profileId}`,
-              log_type: "info",
+              status: "PENDING",
+              details: {
+                startedAt: new Date().toISOString(),
+                startDate: p.startDate,
+                endDate: p.endDate,
+              },
             });
+            await getCronData.save();
+          } catch (_e) {}
+
+          try {
+            if (p.sync == "N") {
+              await cronListCampaignsFromAmazon(pastSyncObj);
+              await cronListAdGroupsFromAmazon(pastSyncObj);
+              await cronListTargetingFromAmazon(pastSyncObj);
+              await cronListProductAdsFromAmazon(pastSyncObj);
+              await cronListProductFromAmazon(pastSyncObj);
+
+              cron_logs({
+                message: `SyncPastData: Listing completed for profile ${p.profileId}`,
+                log_type: "info",
+              });
+
+              await newProfileSyncSchema.findOneAndUpdate(
+                {
+                  profileId: pastSyncObj.profileId,
+                  configId: pastSyncObj.configId
+                },
+                {
+                  $set: { sync: "P" }
+                },
+                { new: true, upsert: true }
+              ).lean();
+            }
+
+            await cronGenerateCampaignReport(false, false, pastSyncObj);
+            await cronGenerateAdGroupReport(false, false, pastSyncObj);
+            await cronGenerateTargetingReport(false, false, pastSyncObj);
+            await cronGenerateAdProductReport(false, false, pastSyncObj);
+            await cronGeneratePlacementReport(false, false, pastSyncObj);
+            await cronGenerateSearchTermReport(false, false, pastSyncObj);
+
+            if (getCronData?._id) {
+              await cronJobHistorySchema.findByIdAndUpdate(
+                getCronData._id,
+                {
+                  status: "COMPLETED",
+                  $set: { "details.completedAt": new Date().toISOString() },
+                },
+                { new: true }
+              );
+            }
 
             await newProfileSyncSchema.findOneAndUpdate(
               {
@@ -2374,43 +2436,32 @@ exports.SyncPastData = async () => {
                 configId: pastSyncObj.configId
               },
               {
-                $set: { sync: "P" }
+                $set: { sync: "C" }
               },
               { new: true, upsert: true }
             ).lean();
 
+            cron_logs({
+              message: `SyncPastData: Step ${p.sync} completed for profile ${p.profileId}`,
+              log_type: "info",
+            });
+          } catch (profileErr) {
+            cron_logs({
+              message: `SyncPastData: Error for profile ${p.profileId}: ${profileErr.message}`,
+              log_type: "error",
+            });
+            if (getCronData?._id) {
+              await cronJobHistorySchema.findByIdAndUpdate(
+                getCronData._id,
+                {
+                  status: "FAILED",
+                  error: profileErr.message,
+                  $set: { "details.failedAt": new Date().toISOString() },
+                },
+                { new: true }
+              );
+            }
           }
-
-          await cronGenerateCampaignReport(false, false, pastSyncObj);
-          await cronGenerateAdGroupReport(false, false, pastSyncObj);
-          await cronGenerateTargetingReport(false, false, pastSyncObj);
-          await cronGenerateAdProductReport(false, false, pastSyncObj);
-          await cronGeneratePlacementReport(false, false, pastSyncObj);
-          await cronGenerateSearchTermReport(false, false, pastSyncObj);
-
-          if (getCronData?._id) {
-            await cronJobHistorySchema.findByIdAndUpdate(
-              getCronData._id,
-              { status: "COMPLETED" },
-              { new: true, upsert: true }
-            );
-          }
-
-          await newProfileSyncSchema.findOneAndUpdate(
-            {
-              profileId: pastSyncObj.profileId,
-              configId: pastSyncObj.configId
-            },
-            {
-              $set: { sync: "C" }
-            },
-            { new: true, upsert: true }
-          ).lean();
-
-          cron_logs({
-            message: `SyncPastData: Step ${p.sync} completed for profile ${p.profileId}`,
-            log_type: "info",
-          });
 
         }
         else {
@@ -2583,6 +2634,21 @@ exports.cronDisconnectReminder = async (req, res) => {
     message: `India Time = ${moment().tz("Asia/Kolkata").format("HH:mm")} Disconnect Reminder`,
     log_type: "info",
   });
+  const currentDate = moment().tz("Asia/Kolkata").format("YYYY-MM-DD");
+  let cronDoc;
+  try {
+    cronDoc = new cronJobHistorySchema({
+      cronName: "Disconnect Reminder",
+      historyDate: currentDate,
+      configId: null,
+      profileId: null,
+      status: "PENDING",
+      details: { startedAt: new Date().toISOString() },
+    });
+    await cronDoc.save();
+  } catch (_e) {
+    // schema insert fallback
+  }
 
   try {
     const cutoffDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -2782,6 +2848,18 @@ exports.cronDisconnectReminder = async (req, res) => {
       log_type: "info"
     });
 
+    if (cronDoc?._id) {
+      await cronJobHistorySchema.findByIdAndUpdate(cronDoc._id, {
+        status: "COMPLETED",
+        recordsCount: adsRemindersSent + spRemindersSent,
+        $set: {
+          "details.completedAt": new Date().toISOString(),
+          "details.adsRemindersSent": adsRemindersSent,
+          "details.spRemindersSent": spRemindersSent,
+        },
+      });
+    }
+
     if (res && typeof res.status === "function") {
       return res.status(200).json({
         isSuccess: true,
@@ -2793,6 +2871,16 @@ exports.cronDisconnectReminder = async (req, res) => {
 
   } catch (error) {
     cron_logs({ message: `Disconnect Reminder Main Error: ${error.message}`, log_type: "error" });
+    if (cronDoc?._id) {
+      await cronJobHistorySchema.findByIdAndUpdate(cronDoc._id, {
+        status: "FAILED",
+        error: error.message,
+        $set: {
+          "details.failedAt": new Date().toISOString(),
+        },
+      });
+    }
+
     if (res && typeof res.status === "function") {
       return res.status(500).json({
         isSuccess: false,

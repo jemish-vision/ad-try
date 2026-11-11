@@ -362,7 +362,7 @@ function TargetingRuleConfirmationModel({
             width: "110px"
         },
         {
-            name: t("Orders"),
+            name: t("Purchases"),
             selector: (row) => row.orders ?? 0,
             cell: (row) => <span className="font-mono text-xs font-semibold">{Number(row.orders || 0).toLocaleString()}</span>,
             right: true,

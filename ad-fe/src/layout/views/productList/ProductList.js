@@ -896,7 +896,7 @@ function ProductList() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__all_notify">{t("All (Notify)")}</SelectItem>
-                    <SelectItem value="true">{t("Notify on Orders")}</SelectItem>
+                    <SelectItem value="true">{t("Notify on Purchases")}</SelectItem>
                     <SelectItem value="false">{t("Don't Notify")}</SelectItem>
                   </SelectContent>
                 </Select>
@@ -1011,7 +1011,7 @@ function ProductList() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__default">{t("Standard")}</SelectItem>
-                    <SelectItem value="bestSellers">{t("Top Selling (Total Orders)")}</SelectItem>
+                    <SelectItem value="bestSellers">{t("Top Selling (Total Purchases)")}</SelectItem>
                     <SelectItem value="newestArrivals">{t("Newest Arrivals")}</SelectItem>
                     <SelectItem value="highestDiscount">{t("Highest Discount")}</SelectItem>
                     <SelectItem value="stockLowToHigh">{t("Stock: Low to High")}</SelectItem>

@@ -330,7 +330,7 @@ function SearchTerm() {
   }, []);
 
   const checkOrderColumns = useCallback((title) => {
-    const matched = visibleColumns?.find(col => col?.title === title);
+    const matched = visibleColumns?.find(col => col?.title === title || (title === "Purchases" && col?.title === "Orders"));
     return {
       width: matched?.width ?? 200,
       hide: Boolean(visibleColumns?.length && !matched),
@@ -567,11 +567,11 @@ function SearchTerm() {
       headerComponentParams: { ...sharedFilterParams, field: "spend", hasFilter: true },
     },
     {
-      headerName: t("Orders"),
+      headerName: t("Purchases"),
       field: "orders",
-      title: "Orders",
+      title: "Purchases",
       exportFormatter: (val) => val !== "" && val != null ? val : 0,
-      ...(checkOrderColumns("Orders")),
+      ...(checkOrderColumns("Purchases")),
       sortable: true,
       resizable: true,
       cellRenderer: (params) => CurrencyFormat(params.value ?? 0),
@@ -1444,7 +1444,7 @@ function SearchTerm() {
             const reverseFieldMap = {
               "impressions": "Impressions",
               "clicks": "Clicks",
-              "orders": "Orders",
+              "orders": "Purchases",
               "sales": "Sales",
               "roas": "ROAS",
               "acos": "ACOS",
@@ -1735,9 +1735,12 @@ function SearchTerm() {
                       <ExpandMoreIcon className="text-gray-500" fontSize="small" />
                     </ShadcnButton>
                   </PopoverTrigger>
-                  <PopoverContent align="start" className="w-72 bg-white dark:bg-[#0e1626] dark:border-white/10 p-2 shadow-xl rounded-xl z-[9999]">
-                    <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider px-3 py-2">
-                      {t("Selected")}: {selectedRows?.length} {selectedRows?.length === 1 ? t("row") : t("rows")}
+                  <PopoverContent align="start" className="w-72 bg-white dark:bg-[#0e1626] border border-slate-200/80 dark:border-white/10 p-2 shadow-xl rounded-xl z-[9999]">
+                    <div className="flex items-center justify-between px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800/60 rounded-lg mb-1 border border-slate-100 dark:border-slate-800/80">
+                      <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">{t("Selected")}</span>
+                      <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-full border border-blue-100 dark:border-blue-900/40">
+                        {selectedRows?.length || 0} {selectedRows?.length === 1 ? t("row") : t("rows")}
+                      </span>
                     </div>
                     <hr className="my-1 border-slate-100 dark:border-white/5" />
 

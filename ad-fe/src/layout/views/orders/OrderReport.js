@@ -448,8 +448,8 @@ const OrderReport = () => {
       },
     },
     {
-      title: "Orders Summary",
-      headerName: t("Orders Summary"),
+      title: "Purchases Summary",
+      headerName: t("Purchases Summary"),
       field: "ordersCount",
       width: 160,
       cellRenderer: (params) => {
@@ -458,7 +458,7 @@ const OrderReport = () => {
         return (
           <div className="flex flex-col justify-center h-full" style={{ gap: 4 }}>
             <span style={{ fontSize: 11, color: P.neutral600 }}>
-              {t("Total Orders")}: <strong style={{ color: isDark ? "#2374F2" : P.primary }}>{row.ordersCount}</strong>
+              {t("Total Purchases")}: <strong style={{ color: isDark ? "#2374F2" : P.primary }}>{row.ordersCount}</strong>
             </span>
             <span style={{ fontSize: 11, color: P.neutral600 }}>
               {t("Total Qty")}: <strong style={{ color: isDark ? "#cbd5e1" : P.neutral800 }}>{row.totalQty} {t("units")}</strong>
@@ -473,14 +473,14 @@ const OrderReport = () => {
       field: "adSpent",
       width: 170,
       headerComponent: CustomHeader,
-      headerComponentParams: { tooltipText: t("Total Ad Spend and Ad Orders count.") },
+      headerComponentParams: { tooltipText: t("Total Ad Spend and Ad Purchases count.") },
       cellRenderer: (params) => {
         const row = params.data;
         if (!row) return null;
         return (
           <div className="flex flex-col justify-center h-full" style={{ gap: 5, padding: "8px 0" }}>
             <div className="flex items-center justify-between" style={{ fontSize: 11, color: P.neutral600 }}>
-              <span style={{ color: "#64748b", fontWeight: 500 }}>{t("Ad Orders")}:</span>
+              <span style={{ color: "#64748b", fontWeight: 500 }}>{t("Ad Purchases")}:</span>
               <span style={{ fontWeight: 600, color: isDark ? "#cbd5e1" : P.neutral800 }}>
                 {row.adOrders ?? 0}
               </span>
@@ -505,8 +505,8 @@ const OrderReport = () => {
       },
     },
     {
-      title: "Orders Breakdown",
-      headerName: t("Orders Breakdown"),
+      title: "Purchases Breakdown",
+      headerName: t("Purchases Breakdown"),
       field: "ordersList",
       width: 160,
       cellRenderer: (params) => {
@@ -683,7 +683,7 @@ const OrderReport = () => {
                     <ShoppingCartIcon style={{ fontSize: 20, color: isDark ? "#2374F2" : P.primary }} />
                   </div>
                   <div className="or-metric-card__content">
-                    <span className="or-metric-card__label">{t("Total Orders")}</span>
+                    <span className="or-metric-card__label">{t("Total Purchases")}</span>
                     <span className="or-metric-card__value" style={{ color: isDark ? "#2374F2" : P.primary }}>
                       {totalOrders.toLocaleString("en-IN")}
                     </span>
@@ -815,7 +815,7 @@ const OrderReport = () => {
                   )}
                 </div>
                 <div className="flex flex-col items-start" style={{ gap: 1, minWidth: 0 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: isDark ? "#cbd5e1" : P.neutral800, fontFamily: "inherit" }}>{t("Orders Breakdown")}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: isDark ? "#cbd5e1" : P.neutral800, fontFamily: "inherit" }}>{t("Purchases Breakdown")}</span>
                   {selectedProductOrders && (
                     <span style={{ fontSize: 10, color: isDark ? "#94a3b8" : P.neutral600, fontFamily: "inherit", fontWeight: "normal" }}>
                       ASIN: {selectedProductOrders.asin} | SKU: {selectedProductOrders.sku}
@@ -940,7 +940,7 @@ const OrderReport = () => {
                     })
                   ) : (
                     <div style={{ textAlign: "center", padding: "16px 0", color: P.neutral400, fontSize: 11, fontFamily: "inherit" }}>
-                      {t("No matching orders found.")}
+                      {t("No matching purchases found.")}
                     </div>
                   )}
                 </div>

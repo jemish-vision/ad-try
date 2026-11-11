@@ -366,7 +366,7 @@ const reconcileStagedRuns = async (entities = ["campaign", "adGroup", "productAd
 /**
 * Scheduled bulk writer that processes ready report streams from Redis into MongoDB.
 */
-const processStagedReportBatches = async (entities = ["campaign", "adGroup", "productAd", ...EXTENDED_REPORT_ENTITIES], { minIdleTime = 30000 } = {}) => {
+const drainStagedReportBatches = async (entities = ["campaign", "adGroup", "productAd", ...EXTENDED_REPORT_ENTITIES], { minIdleTime = 30000 } = {}) => {
   let totalBatchesProcessed = 0;
 
   // Run self-healing reconciliation before processing incoming stream entries
@@ -513,6 +513,8 @@ const processStagedReportBatches = async (entities = ["campaign", "adGroup", "pr
           }).select("status").lean();
 
           if (mongoReport && mongoReport.status === "FAILED") {
+            await redisClient.del(`${MANIFEST_KEY_PREFIX}${importRunId}:keys`);
+            await redisClient.expire(`${MANIFEST_KEY_PREFIX}${importRunId}`, 300);
             await redisClient.xAck(streamKey, CONSUMER_GROUP, streamMsgId);
             await redisClient.xDel(streamKey, streamMsgId);
             await saveRunManifest(importRunId, {
@@ -552,6 +554,8 @@ const processStagedReportBatches = async (entities = ["campaign", "adGroup", "pr
           // invocation was waiting for the scope lock. Use its current count.
           manifest = await getRunManifest(importRunId);
           if (manifest?.status === RUN_STATUS.COMPLETED) {
+            await redisClient.del(`${MANIFEST_KEY_PREFIX}${importRunId}:keys`);
+            await redisClient.expire(`${MANIFEST_KEY_PREFIX}${importRunId}`, 300);
             await redisClient.xAck(streamKey, CONSUMER_GROUP, streamMsgId);
             await redisClient.xDel(streamKey, streamMsgId);
             passActivity++;
@@ -567,6 +571,8 @@ const processStagedReportBatches = async (entities = ["campaign", "adGroup", "pr
           // the committed marker under the scope lock before loading that payload.
           const processedBatchesKey = `${MANIFEST_KEY_PREFIX}${importRunId}:batches`;
           if (await redisClient.sIsMember(processedBatchesKey, batchId)) {
+            // Only this batch is complete. Preserve the run's verification keys
+            // and manifest lifetime until every batch has been verified.
             await redisClient.xAck(streamKey, CONSUMER_GROUP, streamMsgId);
             await redisClient.xDel(streamKey, streamMsgId);
             passActivity++;
@@ -690,6 +696,13 @@ const processStagedReportBatches = async (entities = ["campaign", "adGroup", "pr
             log_type: "error",
           });
 
+          // Infrastructure outages leave the payload pending, without consuming
+          // the data retry budget or repeatedly hammering an unavailable database.
+          if (/Mongo(?:WaitQueueTimeout|NetworkTimeout|Network|ServerSelection)Error/.test(batchErr.name || "") ||
+              /checking out a connection|connection pool|connection .* timed out/i.test(batchErr.message || "")) {
+            throw batchErr;
+          }
+
           // Legacy failedAttempts was shared by the entire run. Never let a
           // different batch consume this batch's retry budget.
           const attemptsField = `batchAttempts:${batchId}`;
@@ -724,6 +737,8 @@ const processStagedReportBatches = async (entities = ["campaign", "adGroup", "pr
               lastError: `Max retries exceeded: ${batchErr.message}`,
             });
 
+            await redisClient.del(`${MANIFEST_KEY_PREFIX}${importRunId}:keys`);
+            await redisClient.expire(`${MANIFEST_KEY_PREFIX}${importRunId}`, 300);
             await redisClient.xAck(streamKey, CONSUMER_GROUP, streamMsgId);
             await redisClient.xDel(streamKey, streamMsgId);
             passActivity++;
@@ -751,6 +766,28 @@ const processStagedReportBatches = async (entities = ["campaign", "adGroup", "pr
   }
 
   return { totalBatchesProcessed };
+};
+
+// Coalesce background callbacks and scheduled imports per entity, and serialize
+// different entities in this process. Cross-process ownership remains Redis-fenced.
+const activeDrains = new Map();
+let drainTail = Promise.resolve();
+const processStagedReportBatches = async (
+  entities = ["campaign", "adGroup", "productAd", ...EXTENDED_REPORT_ENTITIES], options = {}
+) => {
+  const drains = [...new Set(entities)].map(entity => {
+    if (activeDrains.has(entity)) return activeDrains.get(entity);
+    const drain = drainTail.then(() => drainStagedReportBatches([entity], options));
+    activeDrains.set(entity, drain);
+    drainTail = drain.catch(() => {});
+    const cleanup = () => { if (activeDrains.get(entity) === drain) activeDrains.delete(entity); };
+    drain.then(cleanup, cleanup);
+    return drain;
+  });
+  const results = await Promise.allSettled(drains);
+  const failure = results.find(result => result.status === "rejected");
+  if (failure) throw failure.reason;
+  return { totalBatchesProcessed: results.reduce((sum, result) => sum + result.value.totalBatchesProcessed, 0) };
 };
 
 module.exports = {

@@ -62,7 +62,7 @@ const usePageFilter = ({
       isPageFilterLoadedRef.current = false;
       setIsFilterReady(false);
       getPageFilter();
-    } else if (!pageName) {
+    } else if (!pageName || !profileId) {
       isPageFilterLoadedRef.current = false;
       setIsFilterReady(true);
     }

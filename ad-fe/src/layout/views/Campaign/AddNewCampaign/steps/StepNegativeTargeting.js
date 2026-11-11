@@ -213,7 +213,7 @@ const StepNegativeTargeting = ({ formik }) => {
 
             <button
               type="button"
-              className="customize-button clicked w-full m-0 gap-0"
+              className="btn-campaign-primary w-full"
               style={{
                 height: "36px",
                 display: "flex",
@@ -370,7 +370,7 @@ const StepNegativeTargeting = ({ formik }) => {
 
               <button
                 type="button"
-                className="customize-button clicked m-0 gap-0"
+                className="btn-campaign-primary px-5"
                 style={{
                   height: "36px",
                   display: "inline-flex",

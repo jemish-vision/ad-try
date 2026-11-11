@@ -152,7 +152,7 @@ const CampaignSelector = ({ campaigns = [], selected, onChange }) => {
 };
 
 // ─── Campaign Column Cell ─────────────────────────────────────────────────────
-const CampaignCell = ({ campaigns = [], selectedCampaignId, onSelect, onStatusClick, targeting }) => {
+const CampaignCell = ({ campaigns = [], selectedCampaignId, onSelect, onStatusClick, targeting, fromDate, toDate }) => {
     const { t } = useTranslation();
     const selected = selectedCampaignId === "ALL"
         ? null
@@ -172,6 +172,8 @@ const CampaignCell = ({ campaigns = [], selectedCampaignId, onSelect, onStatusCl
                         row={selected}
                         name={selected.campaignName}
                         campaignId={selected.campaignId}
+                        fromDate={fromDate}
+                        toDate={toDate}
                     />
                     <div className="flex flex-wrap items-center justify-between" style={{ gap: 4 }}>
                         <div className="flex items-center" style={{ gap: 4 }}>
@@ -257,6 +259,8 @@ const CheckboxCellRenderer = (cellParams) => {
 // ─── Keyword Analysis Grid ────────────────────────────────────────────────────
 export const KeywordAnalysisGrid = ({
     rowData,
+    fromDate,
+    toDate,
     totalRecords,
     loading,
     currentPage,
@@ -322,9 +326,9 @@ export const KeywordAnalysisGrid = ({
     };
 
     const checkOrderColumns = useCallback((title) => ({
-        width: visibleColumns?.find(col => col?.title === title)?.width ?? 200,
-        hide: Boolean(visibleColumns?.length && !visibleColumns?.find(col => col?.title === title)),
-        order: visibleColumns?.find(col => col?.title === title)?.order,
+        width: visibleColumns?.find(col => col?.title === title || (title === "Purchases" && col?.title === "Orders"))?.width ?? 200,
+        hide: Boolean(visibleColumns?.length && !visibleColumns?.find(col => col?.title === title || (title === "Purchases" && col?.title === "Orders"))),
+        order: visibleColumns?.find(col => col?.title === title || (title === "Purchases" && col?.title === "Orders"))?.order,
     }), [visibleColumns]);
 
     const columns = useMemo(() => [
@@ -401,6 +405,8 @@ export const KeywordAnalysisGrid = ({
                         onSelect={(val) => handleCampaignSelect(row.targeting, val)}
                         onStatusClick={onStatusClick}
                         targeting={row.targeting}
+                        fromDate={fromDate}
+                        toDate={toDate}
                     />
                 );
             },
@@ -476,13 +482,13 @@ export const KeywordAnalysisGrid = ({
 
         // 7. Orders
         {
-            headerName: t("Orders"),
+            headerName: t("Purchases"),
             field: "orders",
-            title: "Orders",
+            title: "Purchases",
             width: 100,
-            ...(checkOrderColumns("Orders")),
+            ...(checkOrderColumns("Purchases")),
             headerComponent: CustomHeader,
-            headerComponentParams: { tooltipText: t("Total orders attributed to this keyword.") },
+            headerComponentParams: { tooltipText: t("Total purchases attributed to this keyword.") },
             cellRenderer: (params) => {
                 const row = params.data;
                 if (!row) return null;
@@ -588,7 +594,7 @@ export const KeywordAnalysisGrid = ({
             },
         },
 
-    ], [t, selectedCampaigns, onStatusClick, checkOrderColumns]);
+    ], [t, selectedCampaigns, onStatusClick, checkOrderColumns, fromDate, toDate]);
 
     return (
         <div className="glass-grid-container overflow-hidden">

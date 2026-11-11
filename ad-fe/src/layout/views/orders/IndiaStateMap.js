@@ -637,9 +637,9 @@ const IndiaStateMap = ({ profileId, orderDateRange, isMobile }) => {
 
   // GeoChart data (National map)
   const chartData = useMemo(() => {
-    if (stateAggregated.length === 0) return [["State", "Orders"]];
+    if (stateAggregated.length === 0) return [["State", "Purchases"]];
     return [
-      ["State", "Orders"],
+      ["State", "Purchases"],
       ...stateAggregated.map((s) => [s.state, s.order]),
     ];
   }, [stateAggregated]);
@@ -731,9 +731,9 @@ const IndiaStateMap = ({ profileId, orderDateRange, isMobile }) => {
 
   // GeoChart data for state drill down
   const drillChartData = useMemo(() => {
-    if (filteredDrill.length === 0) return [["Lat", "Long", "Name", "Orders"]];
+    if (filteredDrill.length === 0) return [["Lat", "Long", "Name", "Purchases"]];
     return [
-      ["Lat", "Long", "Name", "Orders"],
+      ["Lat", "Long", "Name", "Purchases"],
       ...filteredDrill.map((d, idx) => {
         const name = d.city || d.district || "";
         const { lat, lng } = getCityLatLng(name, drillState, idx);
@@ -862,7 +862,7 @@ const IndiaStateMap = ({ profileId, orderDateRange, isMobile }) => {
                 {drillState}
               </div>
               <div className="ism-drill-header__sub">
-                {t("Geographic breakdown of orders in")} {drillState}
+                {t("Geographic breakdown of purchases in")} {drillState}
               </div>
             </div>
           </div>
@@ -871,7 +871,7 @@ const IndiaStateMap = ({ profileId, orderDateRange, isMobile }) => {
               <span className="ism-drill-mini-stat__val" style={{ color: P.primary }}>
                 {drillTotalOrders.toLocaleString("en-IN")}
               </span>
-              <span className="ism-drill-mini-stat__label">{t("Orders")}</span>
+              <span className="ism-drill-mini-stat__label">{t("Purchases")}</span>
             </div>
             <div className="ism-drill-mini-stat">
               <span className="ism-drill-mini-stat__val" style={{ color: P.success }}>
@@ -1034,7 +1034,7 @@ const IndiaStateMap = ({ profileId, orderDateRange, isMobile }) => {
                   <TrendingUpIcon style={{ fontSize: 18, color: P.success }} />
                 </div>
                 <div>
-                  <div className="india-map-stat__label">{t("Total Orders")}</div>
+                  <div className="india-map-stat__label">{t("Total Purchases")}</div>
                   <div className="india-map-stat__value" style={{ color: P.success }}>
                     <AnimatedCounter value={totalOrders} />
                   </div>

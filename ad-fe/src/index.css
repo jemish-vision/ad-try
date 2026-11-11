@@ -1,3 +1,15 @@
+/* Important rules in the first cascade layer outrank component !important
+   transitions, including the sidebar and AG Grid's more specific selectors. */
+@layer theme-switch {
+  :root.theme-switching,
+  :root.theme-switching *,
+  :root.theme-switching *::before,
+  :root.theme-switching *::after {
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+  }
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -285,6 +297,10 @@
 
 :root,
 [data-theme="light"] {
+  --chart-grid-stroke: rgba(0, 0, 0, 0.05);
+  --chart-axis-text: #475569;
+  --chart-table-bg: rgba(255, 255, 255, 0.98);
+  --chart-canvas-bg: #F4F7FA;
   --theme-primary: #1A9FD4;
   /* Canvas — elegant radial gradient echoing the logo's cyan and blue shades */
   --canvas-bg: radial-gradient(at 0% 0%, rgba(35, 116, 242, 0.03) 0px, transparent 50%), radial-gradient(at 100% 100%, rgba(35, 116, 242, 0.03) 0px, transparent 50%), #F4F7FA;
@@ -389,6 +405,10 @@ h6,
 
 
 [data-theme="dark"] {
+  --chart-grid-stroke: rgba(255, 255, 255, 0.04);
+  --chart-axis-text: #9CA3AF;
+  --chart-table-bg: rgba(15, 23, 42, 0.98);
+  --chart-canvas-bg: #0A0E1A;
   /* Canvas — premium deep indigo-dark background with radial blue glow */
   --canvas-bg: radial-gradient(ellipse at 80% 20%, rgba(91, 156, 246, 0.08) 0%, transparent 60%), #0A0E1A;
   --glass-bg: rgba(20, 26, 46, 0.70);
@@ -4151,6 +4171,25 @@ html[data-theme="dark"] .rs-picker-input-group {
   color: #ffffff !important;
 }
 
+/* ── Light Theme Row Selection & Pinned Column Highlight ── */
+.glass-grid-container .iq-ag-table .ag-row-selected,
+.ag-theme-alpine .ag-row-selected {
+  background-color: #E0F2FE !important;
+  background: #E0F2FE !important;
+}
+
+.glass-grid-container .iq-ag-table .ag-row-selected .ag-cell,
+.ag-theme-alpine .ag-row-selected .ag-cell {
+  color: #0369A1 !important;
+}
+
+.glass-grid-container .iq-ag-table .ag-row-selected .ag-pinned-left-cols-container .ag-cell,
+.ag-theme-alpine .ag-row-selected .ag-pinned-left-cols-container .ag-cell {
+  background-color: #DBEAFE !important;
+  background: #DBEAFE !important;
+  color: #0369A1 !important;
+}
+
 [data-theme="dark"] .glass-grid-container .iq-ag-table .ag-row-selected {
   background: rgba(59, 132, 223, 0.28) !important;
 }
@@ -4337,18 +4376,141 @@ html[data-theme="dark"] .rs-picker-input-group {
   color: #E5E7EB !important;
 }
 
+/* ── AG Grid Context / Column Menu & Popups (Light Theme) ── */
+.ag-theme-alpine .ag-menu,
+.ag-popup .ag-menu,
+.ag-popup-child .ag-menu,
+.iq-ag-table .ag-menu,
+.ag-theme-alpine .ag-filter-wrapper,
+.ag-theme-alpine .ag-column-drop-wrapper,
+.ag-theme-alpine .ag-virtual-list-viewport {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.12), 0 8px 10px -6px rgba(15, 23, 42, 0.08) !important;
+  color: #1e293b !important;
+  padding: 6px 0 !important;
+  overflow: hidden !important;
+}
+
+.ag-theme-alpine .ag-menu-list,
+.ag-popup .ag-menu-list,
+.ag-popup-child .ag-menu-list {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+}
+
+.ag-theme-alpine .ag-menu-option,
+.ag-popup .ag-menu-option,
+.ag-popup-child .ag-menu-option {
+  color: #334155 !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  padding: 8px 14px !important;
+  cursor: pointer !important;
+  transition: background-color 0.15s ease, color 0.15s ease !important;
+}
+
+.ag-theme-alpine .ag-menu-option:hover,
+.ag-theme-alpine .ag-menu-option-active,
+.ag-popup .ag-menu-option:hover,
+.ag-popup .ag-menu-option-active {
+  background-color: #f1f5f9 !important;
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+.ag-theme-alpine .ag-menu-option-icon,
+.ag-popup .ag-menu-option-icon {
+  color: #64748b !important;
+}
+
+.ag-theme-alpine .ag-menu-option:hover .ag-menu-option-icon,
+.ag-theme-alpine .ag-menu-option-active .ag-menu-option-icon,
+.ag-popup .ag-menu-option:hover .ag-menu-option-icon,
+.ag-popup .ag-menu-option-active .ag-menu-option-icon {
+  color: #0284c7 !important;
+}
+
+.ag-theme-alpine .ag-menu-separator,
+.ag-popup .ag-menu-separator {
+  border-top: 1px solid #e2e8f0 !important;
+  margin: 4px 0 !important;
+  padding: 0 !important;
+}
+
+.ag-theme-alpine .ag-menu-header,
+.ag-popup .ag-menu-header {
+  background-color: #ffffff !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+.ag-theme-alpine .ag-column-select,
+.ag-popup .ag-column-select {
+  background-color: #ffffff !important;
+  color: #1e293b !important;
+}
+
+/* ── AG Grid Context / Column Menu & Popups (Dark Theme) ── */
 [data-theme="dark"] .ag-theme-alpine .ag-menu,
+[data-theme="dark"] .ag-popup .ag-menu,
+[data-theme="dark"] .ag-popup-child .ag-menu,
+[data-theme="dark"] .iq-ag-table .ag-menu,
 [data-theme="dark"] .ag-theme-alpine .ag-filter-wrapper,
 [data-theme="dark"] .ag-theme-alpine .ag-column-drop-wrapper,
 [data-theme="dark"] .ag-theme-alpine .ag-popup,
 [data-theme="dark"] .ag-theme-alpine .ag-virtual-list-viewport {
   background-color: #111827 !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: #111827 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4) !important;
   color: #F9FAFB !important;
 }
 
-[data-theme="dark"] .ag-theme-alpine .ag-menu-option:hover {
-  background-color: rgba(59, 130, 246, 0.15) !important;
+[data-theme="dark"] .ag-theme-alpine .ag-menu-list,
+[data-theme="dark"] .ag-popup .ag-menu-list,
+[data-theme="dark"] .ag-popup-child .ag-menu-list {
+  background-color: #111827 !important;
+  background: #111827 !important;
+}
+
+[data-theme="dark"] .ag-theme-alpine .ag-menu-option,
+[data-theme="dark"] .ag-popup .ag-menu-option,
+[data-theme="dark"] .ag-popup-child .ag-menu-option {
+  color: #E2E8F0 !important;
+}
+
+[data-theme="dark"] .ag-theme-alpine .ag-menu-option:hover,
+[data-theme="dark"] .ag-theme-alpine .ag-menu-option-active,
+[data-theme="dark"] .ag-popup .ag-menu-option:hover,
+[data-theme="dark"] .ag-popup .ag-menu-option-active {
+  background-color: rgba(59, 130, 246, 0.2) !important;
+  background: rgba(59, 130, 246, 0.2) !important;
+  color: #FFFFFF !important;
+}
+
+[data-theme="dark"] .ag-theme-alpine .ag-menu-option-icon,
+[data-theme="dark"] .ag-popup .ag-menu-option-icon {
+  color: #94A3B8 !important;
+}
+
+[data-theme="dark"] .ag-theme-alpine .ag-menu-separator,
+[data-theme="dark"] .ag-popup .ag-menu-separator {
+  border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="dark"] .ag-theme-alpine .ag-menu-header,
+[data-theme="dark"] .ag-popup .ag-menu-header {
+  background-color: #111827 !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="dark"] .ag-theme-alpine .ag-column-select,
+[data-theme="dark"] .ag-popup .ag-column-select {
+  background-color: #111827 !important;
+  color: #F9FAFB !important;
 }
 
 [data-theme="dark"] .ag-theme-alpine .ag-paging-panel {
@@ -5414,7 +5576,10 @@ html[data-theme="dark"] .rs-picker-input-group {
 
 /* ── Table header AG Grid (dark mode) ── */
 [data-theme="dark"] .glass-grid-container .iq-ag-table .ag-row {
-  border-top: 1px solid rgba(255, 255, 255, 0.04) !important;
+  /* Keep the same row/cell geometry as light mode. A dark-only top border
+     moved every cell's contents by a pixel during a theme switch. */
+  border-top: 0 !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important;
 }
 
 [data-theme="dark"] .glass-grid-container .iq-ag-table .ag-cell {
@@ -8231,6 +8396,40 @@ select:not(.ant-select-selector):not(.ag-theme-alpine select):not(.form-select) 
   opacity: 0.9 !important;
   transform: translateY(-1px) !important;
   box-shadow: 0 6px 14px rgba(21, 98, 213, 0.35) !important;
+}
+
+.btn-campaign-secondary {
+  background: transparent !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 8px !important;
+  padding: 8px 20px !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  color: #475569 !important;
+  transition: all 0.2s ease !important;
+  height: 38px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+}
+
+.btn-campaign-secondary:hover {
+  background: #f1f5f9 !important;
+  border-color: #94a3b8 !important;
+  color: #1e293b !important;
+}
+
+[data-theme="dark"] .btn-campaign-secondary {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+  color: #cbd5e1 !important;
+}
+
+[data-theme="dark"] .btn-campaign-secondary:hover {
+  background: rgba(255, 255, 255, 0.10) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  color: #ffffff !important;
 }
 
 /* Fix dark mode typography for all 'Add Rule' modals across the app */

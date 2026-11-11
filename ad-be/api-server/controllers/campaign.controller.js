@@ -20,12 +20,15 @@ const averageAOVSchema = require("../models/averageAOV.model");
 const defaultTargetAcosSchema = require("../models/defaultTargetAcos.model");
 const profileSchema = require("../models/profiles.model");
 const reportsSchema = require("../models/report.model");
+const { getOrCreateReportRequest } = require("../services/reportRequest.service");
 const placementSchema = require("../models/placement.model");
 const adGroupsSchema = require("../models/adGroups.model");
 const keywordSchema = require("../models/keyword.model");
 const targetingSchema = require("../models/targeting.model");
 const camapignSetting = require("../models/camapignSetting.model");
 const campaignChangeHistorySchema = require("../models/campaignChangeHistory.model");
+const { randomUUID } = require("crypto");
+const { insertOperationHistory } = require("../helper/operationHistory");
 const limitedCPCSchema = require("../models/limitedCPC.model");
 const productAdsSchema = require("../models/productAds.model");
 const searchTermReportSchema = require("../models/searchTerm.model");
@@ -75,7 +78,7 @@ const {
 } = require("../helper/common");
 const { stageReportFileInRedis } = require("../services/reportFileStager.service");
 const { processStagedReportBatches } = require("../services/reportBatchWriter.service");
-const { linkReportHistory } = require("../services/reportHistoryCompletion.service");
+const { linkReportHistory, finalizeReportHistory } = require("../services/reportHistoryCompletion.service");
 const { getCacheWithLog, setCacheWithLog, deletePatternWithLog } = require("../services/redis.service");
 
 const { write_logs: ams_write_logs } = require("../../winston/ams/logger");
@@ -97,6 +100,7 @@ const {
 } = require("../helper/chatgpt");
 const amazonAxios = require("../helper/amazonAxios");
 const AD_TYPE_COLLECTIONS = require("../helper/adTypeCollections");
+const { applyBidHistoryAcos, bidKind, describeBid, placementKey } = require("../helper/historyBidAcos");
 const { retryWithBackoff } = require("../helper/retryHelper");
 const {
   addHealthScoreSettingQuery,
@@ -215,6 +219,23 @@ exports.updateCampaignStatus = async (req, res) => {
     }).sort({ reportDate: -1, createdAt: -1 }).lean();
 
     const previousStatus = existingCamp?.status || "—";
+    const hasStatusChange = String(previousStatus).trim().toUpperCase() !== status.toUpperCase();
+    const snapshotTimestamp = existingCamp?.updatedAt || existingCamp?.createdAt;
+    // A completed reversal advances this anchor even within one millisecond.
+    const priorArrivals = hasStatusChange && existingCamp?._id && snapshotTimestamp
+      ? await campaignChangeHistorySchema.countDocuments({
+        configId,
+        profileId: numericProfileId,
+        changeLevel: numericCampaignId,
+        type: normalizedAdType,
+        source: "MANUAL",
+        changeType: "Update Campaign Status",
+        newValue: String(previousStatus).trim().toUpperCase(),
+      })
+      : null;
+    const snapshotOperation = priorArrivals === null
+      ? randomUUID()
+      : JSON.stringify(["manual-campaign-status", String(existingCamp._id), String(snapshotTimestamp), priorArrivals]);
 
     const response = await retryWithBackoff(() => amazonAxios(updateOptions));
 
@@ -225,6 +246,23 @@ exports.updateCampaignStatus = async (req, res) => {
       && (!Array.isArray(resultBody) || ["SUCCESS", "200"].includes(String(row.code).toUpperCase())));
     if ([200, 207].includes(response?.status) && successful && !errors?.length) {
       const currentDate = moment().tz(getAccount.timezone || "UTC").format("YYYY-MM-DD");
+      // Record status change in campaignChangeHistory
+      if (hasStatusChange) {
+        await insertOperationHistory(campaignChangeHistorySchema, [{
+          configId,
+          userId: userId || undefined,
+          profileId: numericProfileId,
+          changeLevel: numericCampaignId,
+          changeType: "Update Campaign Status",
+          oldValue: previousStatus,
+          newValue: status.toUpperCase(),
+          updatedFrom: "AdvertiseIQ UI",
+          source: "MANUAL",
+          type: normalizedAdType,
+          statusHistoryEvent: true,
+        }], snapshotOperation);
+      }
+
       await adTypeSchema.updateMany(
         {
           configId,
@@ -239,21 +277,6 @@ exports.updateCampaignStatus = async (req, res) => {
           },
         }
       );
-
-      // Record status change in campaignChangeHistory
-      await campaignChangeHistorySchema.create({
-        configId,
-        userId: userId || undefined,
-        profileId: numericProfileId,
-        changeLevel: numericCampaignId,
-        changeType: "Update Campaign Status",
-        oldValue: previousStatus,
-        newValue: status.toUpperCase(),
-        updatedFrom: "AdvertiseIQ UI",
-        source: "MANUAL",
-        type: normalizedAdType,
-        statusHistoryEvent: true,
-      });
 
       write_logs({
         message: `Campaign status updated to ${status.toUpperCase()} - Config ID: ${configId}, Profile: ${profileId}, Campaign: ${campaignId}`,
@@ -2450,7 +2473,7 @@ exports.cronGenerateCampaignReport = async (
     const cronName =
       generateBiWeeklyReport
         ? "BiWeekly Report"
-        : generateWeeklyReport || pastSyncObj != null
+        : generateWeeklyReport || pastSyncObj?.isWeekly
           ? "Weekly Report"
           : "Campaign Report";
 
@@ -2520,24 +2543,28 @@ exports.cronGenerateCampaignReport = async (
                 if (pastSyncObj.endDate) endDate = pastSyncObj.endDate;
               }
 
-              let getCronData;
+              let getCronData = null;
               if (recurring) {
-                getCronData = await cronJobHistorySchema
-                  .findOneAndUpdate(
-                    {
-                      configId: profile.configId,
-                      profileId: profile.profileId,
-                      cronName: cronName,
-                      historyDate: currentDate,
+                try {
+                  getCronData = new cronJobHistorySchema({
+                    configId: profile.configId,
+                    profileId: profile.profileId,
+                    cronName: cronName,
+                    historyDate: currentDate,
+                    status: "PENDING",
+                    details: {
+                      startedAt: new Date().toISOString(),
+                      startDate,
+                      endDate,
                     },
-                    {
-                      $set: {
-                        status: "PENDING",
-                      },
-                    },
-                    { new: true, upsert: true },
-                  )
-                  .lean();
+                  });
+                  await getCronData.save();
+                } catch (saveErr) {
+                  cron_logs({
+                    message: `[${cronName}] Failed to create cron history for profile ${profile.profileId}: ${saveErr.message}`,
+                    log_type: "warn",
+                  });
+                }
               }
 
               let reportSpResponse = await spGenerateReport(
@@ -2596,10 +2623,14 @@ exports.cronGenerateCampaignReport = async (
                 const combinedStatus = reportStatuses.includes("ERROR") ? "FAILED"
                   : reportStatuses.every((status) => status === "COMPLETED") ? "COMPLETED"
                     : reportStatuses.includes("STAGED") ? "STAGED" : reportSpResponse;
-                await cronJobHistorySchema.updateOne(
-                  { _id: getCronData._id, status: { $ne: "COMPLETED" } },
-                  { $set: { status: combinedStatus } },
-                );
+                if (combinedStatus === "FAILED") {
+                  await cronJobHistorySchema.updateOne(
+                    { _id: getCronData._id },
+                    { $set: { status: "FAILED" } },
+                  );
+                } else {
+                  await finalizeReportHistory(getCronData._id);
+                }
               }
               return reportSpResponse;
             } else {
@@ -3288,6 +3319,7 @@ async function spGenerateReport(
         reportTypeId: "spCampaigns",
         reportName: "CAMPAIGNS",
       })
+      .sort({ createdAt: -1 })
       .lean();
 
     if (existing && existing.status == "COMPLETED") return "COMPLETED";
@@ -3400,7 +3432,7 @@ async function spGenerateReport(
   );
 
   if (statusResp.data.status !== "COMPLETED") {
-    if (["FATAL", "FAILED", "EXPIRED"].includes(statusResp.data.status)) {
+    if (["FATAL", "FAILED", "EXPIRED", "CANCELLED", "CANCELED"].includes(statusResp.data.status)) {
       await reportsSchema.updateOne(
         { _id: existing._id },
         { $set: { status: statusResp.data.status } }
@@ -3496,64 +3528,13 @@ async function sbGenerateReport(
 ) {
   const getAccount = await getProfile(configId, profileId);
 
-  let existing;
-  if (!recurring) {
-    existing = await reportsSchema
-      .findOne({
-        startDate,
-        endDate,
-        profileId,
-        configId,
-        reportTypeId: "sbCampaigns",
-        reportName: "CAMPAIGNS",
-      })
-      .lean();
-
-    if (existing && existing.status == "COMPLETED") return "COMPLETED";
-    if (existing && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) {
-      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
-      const lastActivity = new Date(existing.updatedAt || existing.createdAt);
-      if (lastActivity < twoHoursAgo) {
-        await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
-        existing = null;
-      } else {
-        processStagedReportBatches(["sbCampaign"]).catch(() => {});
-        return existing.status;
-      }
-    }
-    if (existing && !["PENDING", "IN_PROGRESS", "PROCESSING"].includes(existing?.status)) {
-      existing = null;
-    }
-  } else {
-    // Include staged reports so recurring polls do not request the same report again.
-    existing = await reportsSchema
-      .findOne({
-        startDate,
-        endDate,
-        profileId,
-        configId,
-        reportTypeId: "sbCampaigns",
-        reportName: "CAMPAIGNS",
-      })
-      .lean();
-    if (existing && existing.status == "COMPLETED") return "COMPLETED";
-    if (existing && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) {
-      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
-      const lastActivity = new Date(existing.updatedAt || existing.createdAt);
-      if (lastActivity < twoHoursAgo) {
-        await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
-        existing = null;
-      } else {
-        processStagedReportBatches(["sbCampaign"]).catch(() => {});
-        return existing.status;
-      }
-    }
-  }
-
-  if (!existing) {
-    let createResp;
-    try {
-      createResp = await retryWithBackoff(() =>
+  let request;
+  try {
+    request = await getOrCreateReportRequest({
+      configId, profileId, startDate, endDate,
+      reportName: "CAMPAIGNS", reportTypeId: "sbCampaigns",
+    }, async () => {
+      const createResp = await retryWithBackoff(() =>
         amazonAxios({
           method: "POST",
           url: `${getAccount.amazonUrl}/reporting/reports`,
@@ -3589,26 +3570,34 @@ async function sbGenerateReport(
           meta: { configId, tokenKey: "adsAccessToken" },
         }),
       );
-    } catch (createErr) {
-      cron_logs({
-        message: `[Campaign Report SB] Report creation failed for profile ${profileId}: ${getAxiosErrorMessage(createErr)}`,
-        log_type: "warn",
+
+      return reportsSchema.create({
+        profileId,
+        configId,
+        reportId: createResp.data.reportId,
+        startDate,
+        endDate,
+        status: createResp.data.status,
+        reportTypeId: "sbCampaigns",
+        reportName: "CAMPAIGNS",
       });
-      return "ERROR";
-    }
-
-    await reportsSchema.create({
-      profileId,
-      configId,
-      reportId: createResp.data.reportId,
-      startDate,
-      endDate,
-      status: createResp.data.status,
-      reportTypeId: "sbCampaigns",
-      reportName: "CAMPAIGNS",
     });
+  } catch (err) {
+    cron_logs({
+      message: `[Campaign Report SB] Report request failed for profile ${profileId}: ${getAxiosErrorMessage(err)}`,
+      log_type: "warn",
+    });
+    return "ERROR";
+  }
 
-    return createResp.data.status;
+  if (request.busy) return "PENDING";
+  const existing = request.report;
+  if (request.created) return existing.status;
+  if (existing.status === "COMPLETED") return "COMPLETED";
+  if (["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) {
+    // Age alone does not prove a staged import failed. Let the writer finish.
+    processStagedReportBatches(["sbCampaign"]).catch(() => {});
+    return existing.status;
   }
 
   // 2️⃣ Poll status
@@ -5976,25 +5965,18 @@ exports.manualGenerateReport = async (req, res) => {
     const endDate = moment().tz(getProfile.timezone).format("YYYY-MM-DD");
     const checkConfigAds = await getAccessToken(configId);
     if (checkConfigAds && checkConfigAds.adsAccessToken) {
-      const getCronData = await cronJobHistorySchema
-        .findOne({
-          configId: configId,
-          profileId: profileId,
-          cronName: "Campaign Report",
-          status: "PENDING",
-          historyDate: startDate,
-        })
-        .lean();
-      if (!getCronData) {
-        const createCronHistory = new cronJobHistorySchema({
-          configId: configId,
-          profileId: profileId,
-          cronName: "Campaign Report",
-          status: "PENDING",
-          historyDate: startDate,
-        });
-        await createCronHistory.save();
-      }
+      const createCronHistory = new cronJobHistorySchema({
+        configId: configId,
+        profileId: profileId,
+        cronName: "Campaign Report",
+        status: "PENDING",
+        historyDate: startDate,
+        details: {
+          startedAt: new Date().toISOString(),
+          manual: true,
+        },
+      });
+      await createCronHistory.save();
       let responseSPStatus = "PENDING";
       let responseSBStatus = "IN_PROGRESS";
       let responseSDStatus = "IN_PROGRESS";
@@ -6069,20 +6051,12 @@ exports.manualGenerateReport = async (req, res) => {
           }
         }
       }
-      const getUpdateCronData = await cronJobHistorySchema
-        .findOne({
-          configId: configId,
-          profileId: profileId,
-          cronName: "Campaign Report",
-          status: "PENDING",
-          historyDate: startDate,
-        })
-        .lean();
-      if (getUpdateCronData) {
+      if (createCronHistory?._id) {
         await cronJobHistorySchema.findByIdAndUpdate(
-          { _id: getUpdateCronData._id },
+          createCronHistory._id,
           {
             status: "COMPLETED",
+            "details.completedAt": new Date().toISOString(),
           },
           { new: true },
         );
@@ -6113,6 +6087,7 @@ exports.getHistory = async (req, res) => {
     const adType = req.adType;
 
     let { pageNo = 1, perPage = 10, fromDate, toDate, profileId, type, searchName, targeting, matchType, placement, source, campaignId, fieldName, sortType, changeType, historyScope, dateOption, acosLookbackMode = "7", acosLookbackDays = 7, currentAcosFromDate, currentAcosToDate, currentAcosLookbackDays = 7 } = req.body;
+    const compareBids = req.body.oldAcosMode === "bid-to-bid";
     const isScopedQuery = Boolean(campaignId || targeting || req.body?.targetId);
 
     if (!profileId) {
@@ -6174,6 +6149,7 @@ exports.getHistory = async (req, res) => {
     // Source/display filters must not hide the authoritative event before its
     // Amazon echo is deduplicated. Keep an independent identity/ad-product query.
     const historyIdentityFilter = { ...filter, ...(filter.$and ? { $and: [...filter.$and] } : {}) };
+    const bidHistoryScope = { ...filter, ...(filter.$and ? { $and: [...filter.$and] } : {}) };
     const isAllDates = String(dateOption).toLowerCase() === "all" || (!fromDate && !toDate);
     if (!isAllDates && fromDate && toDate) {
       filter.createdAt = {
@@ -6823,6 +6799,15 @@ exports.getHistory = async (req, res) => {
       }
       const deduped = [];
       const candidateIndices = new Map();
+      const candidateSources = new Map();
+      const transitionBuckets = new Map();
+      for (const row of docs) {
+        const key = JSON.stringify([String(row.changeLevel || row.campaignId || ""), normalizeChangeType(row.changeType)]);
+        const bucket = transitionBuckets.get(key) || [];
+        bucket.push(row);
+        transitionBuckets.set(key, bucket);
+      }
+      for (const bucket of transitionBuckets.values()) bucket.sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt));
       for (const doc of docs) {
         if (suppressed.has(doc)) continue;
         const cId = String(doc.changeLevel || doc.campaignId || "");
@@ -6849,27 +6834,57 @@ exports.getHistory = async (req, res) => {
             (target && exTarget && target === exTarget) ||
             (!target && !exTarget && !tId && !exTId);
           const sameAdGroup = !doc.adGroupId || !ex.adGroupId || String(doc.adGroupId) === String(ex.adGroupId);
-          const sameType = exCType === cType;
+          const sameAdType = !doc.type || !ex.type || String(doc.type).toUpperCase() === String(ex.type).toUpperCase();
+          const sameType = exCType === cType && (cType !== "placement" ||
+            placementKey(doc.placement || doc.changeType) === placementKey(ex.placement || ex.changeType));
           if ((doc.statusHistoryEvent || ex.statusHistoryEvent) && +new Date(doc.createdAt) !== +new Date(ex.createdAt)) return false;
           const sameChange = exOldV === oldV && exNewV === newV;
 
-          if (!sameCamp || !sameTarget || !sameAdGroup || !sameType || !sameChange) return false;
+          if (!sameCamp || !sameTarget || !sameAdGroup || !sameAdType || !sameType || !sameChange) return false;
 
           const t1 = new Date(ex.createdAt || 0).getTime();
           const t2 = new Date(doc.createdAt || 0).getTime();
           if (!isNaN(t1) && !isNaN(t2)) {
-            return Math.abs(t1 - t2) <= 24 * 60 * 60 * 1000;
+            // Stream echoes can arrive seconds after their authoritative audit.
+            // Separate observations are never inferred to be duplicates by value alone.
+            if (Math.abs(t1 - t2) > 60 * 1000) return false;
+            if (candidateSources.get(index).has(computeTriggerSource(doc))
+              && (!ex._id || !doc._id || String(ex._id) !== String(doc._id))) return false;
+            const bucket = transitionBuckets.get(JSON.stringify([cId, cType]));
+            const from = Math.min(t1, t2);
+            const to = Math.max(t1, t2);
+            let left = 0;
+            let right = bucket.length;
+            while (left < right) {
+              const mid = Math.floor((left + right) / 2);
+              if (+new Date(bucket[mid].createdAt) <= from) left = mid + 1;
+              else right = mid;
+            }
+            for (let i = left; i < bucket.length && +new Date(bucket[i].createdAt) < to; i++) {
+              const other = bucket[i];
+              const otherTId = other.targetId ? String(other.targetId).replace(/^[TK]-/, "").trim() : "";
+              const otherTarget = other.targeting ? String(other.targeting).toLowerCase().trim() : "";
+              const sameEntity = tId && otherTId ? tId === otherTId :
+                (target && otherTarget && target === otherTarget) || (!target && !otherTarget && !tId && !otherTId);
+              if (sameEntity && (!doc.adGroupId || !other.adGroupId || String(doc.adGroupId) === String(other.adGroupId))
+                && (!doc.type || !other.type || String(doc.type).toUpperCase() === String(other.type).toUpperCase())
+                && (cType !== "placement" || placementKey(doc.placement || doc.changeType) === placementKey(other.placement || other.changeType))
+                && (normalizeVal(other.oldValue) !== oldV || normalizeVal(other.newValue) !== newV)) return false;
+            }
+            return true;
           }
           return false;
         }) ?? -1;
 
         if (existingIdx >= 0) {
+          candidateSources.get(existingIdx).add(computeTriggerSource(doc));
           if (getSourcePriority(doc) > getSourcePriority(deduped[existingIdx])) {
             deduped[existingIdx] = doc;
           }
         } else {
           candidates.push(deduped.length);
           candidateIndices.set(changeKey, candidates);
+          candidateSources.set(deduped.length, new Set([computeTriggerSource(doc)]));
           deduped.push(doc);
         }
       }
@@ -6931,7 +6946,8 @@ exports.getHistory = async (req, res) => {
             _id: sd._id,
             configId: sd.configId,
             profileId: sd.profileId,
-            changeLevel: sd.campaignId,
+            // Match the numeric campaign-change schema before applying its filters.
+            changeLevel: Number(sd.campaignId),
             adGroupId: sd.adGroupId,
             targetId: sd.targetId,
             targeting: sd.targeting,
@@ -7240,7 +7256,7 @@ exports.getHistory = async (req, res) => {
           profileId: queryProfileId,
           ...(uniqueCampaignIds.length ? { campaignId: { $in: uniqueCampaignIds } } : {}),
           $or: orClauses,
-        }, { reportDate: 1, spend: 1, sales: 1, targetId: 1, targeting: 1, matchType: 1, campaignId: 1 }).lean();
+        }, { reportDate: 1, spend: 1, sales: 1, targetId: 1, targeting: 1, matchType: 1, campaignId: 1, ...(compareBids ? { adGroupId: 1 } : {}) }).lean();
       }
 
       let campaignDailyStats = [];
@@ -7376,7 +7392,55 @@ exports.getHistory = async (req, res) => {
         item.currentSales = Number(currSales.toFixed(2));
         item.currentDateRange = { startDate: currStartDate, endDate: currEndDate };
       }
+
+      if (compareBids) {
+        const bidRows = data.filter(describeBid);
+        const bidCampaignIds = [...new Set(bidRows.map(row => Number(row.changeLevel)).filter(Number.isFinite))];
+        const latestBidDate = new Date(bidRows.reduce((latest, row) => Math.max(latest, +new Date(row.createdAt)), 0));
+        const targetIds = [...new Set(bidRows.filter(row => bidKind(row) === "target" && row.targetId).flatMap(row => {
+          const id = String(row.targetId).replace(/^[TK]-/i, "");
+          return [id, `K-${id}`, `T-${id}`, String(row.targetId)];
+        }))];
+        const placementRows = bidRows.filter(row => bidKind(row) === "placement");
+        const adGroupIds = [...new Set(bidRows.filter(row => bidKind(row) === "adGroup").map(row => row.adGroupId))];
+        const reportScope = { configId, profileId: queryProfileId, reportDate: { $lt: moment(latestBidDate).tz(timezone).format("YYYY-MM-DD") } };
+        const adModels = AD_TYPE_COLLECTIONS[`${adType}Model`] || AD_TYPE_COLLECTIONS.SPModel;
+        const [storedBids, streamedBids, placementReports, adGroupReports] = await Promise.all([
+          bidCampaignIds.length ? campaignChangeHistorySchema.find({
+            ...bidHistoryScope,
+            changeLevel: { $in: bidCampaignIds },
+            changeType: /bid|adjust|placement|top of search|rest of search|product pages?/i,
+            createdAt: { $lte: latestBidDate },
+          }).sort({ createdAt: -1 }).lean() : [],
+          targetIds.length ? targetingHistorySchema.find({
+            configId, profileId: queryProfileId,
+            campaignId: { $in: bidCampaignIds.map(String) },
+            targetId: { $in: targetIds },
+          }).sort({ last_updated_date_time: -1 }).lean() : [],
+          placementRows.length ? adModels.placementSchema.find({
+            ...reportScope, campaignId: { $in: placementRows.map(row => row.changeLevel) },
+          }, { campaignId: 1, placement: 1, reportDate: 1, spend: 1, sales: 1 }).lean() : [],
+          adGroupIds.length ? adModels.adGroupSchema.find({
+            ...reportScope, adGroupId: { $in: adGroupIds },
+          }, { campaignId: 1, adGroupId: 1, reportDate: 1, spend: 1, sales: 1 }).lean() : [],
+        ]);
+        const streamEvents = streamedBids.map(row => ({
+          ...row,
+          changeLevel: row.campaignId,
+          changeType: "Update Targeting Bid",
+          oldValue: row.oldBid,
+          newValue: row.bid,
+          matchType: row.match_type || row.matchType,
+          createdAt: new Date(row.last_updated_date_time || row.creation_date_time || row.createdAt),
+          source: row.source || "AMAZON_SQS",
+        }));
+        const timeline = deduplicateHistoryDocs([...storedBids, ...streamEvents, ...bidRows]
+          .filter(describeBid)
+          .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)));
+        applyBidHistoryAcos(data, timeline, { target: targetDailyStats, placement: placementReports, adGroup: adGroupReports }, timezone);
+      }
     } catch (acosErr) {
+      if (compareBids) throw acosErr;
       console.error("Error calculating ACOS in getHistory:", acosErr?.message || acosErr);
     }
 
@@ -7551,6 +7615,7 @@ exports.getLatestCampaignHistory = async (req, res) => {
             _id: {
               cid: { $toString: "$changeLevel" },
               targeting: { $toLower: { $trim: { input: "$targeting" } } },
+              targetId: { $ifNull: ["$targetId", ""] },
               matchType: {
                 $cond: [
                   { $and: [{ $ne: ["$matchType", null] }, { $ne: ["$matchType", ""] }] },
@@ -7583,6 +7648,7 @@ exports.getLatestCampaignHistory = async (req, res) => {
             _id: {
               cid: { $toString: "$campaignId" },
               targeting: { $toLower: { $trim: { input: "$targeting" } } },
+              targetId: { $ifNull: ["$targetId", ""] },
             },
             targetId: { $first: "$targetId" },
             latestCreatedAt: { $first: { $ifNull: ["$last_updated_date_time", "$createdAt"] } },
@@ -7646,6 +7712,7 @@ exports.getLatestCampaignHistory = async (req, res) => {
           updatedFrom: r.updatedFrom,
           targeting: r.targeting,
           matchType: r.matchType,
+          targetId: r._id.targetId,
           oldValue: r.oldValue,
           newValue: r.newValue,
         };
@@ -7656,7 +7723,9 @@ exports.getLatestCampaignHistory = async (req, res) => {
             .replace(/^(keyword|automatic|targeting)\s*[-:]\s*/i, "")
             .trim();
           const matchKey = `${cid}_${normTarget}_${normMatch}`;
-          map[matchKey] = info;
+          if (!map[matchKey] || new Date(info.latestCreatedAt) > new Date(map[matchKey].latestCreatedAt)) {
+            map[matchKey] = info;
+          }
         }
 
         const generalKey = `${cid}_${normTarget}`;
@@ -7664,8 +7733,8 @@ exports.getLatestCampaignHistory = async (req, res) => {
           map[generalKey] = info;
         }
 
-        if (r.targetId) {
-          const cleanTId = String(r.targetId).replace(/^[TK]-/, "").trim();
+        if (r._id.targetId) {
+          const cleanTId = String(r._id.targetId).replace(/^[TK]-/, "").trim();
           if (cleanTId) {
             const idKey = `${cid}_id_${cleanTId}`;
             if (!map[idKey] || new Date(info.latestCreatedAt) > new Date(map[idKey].latestCreatedAt)) {
@@ -7686,6 +7755,7 @@ exports.getLatestCampaignHistory = async (req, res) => {
           updatedFrom: "Amazon Stream",
           source: str.source || "Amazon Marketing Stream",
           targeting: str._id.targeting,
+          targetId: str.targetId,
           oldValue: str.oldBid !== null && str.oldBid !== undefined ? str.oldBid : "—",
           newValue: str.bid,
         };
