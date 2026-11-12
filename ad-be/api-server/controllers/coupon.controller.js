@@ -13,6 +13,7 @@ const limit = pLimit(Number(process.env.PROCESS_LIMIT));
 
 const couponSchema = require("../models/coupons.model");
 const cronJobHistorySchema = require("../models/cronJobHistory.model");
+const { reportRequestFailureReason, syncNotCompletedReason } = require("../helpers/cronHistoryError.helper");
 const marketPlaceConfigSchema = require("../models/marketPlaceConfig.model");
 const reportsSchema = require("../models/report.model");
 
@@ -93,7 +94,7 @@ exports.cronListCouponFromAmazon = async (customStartDate = null, customEndDate 
             if (cronjobid) {
                 await cronJobHistorySchema.findByIdAndUpdate(
                     cronjobid,
-                    { status: "FAILED" },
+                    { status: "FAILED", error: syncNotCompletedReason("SELLER_CATALOG", "seller") },
                     { new: true }
                 );
             }

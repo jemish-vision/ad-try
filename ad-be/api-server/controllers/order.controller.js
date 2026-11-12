@@ -25,6 +25,7 @@ const adNotificationSchema = require("../models/adNotification.model");
 const marketPlaceConfigSchema = require("../models/marketPlaceConfig.model");
 const cronJobSchema = require("../models/cronJob.model");
 const cronJobHistorySchema = require("../models/cronJobHistory.model");
+const { reportRequestFailureReason, syncNotCompletedReason } = require("../helpers/cronHistoryError.helper");
 const reportsSchema = require("../models/report.model");
 const inventorySchema = require("../models/inventory.model");
 const productAdsSchema = require("../models/productAds.model");
@@ -100,7 +101,7 @@ exports.cronGenerateOrderReport = async (customStartDate = null, customEndDate =
             if (cronjobid) {
                 await cronJobHistorySchema.findByIdAndUpdate(
                     cronjobid,
-                    { status: "FAILED" },
+                    { status: "FAILED", error: syncNotCompletedReason("ORDERS_AND_FINANCE", "seller") },
                     { new: true }
                 );
             }
@@ -646,7 +647,7 @@ exports.cronGenerateRefundReport = async (customStartDate = null, customEndDate 
             if (cronjobid) {
                 await cronJobHistorySchema.findByIdAndUpdate(
                     cronjobid,
-                    { status: "FAILED" },
+                    { status: "FAILED", error: syncNotCompletedReason("ORDERS_AND_FINANCE", "seller") },
                     { new: true }
                 );
             }
@@ -1676,7 +1677,7 @@ exports.SyncProductListing = async (pastSyncObj) => {
             if (cronjobid) {
                 await cronJobHistorySchema.findByIdAndUpdate(
                     cronjobid,
-                    { status: "FAILED" },
+                    { status: "FAILED", error: syncNotCompletedReason("PRODUCT_ADS", "seller") },
                     { new: true }
                 );
             }
@@ -4346,7 +4347,7 @@ exports.cronGenerateOrderListing = async (customStartDate = null, customEndDate 
             if (cronjobid) {
                 await cronJobHistorySchema.findByIdAndUpdate(
                     cronjobid,
-                    { status: "FAILED" },
+                    { status: "FAILED", error: syncNotCompletedReason("ORDERS_AND_FINANCE", "seller") },
                     { new: true }
                 );
             }

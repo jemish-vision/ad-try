@@ -16,6 +16,7 @@ const sift = require("sift").default;
 
 const campaignsSchema = require("../models/campaign.model");
 const cronJobHistorySchema = require("../models/cronJobHistory.model");
+const { reportRequestFailureReason, syncNotCompletedReason } = require("../helpers/cronHistoryError.helper");
 const averageAOVSchema = require("../models/averageAOV.model");
 const defaultTargetAcosSchema = require("../models/defaultTargetAcos.model");
 const profileSchema = require("../models/profiles.model");
@@ -2489,7 +2490,7 @@ exports.cronGenerateCampaignReport = async (
       if (cronjobid) {
         await cronJobHistorySchema.findByIdAndUpdate(
           cronjobid,
-          { status: "FAILED" },
+          { status: "FAILED", error: syncNotCompletedReason("CAMPAIGNS", "ads") },
           { new: true }
         );
       }
@@ -2626,7 +2627,7 @@ exports.cronGenerateCampaignReport = async (
                 if (combinedStatus === "FAILED") {
                   await cronJobHistorySchema.updateOne(
                     { _id: getCronData._id },
-                    { $set: { status: "FAILED" } },
+                    { $set: { status: "FAILED", error: reportRequestFailureReason({ SP: reportSpResponse, SB: reportSbResponse, SD: reportSdResponse }) } },
                   );
                 } else {
                   await finalizeReportHistory(getCronData._id);
@@ -2680,7 +2681,7 @@ exports.cronListCampaignsFromAmazon = async (pastSyncObj) => {
       if (cronjobid) {
         await cronJobHistorySchema.findByIdAndUpdate(
           cronjobid,
-          { status: "FAILED" },
+          { status: "FAILED", error: syncNotCompletedReason("CAMPAIGNS", "ads") },
           { new: true }
         );
       }

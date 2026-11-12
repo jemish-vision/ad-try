@@ -43,8 +43,12 @@ const { write_logs } = require("../../winston/utility/logger");
 
 const runReportCronByName = async (reportName, pastSyncObj) => {
   let attempt = 0;
-  let maxRetries = Number(process.env.MAX_AUTO_CRON_LIMIT);
-  let retryDelayMs = Number(process.env.RETRY_DELAT_MS);
+  // Defaults matter: Number(undefined) is NaN and `attempt < NaN` is false, which used to skip the
+  // whole run while the sync request was still marked COMPLETED. RETRY_DELAY_MS is the correctly
+  // spelled name; RETRY_DELAT_MS is still read for backwards compatibility.
+  const envInt = (v, fallback) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : fallback);
+  let maxRetries = envInt(process.env.MAX_AUTO_CRON_LIMIT, 3);
+  let retryDelayMs = envInt(process.env.RETRY_DELAY_MS ?? process.env.RETRY_DELAT_MS, 60000);
   let historyDate = moment().format("YYYY-MM-DD");
   if (pastSyncObj && pastSyncObj.profileId) {
     const profile = await profileSchema.findOne({ profileId: Number(pastSyncObj.profileId), ...(pastSyncObj.configId && { configId: pastSyncObj.configId }) }).lean();
@@ -61,12 +65,14 @@ const runReportCronByName = async (reportName, pastSyncObj) => {
       historyDate: historyDate,
     },
     {
+      // A new sync attempt starts PENDING even if an earlier run today already marked this
+      // row FAILED; otherwise the status check below would stop after the first pass.
+      $set: { status: "PENDING", error: null },
       $setOnInsert: {
         configId: pastSyncObj.configId,
         profileId: pastSyncObj.profileId,
         cronName: reportName,
         historyDate: historyDate,
-        status: "PENDING",
       }
     },
     { new: true, upsert: true }
@@ -176,8 +182,10 @@ const runReportCronByName = async (reportName, pastSyncObj) => {
         cron_logs({ message: `[runReportCronByName] ${reportName} completed successfully.`, log_type: "info" });
         break;
       }
-      else if (updatedRecord.status === "FAILED") {
-        cron_logs({ message: `[runReportCronByName] No handler matched for report: ${reportName}`, log_type: "warn" });
+      else if (updatedRecord?.status === "FAILED") {
+        // Not retried and not fatal for the whole sync group (e.g. a profile without SD access
+        // fails only the SD part); the reason is kept on the cron history row.
+        cron_logs({ message: `[runReportCronByName] ${reportName} FAILED for profile ${pastSyncObj?.profileId}: ${updatedRecord.error || "no reason recorded"}`, log_type: "warn" });
         break;
       }
 

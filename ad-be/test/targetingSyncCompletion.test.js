@@ -22,6 +22,8 @@ function fixture({ status = 'STAGED', controllerResult = 'STAGED', missing = fal
     if (name === './profileEligibility.service') return { getEligibleProfile: async () => ({ timezone: 'Asia/Kolkata', name: 'Test' }) };
     if (name.includes('automationMode')) return { isShadowModeEnabled: () => shadow };
     if (name === './syncRun.service') return sync;
+    // Profile has completed initial sync for TARGETING, so the task is allowed to run.
+    if (name === '../../models/synchronizeDetails.model') return { findOne: () => ({ select() { return this; }, lean: async () => ({ groupId: 'TARGETING' }) }) };
     if (name.includes('queueNames')) return { SYNC_TASKS };
     if (name.includes('contracts/errors')) return errors;
     if (name === '../../models/report.model') return { find: filter => {

@@ -13,6 +13,7 @@ const dealPerformanceSchema = require("../models/dealPerformance.model");
 const reportsSchema = require("../models/report.model");
 const marketPlaceConfigSchema = require("../models/marketPlaceConfig.model");
 const cronJobHistorySchema = require("../models/cronJobHistory.model");
+const { reportRequestFailureReason, syncNotCompletedReason } = require("../helpers/cronHistoryError.helper");
 const profileSchema = require("../models/profiles.model");
 
 const {
@@ -64,7 +65,7 @@ exports.cronSyncDealPerformance = async (customStartDate = null, customEndDate =
             if (cronjobid) {
                 await cronJobHistorySchema.findByIdAndUpdate(
                     cronjobid,
-                    { status: "FAILED" },
+                    { status: "FAILED", error: syncNotCompletedReason("SELLER_CATALOG", "seller") },
                     { new: true }
                 );
             }

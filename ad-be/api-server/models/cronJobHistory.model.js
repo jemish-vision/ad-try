@@ -104,6 +104,27 @@ cronJobHistorySchema.index({
 // 4. Performance Indexing
 cronJobHistorySchema.index({ configId: 1, profileId: 1, cronName: 1, status: 1, historyDate: 1 });
 
+// Safety net: a FAILED row must always say why. Code paths that set FAILED without an
+// `error` get a generic message instead of an empty field.
+const UNSPECIFIED_FAILURE = "Failed without a recorded reason (see cron logs for this cronName/profile/time).";
+
+const ensureFailureReason = function () {
+  const update = this.getUpdate && this.getUpdate();
+  if (!update || Array.isArray(update)) return;
+  const set = update.$set || {};
+  const status = update.status ?? set.status;
+  const error = update.error ?? set.error;
+  if (status === "FAILED" && !error) {
+    update.$set = { ...set, error: UNSPECIFIED_FAILURE };
+  }
+};
+cronJobHistorySchema.pre("findOneAndUpdate", ensureFailureReason);
+cronJobHistorySchema.pre("updateOne", ensureFailureReason);
+cronJobHistorySchema.pre("updateMany", ensureFailureReason);
+cronJobHistorySchema.pre("save", function () {
+  if (this.status === "FAILED" && !this.error) this.error = UNSPECIFIED_FAILURE;
+});
+
 // TTL index for 396-day data retention
 cronJobHistorySchema.index({ createdAt: 1 }, { expireAfterSeconds: 34214400 });
 

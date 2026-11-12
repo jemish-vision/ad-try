@@ -7,7 +7,10 @@ const {
   markSyncRunCompleted,
   markSyncRunFailed,
   markSyncRunWaiting,
+  markSyncRunSkipped,
 } = require("./syncRun.service");
+const synchronizeDetailsSchema = require("../../models/synchronizeDetails.model");
+const { cron_logs } = require("../../../winston/cronAutomation/logger");
 const { SYNC_TASKS } = require("../../../queue-service/queues/queueNames");
 const {
   DependencyNotReadyError,
@@ -24,6 +27,42 @@ const { cronListProductAdsFromAmazon, cronGenerateAdProductReport } = require(".
 const { cronGeneratePlacementReport } = require("../../controllers/placement.controller");
 const { cronGenerateSearchTermReport } = require("../../controllers/searchTerm.controller");
 const { runPeriodicReportSync } = require("./periodicReportSync.service");
+
+/**
+ * synchronizeDetails group each task's controller guard checks (must match the
+ * getAllowedSyncProfiles(...) call inside the delegated controller function).
+ */
+const TASK_SYNC_GROUPS = Object.freeze({
+  [SYNC_TASKS.CAMPAIGN_LISTING]: ["CAMPAIGNS"],
+  [SYNC_TASKS.ADGROUP_LISTING]: ["CAMPAIGNS"],
+  [SYNC_TASKS.PRODUCT_ADS_LISTING]: ["CAMPAIGNS"],
+  [SYNC_TASKS.CAMPAIGN_REPORT]: ["CAMPAIGNS"],
+  [SYNC_TASKS.ADGROUP_REPORT]: ["CAMPAIGNS"],
+  [SYNC_TASKS.PRODUCT_ADS_REPORT]: ["CAMPAIGNS"],
+  [SYNC_TASKS.TARGETING_LISTING]: ["TARGETING"],
+  [SYNC_TASKS.TARGETING_REPORT]: ["TARGETING"],
+  [SYNC_TASKS.PLACEMENT_REPORT]: ["TARGETING"],
+  [SYNC_TASKS.SEARCH_TERM_REPORT]: ["TARGETING"],
+  // Periodic reports delegate to both groups; each controller still guards itself.
+  [SYNC_TASKS.WEEKLY_REPORT]: ["CAMPAIGNS", "TARGETING"],
+  [SYNC_TASKS.BIWEEKLY_REPORT]: ["CAMPAIGNS", "TARGETING"],
+});
+
+/**
+ * True if the profile has a COMPLETED synchronizeDetails row for at least one of the task's groups.
+ * Without it the controller guard silently returns without calling Amazon, so running the task
+ * would record a COMPLETED sync run with no data behind it.
+ */
+async function isSyncGroupReady({ task, configId, profileId }) {
+  const groups = TASK_SYNC_GROUPS[task];
+  if (!groups) return { ready: true };
+  // Same conditions as getAllowedSyncProfiles(groupId, "ads", true), scoped to one profile.
+  const match = await synchronizeDetailsSchema
+    .findOne({ groupId: { $in: groups }, type: "ads", requestStatus: "COMPLETED", profileId: Number(profileId), configId })
+    .select("groupId")
+    .lean();
+  return match ? { ready: true, groupId: match.groupId } : { ready: false, groups };
+}
 
 /** Generate/poll targeting reports and require verified imports before completion. */
 async function runTargetingReportSync({ pastSyncObj, configId, profileId, syncDate, scheduledFor }) {
@@ -115,6 +154,28 @@ async function runHourlySyncForProfile({ task, configId, profileId, timeBlock, s
 
   const isShadow = isShadowModeEnabled();
   const effectiveTimeBlock = isShadow ? `shadow-${timeBlock}` : timeBlock;
+
+  // 1b. Initial synchronization must be COMPLETED for this task's group. Otherwise record
+  //     SKIPPED (visible, not a fake COMPLETED) and let dependent tasks continue.
+  const syncGroup = await isSyncGroupReady({ task, configId, profileId });
+  if (!syncGroup.ready) {
+    const reason = `SYNC_NOT_COMPLETED:${syncGroup.groups.join("|")}`;
+    const record = await markSyncRunSkipped({
+      task,
+      configId,
+      profileId,
+      timeBlock: effectiveTimeBlock,
+      scheduledFor,
+      jobId,
+      reason,
+      isDryRun: isShadow,
+    });
+    cron_logs({
+      message: `[HourlySync] Skipped "${task}" for Profile ${profile.name || profileId} (${profileId}): initial synchronization is not COMPLETED for group(s) ${syncGroup.groups.join(", ")}. No data will sync for this group until the profile's sync request is executed.`,
+      log_type: "warn",
+    });
+    return { success: true, skipped: true, reason, syncRunId: record?._id, dryRun: isShadow };
+  }
 
   // 2. Check prerequisite status for the given time block
   const prereqCheck = await checkPrerequisiteStatus({
@@ -264,4 +325,6 @@ async function runHourlySyncForProfile({ task, configId, profileId, timeBlock, s
 
 module.exports = {
   runHourlySyncForProfile,
+  isSyncGroupReady,
+  TASK_SYNC_GROUPS,
 };

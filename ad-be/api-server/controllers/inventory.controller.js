@@ -40,6 +40,8 @@ const reportsSchema = require("../models/report.model");
 
 const marketPlaceConfigSchema = require("../models/marketPlaceConfig.model");
 const cronJobHistorySchema = require("../models/cronJobHistory.model");
+const { reportRequestFailureReason, syncNotCompletedReason } = require("../helpers/cronHistoryError.helper");
+const { settleTerminalReportStatus, SETTLED_REPORT_STATUSES } = require("../helpers/spReportStatus.helper");
 
 const {
     getSPAccessToken,
@@ -93,7 +95,7 @@ exports.cronGenerateInvetoryReport = async (customParam1 = null, customParam2 = 
             if (cronjobid) {
                 await cronJobHistorySchema.findByIdAndUpdate(
                     cronjobid,
-                    { status: "FAILED" },
+                    { status: "FAILED", error: syncNotCompletedReason("SELLER_CATALOG", "seller") },
                     { new: true }
                 );
             }
@@ -343,7 +345,7 @@ exports.cronGenerateSalesReport = async (customStartDate = null, customEndDate =
             if (cronjobid) {
                 await cronJobHistorySchema.findByIdAndUpdate(
                     cronjobid,
-                    { status: "FAILED" },
+                    { status: "FAILED", error: syncNotCompletedReason("ORDERS_AND_FINANCE", "seller") },
                     { new: true }
                 );
             }
@@ -451,7 +453,7 @@ async function generateSalesReportForDate(profile, date, token, recurring = true
             adProduct: "BUSINESS_SALES",
             reportTypeId: "BUSINESS_SALES"
         }).lean();
-        if (existing && existing.status == "COMPLETED") return "COMPLETED";
+        if (existing && SETTLED_REPORT_STATUSES.includes(existing.status)) return "COMPLETED";
         if (existing && !["PENDING", "IN_PROGRESS", "PROCESSING"].includes(existing?.status)) {
             existing = null;
         }
@@ -512,6 +514,15 @@ async function generateSalesReportForDate(profile, date, token, recurring = true
         message: `Sales Report: Status : ${statusRes.data?.processingStatus}`
         , log_type: "info"
     });
+
+    const terminal = await settleTerminalReportStatus(reportsSchema, existing, statusRes?.data?.processingStatus);
+    if (terminal) {
+        cron_logs({
+            message: `Sales Report ${existing?.reportId} ended as ${statusRes?.data?.processingStatus} (profile ${profile?.profileId}, ${date})`,
+            log_type: terminal === "ERROR" ? "warn" : "info",
+        });
+        return terminal;
+    }
 
     if (statusRes?.data?.processingStatus !== "DONE") {
         cron_logs({

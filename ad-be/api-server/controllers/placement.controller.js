@@ -21,6 +21,7 @@ const { streamArray } = require("stream-json/streamers/StreamArray");
 
 const cronJobSchema = require("../models/cronJob.model");
 const cronJobHistorySchema = require("../models/cronJobHistory.model");
+const { reportRequestFailureReason, syncNotCompletedReason } = require("../helpers/cronHistoryError.helper");
 const placementRulesSchema = require("../models/placementRules.model");
 const profileSchema = require("../models/profiles.model");
 const placementSchema = require("../models/placement.model");
@@ -99,7 +100,7 @@ exports.cronGeneratePlacementReport = async (generateWeeklyReport = false, gener
       if (cronjobid) {
         await cronJobHistorySchema.findByIdAndUpdate(
           cronjobid,
-          { status: "FAILED" },
+          { status: "FAILED", error: syncNotCompletedReason("TARGETING", "ads") },
           { new: true }
         );
       }
@@ -204,7 +205,7 @@ exports.cronGeneratePlacementReport = async (generateWeeklyReport = false, gener
           if (recurring && getCronData?._id) {
             await cronJobHistorySchema.findByIdAndUpdate(
               getCronData._id,
-              { status: "FAILED" },
+              { status: "FAILED", error: reportRequestFailureReason({ SP: reportSpResponse, SB: reportSbResponse }) },
               { new: true }
             );
           }
@@ -612,7 +613,7 @@ const stagePlacementReport = async ({
     });
     await reportsSchema.updateOne(
       { _id: existing._id },
-      { $set: { status: "FAILED" } },
+      { $set: { status: "FAILED", errorMessage: `Staging failed: ${err.message}` } },
     );
     throw err;
   }

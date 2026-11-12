@@ -39,7 +39,7 @@ const syncRunSchema = new mongoose.Schema(
     },
     state: {
       type: String,
-      enum: ["QUEUED", "RUNNING", "WAITING", "COMPLETED", "FAILED"],
+      enum: ["QUEUED", "RUNNING", "WAITING", "COMPLETED", "SKIPPED", "FAILED"],
       required: true,
       default: "QUEUED",
       index: true,
@@ -83,6 +83,11 @@ const syncRunSchema = new mongoose.Schema(
     },
     completedAt: {
       type: Date,
+      default: null,
+    },
+    // Why a run was SKIPPED (e.g. SYNC_NOT_COMPLETED) — no Amazon calls were made
+    skipReason: {
+      type: String,
       default: null,
     },
     lastError: {

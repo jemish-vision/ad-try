@@ -17,6 +17,7 @@ const sdAdGroupsSchema = require("../models/sdAdGroups.model");
 const profileSchema = require("../models/profiles.model");
 const reportsSchema = require("../models/report.model");
 const cronJobHistorySchema = require("../models/cronJobHistory.model");
+const { reportRequestFailureReason, syncNotCompletedReason } = require("../helpers/cronHistoryError.helper");
 const cronJobSchema = require("../models/cronJob.model");
 
 const {
@@ -667,7 +668,7 @@ exports.cronGenerateAdGroupReport = async (generateWeeklyReport = false, generat
             if (getCronData?._id) {
               await cronJobHistorySchema.findByIdAndUpdate(
                 getCronData._id,
-                { status: "FAILED" },
+                { status: "FAILED", error: reportRequestFailureReason({ SP: reportSpResponse, SB: reportSbResponse, SD: reportSdResponse }) },
                 { new: true },
               );
             }
@@ -892,7 +893,7 @@ async function spGenerateReport(
       });
       await reportsSchema.updateOne(
         { _id: existing._id },
-        { $set: { status: "FAILED" } }
+        { $set: { status: "FAILED", errorMessage: `Staging failed: ${parseErr.message}` } }
       );
       throw parseErr;
     }

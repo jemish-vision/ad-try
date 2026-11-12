@@ -10,6 +10,7 @@ const asinAPlusContentModel = require("../models/asinAPlusContent.model");
 const aPlusBatchJobModel = require("../models/aPlusBatchJob.model");
 const adNotificationSchema = require("../models/adNotification.model");
 const cronJobHistorySchema = require("../models/cronJobHistory.model");
+const { reportRequestFailureReason, syncNotCompletedReason } = require("../helpers/cronHistoryError.helper");
 const marketPlaceConfigSchema = require("../models/marketPlaceConfig.model");
 
 const { cron_logs } = require("../../winston/cronAutomation/logger");
@@ -43,7 +44,7 @@ exports.cronFetchAPlusContentFromAmazon = async (pastSyncData = null) => {
             if (cronjobid) {
                 await cronJobHistorySchema.findByIdAndUpdate(
                     cronjobid,
-                    { status: "FAILED" },
+                    { status: "FAILED", error: syncNotCompletedReason("SELLER_CATALOG", "seller") },
                     { new: true }
                 );
             }

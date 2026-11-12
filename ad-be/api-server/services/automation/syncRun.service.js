@@ -40,7 +40,8 @@ async function checkPrerequisiteStatus({ task, configId, profileId, timeBlock })
     timeBlock,
   });
 
-  if (!prereqRun || prereqRun.state !== "COMPLETED") {
+  // SKIPPED (e.g. profile's sync group not set up) has nothing to wait for, so it unblocks the chain.
+  if (!prereqRun || !["COMPLETED", "SKIPPED"].includes(prereqRun.state)) {
     return {
       ready: false,
       prerequisiteTask: prereqTask,
@@ -168,6 +169,23 @@ async function markSyncRunFailed(recordId, error) {
   );
 }
 
+/**
+ * Records a run that was intentionally not executed (no Amazon calls), e.g. because the
+ * profile has not completed initial synchronization for this task's group.
+ * Idempotent per (task, configId, profileId, timeBlock). A later occurrence re-checks.
+ */
+async function markSyncRunSkipped({ task, configId, profileId, timeBlock, scheduledFor, jobId, reason, isDryRun = false }) {
+  const now = new Date();
+  return SyncRun.findOneAndUpdate(
+    { task, configId, profileId, timeBlock },
+    {
+      $set: { state: "SKIPPED", skipReason: reason, jobId, completedAt: now, lastError: null },
+      $setOnInsert: { scheduledFor: new Date(scheduledFor), startedAt: now, attempts: 0, isDryRun },
+    },
+    { upsert: true, new: true }
+  );
+}
+
 async function markSyncRunWaiting(recordId, error) {
   return SyncRun.findByIdAndUpdate(recordId, {
     $set: { state: "WAITING", lastError: { message: error.message }, completedAt: null },
@@ -181,6 +199,7 @@ module.exports = {
   markSyncRunCompleted,
   markSyncRunFailed,
   markSyncRunWaiting,
+  markSyncRunSkipped,
   SYNC_PREREQUISITES,
   PrerequisiteNotMetError,
 };

@@ -30,6 +30,7 @@ const camapignSettingSchema = require("../models/camapignSetting.model");
 
 const reportsSchema = require("../models/report.model");
 const cronJobHistorySchema = require("../models/cronJobHistory.model");
+const { reportRequestFailureReason, syncNotCompletedReason } = require("../helpers/cronHistoryError.helper");
 const searchTermRuleSchema = require("../models/searchTermRules.model");
 const searchTermRuleHistorySchema = require("../models/searchTermRuleHistory.model");
 const affectedCampaignByRuleSchema = require("../models/affectedCampaignByRule.model");
@@ -100,7 +101,7 @@ exports.cronGenerateSearchTermReport = async (generateWeeklyReport = false, gene
             if (cronjobid) {
                 await cronJobHistorySchema.findByIdAndUpdate(
                     cronjobid,
-                    { status: "FAILED" },
+                    { status: "FAILED", error: syncNotCompletedReason("TARGETING", "ads") },
                     { new: true }
                 );
             }
@@ -204,13 +205,13 @@ exports.cronGenerateSearchTermReport = async (generateWeeklyReport = false, gene
                     if (recurring && getCronData?._id) {
                         await cronJobHistorySchema.findByIdAndUpdate(
                             getCronData._id,
-                            { status: "FAILED" },
+                            { status: "FAILED", error: reportRequestFailureReason({ SP: reportSpResponse, SB: reportSbResponse }) },
                             { new: true }
                         );
                     } else if (cronjobid) {
                         await cronJobHistorySchema.findByIdAndUpdate(
                             cronjobid,
-                            { status: "FAILED" },
+                            { status: "FAILED", error: reportRequestFailureReason({ SP: reportSpResponse, SB: reportSbResponse }) },
                             { new: true }
                         );
                     }
@@ -628,7 +629,7 @@ const stageSearchTermReport = async ({
         });
         await reportsSchema.updateOne(
             { _id: existing._id },
-            { $set: { status: "FAILED" } },
+            { $set: { status: "FAILED", errorMessage: `Staging failed: ${err.message}` } },
         );
         throw err;
     }

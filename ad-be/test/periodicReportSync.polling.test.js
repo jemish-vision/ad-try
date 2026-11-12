@@ -216,6 +216,9 @@ for (const task of [SYNC_TASKS.WEEKLY_REPORT, SYNC_TASKS.BIWEEKLY_REPORT]) {
       if (name.includes('queueNames')) return { SYNC_TASKS };
       if (name.includes('contracts/errors')) return errors;
       if (name === './periodicReportSync.service') return { runPeriodicReportSync: f.invoke };
+      // Profile has completed initial sync, so periodic reports are allowed to run.
+      if (name === '../../models/synchronizeDetails.model') return { findOne: () => ({ select() { return this; }, lean: async () => ({ groupId: 'CAMPAIGNS' }) }) };
+      if (name.includes('cronAutomation/logger')) return { cron_logs: () => {} };
       const mapping = {
         campaign: 'cronGenerateCampaignReport', adGroups: 'cronGenerateAdGroupReport',
         targeting: 'cronGenerateTargetingReport', productAds: 'cronGenerateAdProductReport',

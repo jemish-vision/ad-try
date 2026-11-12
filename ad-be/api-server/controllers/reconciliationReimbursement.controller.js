@@ -17,6 +17,8 @@ const spProfileSettingSchema = require("../models/spProfileSetting.model");
 const adNotificationSchema = require("../models/adNotification.model");
 
 const cronJobHistorySchema = require("../models/cronJobHistory.model");
+const { reportRequestFailureReason, syncNotCompletedReason } = require("../helpers/cronHistoryError.helper");
+const { settleTerminalReportStatus, SETTLED_REPORT_STATUSES } = require("../helpers/spReportStatus.helper");
 const marketPlaceConfigSchema = require("../models/marketPlaceConfig.model");
 const reportsSchema = require("../models/report.model");
 
@@ -95,7 +97,7 @@ exports.cronGenerateReimbursementReport = async (customStartDate = null, customE
             if (cronjobid) {
                 await cronJobHistorySchema.findByIdAndUpdate(
                     cronjobid,
-                    { status: "FAILED" },
+                    { status: "FAILED", error: syncNotCompletedReason("ORDERS_AND_FINANCE", "seller") },
                     { new: true }
                 );
             }
@@ -158,6 +160,12 @@ exports.cronGenerateReimbursementReport = async (customStartDate = null, customE
                         { status: "COMPLETED" },
                         { new: true }
                     );
+                } else if (recurring && getCronData?._id && reportSpResponse === "ERROR") {
+                    await cronJobHistorySchema.findByIdAndUpdate(
+                        getCronData._id,
+                        { status: "FAILED", error: "Amazon reimbursement report failed (FATAL). See reports.errorMessage." },
+                        { new: true }
+                    );
                 } else if (!recurring && cronjobid && reportSpResponse === "COMPLETED") {
                     await cronJobHistorySchema.findByIdAndUpdate(
                         cronjobid,
@@ -204,7 +212,7 @@ async function generateReimbursementSPReport(profile, startDate, endDate, token,
             endDate: endDate,
             reportTypeId: "REIMBURSEMENT"
         }).lean();
-        if (existing && existing.status == "COMPLETED") return "COMPLETED";
+        if (existing && SETTLED_REPORT_STATUSES.includes(existing.status)) return "COMPLETED";
         if (existing && !["PENDING", "IN_PROGRESS", "PROCESSING"].includes(existing?.status)) {
             existing = null;
         }
@@ -254,7 +262,10 @@ async function generateReimbursementSPReport(profile, startDate, endDate, token,
         meta: { configId: profile.configId, tokenKey: "spAccessToken", sp: true, profileId: profile?.profileId }
     }));
 
-    if (statusRes?.data?.processingStatus !== "DONE") {
+    const processingStatus = statusRes?.data?.processingStatus;
+    const terminal = await settleTerminalReportStatus(reportsSchema, existing, processingStatus);
+    if (terminal) return terminal;
+    if (processingStatus !== "DONE") {
         return "PENDING";
     }
 
@@ -387,7 +398,7 @@ exports.cronGenerateShipmentQueueReport = async (customStartDate = null) => {
             if (cronjobid) {
                 await cronJobHistorySchema.findByIdAndUpdate(
                     cronjobid,
-                    { status: "FAILED" },
+                    { status: "FAILED", error: syncNotCompletedReason("ORDERS_AND_FINANCE", "seller") },
                     { new: true }
                 );
             }

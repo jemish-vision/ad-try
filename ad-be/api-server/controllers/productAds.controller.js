@@ -20,6 +20,7 @@ const campaignsSchema = require("../models/campaign.model");
 const adGroupsSchema = require("../models/adGroups.model");
 const reportsSchema = require("../models/report.model");
 const cronJobHistorySchema = require("../models/cronJobHistory.model");
+const { reportRequestFailureReason, syncNotCompletedReason } = require("../helpers/cronHistoryError.helper");
 const { linkReportHistory, finalizeReportHistory } = require("../services/reportHistoryCompletion.service");
 const cronJobSchema = require("../models/cronJob.model");
 const productSchema = require("../models/product.model");
@@ -140,7 +141,7 @@ exports.cronListProductAdsFromAmazon = async (pastSyncObj) => {
       if (cronjobid) {
         await cronJobHistorySchema.findByIdAndUpdate(
           cronjobid,
-          { status: "FAILED" },
+          { status: "FAILED", error: syncNotCompletedReason("CAMPAIGNS", "ads") },
           { new: true }
         );
       }
@@ -775,7 +776,7 @@ exports.cronGenerateAdProductReport = async (generateWeeklyReport = false, gener
       if (cronjobid) {
         await cronJobHistorySchema.findByIdAndUpdate(
           cronjobid,
-          { status: "FAILED" },
+          { status: "FAILED", error: syncNotCompletedReason("CAMPAIGNS", "ads") },
           { new: true }
         );
       }
@@ -883,7 +884,7 @@ exports.cronGenerateAdProductReport = async (generateWeeklyReport = false, gener
             if (recurring && getCronData?._id) {
               await cronJobHistorySchema.findByIdAndUpdate(
                 getCronData._id,
-                { status: "FAILED" },
+                { status: "FAILED", error: reportRequestFailureReason({ SP: reportSpResponse, SD: reportSdResponse }) },
                 { new: true }
               );
             }
@@ -1245,7 +1246,7 @@ async function spGenerateReport(
     });
     await reportsSchema.updateOne(
       { _id: existing._id },
-      { $set: { status: "FAILED" } }
+      { $set: { status: "FAILED", errorMessage: `Staging failed: ${parseErr.message}` } }
     );
     throw parseErr;
   }
@@ -2970,7 +2971,7 @@ exports.cronListProductFromAmazon = async (pastSyncObj) => {
       if (cronjobid) {
         await cronJobHistorySchema.findByIdAndUpdate(
           cronjobid,
-          { status: "FAILED" },
+          { status: "FAILED", error: syncNotCompletedReason("SELLER_CATALOG", "seller") },
           { new: true }
         );
       }

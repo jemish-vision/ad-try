@@ -13,6 +13,7 @@ const keywordSchema = require("../models/keyword.model");
 const profileSchema = require("../models/profiles.model");
 const reportsSchema = require("../models/report.model");
 const cronJobHistorySchema = require("../models/cronJobHistory.model");
+const { reportRequestFailureReason, syncNotCompletedReason } = require("../helpers/cronHistoryError.helper");
 const cronJobSchema = require("../models/cronJob.model");
 const userSchema = require("../models/user.model");
 const keywordSearchHistorySchema = require("../models/keywordSearchHistory.model");
@@ -61,7 +62,7 @@ exports.cronListKeywordsFromAmazon = async (pastSyncObj) => {
       if (cronjobid) {
         await cronJobHistorySchema.findByIdAndUpdate(
           cronjobid,
-          { status: "FAILED" },
+          { status: "FAILED", error: syncNotCompletedReason("TARGETING", "ads") },
           { new: true }
         );
       }
@@ -448,7 +449,7 @@ exports.cronGenerateKeywordReport = async (generateWeeklyReport = false, pastSyn
       if (cronjobid) {
         await cronJobHistorySchema.findByIdAndUpdate(
           cronjobid,
-          { status: "FAILED" },
+          { status: "FAILED", error: syncNotCompletedReason("TARGETING", "ads") },
           { new: true }
         );
       }

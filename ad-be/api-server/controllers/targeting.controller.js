@@ -24,6 +24,7 @@ const profileSchema = require("../models/profiles.model");
 const reportsSchema = require("../models/report.model");
 const cronJobSchema = require("../models/cronJob.model");
 const cronJobHistorySchema = require("../models/cronJobHistory.model");
+const { reportRequestFailureReason, syncNotCompletedReason } = require("../helpers/cronHistoryError.helper");
 const campaignSchema = require("../models/campaign.model");
 const adGroupsSchema = require("../models/adGroups.model");
 const targetingSchema = require("../models/targeting.model");
@@ -156,7 +157,7 @@ exports.cronGenerateTargetingReport = async (generateWeeklyReport = false, gener
             if (cronjobid) {
                 await cronJobHistorySchema.findByIdAndUpdate(
                     cronjobid,
-                    { status: "FAILED" },
+                    { status: "FAILED", error: syncNotCompletedReason("TARGETING", "ads") },
                     { new: true }
                 );
             }
@@ -278,7 +279,7 @@ exports.cronGenerateTargetingReport = async (generateWeeklyReport = false, gener
                     if (getCronData?._id) {
                         await cronJobHistorySchema.findByIdAndUpdate(
                             getCronData._id,
-                            { status: "FAILED" },
+                            { status: "FAILED", error: reportRequestFailureReason({ SP: reportSpResponse, SB: reportSbResponse, SD: reportSdResponse }) },
                             { new: true },
                         );
                     }
@@ -938,7 +939,7 @@ const stageTargetingReport = async ({
     } catch (err) {
         await reportsSchema.updateOne(
             { _id: report._id },
-            { $set: { status: "FAILED" } },
+            { $set: { status: "FAILED", errorMessage: `Staging failed: ${err.message}` } },
         );
         throw err;
     }
@@ -2810,7 +2811,7 @@ exports.cronListTargetingFromAmazon = async (pastSyncObj) => {
             if (cronjobid) {
                 await cronJobHistorySchema.findByIdAndUpdate(
                     cronjobid,
-                    { status: "FAILED" },
+                    { status: "FAILED", error: syncNotCompletedReason("TARGETING", "ads") },
                     { new: true }
                 );
             }

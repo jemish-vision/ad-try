@@ -22,6 +22,7 @@ const { cron_logs } = require("../../winston/cronAutomation/logger");
 const reportsSchema = require("../models/report.model");
 const marketPlaceConfigSchema = require("../models/marketPlaceConfig.model");
 const cronJobHistorySchema = require("../models/cronJobHistory.model");
+const { reportRequestFailureReason, syncNotCompletedReason } = require("../helpers/cronHistoryError.helper");
 const fulfillmentCenterSchema = require("../models/fulfillmentCenter.model");
 const fulfillmentCenterMasterSchema = require("../models/fulfillmentCenterMaster.model");
 const profilesSchema = require("../models/profiles.model");
@@ -108,7 +109,7 @@ exports.cronGenerateFcInventoryLedgerReport = async (customParam1 = null) => {
       profiles = profiles.filter((p) => allowedProfiles.some((item) => item.profileId === Number(p.profileId) && item.configId === String(p.configId)));
     }
     if (!profiles || profiles.length === 0) {
-      if (cronjobid) await cronJobHistorySchema.findByIdAndUpdate(cronjobid, { status: "FAILED" });
+      if (cronjobid) await cronJobHistorySchema.findByIdAndUpdate(cronjobid, { status: "FAILED", error: syncNotCompletedReason("SELLER_CATALOG", "seller") });
       cron_logs({ message: "[FC Ledger] No active profiles found.", log_type: "warn" });
       return;
     }
@@ -548,7 +549,7 @@ exports.cronGenerateFcStorageFeeReport = async (customParam1 = null) => {
       );
     }
     if (!profiles || profiles.length === 0) {
-      if (cronjobid) await cronJobHistorySchema.findByIdAndUpdate(cronjobid, { status: "FAILED" });
+      if (cronjobid) await cronJobHistorySchema.findByIdAndUpdate(cronjobid, { status: "FAILED", error: syncNotCompletedReason("SELLER_CATALOG", "seller") });
       cron_logs({ message: "[FC Storage] No active profiles found.", log_type: "warn" });
       return;
     }

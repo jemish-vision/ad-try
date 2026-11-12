@@ -10,6 +10,7 @@ const reportsSchema = require("../models/report.model");
 const productListingSchema = require("../models/productListing.model");
 const marketPlaceConfigSchema = require("../models/marketPlaceConfig.model");
 const cronJobHistorySchema = require("../models/cronJobHistory.model");
+const { reportRequestFailureReason, syncNotCompletedReason } = require("../helpers/cronHistoryError.helper");
 
 const {
     getSPAccessToken,
@@ -66,7 +67,7 @@ exports.cronBrandAnalytics = async (customStartDate = null, customEndDate = null
             if (cronjobid) {
                 await cronJobHistorySchema.findByIdAndUpdate(
                     cronjobid,
-                    { status: "FAILED" },
+                    { status: "FAILED", error: syncNotCompletedReason("SELLER_CATALOG", "seller") },
                     { new: true }
                 );
             }
