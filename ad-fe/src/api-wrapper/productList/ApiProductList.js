@@ -104,5 +104,11 @@ const ApiGetCompetitorsLists = (data) => {
         .then(res => res.data).catch(res => res.data)
 }
 
-export { ApiCreateProduct, ApiGenerateProductData, ApiAddProduct, ApiGetSPProduct, ApiChangeProductSetting, ApiFileUpload, ApiGetProductTypes, ApiGetProductDefinition, ApiCheckASIN, ApiCheckASINFromDB, ApiProductSearchOnAmazon, ApiParseFields, ApiUpdateProductPrice, ApiBulkUpdateProductPrice, ApiToggleProductFavorite, ApiGetListofCompetitorsProduct, ApiGetCompetitorsBrands, ApiGetCompetitorsLists }
+// Read-only same-ASIN comparison (our offer vs other sellers / Buy Box)
+const ApiGetProductComparison = ({ asin, profileId, refresh = false }) => {
+    return axios.get(`${apiProducts}${encodeURIComponent(asin)}/compare`, { headers, params: { profileId, ...(refresh ? { refresh: true } : {}) } })
+        .then(res => res.data).catch(err => err?.response?.data || { isSuccess: false, message: err?.message })
+}
+
+export { ApiGetProductComparison, ApiCreateProduct, ApiGenerateProductData, ApiAddProduct, ApiGetSPProduct, ApiChangeProductSetting, ApiFileUpload, ApiGetProductTypes, ApiGetProductDefinition, ApiCheckASIN, ApiCheckASINFromDB, ApiProductSearchOnAmazon, ApiParseFields, ApiUpdateProductPrice, ApiBulkUpdateProductPrice, ApiToggleProductFavorite, ApiGetListofCompetitorsProduct, ApiGetCompetitorsBrands, ApiGetCompetitorsLists }
 

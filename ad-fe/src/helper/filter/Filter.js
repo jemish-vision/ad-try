@@ -90,6 +90,7 @@ const routeTitleMap = {
     "/inventory-management": "Inventory Management",
     "/warehouse-inventory": "Warehouse Inventory",
     "/product-performance": "Product Performance",
+    "/competitor-comparison": "Competitor Comparison",
     "/fba-planning": "FBA Planning",
     "/mfn-to-fba": "MFN to FBA Recommendations",
     "/reconciliation-reimbursement": "Reconciliation & Reimbursement",

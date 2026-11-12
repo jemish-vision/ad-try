@@ -78,7 +78,7 @@ function Sidebar({ open, setOpen }) {
       name: "Operations",
       icon: <Package size={22} weight="regular" />,
       items: [
-        "Profit Analysis", "Orders", "Order Report", "Product List", "Product Ads", "Product Performance", "Promotions", "Coupons", "Deals",
+        "Profit Analysis", "Orders", "Order Report", "Product List", "Product Ads", "Product Performance", "Competitor Comparison", "Promotions", "Coupons", "Deals",
         "Inventory", "Warehouse Inventory", "Warehouse Details", "FBA Planning", "MFN to FBA", "Reconciliation & Reimbursement", "Returns & Refunds"
       ]
     },
@@ -575,6 +575,8 @@ function Sidebar({ open, setOpen }) {
       pages.push("Warehouse Details");
       pages.push("Product Performance");
       pages.push("MFN to FBA");
+      // Competitor Comparison is a read-only view gated by Product List access (same backend permission).
+      if (pages.includes("Product List")) pages.push("Competitor Comparison");
       if (role === ROLES.SUPER_ADMIN) pages.push("Dashboard");
       setPermissionPages(pages);
 
@@ -1100,6 +1102,7 @@ function Sidebar({ open, setOpen }) {
                             role === ROLES.SUPER_ADMIN ||
                             pagePermission?.some((x) => x.pageName?.toLowerCase()?.includes(child.name?.toLowerCase()) || x.pageName === child.name || x.pageSlug === child.id) ||
                               child.name === "Product Performance" ||
+                              (child.name === "Competitor Comparison" && pagePermission?.some((x) => x.pageName === "Product List")) ||
                               child.name === "Warehouse Inventory" ||
                               child.name === "Warehouse Details" ||
                               child.name === "MFN to FBA" ||

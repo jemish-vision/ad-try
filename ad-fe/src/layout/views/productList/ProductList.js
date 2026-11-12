@@ -291,7 +291,7 @@ function ProductList() {
                 <div className="mr-3 mb-1">
                   <strong className="text-dark">{t("SKU")}:</strong> {row?.sku || "-"}
                 </div>
-                <div className="mt-1 flex items-center gap-2">
+                <div className="mt-1 flex flex-wrap items-center gap-2">
                   {PermissionCheck(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.UPDATE) && (
                     <Button
                       variant="outline"
@@ -321,6 +321,20 @@ function ProductList() {
                   >
                     <i className="fas fa-users" style={{ fontSize: "10px" }}></i>
                     {t("View Competitors")}
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    id={"product-list-compare-offers-" + params.node.rowIndex}
+                    className="sku-btn-competitors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/competitor-comparison?asin=${row?.asin}`);
+                    }}
+                  >
+                    <i className="fas fa-balance-scale" style={{ fontSize: "10px" }}></i>
+                    {t("Compare Offers")}
                   </Button>
 
                   {PermissionCheck(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.UPDATE) && (() => {

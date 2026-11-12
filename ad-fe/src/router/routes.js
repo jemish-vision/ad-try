@@ -17,6 +17,7 @@ const ProductList = lazy(() => import("../layout/views/productList/ProductList")
 const InventoryManagement = lazy(() => import("../layout/views/inventoryManagement/Inventory"));
 const WarehouseDetails = lazy(() => import("../layout/views/warehouseDetails/WarehouseDetails"));
 const ProductPerformance = lazy(() => import("../layout/views/productPerformance/ProductPerformance"));
+const CompetitorComparison = lazy(() => import("../layout/views/competitorComparison/CompetitorComparison"));
 const FbaPlanning = lazy(() => import("../layout/views/fbaPlanning/FbaPlanning"));
 const MfnToFbaPage = lazy(() => import("../layout/views/fbaPlanning/MfnToFbaPage"));
 const ReconciliationReimbursement = lazy(() => import("../layout/views/reconciliationReimbursement/ReconciliationReimbursement"));
@@ -251,6 +252,12 @@ const PagesRoutes = [
     component: <ProductPerformance />,
     exact: true,
     name: "Product Performance",
+  },
+  {
+    path: "/competitor-comparison",
+    component: <CompetitorComparison />,
+    exact: true,
+    name: "Competitor Comparison",
   },
   {
     path: "/fba-planning",

@@ -1,4 +1,5 @@
 import {
+  Scales,
   House,
   Megaphone,
   Target,
@@ -156,6 +157,12 @@ const nav = [
         id: "product-performance",
         icon: <ChartLineUp size={18} weight="regular" />,
         path: "/product-performance",
+      },
+      {
+        name: "Competitor Comparison",
+        id: "competitor-comparison",
+        icon: <Scales size={18} weight="regular" />,
+        path: "/competitor-comparison",
       },
     ],
   },
