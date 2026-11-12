@@ -174,6 +174,11 @@ function createSpApiProcessor() {
           break;
         }
 
+        case SP_API_TASKS.ASIN_SNAPSHOT: {
+          const { cronAsinSnapshot } = require("../../api-server/services/automation/asinSnapshot.service");
+          result = await cronAsinSnapshot();
+          break;
+        }
         case SP_API_TASKS.SYNC_PAST_DATA: {
           const { SyncPastData } = require("../../api-server/controllers/config.controller");
           result = await SyncPastData();

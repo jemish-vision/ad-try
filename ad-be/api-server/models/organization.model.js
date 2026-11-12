@@ -77,6 +77,12 @@ const organizationSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // Competitor Price History: days of daily snapshots to keep (Enterprise feature)
+    historyRetentionDays: {
+      type: Number,
+      enum: [7, 14, 30, 60],
+      default: 30,
+    },
   },
   { timestamps: true }
 );

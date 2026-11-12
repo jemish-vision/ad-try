@@ -3478,98 +3478,104 @@ exports.cronBestSellerRank = async () => {
         log_type: "info",
     });
     try {
+        // Previously hard-coded to a single profile; now every SP-enabled, active-plan profile.
+        const profiles = await getActivePlanProfiles("ALL", "sp");
+        const BATCH_SIZE = 20; // searchCatalogItems accepts up to 20 identifiers per request
 
-        const getProfileId = await profileSchema.find({ isActive: true, profileId: 1451708219889308 }).lean();
-        const listPromises = getProfileId.map((profile) => limit(async () => {
-            const currentDate = moment.tz(profile.timezone).format("YYYY-MM-DD");
+        const listPromises = profiles.map((profile) => limit(async () => {
+            const currentDate = moment.tz(profile.timezone || "UTC").format("YYYY-MM-DD");
+            let updated = 0;
+            let failedBatches = 0;
+            try {
+                const marketPlaceSettings = await marketPlaceConfigSchema.findOne(
+                    profile.marketplaceStringId ? { marketPlaceId: profile.marketplaceStringId } : { countryCode: profile.countryCode }
+                ).lean();
+                if (!marketPlaceSettings?.endPoint) throw new Error("Marketplace configuration not found");
 
-            const marketPlaceSettings = await marketPlaceConfigSchema.findOne({
-                countryCode: profile.countryCode
-            }).lean();
-
-            const products = await productListingSchema.find({
-                configId: profile.configId,
-                profileId: profile.profileId
-            }).lean()
-
-            const BATCH_SIZE = 5;
-            const total = products.length;
-            let count = 0;
-
-            for (let i = 0; i < total; i += BATCH_SIZE) {
-
-                const batch = products.slice(i, i + BATCH_SIZE);
                 const checkConfigSP = await getSPAccessToken(profile.configId, profile.profileId);
+                if (!checkConfigSP?.spAccessToken) throw new Error("Seller Central account is not connected");
 
-                for (let j = 0; j < batch.length; j++) {
+                const products = await productListingSchema
+                    .find({ configId: profile.configId, profileId: profile.profileId, asin: { $nin: [null, ""] } })
+                    .select("_id asin")
+                    .lean();
+                const idsByAsin = new Map();
+                for (const p of products) {
+                    if (!idsByAsin.has(p.asin)) idsByAsin.set(p.asin, []);
+                    idsByAsin.get(p.asin).push(p._id);
+                }
+                const asins = [...idsByAsin.keys()];
 
-                    const p = batch[j];
-                    const url = `${marketPlaceSettings.endPoint}/catalog/2022-04-01/items/${p.asin}?marketplaceIds=${marketPlaceSettings.marketPlaceId}&includedData=salesRanks`;
-
+                for (let i = 0; i < asins.length; i += BATCH_SIZE) {
+                    const batch = asins.slice(i, i + BATCH_SIZE);
                     const config = {
-                        method: 'GET',
-                        url,
+                        method: "GET",
+                        url: `${marketPlaceSettings.endPoint}/catalog/2022-04-01/items?marketplaceIds=${marketPlaceSettings.marketPlaceId}&identifiers=${batch.join(",")}&identifiersType=ASIN&includedData=salesRanks&pageSize=${BATCH_SIZE}`,
                         timeout: 20000,
                         headers: {
-                            'x-amz-access-token': checkConfigSP.spAccessToken,
-                            'Content-Type': 'application/json'
+                            "x-amz-access-token": checkConfigSP.spAccessToken,
+                            "Content-Type": "application/json",
                         },
-                        meta: {
-                            configId: profile.configId,
-                            tokenKey: "spAccessToken",
-                            sp: true,
-                            profileId: profile?.profileId,
-                        }
+                        meta: { configId: profile.configId, tokenKey: "spAccessToken", sp: true, profileId: profile?.profileId },
                     };
-
-                    count++;
                     let response;
                     try {
                         response = await retryWithBackoff(() => amazonAxios(config));
                     } catch (error) {
-                        cron_logs({
-                            message: `CronBestSellerRank, Asin: ${p.asin}, Error: ${error}`,
-                            log_type: "info",
-                        });
+                        failedBatches++;
+                        cron_logs({ message: `CronBestSellerRank profile ${profile.profileId}, ASINs ${batch.join(",")}: ${error}`, log_type: "warn" });
                         continue;
                     }
-                    if (response?.status === 200) {
-
-                        cron_logs({
-                            message: `Fetched from index ${count}/${total}, Asin: ${p.asin}`,
-                            log_type: "info",
-                        });
-
-                        const sellerRank = response.data.salesRanks;
-                        if (sellerRank?.length) {
-                            await productListingSchema.findByIdAndUpdate(
-                                p._id,
-                                {
-                                    $set: {
-                                        classificationRank: sellerRank[0]?.classificationRanks?.[0]?.rank || 0,
-                                        displayGroupRanks: sellerRank[0]?.displayGroupRanks?.[0]?.rank || 0
-                                    }
-                                }
-                            );
+                    const ops = [];
+                    for (const item of response?.data?.items || []) {
+                        const rankSet = (item.salesRanks || []).find((s) => s.marketplaceId === marketPlaceSettings.marketPlaceId) || item.salesRanks?.[0];
+                        if (!rankSet) continue;
+                        for (const _id of idsByAsin.get(item.asin) || []) {
+                            ops.push({
+                                updateOne: {
+                                    filter: { _id },
+                                    update: {
+                                        $set: {
+                                            classificationRank: rankSet.classificationRanks?.[0]?.rank || 0,
+                                            displayGroupRanks: rankSet.displayGroupRanks?.[0]?.rank || 0,
+                                        },
+                                    },
+                                },
+                            });
                         }
+                    }
+                    if (ops.length) {
+                        await productListingSchema.bulkWrite(ops, { ordered: false });
+                        updated += ops.length;
                     }
                 }
 
+                const allFailed = asins.length > 0 && failedBatches === Math.ceil(asins.length / BATCH_SIZE);
+                await new cronJobHistorySchema({
+                    configId: profile.configId,
+                    profileId: profile.profileId,
+                    cronName: "Best Seller Rank",
+                    status: allFailed ? "FAILED" : "COMPLETED",
+                    ...(allFailed && { error: `All ${failedBatches} catalog request(s) failed; see cron logs.` }),
+                    recordsCount: updated,
+                    historyDate: currentDate,
+                }).save();
+            } catch (err) {
+                cron_logs({ message: `CronBestSellerRank profile ${profile.profileId}: ${err.message}`, log_type: "error" });
+                await new cronJobHistorySchema({
+                    configId: profile.configId,
+                    profileId: profile.profileId,
+                    cronName: "Best Seller Rank",
+                    status: "FAILED",
+                    error: err.message,
+                    historyDate: currentDate,
+                }).save().catch(() => {});
             }
-
-            const createCronHistory = new cronJobHistorySchema({
-                configId: profile.configId,
-                profileId: profile.profileId,
-                cronName: "Best Seller Rank",
-                status: "COMPLETED",
-                historyDate: currentDate,
-            });
-            await createCronHistory.save();
         }));
         await Promise.all(listPromises);
 
         return cron_logs({
-            message: "Product rank fetched successfully.",
+            message: `Product rank fetched for ${profiles.length} profile(s).`,
             log_type: "info",
         });
 

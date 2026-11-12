@@ -52,6 +52,7 @@ const CRON_NAME_MAP = Object.freeze({
   "productslisting": { queue: QUEUES.SP_API, task: SP_API_TASKS.PRODUCTS_LISTING, family: "sp-api" },
   "productsmetalisting": { queue: QUEUES.SP_API, task: SP_API_TASKS.PRODUCTS_META_LISTING, family: "sp-api" },
   "syncpastdata": { queue: QUEUES.SP_API, task: SP_API_TASKS.SYNC_PAST_DATA, family: "sp-api" },
+  "asinsnapshot": { queue: QUEUES.SP_API, task: SP_API_TASKS.ASIN_SNAPSHOT, family: "sp-api" },
 });
 
 /**

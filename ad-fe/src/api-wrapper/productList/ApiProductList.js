@@ -116,5 +116,21 @@ const ApiGetFeesEstimate = (data) => {
         .then(res => res.data).catch(err => err?.response?.data || { isSuccess: false, message: err?.message })
 }
 
-export { ApiGetFeesEstimate, ApiGetProductComparison, ApiCreateProduct, ApiGenerateProductData, ApiAddProduct, ApiGetSPProduct, ApiChangeProductSetting, ApiFileUpload, ApiGetProductTypes, ApiGetProductDefinition, ApiCheckASIN, ApiCheckASINFromDB, ApiProductSearchOnAmazon, ApiParseFields, ApiUpdateProductPrice, ApiBulkUpdateProductPrice, ApiToggleProductFavorite, ApiGetListofCompetitorsProduct, ApiGetCompetitorsBrands, ApiGetCompetitorsLists }
+// Competitor Price History (Enterprise)
+const ApiGetPriceHistory = ({ asin, profileId, days, rivalAsin }) => {
+    return axios.get(`${apiProducts}${encodeURIComponent(asin)}/history`, { headers, params: { profileId, ...(days ? { days } : {}), ...(rivalAsin ? { rivalAsin } : {}) } })
+        .then(res => res.data).catch(err => err?.response?.data || { isSuccess: false, message: err?.message })
+}
+
+const ApiGetHistorySettings = () => {
+    return axios.get(`${apiProducts}history-settings`, { headers })
+        .then(res => res.data).catch(err => err?.response?.data || { isSuccess: false, message: err?.message })
+}
+
+const ApiUpdateHistorySettings = (data) => {
+    return axios.put(`${apiProducts}history-settings`, data, { headers })
+        .then(res => res.data).catch(err => err?.response?.data || { isSuccess: false, message: err?.message })
+}
+
+export { ApiGetPriceHistory, ApiGetHistorySettings, ApiUpdateHistorySettings, ApiGetFeesEstimate, ApiGetProductComparison, ApiCreateProduct, ApiGenerateProductData, ApiAddProduct, ApiGetSPProduct, ApiChangeProductSetting, ApiFileUpload, ApiGetProductTypes, ApiGetProductDefinition, ApiCheckASIN, ApiCheckASINFromDB, ApiProductSearchOnAmazon, ApiParseFields, ApiUpdateProductPrice, ApiBulkUpdateProductPrice, ApiToggleProductFavorite, ApiGetListofCompetitorsProduct, ApiGetCompetitorsBrands, ApiGetCompetitorsLists }
 

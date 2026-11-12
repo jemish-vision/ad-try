@@ -18,6 +18,9 @@ import { ProfileContext } from "../../../helper/usecontext/useContext";
 import { getCurrencySymbol } from "../../../helper/currencyCode/CurrencyCode";
 import { ApiGetCompetitorsLists, ApiGetFeesEstimate, ApiGetProductComparison, ApiGetSPProduct } from "../../../api-wrapper/productList/ApiProductList";
 import "./CompetitorComparison.css";
+import PriceHistoryPanel from "./PriceHistoryPanel";
+import { PermissionCheck } from "../../../helper/permission/PermissionCheck";
+import { SYSTEM_PAGES, PAGE_ACTIONS } from "src/common/constants";
 
 // Project palette (matches FBA Planning / Returns)
 const P = {
@@ -792,6 +795,13 @@ export default function CompetitorComparison() {
   const tabs = [
     { id: "sellers", label: t("Sellers on this ASIN"), count: cmp ? cmp.competitorCount + (ours?.source === "offers" ? 1 : 0) : 0, icon: "fa-store" },
     { id: "rivals", label: t("Rival Brands"), count: rivals.totalRecords, icon: "fa-people-arrows" },
+    // Enterprise feature: shows a lock (and an upgrade card) when the plan doesn't include it
+    {
+      id: "history",
+      label: t("Price History"),
+      icon: "fa-chart-line",
+      locked: !PermissionCheck(SYSTEM_PAGES.COMPETITOR_PRICE_HISTORY, PAGE_ACTIONS.VIEW_ONLY),
+    },
   ];
 
   /* ── Render ── */
@@ -1023,12 +1033,15 @@ export default function CompetitorComparison() {
                       >
                         <i className={`fa-solid ${tab.icon}`} style={{ fontSize: 12 }} />
                         {tab.label}
-                        <span
-                          className="rounded-full px-2"
-                          style={{ fontSize: 11, background: active ? "rgba(255,255,255,0.22)" : isDark ? "rgba(255,255,255,0.08)" : "#fff", color: active ? "#fff" : textSecondary }}
-                        >
-                          {tab.count}
-                        </span>
+                        {tab.count !== undefined && (
+                          <span
+                            className="rounded-full px-2"
+                            style={{ fontSize: 11, background: active ? "rgba(255,255,255,0.22)" : isDark ? "rgba(255,255,255,0.08)" : "#fff", color: active ? "#fff" : textSecondary }}
+                          >
+                            {tab.count}
+                          </span>
+                        )}
+                        {tab.locked && <i className="fa-solid fa-lock" style={{ fontSize: 10, opacity: 0.8 }} title={t("Enterprise plan")} />}
                       </button>
                     );
                   })}
@@ -1078,6 +1091,19 @@ export default function CompetitorComparison() {
                       </div>
                     </Section>
                   </>
+                )}
+
+                {/* ── Tab: Price History (Enterprise) ── */}
+                {activeTab === "history" && (
+                  <PriceHistoryPanel
+                    asin={data.asin}
+                    profileId={pId}
+                    isDark={isDark}
+                    isMobile={isMobile}
+                    currency={currency}
+                    rivalAsin={selectedRival?.asin}
+                    Section={Section}
+                  />
                 )}
 
                 {/* ── Tab: Rival Brands ── */}

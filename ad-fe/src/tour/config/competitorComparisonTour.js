@@ -1,6 +1,6 @@
 import { tourRegistry } from '../TourRegistry';
 import {
-    MagnifyingGlass, Scales, ArrowClockwise, Package, Cards, Storefront, Table, UsersThree, ListMagnifyingGlass
+    MagnifyingGlass, Scales, ArrowClockwise, Package, Cards, Storefront, Table, UsersThree, ListMagnifyingGlass, ChartLine, CalendarBlank, GearSix, Crown
 } from '@phosphor-icons/react';
 
 export const competitorComparisonTourConfig = {
@@ -17,7 +17,13 @@ export const competitorComparisonTourConfig = {
         { target: "#cc-offers", icon: Table, title: "All Offers", content: "Every seller on this ASIN sorted by landed price, with the Buy Box owner highlighted.", blockTargetInteraction: true },
         { target: "#cc-tab-rivals", icon: UsersThree, title: "Rival Brands", content: "Click to compare your product with similar products from other brands.", requireClick: true },
         { target: "#cc-rival-compare", icon: Scales, title: "Product vs Rival Brand", content: "Compare price, price per unit, Best Seller Rank, size and pack count with the selected rival.", blockTargetInteraction: true },
-        { target: "#cc-rivals", icon: ListMagnifyingGlass, title: "Rival Brand Products", content: "All rival products found for this item. Sort by price or rank, and click Compare on any row to see it side by side.", blockTargetInteraction: true }
+        { target: "#cc-rivals", icon: ListMagnifyingGlass, title: "Rival Brand Products", content: "All rival products found for this item. Sort by price or rank, and click Compare on any row to see it side by side.", blockTargetInteraction: true },
+        { target: "#cc-tab-history", icon: ChartLine, title: "Price History", content: "Click to see how your price, the Buy Box and your rank changed day by day (Enterprise plan).", requireClick: true },
+        { target: "#cc-history-range", icon: CalendarBlank, title: "Date Range", content: "Choose how many days of history to show.", blockTargetInteraction: true },
+        { target: "#cc-history-settings", icon: GearSix, title: "History Settings", content: "Choose how many days of history your organization keeps: 7, 14, 30 or 60 days. Older data is deleted automatically.", blockTargetInteraction: true },
+        { target: "#cc-history-summary", icon: Cards, title: "History Summary", content: "How often you held the Buy Box, your average price, the average Buy Box price and how your rank moved.", blockTargetInteraction: true },
+        { target: "#cc-history-buybox", icon: Crown, title: "Buy Box Owner by Day", content: "Green days you held the Buy Box, red days another seller did. Hover a day to see who.", blockTargetInteraction: true },
+        { target: "#cc-history-price", icon: ChartLine, title: "Price vs Buy Box", content: "Your price against the Buy Box price and the lowest FBA and FBM prices over time.", blockTargetInteraction: true }
     ]
 };
 

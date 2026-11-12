@@ -37,6 +37,9 @@ const spApiLimits = [
     { regex: /^\/products\/pricing\/v0\/competitivePrice$/, method: 'GET', rate: 0.5, burst: 1 },
     { regex: /^\/products\/pricing\/v0\/items\/[^/]+\/offers$/, method: 'GET', rate: 0.5, burst: 1 },
 
+    // --- PRODUCT PRICING BATCH (v0) — getItemOffersBatch, up to 20 ASINs per request ---
+    { regex: /^\/batches\/products\/pricing\/v0\/itemOffers$/, method: 'POST', rate: 0.1, burst: 1 },
+
     // --- PRODUCT FEES API (v0) ---
     { regex: /^\/products\/fees\/v0\/items\/[^/]+\/feesEstimate$/, method: 'POST', rate: 1.0, burst: 2 },
 

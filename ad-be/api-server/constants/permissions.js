@@ -21,6 +21,7 @@ const SYSTEM_PAGES = {
   ORDERS: 'Orders',
   ORDER_REPORT: 'Order Report',
   PRODUCT_LIST: 'Product List',
+  COMPETITOR_PRICE_HISTORY: 'Competitor Price History',
   PRODUCT_ADS: 'Product Ads',
   PROMOTIONS: 'Promotions',
   COUPONS: 'Coupons',

@@ -6,6 +6,7 @@ const { verifyToken } = require("../middleware/user.auth");
 const { cronFetchCompetitorsFromAmazon, getCompetitorBrands, getCompetitorsData } = require("../controllers/products.controller");
 const { verifyCronAuth } = require("../middleware/cron.auth");
 const { getProductComparison, getFeesEstimate } = require("../controllers/competitorComparison.controller");
+const { getAsinHistory, getHistorySettings, updateHistorySettings } = require("../controllers/competitorHistory.controller");
 
 router.get("/cronFetchCompetitorsFromAmazon", verifyToken, verifyCronAuth, cronFetchCompetitorsFromAmazon);
 
@@ -17,5 +18,10 @@ router.post("/fees-estimate", verifyToken, validateRoutePermission(SYSTEM_PAGES.
 
 // Read-only same-ASIN comparison: our offer vs other sellers / Buy Box (getCatalogItem + getItemOffers)
 router.get("/:asin/compare", verifyToken, validateRoutePermission(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.VIEW_ONLY), getProductComparison);
+
+// Competitor Price History (Enterprise plans: page "Competitor Price History" in the plan)
+router.get("/history-settings", verifyToken, validateRoutePermission(SYSTEM_PAGES.COMPETITOR_PRICE_HISTORY, PAGE_ACTIONS.VIEW_ONLY), getHistorySettings);
+router.put("/history-settings", verifyToken, validateRoutePermission(SYSTEM_PAGES.COMPETITOR_PRICE_HISTORY, PAGE_ACTIONS.UPDATE), updateHistorySettings);
+router.get("/:asin/history", verifyToken, validateRoutePermission(SYSTEM_PAGES.COMPETITOR_PRICE_HISTORY, PAGE_ACTIONS.VIEW_ONLY), getAsinHistory);
 
 module.exports = router;
