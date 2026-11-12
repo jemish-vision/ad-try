@@ -42,6 +42,11 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // to the next hourly run, where they are still due.
 const RUN_BUDGET_MS = Number(process.env.ASIN_SNAPSHOT_RUN_BUDGET_MS) || 25 * 60 * 1000;
 const IN_PROGRESS_STALE_MS = 2 * 60 * 60 * 1000;
+// getItemOffersBatch allows 0.1 requests/second (one every 10s, burst 1). Pace explicitly: the shared
+// Redis rate limiter does not apply per-endpoint limits (see helper/rateLimiter.js), so without this
+// the batches go out back-to-back and Amazon answers 429.
+const OFFERS_BATCH_INTERVAL_MS = Number(process.env.ASIN_SNAPSHOT_OFFERS_INTERVAL_MS) || 10500;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Amazon's own retail seller IDs, to flag "Amazon is selling this ASIN". Unknown marketplaces → null.
 const AMAZON_RETAIL_SELLER_IDS = Object.freeze({
@@ -234,7 +239,11 @@ async function runAsinSnapshotForProfile({ profile, date, now = new Date() }) {
   const offers = new Map();
   const ranks = new Map();
   let failedBatches = 0;
+  let lastOffersCallAt = 0;
   for (const group of chunk(asins, BATCH_SIZE)) {
+    const waitMs = lastOffersCallAt + OFFERS_BATCH_INTERVAL_MS - Date.now();
+    if (lastOffersCallAt && waitMs > 0) await sleep(waitMs);
+    lastOffersCallAt = Date.now();
     try {
       for (const [k, v] of await fetchOffersBatch({ asins: group, marketplaceConfig, token: spConfig.spAccessToken, meta })) offers.set(k, v);
     } catch (err) {
