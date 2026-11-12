@@ -105,6 +105,9 @@ const normalizeCatalog = (item, marketplaceId) => {
         brand: summary.brand ?? summary.brandName ?? a.brand?.[0]?.value ?? null,
         image: main?.link ?? null,
         bulletPoints: (a.bullet_point || []).map((b) => b.value).filter(Boolean),
+        size: summary.size ?? a.size?.[0]?.value ?? null,
+        unitValue: a.unit_count?.[0]?.value ?? null,
+        unitType: a.unit_count?.[0]?.type?.value ?? null,
         category: classification?.title ?? summary.browseClassification?.displayName ?? null,
         salesRank: classification
             ? { rank: classification.rank, category: classification.title }
