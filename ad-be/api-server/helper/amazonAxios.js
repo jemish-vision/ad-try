@@ -12,6 +12,10 @@ const httpsAgent = new https.Agent({
     keepAliveMsecs: 10000,
 });
 
+// Pre-flight (local rate limiter) wait limits
+const FRONTEND_MAX_PREFLIGHT_WAIT_MS = Number(process.env.AMAZON_FRONTEND_RATE_WAIT_MS) || 3000;
+const BACKGROUND_MAX_PREFLIGHT_WAIT_MS = Number(process.env.AMAZON_BACKGROUND_RATE_WAIT_MS) || 10 * 60 * 1000;
+
 const amazonAxios = axios.create({
     timeout: 60_000,
     httpsAgent,
@@ -60,24 +64,26 @@ amazonAxios.interceptors.request.use(
                     break;
                 } catch (rateErr) {
                     if (rateErr.message && rateErr.message.startsWith('LOCAL_RATE_LIMIT:')) {
-                        const msToWait = parseInt(rateErr.message.split(':')[1], 10);
-                        const isBackgroundWorker = isBackgroundWorkerExecution(config);
+                        const msToWait = Math.max(parseInt(rateErr.message.split(':')[1], 10) || 1000, 0) + 50; // + jitter
+                        const waitedMs = config._preFlightWaitMs || 0;
 
-                        if (!isBackgroundWorker) {
-                            // Frontend request: fail fast
-                            return Promise.reject({
-                                isRateLimit: true,
-                                message: "Amazon is currently busy processing data for this profile. Please try again in a few seconds."
-                            });
+                        if (!isBackgroundWorkerExecution(config)) {
+                            // Frontend request: wait briefly if the slot frees up soon, otherwise fail fast
+                            if (waitedMs + msToWait > FRONTEND_MAX_PREFLIGHT_WAIT_MS) {
+                                return Promise.reject({
+                                    isRateLimit: true,
+                                    message: "Amazon is currently busy processing data for this profile. Please try again in a few seconds."
+                                });
+                            }
+                        } else if (waitedMs + msToWait > BACKGROUND_MAX_PREFLIGHT_WAIT_MS) {
+                            // Background worker: give up only after a total wait budget (strict endpoints
+                            // such as report creation allow 1 request/minute, so a fixed retry count is too short)
+                            return Promise.reject(new Error(`Pre-flight rate limit wait budget exhausted after ${Math.round(waitedMs / 1000)}s (${config.method?.toUpperCase()} ${String(config.url).split('?')[0]})`));
                         }
 
-                        config._preFlightRetries = (config._preFlightRetries || 0) + 1;
-                        if (config._preFlightRetries >= 5) {
-                            return Promise.reject(new Error("Max pre-flight rate limit retries reached"));
-                        }
-
-                        // Background worker: Wait and retry locally without hitting Amazon
-                        await wait(msToWait + 50); // wait required time + 50ms jitter
+                        // Wait locally and retry without hitting Amazon
+                        config._preFlightWaitMs = waitedMs + msToWait;
+                        await wait(msToWait);
                         continue;
                     }
                     throw rateErr;
