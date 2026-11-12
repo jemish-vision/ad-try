@@ -25,6 +25,7 @@ import './couponsTour';
 import './dealsDashboardTour';
 import './inventoryTour';
 import './fbaPlanningTour';
+import './competitorComparisonTour';
 import './reconciliationTour';
 import './returnsTour';
 import './brandAnalysisTour';

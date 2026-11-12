@@ -1,0 +1,74 @@
+/* Competitor Comparison — page-scoped tweaks on top of the shared glass theme */
+
+/* Sticky search bar: stay fully visible below the top nav and keep scrolled
+   content (tabs, cards) from showing through the translucent glass. */
+.competitor-comparison-container .glass-sticky-header.cc-sticky-header {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 95 !important;
+}
+
+[data-theme="light"] .competitor-comparison-container .glass-sticky-header.cc-sticky-header {
+  background: rgba(255, 255, 255, 0.96) !important;
+}
+
+[data-theme="dark"] .competitor-comparison-container .glass-sticky-header.cc-sticky-header {
+  background: rgba(12, 18, 34, 0.97) !important;
+}
+
+/* Search input: inherit theme colours, no inner box */
+.competitor-comparison-container .cc-sticky-header .search_option input {
+  padding: 0 12px 0 8px !important;
+  height: 100% !important;
+  box-shadow: none !important;
+}
+
+.competitor-comparison-container .cc-sticky-header .search_option input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.8;
+}
+
+/* Buttons */
+.competitor-comparison-container .cc-btn-primary,
+.competitor-comparison-container .cc-btn-secondary {
+  height: 40px !important;
+  min-width: 120px;
+  padding: 0 18px !important;
+  border-radius: 8px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out !important;
+}
+
+.competitor-comparison-container .cc-btn-primary {
+  background: linear-gradient(135deg, #2374f1 0%, #1a5cc7 100%);
+  color: #fff;
+  border: none;
+  box-shadow: 0 4px 12px rgba(35, 116, 242, 0.25);
+}
+
+.competitor-comparison-container .cc-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1a5cc7 0%, #1248a3 100%);
+}
+
+.competitor-comparison-container .cc-btn-secondary:hover:not(:disabled) {
+  border-color: #2374f1 !important;
+  color: #2374f1 !important;
+}
+
+.competitor-comparison-container .cc-btn-primary:disabled,
+.competitor-comparison-container .cc-btn-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Grid rows are clickable in the rival list */
+.competitor-comparison-container #cc-rivals .ag-row {
+  cursor: pointer;
+}

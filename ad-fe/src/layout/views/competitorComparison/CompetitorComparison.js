@@ -12,12 +12,12 @@ import AgTable from "../../../common/grid/AgTable";
 import SpAccountNotConnected from "../../../common/components/SpAccountNotConnected";
 import useSpConnection from "../../../helper/hooks/useSpConnection";
 import { Button } from "../../../components/ui/button";
-import { Input } from "../../../components/ui/input";
 import { Skeleton } from "../../../components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { ProfileContext } from "../../../helper/usecontext/useContext";
 import { getCurrencySymbol } from "../../../helper/currencyCode/CurrencyCode";
 import { ApiGetCompetitorsLists, ApiGetProductComparison, ApiGetSPProduct } from "../../../api-wrapper/productList/ApiProductList";
+import "./CompetitorComparison.css";
 
 // Project palette (matches FBA Planning / Returns)
 const P = {
@@ -34,7 +34,10 @@ const P = {
 };
 
 const ASIN_REGEX = /^[A-Z0-9]{10}$/;
-const RIVAL_PAGE_SIZE = 10;
+const DEFAULT_RIVAL_PAGE_SIZE = 10;
+const GRID_DEFAULT_COL_DEF = { cellStyle: { display: "flex", alignItems: "center" } };
+const GRID_AUTO_SIZE = { type: "fitGridWidth" };
+const fitColumns = (p) => p?.api?.sizeColumnsToFit?.();
 const isNum = (v) => v !== null && v !== undefined && v !== "" && !Number.isNaN(Number(v));
 
 function useIsDark() {
@@ -182,6 +185,7 @@ export default function CompetitorComparison() {
   const [rivals, setRivals] = useState({ lists: [], totalRecords: 0 });
   const [rivalsLoading, setRivalsLoading] = useState(false);
   const [rivalPage, setRivalPage] = useState(1);
+  const [rivalPerPage, setRivalPerPage] = useState(DEFAULT_RIVAL_PAGE_SIZE);
   const [rivalSort, setRivalSort] = useState("price_asc");
   const [selectedRival, setSelectedRival] = useState(null);
 
@@ -228,7 +232,7 @@ export default function CompetitorComparison() {
     if (!data?.asin || !pId) return;
     const [fieldName, dir] = rivalSort === "bsr" ? ["classificationRanks", 1] : ["price", rivalSort === "price_desc" ? -1 : 1];
     setRivalsLoading(true);
-    const res = await ApiGetCompetitorsLists({ profileId: pId, asin: data.asin, page: rivalPage, limit: RIVAL_PAGE_SIZE, fieldName, sortOrder: dir });
+    const res = await ApiGetCompetitorsLists({ profileId: pId, asin: data.asin, page: rivalPage, limit: rivalPerPage, fieldName, sortOrder: dir });
     setRivalsLoading(false);
     if (res?.isSuccess) {
       const lists = (res.data?.lists || []).map((x) => {
@@ -251,7 +255,7 @@ export default function CompetitorComparison() {
     } else {
       setRivals({ lists: [], totalRecords: 0 });
     }
-  }, [data?.asin, pId, rivalPage, rivalSort]);
+  }, [data?.asin, pId, rivalPage, rivalPerPage, rivalSort]);
 
   useEffect(() => {
     loadRivals();
@@ -304,15 +308,15 @@ export default function CompetitorComparison() {
     if (Number(d) === 0) return <Badge isDark={isDark}>{t("Same")}</Badge>;
     const abs = `${currency}${Math.abs(d).toFixed(2)}`;
     return d > 0 ? (
-      <Badge tone="bad" icon="fa-arrow-up" isDark={isDark}>{abs} {t("higher")}</Badge>
+      <Badge tone="bad" icon="fa-arrow-up" isDark={isDark}>{t("{{amount}} higher", { amount: abs })}</Badge>
     ) : (
-      <Badge tone="good" icon="fa-arrow-down" isDark={isDark}>{abs} {t("lower")}</Badge>
+      <Badge tone="good" icon="fa-arrow-down" isDark={isDark}>{t("{{amount}} lower", { amount: abs })}</Badge>
     );
   };
 
   const boolAdvantage = (ourVal, theirVal, label) => {
     if (ourVal === null || ourVal === undefined || theirVal === null || theirVal === undefined || ourVal === theirVal) return <Badge isDark={isDark}>{t("Even")}</Badge>;
-    return ourVal ? <Badge tone="good" isDark={isDark}>{t("Our")} {label} {t("advantage")}</Badge> : <Badge tone="bad" isDark={isDark}>{t("Rival")} {label} {t("advantage")}</Badge>;
+    return ourVal ? <Badge tone="good" isDark={isDark}>{t("Our {{feature}} advantage", { feature: label })}</Badge> : <Badge tone="bad" isDark={isDark}>{t("Rival {{feature}} advantage", { feature: label })}</Badge>;
   };
 
   const yesNo = (v) => (v === null || v === undefined ? <span style={{ color: textMuted }}>—</span> : v ? t("Yes") : <span style={{ color: textMuted }}>{t("No")}</span>);
@@ -320,7 +324,7 @@ export default function CompetitorComparison() {
   const rating = (o) =>
     isNum(o?.feedbackPercent) ? (
       <span>
-        <b>{o.feedbackPercent}%</b> <span style={{ color: textMuted }}>({Number(o.feedbackCount || 0).toLocaleString()} {t("ratings")})</span>
+        <b>{o.feedbackPercent}%</b> <span style={{ color: textMuted }}>({t("{{num}} ratings", { num: Number(o.feedbackCount || 0).toLocaleString() })})</span>
       </span>
     ) : (
       <span style={{ color: textMuted }}>—</span>
@@ -371,9 +375,9 @@ export default function CompetitorComparison() {
       delta:
         isNum(ours?.feedbackPercent) && isNum(rival?.feedbackPercent) && ours.feedbackPercent !== rival.feedbackPercent ? (
           ours.feedbackPercent > rival.feedbackPercent ? (
-            <Badge tone="good" isDark={isDark}>+{ours.feedbackPercent - rival.feedbackPercent}% {t("better")}</Badge>
+            <Badge tone="good" isDark={isDark}>{t("+{{value}}% better", { value: ours.feedbackPercent - rival.feedbackPercent })}</Badge>
           ) : (
-            <Badge tone="bad" isDark={isDark}>{ours.feedbackPercent - rival.feedbackPercent}% {t("lower")}</Badge>
+            <Badge tone="bad" isDark={isDark}>{t("{{value}}% lower", { value: Math.abs(ours.feedbackPercent - rival.feedbackPercent) })}</Badge>
           )
         ) : (
           <Badge isDark={isDark}>{t("Even")}</Badge>
@@ -395,9 +399,9 @@ export default function CompetitorComparison() {
     const d = Number(ourBsr.rank) - Number(sr.bsrCategory);
     if (d === 0) return <Badge isDark={isDark}>{t("Same")}</Badge>;
     return d < 0 ? (
-      <Badge tone="good" icon="fa-arrow-up" isDark={isDark}>{Math.abs(d).toLocaleString()} {t("ranks ahead")}</Badge>
+      <Badge tone="good" icon="fa-arrow-up" isDark={isDark}>{t("{{ranks}} ranks ahead", { ranks: Math.abs(d).toLocaleString() })}</Badge>
     ) : (
-      <Badge tone="bad" icon="fa-arrow-down" isDark={isDark}>{d.toLocaleString()} {t("ranks behind")}</Badge>
+      <Badge tone="bad" icon="fa-arrow-down" isDark={isDark}>{t("{{ranks}} ranks behind", { ranks: d.toLocaleString() })}</Badge>
     );
   };
 
@@ -436,6 +440,14 @@ export default function CompetitorComparison() {
     () => (data ? [...(ours && ours.source === "offers" ? [ours] : []), ...data.competitors].sort((a, b) => (a.landedPrice ?? Infinity) - (b.landedPrice ?? Infinity)) : []),
     [data, ours]
   );
+
+  // Stable grid callbacks — a new function/object identity on every render makes AgTable
+  // re-apply column defaults, which resets the fitted column widths ("grid shrinks" on click).
+  const highlightBg = isDark ? "rgba(26,159,212,0.08)" : "rgba(26,159,212,0.06)";
+  const offerRowStyle = useCallback((p) => (p.data?.isOurs ? { background: highlightBg } : undefined), [highlightBg]);
+  const selectedRivalAsin = sr?.asin;
+  const rivalRowStyle = useCallback((p) => (selectedRivalAsin && p.data?.asin === selectedRivalAsin ? { background: highlightBg } : undefined), [selectedRivalAsin, highlightBg]);
+  const onRivalRowClicked = useCallback((p) => p.data && setSelectedRival(p.data), []);
 
   const cell = (children, align = "left") => <div className={`flex items-center h-full ${align === "right" ? "justify-end" : ""}`}>{children}</div>;
 
@@ -562,7 +574,7 @@ export default function CompetitorComparison() {
       losing: {
         tone: "bad",
         icon: "fa-circle-xmark",
-        text: data?.buyBoxOffer ? `${t("You are losing the Buy Box to")} ${sellerLabel(data.buyBoxOffer)}` : t("You don't hold the Buy Box"),
+        text: data?.buyBoxOffer ? t("You are losing the Buy Box to {{seller}}", { seller: sellerLabel(data.buyBoxOffer) }) : t("You don't hold the Buy Box"),
       },
       only_seller: { tone: "info", icon: "fa-circle-info", text: t("You are the only seller on this ASIN — see the Rival Brands tab for competing products") },
       no_offer: { tone: "warn", icon: "fa-triangle-exclamation", text: t("You have no active offer on this ASIN — showing competitor offers only") },
@@ -654,41 +666,37 @@ export default function CompetitorComparison() {
       <div className="middle_container">
         {/* Sticky search bar */}
         <div
-          className={`glass-sticky-header flex flex-wrap items-center gap-3 w-full max-w-full box-border ${!isMobile ? "sticky-top" : ""}`}
-          style={{ padding: isMobile ? "10px 16px" : "10px 24px", zIndex: 90, top: 0, marginTop: "-10px", marginBottom: "20px" }}
+          className="glass-sticky-header sticky-top cc-sticky-header flex flex-wrap items-center gap-3 w-full max-w-full box-border"
+          style={{ padding: isMobile ? "10px 16px" : "10px 24px", marginTop: "-10px", marginBottom: "20px" }}
         >
-          <div ref={boxRef} className="relative" style={{ flex: isMobile ? "1 1 100%" : "1 1 420px", maxWidth: isMobile ? "100%" : 560 }}>
+          <div ref={boxRef} id="cc-search" className="relative" style={{ flex: isMobile ? "1 1 100%" : "1 1 420px", maxWidth: isMobile ? "100%" : 560 }}>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 runCompare(asinInput);
               }}
-              id="competitor-compare-search"
-              className="search_option m-0 flex items-center relative"
-              style={{
-                height: 40,
-                border: `1px solid ${isDark ? "rgba(255,255,255,0.08)" : "#e2e8f0"}`,
-                background: isDark ? "rgba(255, 255, 255, 0.04)" : "#F1F5F9",
-                borderRadius: 6,
-                paddingLeft: 12,
-              }}
+              className="search_option m-0 flex items-center relative w-full"
+              style={{ height: 40 }}
             >
-              <FiSearch style={{ fontSize: 16, color: "#94a3b8", flexShrink: 0 }} />
-              <Input
+              <span style={{ padding: "0 0 0 12px", color: "#94a3b8", display: "flex", alignItems: "center" }}>
+                <FiSearch style={{ fontSize: 17 }} />
+              </span>
+              <input
                 type="text"
                 placeholder={t("Search your products by name, SKU or ASIN...")}
                 value={asinInput}
                 onChange={(e) => onAsinChange(e.target.value)}
                 onFocus={() => suggestions.length && setShowSuggestions(true)}
                 autoComplete="off"
-                className="flex-grow w-full h-[40px] border-0 focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent shadow-none px-2"
-                style={{ paddingRight: asinInput ? 30 : 10 }}
+                className="w-full min-w-0 h-full border-none outline-none bg-transparent shadow-none"
+                style={{ paddingRight: asinInput ? 34 : 12 }}
               />
               {asinInput && (
                 <MdOutlineClose
                   onClick={() => {
                     setAsinInput("");
                     setSuggestions([]);
+                    setShowSuggestions(false);
                   }}
                   style={{ position: "absolute", right: 10, cursor: "pointer", color: "var(--text-secondary)", fontSize: 18, opacity: 0.7 }}
                 />
@@ -705,10 +713,11 @@ export default function CompetitorComparison() {
                 }}
               >
                 {suggestions.map((p) => (
-                  <button
-                    type="button"
+                  <div
+                    role="button"
+                    tabIndex={0}
                     key={`${p.asin}-${p.sku}`}
-                    className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-slate-100 dark:hover:bg-slate-800"
+                    className="flex w-full items-center gap-3 px-3 py-2 text-left cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800"
                     onClick={() => {
                       setAsinInput(p.asin);
                       runCompare(p.asin);
@@ -721,45 +730,37 @@ export default function CompetitorComparison() {
                         ASIN: {p.asin} · SKU: {p.sku}
                       </span>
                     </span>
-                  </button>
+                  </div>
                 ))}
               </div>
             )}
           </div>
 
           <div className="flex items-center gap-2" style={{ flex: isMobile ? "1 1 100%" : "0 0 auto" }}>
-            <Button
+            <button
               type="button"
+              id="cc-compare-btn"
               disabled={loading || !pId}
               onClick={() => runCompare(asinInput)}
-              className="h-[40px] px-5 font-semibold text-[13px] text-white border-0 flex-1"
-              style={{ background: `linear-gradient(135deg, ${P.primary}, ${P.primaryDeep})` }}
+              className="cc-btn-primary flex-1"
             >
-              <i className="fa-solid fa-scale-balanced mr-2" style={{ fontSize: 12 }} />
-              {t("Compare")}
-            </Button>
+              <i className="fa-solid fa-scale-balanced" style={{ fontSize: 13 }} />
+              <span>{t("Compare")}</span>
+            </button>
             {data && (
-              <Button
+              <button
                 type="button"
-                variant="outline"
+                id="cc-refresh-btn"
                 disabled={loading}
                 onClick={() => runCompare(data.asin, true)}
-                className="h-[40px] px-4 font-semibold text-[13px] flex-1"
-                style={{ borderColor: isDark ? "var(--glass-border-color)" : `${P.primary}40`, color: isDark ? P.primaryDeep : P.primary, background: isDark ? "rgba(255,255,255,0.05)" : `${P.primary}08` }}
+                className="glass-dropdown-btn cc-btn-secondary flex-1"
+                title={t("Fetch the latest data from Amazon")}
               >
-                <i className={`fa-solid fa-rotate-right mr-2 ${loading ? "fa-spin" : ""}`} style={{ fontSize: 12 }} />
-                {t("Refresh")}
-              </Button>
+                <i className={`fa-solid fa-rotate-right ${loading ? "fa-spin" : ""}`} style={{ fontSize: 13 }} />
+                <span>{t("Refresh")}</span>
+              </button>
             )}
           </div>
-
-          {data?.fetchedAt && !isMobile && (
-            <span style={{ fontSize: 11.5, color: textMuted, marginLeft: "auto" }}>
-              <i className="fa-regular fa-clock mr-1" />
-              {t("Updated")} {new Date(data.fetchedAt).toLocaleTimeString()}
-              {data.cached ? ` · ${t("cached")}` : ""}
-            </span>
-          )}
         </div>
 
         {!isSpConnected && isSpLoaded ? (
@@ -802,7 +803,7 @@ export default function CompetitorComparison() {
             {!loading && data && (
               <>
                 {/* Product hero */}
-                <div className="glass-card" style={{ padding: isMobile ? 16 : 20 }}>
+                <div id="cc-product" className="glass-card" style={{ padding: isMobile ? 16 : 20 }}>
                   <div className="flex flex-col md:flex-row gap-4">
                     <ProductThumb src={data.product?.image} size={isMobile ? 88 : 112} isDark={isDark} />
                     <div className="min-w-0 flex-1">
@@ -825,13 +826,13 @@ export default function CompetitorComparison() {
                 </div>
 
                 {/* Summary tiles */}
-                <div className="grid mt-4" style={{ gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? 150 : 190}px, 1fr))`, gap: isMobile ? 10 : 16 }}>
+                <div id="cc-summary" className="grid mt-4" style={{ gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? 150 : 190}px, 1fr))`, gap: isMobile ? 10 : 16 }}>
                   <SummaryTile isDark={isDark} title={t("Our Price")} value={fmt(ourPrice)} sub={ours?.source === "listing" ? t("From Product List") : t("Landed (price + shipping)")} icon="fa-tag" accent={P.primary} />
                   <SummaryTile
                     isDark={isDark}
                     title={t("Buy Box")}
                     value={fmt(summary?.buyBoxPrice?.landedPrice)}
-                    sub={cmp?.weHaveBuyBox ? t("Owned by you") : data.buyBoxOffer ? `${t("Owned by")} ${sellerLabel(data.buyBoxOffer)}` : t("No Buy Box winner")}
+                    sub={cmp?.weHaveBuyBox ? t("Owned by you") : data.buyBoxOffer ? t("Owned by {{seller}}", { seller: sellerLabel(data.buyBoxOffer) }) : t("No Buy Box winner")}
                     icon="fa-crown"
                     accent={cmp?.weHaveBuyBox ? P.success : data.buyBoxOffer ? P.danger : P.warning}
                   />
@@ -841,7 +842,7 @@ export default function CompetitorComparison() {
                     isDark={isDark}
                     title={t("Cheapest Rival Brand")}
                     value={fmt(lowestRivalBrandPrice)}
-                    sub={isNum(ourPrice) && isNum(lowestRivalBrandPrice) ? (ourPrice > lowestRivalBrandPrice ? `${t("You are")} ${fmt(ourPrice - lowestRivalBrandPrice)} ${t("higher")}` : t("You are the cheaper option")) : t("On this page of results")}
+                    sub={isNum(ourPrice) && isNum(lowestRivalBrandPrice) ? (ourPrice > lowestRivalBrandPrice ? t("You are {{amount}} higher", { amount: fmt(ourPrice - lowestRivalBrandPrice) }) : t("You are the cheaper option")) : t("On this page of results")}
                     icon="fa-arrow-trend-down"
                     accent={isNum(ourPrice) && isNum(lowestRivalBrandPrice) && ourPrice > lowestRivalBrandPrice ? P.danger : P.success}
                   />
@@ -849,6 +850,7 @@ export default function CompetitorComparison() {
 
                 {/* Tabs */}
                 <div
+                  id="cc-tabs"
                   className="inline-flex mt-5 p-1 gap-1 flex-wrap"
                   style={{ borderRadius: 12, background: isDark ? "rgba(255,255,255,0.04)" : P.neutral100, border: `1px solid ${isDark ? "var(--glass-border-color)" : P.neutral200}` }}
                 >
@@ -894,14 +896,14 @@ export default function CompetitorComparison() {
                         id="cc-seller-matrix"
                         isDark={isDark}
                         isMobile={isMobile}
-                        title={`${t("Our offer vs")} ${rival.isBuyBoxWinner ? t("Buy Box winner") : t("lowest-priced seller")}`}
+                        title={rival.isBuyBoxWinner ? t("Our offer vs Buy Box winner") : t("Our offer vs lowest-priced seller")}
                         right={<span style={{ fontSize: 12, color: textMuted }}>{t("Delta = our price − theirs · red = we're more expensive")}</span>}
                       >
                         <MatrixTable rows={sellerRows} oursHeader={t("Our Offer")} rivalHeader={`${t("Competitor")} (${sellerLabel(rival)})`} />
                       </Section>
                     )}
 
-                    <Section id="cc-offers" isDark={isDark} isMobile={isMobile} title={t("All Offers")} count={`${allOffers.length} ${t("Sellers")}`}>
+                    <Section id="cc-offers" isDark={isDark} isMobile={isMobile} title={t("All Offers")} count={t("{{num}} Sellers", { num: allOffers.length })}>
                       <div className="data_table position-relative" style={{ padding: isMobile ? "0 12px 16px" : "0 24px 24px" }}>
                         <AgTable
                           tableId=""
@@ -915,10 +917,12 @@ export default function CompetitorComparison() {
                           rowHeight={52}
                           height={`${Math.min(Math.max(allOffers.length, 1) * 52 + 60, 640)}px`}
                           minHeight="140px"
-                          autoSizeStrategy={{ type: "fitGridWidth" }}
-                          onGridSizeChanged={(p) => p.api.sizeColumnsToFit()}
-                          defaultColDef={{ cellStyle: { display: "flex", alignItems: "center" } }}
-                          getRowStyle={(p) => (p.data?.isOurs ? { background: isDark ? "rgba(26,159,212,0.08)" : "rgba(26,159,212,0.06)" } : undefined)}
+                          autoSizeStrategy={GRID_AUTO_SIZE}
+                          onGridSizeChanged={fitColumns}
+                          onFirstDataRendered={fitColumns}
+                          onNewColumnsLoaded={fitColumns}
+                          defaultColDef={GRID_DEFAULT_COL_DEF}
+                          getRowStyle={offerRowStyle}
                         />
                         <div style={{ fontSize: 11.5, color: textMuted, marginTop: 10 }}>
                           {t("Amazon returns up to 20 lowest-priced New offers per ASIN. Sellers are shown by seller ID.")}
@@ -952,7 +956,7 @@ export default function CompetitorComparison() {
                       isDark={isDark}
                       isMobile={isMobile}
                       title={t("Rival Brand Products")}
-                      count={`${rivals.totalRecords} ${t("Products")}`}
+                      count={t("{{num}} Products", { num: rivals.totalRecords })}
                       right={
                         <div style={{ minWidth: 200 }}>
                           <Select
@@ -989,21 +993,24 @@ export default function CompetitorComparison() {
                             rowData={rivals.lists}
                             columnDefs={rivalColumns}
                             totalRecords={rivals.totalRecords}
-                            perPage={RIVAL_PAGE_SIZE}
+                            perPage={rivalPerPage}
                             currentPage={rivalPage}
                             onPageChange={(p) => setRivalPage(p)}
-                            paginationOptions={[RIVAL_PAGE_SIZE]}
+                            onPerPageChange={(pp) => {
+                              setRivalPerPage(Number(pp));
+                              setRivalPage(1);
+                            }}
                             enableCustomizeColumns={false}
                             loading={rivalsLoading}
                             rowHeight={75}
                             height={`${Math.min(Math.max(rivals.lists.length, 3) * 75 + 60, 820)}px`}
-                            defaultColDef={{ cellStyle: { display: "flex", alignItems: "center" } }}
-                            autoSizeStrategy={{ type: "fitGridWidth" }}
-                          onGridSizeChanged={(p) => p.api.sizeColumnsToFit()}
-                            onRowClicked={(p) => p.data && setSelectedRival(p.data)}
-                            getRowStyle={(p) =>
-                              sr && p.data?.asin === sr.asin ? { background: isDark ? "rgba(26,159,212,0.08)" : "rgba(26,159,212,0.06)", cursor: "pointer" } : { cursor: "pointer" }
-                            }
+                            defaultColDef={GRID_DEFAULT_COL_DEF}
+                            autoSizeStrategy={GRID_AUTO_SIZE}
+                            onGridSizeChanged={fitColumns}
+                            onFirstDataRendered={fitColumns}
+                            onNewColumnsLoaded={fitColumns}
+                            onRowClicked={onRivalRowClicked}
+                            getRowStyle={rivalRowStyle}
                           />
                         )}
                         <div style={{ fontSize: 11.5, color: textMuted, marginTop: 10 }}>

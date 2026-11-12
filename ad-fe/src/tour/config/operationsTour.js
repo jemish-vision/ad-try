@@ -1,7 +1,7 @@
 import { tourRegistry } from '../TourRegistry';
 import {
     Package, ShoppingCart, Megaphone, Storefront,
-    Receipt, Tag, Percent, ClipboardText, BoxArrowDown, ArrowUUpLeft
+    Receipt, Tag, Percent, ClipboardText, BoxArrowDown, ArrowUUpLeft, Scales
 } from '@phosphor-icons/react';
 
 export const operationsTourConfig = {
@@ -15,6 +15,7 @@ export const operationsTourConfig = {
         { target: "#nav-product-list-parent", icon: Package, title: "Product List Menu", content: "Expand to access product management.", blockTargetInteraction: true },
         { target: "#nav-product-list", icon: Package, title: "Product List", content: "View and optimize your product listings.", childTourId: "product-list" },
         { target: "#nav-product-ads", icon: Tag, title: "Product Ads", content: "Manage and track your advertised products.", childTourId: "product-ads" },
+        { target: "#nav-competitor-comparison", icon: Scales, title: "Competitor Comparison", content: "Compare your offer with other sellers on the same ASIN and with rival brand products.", childTourId: "competitor-comparison" },
 
         { target: "#nav-promotions-parent", icon: Megaphone, title: "Promotions Menu", content: "Expand to manage your marketing promotions.", blockTargetInteraction: true },
         { target: "#nav-coupons", icon: Percent, title: "Coupons", content: "Create and manage your discount coupons.", childTourId: "coupons" },

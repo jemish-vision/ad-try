@@ -220,6 +220,7 @@ function LayoutHeader({ nameShow = false, name, dateShow = false, profileShow, i
         "/deals": "deals-dashboard",
         "/inventory-management": "inventory",
         "/fba-planning": "fba-planning",
+        "/competitor-comparison": "competitor-comparison",
         "/reconciliation-reimbursement": "reconciliation",
         "/returns": "returns",
         "/brand-analytics": "brand-analysis",
