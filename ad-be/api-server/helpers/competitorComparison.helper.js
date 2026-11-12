@@ -106,8 +106,8 @@ const normalizeCatalog = (item, marketplaceId) => {
         image: main?.link ?? null,
         bulletPoints: (a.bullet_point || []).map((b) => b.value).filter(Boolean),
         size: summary.size ?? a.size?.[0]?.value ?? null,
-        unitValue: a.unit_count?.[0]?.value ?? null,
-        unitType: a.unit_count?.[0]?.type?.value ?? null,
+        unitValue: a.unit_count?.[0]?.value ?? a.number_of_items?.[0]?.value ?? a.item_package_quantity?.[0]?.value ?? null,
+        unitType: a.unit_count?.[0]?.type?.value ?? (a.number_of_items?.[0]?.value || a.item_package_quantity?.[0]?.value ? "count" : null),
         category: classification?.title ?? summary.browseClassification?.displayName ?? null,
         salesRank: classification
             ? { rank: classification.rank, category: classification.title }
@@ -143,8 +143,10 @@ const buildComparison = ({ offersPayload, catalogItem, ourSellerId, marketplaceI
 
     let ourOffer = offers.find((o) => o.isOurs) || null;
     if (!ourOffer && ourListing) {
-        const price = ourListing.sellingPrice ?? ourListing.basePrice ?? null;
-        ourOffer = {
+        // A 0 / empty price in Product List means "no price" (e.g. listing inactive) — never compare against it.
+        const positive = (v) => (Number(v) > 0 ? Number(v) : null);
+        const price = positive(ourListing.sellingPrice) ?? positive(ourListing.basePrice) ?? null;
+        if (price !== null) ourOffer = {
             sellerId: ourSellerId || null,
             isOurs: true,
             isBuyBoxWinner: false,

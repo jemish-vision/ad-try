@@ -7828,7 +7828,6 @@
   "Cheapest Rival Brand": "Marca rivale più economica",
   "You are {{amount}} higher": "Sei {{amount}} più caro",
   "You are the cheaper option": "Sei l'opzione più economica",
-  "On this page of results": "In questa pagina di risultati",
   "Our offer vs Buy Box winner": "Nostra offerta vs vincitore della Buy Box",
   "Our offer vs lowest-priced seller": "Nostra offerta vs venditore con il prezzo più basso",
   "Delta = our price − theirs · red = we're more expensive": "Differenza = nostro prezzo − il loro · rosso = siamo più cari",
@@ -7864,5 +7863,8 @@
   "All rival products found for this item. Sort by price or rank, and click Compare on any row to see it side by side.": "Tutti i prodotti rivali trovati per questo articolo. Ordina per prezzo o posizione e fai clic su Confronta in una riga per vederlo affiancato.",
   "Compare Offers": "Confronta offerte",
   "Compare your offer with other sellers on the same ASIN and with rival brand products.": "Confronta la tua offerta con gli altri venditori sullo stesso ASIN e con i prodotti delle marche rivali.",
-  "Open Competitor Comparison for this product to compare Buy Box, prices and rival brands side by side.": "Apri il Confronto concorrenti per questo prodotto per confrontare affiancati Buy Box, prezzi e marche rivali."
+  "Open Competitor Comparison for this product to compare Buy Box, prices and rival brands side by side.": "Apri il Confronto concorrenti per questo prodotto per confrontare affiancati Buy Box, prezzi e marche rivali.",
+  "No active offer": "Nessuna offerta attiva",
+  "No active offer to compare": "Nessuna offerta attiva da confrontare",
+  "Lowest price among rival brands": "Prezzo più basso tra i marchi concorrenti"
 }

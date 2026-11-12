@@ -7828,7 +7828,6 @@
   "Cheapest Rival Brand": "Cheapest Rival Brand",
   "You are {{amount}} higher": "You are {{amount}} higher",
   "You are the cheaper option": "You are the cheaper option",
-  "On this page of results": "On this page of results",
   "Our offer vs Buy Box winner": "Our offer vs Buy Box winner",
   "Our offer vs lowest-priced seller": "Our offer vs lowest-priced seller",
   "Delta = our price − theirs · red = we're more expensive": "Delta = our price − theirs · red = we're more expensive",
@@ -7864,5 +7863,8 @@
   "All rival products found for this item. Sort by price or rank, and click Compare on any row to see it side by side.": "All rival products found for this item. Sort by price or rank, and click Compare on any row to see it side by side.",
   "Compare Offers": "Compare Offers",
   "Compare your offer with other sellers on the same ASIN and with rival brand products.": "Compare your offer with other sellers on the same ASIN and with rival brand products.",
-  "Open Competitor Comparison for this product to compare Buy Box, prices and rival brands side by side.": "Open Competitor Comparison for this product to compare Buy Box, prices and rival brands side by side."
+  "Open Competitor Comparison for this product to compare Buy Box, prices and rival brands side by side.": "Open Competitor Comparison for this product to compare Buy Box, prices and rival brands side by side.",
+  "No active offer": "No active offer",
+  "No active offer to compare": "No active offer to compare",
+  "Lowest price among rival brands": "Lowest price among rival brands"
 }

@@ -7829,7 +7829,6 @@
   "Cheapest Rival Brand": "Marca rival más barata",
   "You are {{amount}} higher": "Estás {{amount}} más alto",
   "You are the cheaper option": "Eres la opción más barata",
-  "On this page of results": "En esta página de resultados",
   "Our offer vs Buy Box winner": "Nuestra oferta vs. ganador de la Buy Box",
   "Our offer vs lowest-priced seller": "Nuestra oferta vs. vendedor con el precio más bajo",
   "Delta = our price − theirs · red = we're more expensive": "Diferencia = nuestro precio − el suyo · rojo = somos más caros",
@@ -7865,5 +7864,8 @@
   "All rival products found for this item. Sort by price or rank, and click Compare on any row to see it side by side.": "Todos los productos rivales encontrados para este artículo. Ordena por precio o ranking y haz clic en Comparar en cualquier fila para verlo en paralelo.",
   "Compare Offers": "Comparar ofertas",
   "Compare your offer with other sellers on the same ASIN and with rival brand products.": "Compara tu oferta con otros vendedores del mismo ASIN y con productos de marcas rivales.",
-  "Open Competitor Comparison for this product to compare Buy Box, prices and rival brands side by side.": "Abre la comparación con la competencia de este producto para comparar Buy Box, precios y marcas rivales en paralelo."
+  "Open Competitor Comparison for this product to compare Buy Box, prices and rival brands side by side.": "Abre la comparación con la competencia de este producto para comparar Buy Box, precios y marcas rivales en paralelo.",
+  "No active offer": "Sin oferta activa",
+  "No active offer to compare": "No hay oferta activa para comparar",
+  "Lowest price among rival brands": "Precio más bajo entre marcas rivales"
 }

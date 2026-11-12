@@ -107,3 +107,26 @@ test('normalizes catalog item fields', () => {
   assert.deepEqual(data.product.salesRank, { rank: 42, category: 'Kitchen' });
   assert.deepEqual(data.product.bulletPoints, ['Strong', 'Light']);
 });
+
+test('listing price of 0 is ignored -> no_offer instead of a fake ₹0 offer', () => {
+  const data = buildComparison({
+    offersPayload: { ASIN: 'B0X', Summary: { TotalOfferCount: 0 }, Offers: [] },
+    ourSellerId: 'ME',
+    marketplaceId: 'M',
+    ourListing: { sellingPrice: 0, basePrice: 0 },
+  });
+  assert.equal(data.ourOffer, null);
+  assert.equal(data.comparison.status, 'no_offer');
+});
+
+test('pack size falls back to number_of_items / item_package_quantity', () => {
+  const mk = (attributes) => buildComparison({ offersPayload: payload([]), catalogItem: { asin: 'B0X', summaries: [{ marketplaceId: 'M' }], attributes }, ourSellerId: 'ME', marketplaceId: 'M' }).product;
+  assert.deepEqual([mk({ number_of_items: [{ value: 3 }] }).unitValue, mk({ number_of_items: [{ value: 3 }] }).unitType], [3, 'count']);
+  assert.equal(mk({ item_package_quantity: [{ value: 2 }] }).unitValue, 2);
+  assert.equal(mk({ unit_count: [{ value: 20, type: { value: 'Meter' } }] }).unitType, 'Meter');
+});
+
+test('category falls back to the overall (display group) rank', () => {
+  const p = buildComparison({ offersPayload: payload([]), catalogItem: { asin: 'B0X', summaries: [{ marketplaceId: 'M' }], salesRanks: [{ marketplaceId: 'M', displayGroupRanks: [{ title: 'Bags', rank: 1234 }] }] }, ourSellerId: 'ME', marketplaceId: 'M' }).product;
+  assert.deepEqual(p.salesRank, { rank: 1234, category: 'Bags' });
+});

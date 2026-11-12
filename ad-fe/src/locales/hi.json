@@ -7828,7 +7828,6 @@
   "Cheapest Rival Brand": "सबसे सस्ता प्रतिद्वंद्वी ब्रांड",
   "You are {{amount}} higher": "आप {{amount}} महंगे हैं",
   "You are the cheaper option": "आप सबसे सस्ता विकल्प हैं",
-  "On this page of results": "परिणामों के इस पेज पर",
   "Our offer vs Buy Box winner": "हमारा ऑफ़र बनाम Buy Box विजेता",
   "Our offer vs lowest-priced seller": "हमारा ऑफ़र बनाम सबसे कम कीमत वाला विक्रेता",
   "Delta = our price − theirs · red = we're more expensive": "अंतर = हमारा मूल्य − उनका मूल्य · लाल = हम महंगे हैं",
@@ -7864,5 +7863,8 @@
   "All rival products found for this item. Sort by price or rank, and click Compare on any row to see it side by side.": "इस आइटम के लिए मिले सभी प्रतिद्वंद्वी उत्पाद। मूल्य या रैंक के अनुसार क्रमबद्ध करें, और साथ-साथ देखने के लिए किसी भी पंक्ति में तुलना करें पर क्लिक करें।",
   "Compare Offers": "ऑफ़र की तुलना करें",
   "Compare your offer with other sellers on the same ASIN and with rival brand products.": "उसी ASIN पर अन्य विक्रेताओं और प्रतिद्वंद्वी ब्रांड के उत्पादों से अपने ऑफ़र की तुलना करें।",
-  "Open Competitor Comparison for this product to compare Buy Box, prices and rival brands side by side.": "Buy Box, मूल्य और प्रतिद्वंद्वी ब्रांड की साथ-साथ तुलना करने के लिए इस उत्पाद की प्रतिस्पर्धी तुलना खोलें।"
+  "Open Competitor Comparison for this product to compare Buy Box, prices and rival brands side by side.": "Buy Box, मूल्य और प्रतिद्वंद्वी ब्रांड की साथ-साथ तुलना करने के लिए इस उत्पाद की प्रतिस्पर्धी तुलना खोलें।",
+  "No active offer": "कोई सक्रिय ऑफ़र नहीं",
+  "No active offer to compare": "तुलना के लिए कोई सक्रिय ऑफ़र नहीं",
+  "Lowest price among rival brands": "प्रतिद्वंद्वी ब्रांडों में सबसे कम कीमत"
 }

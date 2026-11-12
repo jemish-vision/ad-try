@@ -246,8 +246,10 @@ export default function CompetitorComparison() {
           size: a.size || null,
           unitValue: isNum(a.unitValue) ? Number(a.unitValue) : null,
           unitType: a.unitType || null,
-          bsrCategory: a.salesRankCategory ?? (isNum(x.classificationRanks) ? Number(x.classificationRanks) : null),
-          bsrCategoryName: a.salesRankCategoryName || x.classification || null,
+          // Category rank if Amazon has one, otherwise the overall (display group) rank, otherwise what the sync stored
+          bsrCategory: a.salesRankCategory ?? a.salesRankOverall ?? (isNum(x.classificationRanks) ? Number(x.classificationRanks) : null),
+          bsrCategoryName:
+            a.salesRankCategoryName || (a.salesRankCategory == null ? a.salesRankOverallName : null) || (x.classification && !isNum(x.classification) ? x.classification : null),
           bsrOverall: a.salesRankOverall ?? null,
         };
       });
@@ -260,6 +262,23 @@ export default function CompetitorComparison() {
   useEffect(() => {
     loadRivals();
   }, [loadRivals]);
+
+  // Cheapest rival across ALL rivals (not just the current page / sort order)
+  const [cheapestRivalPrice, setCheapestRivalPrice] = useState(null);
+  useEffect(() => {
+    if (!data?.asin || !pId) return;
+    let cancelled = false;
+    setCheapestRivalPrice(null);
+    ApiGetCompetitorsLists({ profileId: pId, asin: data.asin, page: 1, limit: 1, fieldName: "price", sortOrder: 1 }).then((res) => {
+      if (cancelled || !res?.isSuccess) return;
+      const first = res.data?.lists?.[0];
+      const amt = first?.amazonData?.price?.amount ?? first?.price;
+      setCheapestRivalPrice(isNum(amt) && Number(amt) > 0 ? Number(amt) : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [data?.asin, pId]);
 
   // Auto-load when opened with ?asin= (e.g. from Product List) or when the profile changes.
   useEffect(() => {
@@ -297,10 +316,7 @@ export default function CompetitorComparison() {
   const delta = cmp?.vsPrimaryRival;
   const summary = data?.summary;
   const ourPrice = ours?.landedPrice ?? ours?.listingPrice ?? null;
-  const lowestRivalBrandPrice = useMemo(() => {
-    const prices = rivals.lists.map((r) => r.price).filter(isNum);
-    return prices.length ? Math.min(...prices) : null;
-  }, [rivals.lists]);
+  const lowestRivalBrandPrice = cheapestRivalPrice;
 
   // delta = ours - theirs; positive → we're more expensive (red)
   const priceDelta = (d) => {
@@ -389,7 +405,8 @@ export default function CompetitorComparison() {
 
   const sr = selectedRival || rivals.lists.find((r) => isNum(r.price)) || null;
   const ourBsr = data?.product?.salesRank;
-  const sameCategory = sr && ourBsr?.category && sr.bsrCategoryName && ourBsr.category === sr.bsrCategoryName;
+  const sameCategory = sr && ourBsr?.category && sr.bsrCategoryName && ourBsr.category.toLowerCase() === sr.bsrCategoryName.toLowerCase();
+  const sameUnit = (a, b) => Boolean(a && b && String(a).trim().toLowerCase() === String(b).trim().toLowerCase());
   const ourPpu = data?.product ? pricePerUnit(ourPrice, data.product.unitValue, data.product.unitType) : null;
   const rivalPpu = sr ? pricePerUnit(sr.price, sr.unitValue, sr.unitType) : null;
 
@@ -406,7 +423,7 @@ export default function CompetitorComparison() {
   };
 
   const ppuDelta = () => {
-    if (!ourPpu || !rivalPpu || data?.product?.unitType !== sr?.unitType) return <span style={{ color: textMuted }}>—</span>;
+    if (!ourPpu || !rivalPpu || !sameUnit(data?.product?.unitType, sr?.unitType)) return <span style={{ color: textMuted }}>—</span>;
     return priceDelta(Math.round((ourPrice / data.product.unitValue - sr.price / sr.unitValue) * 100) / 100);
   };
 
@@ -827,7 +844,7 @@ export default function CompetitorComparison() {
 
                 {/* Summary tiles */}
                 <div id="cc-summary" className="grid mt-4" style={{ gridTemplateColumns: `repeat(auto-fit, minmax(${isMobile ? 150 : 190}px, 1fr))`, gap: isMobile ? 10 : 16 }}>
-                  <SummaryTile isDark={isDark} title={t("Our Price")} value={fmt(ourPrice)} sub={ours?.source === "listing" ? t("From Product List") : t("Landed (price + shipping)")} icon="fa-tag" accent={P.primary} />
+                  <SummaryTile isDark={isDark} title={t("Our Price")} value={fmt(ourPrice)} sub={!ours ? t("No active offer") : ours.source === "listing" ? t("From Product List") : t("Landed (price + shipping)")} icon="fa-tag" accent={P.primary} />
                   <SummaryTile
                     isDark={isDark}
                     title={t("Buy Box")}
@@ -842,7 +859,7 @@ export default function CompetitorComparison() {
                     isDark={isDark}
                     title={t("Cheapest Rival Brand")}
                     value={fmt(lowestRivalBrandPrice)}
-                    sub={isNum(ourPrice) && isNum(lowestRivalBrandPrice) ? (ourPrice > lowestRivalBrandPrice ? t("You are {{amount}} higher", { amount: fmt(ourPrice - lowestRivalBrandPrice) }) : t("You are the cheaper option")) : t("On this page of results")}
+                    sub={isNum(ourPrice) && isNum(lowestRivalBrandPrice) ? (ourPrice > lowestRivalBrandPrice ? t("You are {{amount}} higher", { amount: fmt(ourPrice - lowestRivalBrandPrice) }) : t("You are the cheaper option")) : !isNum(ourPrice) ? t("No active offer to compare") : t("Lowest price among rival brands")}
                     icon="fa-arrow-trend-down"
                     accent={isNum(ourPrice) && isNum(lowestRivalBrandPrice) && ourPrice > lowestRivalBrandPrice ? P.danger : P.success}
                   />

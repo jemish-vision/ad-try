@@ -138,8 +138,9 @@ const normalizeItem = (item) => {
         brand: summary.brand ?? attr(a, "brand") ?? "Unknown",
         form: attr(a, "item_form"),
         size: summary.size ?? attr(a, "size"),
-        unitValue: a?.unit_count?.[0]?.value ?? null,
-        unitType: a?.unit_count?.[0]?.type?.value ?? null,
+        // Pack size: unit_count, else number_of_items / item_package_quantity (counted as "count")
+        unitValue: a?.unit_count?.[0]?.value ?? a?.number_of_items?.[0]?.value ?? a?.item_package_quantity?.[0]?.value ?? null,
+        unitType: a?.unit_count?.[0]?.type?.value ?? (a?.number_of_items?.[0]?.value || a?.item_package_quantity?.[0]?.value ? "count" : null),
         weight: a?.item_weight?.[0]?.value ?? null,
         weightUnit: a?.item_weight?.[0]?.unit ?? null,
         dietType: attr(a, "diet_type"),
@@ -149,6 +150,7 @@ const normalizeItem = (item) => {
         salesRankCategory: salesRank?.classificationRanks?.[0]?.rank ?? null,
         salesRankCategoryName: salesRank?.classificationRanks?.[0]?.title ?? null,
         salesRankOverall: salesRank?.displayGroupRanks?.[0]?.rank ?? null,
+        salesRankOverallName: salesRank?.displayGroupRanks?.[0]?.title ?? null,
         price: null,
     };
 };
@@ -451,15 +453,16 @@ exports.getCompetitorsData = async (req, res) => {
             { $match: matchQuery },
             {
                 $addFields: {
+                    // Unranked products (missing / null / "") sort last when sorting by rank
                     classificationRankSort: {
-                        $cond: [{ $or: [{ $eq: ["$classificationRanks", null] }, { $eq: ["$classificationRanks", ""] }] }, Number.MAX_SAFE_INTEGER, "$classificationRanks"]
+                        $cond: [{ $or: [{ $eq: [{ $ifNull: ["$classificationRanks", null] }, null] }, { $eq: ["$classificationRanks", ""] }] }, Number.MAX_SAFE_INTEGER, "$classificationRanks"]
                     }
                 }
             },
             {
                 $facet: {
                     lists: [
-                        { $sort: { [fieldName]: sortOrder, classificationRanks: 1 } },
+                        { $sort: fieldName === "classificationRanks" ? { classificationRankSort: Number(sortOrder) || 1, price: 1 } : { [fieldName]: Number(sortOrder) || 1, classificationRankSort: 1 } },
                         { $skip: (Number(page) - 1) * Number(limit) },
                         { $limit: Number(limit) }
                     ],

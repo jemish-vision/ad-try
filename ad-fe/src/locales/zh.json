@@ -7828,7 +7828,6 @@
   "Cheapest Rival Brand": "最便宜的竞品品牌",
   "You are {{amount}} higher": "您高出 {{amount}}",
   "You are the cheaper option": "您的价格更低",
-  "On this page of results": "在当前结果页中",
   "Our offer vs Buy Box winner": "我方报价 vs Buy Box 赢家",
   "Our offer vs lowest-priced seller": "我方报价 vs 最低价卖家",
   "Delta = our price − theirs · red = we're more expensive": "差额 = 我方价格 − 对方价格 · 红色 = 我方更贵",
@@ -7864,5 +7863,8 @@
   "All rival products found for this item. Sort by price or rank, and click Compare on any row to see it side by side.": "为此商品找到的所有竞品商品。可按价格或排名排序，点击任意行的“对比”即可并排查看。",
   "Compare Offers": "对比报价",
   "Compare your offer with other sellers on the same ASIN and with rival brand products.": "将您的报价与同一 ASIN 上的其他卖家及竞品品牌商品进行对比。",
-  "Open Competitor Comparison for this product to compare Buy Box, prices and rival brands side by side.": "打开此商品的竞品对比，并排比较 Buy Box、价格和竞品品牌。"
+  "Open Competitor Comparison for this product to compare Buy Box, prices and rival brands side by side.": "打开此商品的竞品对比，并排比较 Buy Box、价格和竞品品牌。",
+  "No active offer": "无有效报价",
+  "No active offer to compare": "没有可对比的有效报价",
+  "Lowest price among rival brands": "竞品品牌中的最低价"
 }
