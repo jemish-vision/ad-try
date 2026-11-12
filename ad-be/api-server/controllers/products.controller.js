@@ -14,6 +14,7 @@ const { cron_logs } = require("../../winston/cronAutomation/logger");
 const { getActivePlanProfiles, getSPAccessToken, parallelBulkWrite, getProfile, getAllowedSyncProfiles } = require("../helper/common");
 const amazonAxios = require("../helper/amazonAxios");
 const { product_write_logs } = require("../../winston/products/logger");
+const { write_logs } = require("../../winston/utility/logger");
 
 exports.cronFetchCompetitorsFromAmazon = async (customStartDate = null) => {
 
@@ -367,7 +368,10 @@ exports.getCompetitorBrands = async (req, res) => {
         if (!profile) return res.status(200).send({ isSuccess: false, message: "Profile not found or inactive" });
 
         const checkSPConfig = await getSPAccessToken(profile?.configId, profile?.profileId);
-        if (!checkSPConfig) return cron_logs({ message: `Account disconnected ${profile?.configId} [body] ${JSON.stringify(req?.body)}`, log_type: "info" });
+        if (!checkSPConfig) {
+            cron_logs({ message: `Account disconnected ${profile?.configId} [body] ${JSON.stringify(req?.body)}`, log_type: "info" });
+            return res.status(200).send({ isSuccess: false, message: "Seller Central account is not connected" });
+        }
 
         const marketplaceConfig = await marketPlaceConfigSchema.findOne({ marketPlaceId: profile?.marketplaceStringId, }).lean();
         const myProductData = await fetchMyProductData(asin, marketplaceConfig, checkSPConfig?.spAccessToken, configId, Number(profileId));
@@ -420,7 +424,10 @@ exports.getCompetitorsData = async (req, res) => {
         if (!profile) return res.status(200).send({ isSuccess: false, message: "Profile not found or inactive" });
 
         const checkSPConfig = await getSPAccessToken(profile?.configId, profile?.profileId);
-        if (!checkSPConfig) return cron_logs({ message: `Account disconnected ${profile?.configId} [body] ${JSON.stringify(req?.body)}`, log_type: "info" });
+        if (!checkSPConfig) {
+            cron_logs({ message: `Account disconnected ${profile?.configId} [body] ${JSON.stringify(req?.body)}`, log_type: "info" });
+            return res.status(200).send({ isSuccess: false, message: "Seller Central account is not connected" });
+        }
 
         const marketplaceConfig = await marketPlaceConfigSchema.findOne({ marketPlaceId: profile?.marketplaceStringId, }).lean();
         const myProductData = await fetchMyProductData(asin, marketplaceConfig, checkSPConfig?.spAccessToken, configId, Number(profileId));
