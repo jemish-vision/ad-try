@@ -15,7 +15,7 @@ const { getCacheWithLog, setCacheWithLog } = require("../services/redis.service"
 const amazonAxios = require("../helper/amazonAxios");
 const { retryWithBackoff } = require("../helper/retryHelper");
 const { write_logs } = require("../../winston/utility/logger");
-const { buildComparison } = require("../helpers/competitorComparison.helper");
+const { buildComparison, normalizeFees } = require("../helpers/competitorComparison.helper");
 
 // getItemOffers is limited to 0.5 req/s — cache briefly so re-opening the page doesn't burn quota.
 const CACHE_TTL_SECONDS = 180;
@@ -76,7 +76,7 @@ exports.getProductComparison = async (req, res) => {
         const catalogReq = retryWithBackoff(() =>
             amazonAxios({
                 method: "get",
-                url: `${endPoint}/catalog/2022-04-01/items/${asin}?marketplaceIds=${marketPlaceId}&includedData=summaries,images,salesRanks,attributes`,
+                url: `${endPoint}/catalog/2022-04-01/items/${asin}?marketplaceIds=${marketPlaceId}&includedData=summaries,images,salesRanks,attributes,relationships`,
                 headers,
                 meta,
             })
@@ -134,6 +134,92 @@ exports.getProductComparison = async (req, res) => {
         return res.status(200).send({ isSuccess: true, message: "Comparison fetched successfully", data: { ...data, cached: false } });
     } catch (error) {
         write_logs({ message: `[getProductComparison Error] asin=${asin} ${error?.message || error}`, log_type: "error" });
+        return res.status(500).send({ isSuccess: false, message: "Something went wrong", error: "An internal server error occurred" });
+    }
+};
+
+/**
+ * POST /api/products/fees-estimate
+ * body: { profileId, items: [{ asin, price, shipping?, isFba }] }   (max 4 items)
+ *
+ * Read-only Product Fees API (getMyFeesEstimateForASIN) — referral, FBA and closing fees
+ * for any ASIN at a given price. Each estimate is cached for 12h.
+ */
+const FEES_CACHE_TTL_SECONDS = 12 * 60 * 60;
+const MAX_FEE_ITEMS = 4;
+
+exports.getFeesEstimate = async (req, res) => {
+    const configId = req?.config?.configId || req.body?.configId || req.headers?.["x-config-id"];
+    const profileId = Number(req.body?.profileId);
+    const items = Array.isArray(req.body?.items) ? req.body.items.slice(0, MAX_FEE_ITEMS) : [];
+
+    try {
+        if (!configId || !profileId) return res.status(200).send({ isSuccess: false, message: "configId and profileId are required" });
+        if (!items.length) return res.status(200).send({ isSuccess: true, data: [] });
+
+        const profile = await getProfile(configId, profileId);
+        if (!profile) return res.status(200).send({ isSuccess: false, message: "Profile not found or inactive" });
+
+        const spConfig = await getSPAccessToken(profile.configId, profile.profileId);
+        if (!spConfig?.spAccessToken) return res.status(200).send({ isSuccess: false, message: "Seller Central account is not connected" });
+
+        const marketplaceConfig = await marketPlaceConfigSchema.findOne({ marketPlaceId: profile.marketplaceStringId }).lean();
+        if (!marketplaceConfig?.endPoint) return res.status(200).send({ isSuccess: false, message: "Marketplace configuration not found" });
+
+        const { endPoint, marketPlaceId } = marketplaceConfig;
+        const currency = req.body?.currency || profile.currencyCode || "USD";
+        const results = [];
+
+        // Sequential on purpose: fees API is rate limited (1 req/s)
+        for (const item of items) {
+            const asin = String(item?.asin || "").trim().toUpperCase();
+            const price = Number(item?.price);
+            const shipping = Number(item?.shipping) || 0;
+            const isFba = Boolean(item?.isFba);
+            if (!ASIN_REGEX.test(asin) || !(price > 0)) {
+                results.push({ asin, price: item?.price, isFba, fees: null });
+                continue;
+            }
+
+            const cacheKey = `feesEstimate_${marketPlaceId}_${asin}_${price.toFixed(2)}_${shipping.toFixed(2)}_${isFba ? "fba" : "fbm"}`;
+            const cached = safeParse(await getCacheWithLog(cacheKey));
+            if (cached) {
+                results.push({ asin, price, isFba, fees: cached });
+                continue;
+            }
+
+            try {
+                const resp = await retryWithBackoff(() =>
+                    amazonAxios({
+                        method: "post",
+                        url: `${endPoint}/products/fees/v0/items/${asin}/feesEstimate`,
+                        headers: { "x-amz-access-token": spConfig.spAccessToken, "Content-Type": "application/json" },
+                        data: {
+                            FeesEstimateRequest: {
+                                MarketplaceId: marketPlaceId,
+                                IsAmazonFulfilled: isFba,
+                                Identifier: `${asin}-${isFba ? "fba" : "fbm"}-${Date.now()}`,
+                                PriceToEstimateFees: {
+                                    ListingPrice: { CurrencyCode: currency, Amount: price },
+                                    Shipping: { CurrencyCode: currency, Amount: shipping },
+                                },
+                            },
+                        },
+                        meta: { configId, tokenKey: "spAccessToken", sp: true, profileId },
+                    })
+                );
+                const fees = normalizeFees(resp?.data?.payload?.FeesEstimateResult);
+                if (fees) await setCacheWithLog(cacheKey, JSON.stringify(fees), FEES_CACHE_TTL_SECONDS);
+                results.push({ asin, price, isFba, fees });
+            } catch (err) {
+                write_logs({ message: `[getFeesEstimate] asin=${asin} price=${price}: ${amazonErrorMessage(err)}`, log_type: "warn" });
+                results.push({ asin, price, isFba, fees: null, error: amazonErrorMessage(err) });
+            }
+        }
+
+        return res.status(200).send({ isSuccess: true, data: results });
+    } catch (error) {
+        write_logs({ message: `[getFeesEstimate Error] ${error?.message || error}`, log_type: "error" });
         return res.status(500).send({ isSuccess: false, message: "Something went wrong", error: "An internal server error occurred" });
     }
 };

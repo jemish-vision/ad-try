@@ -37,6 +37,9 @@ const spApiLimits = [
     { regex: /^\/products\/pricing\/v0\/competitivePrice$/, method: 'GET', rate: 0.5, burst: 1 },
     { regex: /^\/products\/pricing\/v0\/items\/[^/]+\/offers$/, method: 'GET', rate: 0.5, burst: 1 },
 
+    // --- PRODUCT FEES API (v0) ---
+    { regex: /^\/products\/fees\/v0\/items\/[^/]+\/feesEstimate$/, method: 'POST', rate: 1.0, burst: 2 },
+
     // --- PRODUCT TYPE DEFINITIONS API ---
     { regex: /^\/definitions\/2020-09-01\/productTypes/, method: 'GET', rate: 5.0, burst: 10 },
 

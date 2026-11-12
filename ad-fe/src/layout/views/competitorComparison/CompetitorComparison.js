@@ -16,7 +16,7 @@ import { Skeleton } from "../../../components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { ProfileContext } from "../../../helper/usecontext/useContext";
 import { getCurrencySymbol } from "../../../helper/currencyCode/CurrencyCode";
-import { ApiGetCompetitorsLists, ApiGetProductComparison, ApiGetSPProduct } from "../../../api-wrapper/productList/ApiProductList";
+import { ApiGetCompetitorsLists, ApiGetFeesEstimate, ApiGetProductComparison, ApiGetSPProduct } from "../../../api-wrapper/productList/ApiProductList";
 import "./CompetitorComparison.css";
 
 // Project palette (matches FBA Planning / Returns)
@@ -189,6 +189,10 @@ export default function CompetitorComparison() {
   const [rivalSort, setRivalSort] = useState("price_asc");
   const [selectedRival, setSelectedRival] = useState(null);
 
+  // Fee estimates keyed by asin|price|shipping|fba
+  const [fees, setFees] = useState({});
+  const feeKey = (it) => (it && isNum(it.price) && Number(it.price) > 0 ? `${it.asin}|${Number(it.price).toFixed(2)}|${Number(it.shipping || 0).toFixed(2)}|${it.isFba ? 1 : 0}` : null);
+
   // Our-product suggestions for the search box
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -348,6 +352,61 @@ export default function CompetitorComparison() {
 
   const sellerLabel = (o) => (o ? (o.isOurs ? t("You") : o.sellerId || t("Unknown seller")) : "—");
 
+  // Seller dispatch (handling) time from getItemOffers ShippingTime
+  const dispatchLabel = (o) => {
+    const st = o?.shippingTime;
+    if (!st) return null;
+    if (st.availability && st.availability !== "NOW") return t("Backordered");
+    const max = st.maxHours ?? st.minHours;
+    if (!isNum(max)) return null;
+    if (Number(max) <= 24) return t("Within 1 day");
+    const minD = Math.max(1, Math.ceil(Number(st.minHours ?? max) / 24));
+    const maxD = Math.ceil(Number(max) / 24);
+    return minD === maxD ? t("{{num}} days", { num: maxD }) : t("{{min}}–{{max}} days", { min: minD, max: maxD });
+  };
+
+  const feesFor = (it) => {
+    const k = feeKey(it);
+    return k ? fees[k] : undefined; // undefined = not loaded yet, null = unavailable
+  };
+  const feeCell = (f) => {
+    if (f === undefined) return <span style={{ color: textMuted }}>{t("Loading...")}</span>;
+    if (!f) return <span style={{ color: textMuted }}>—</span>;
+    const parts = [
+      f.referral ? `${t("Referral")} ${fmt(f.referral)}` : null,
+      f.fba ? `FBA ${fmt(f.fba)}` : null,
+      f.closing ? `${t("Closing")} ${fmt(f.closing)}` : null,
+    ].filter(Boolean);
+    return (
+      <div style={{ lineHeight: 1.35 }}>
+        <b>{fmt(f.total)}</b>
+        {parts.length > 0 && <div style={{ fontSize: 11, color: textMuted }}>{parts.join(" · ")}</div>}
+      </div>
+    );
+  };
+  // Net = (price + shipping) − Amazon fees. Higher is better for us.
+  const netOf = (price, f) => (isNum(price) && f && isNum(f.total) ? Math.round((Number(price) - f.total) * 100) / 100 : null);
+  const netDelta = (ourNet, theirNet) => {
+    if (!isNum(ourNet) || !isNum(theirNet)) return <span style={{ color: textMuted }}>—</span>;
+    const d = Math.round((ourNet - theirNet) * 100) / 100;
+    if (d === 0) return <Badge isDark={isDark}>{t("Same")}</Badge>;
+    const amount = `${currency}${Math.abs(d).toFixed(2)}`;
+    return d > 0 ? (
+      <Badge tone="good" icon="fa-arrow-up" isDark={isDark}>{t("{{amount}} more per sale", { amount })}</Badge>
+    ) : (
+      <Badge tone="bad" icon="fa-arrow-down" isDark={isDark}>{t("{{amount}} less per sale", { amount })}</Badge>
+    );
+  };
+  const feeDelta = (ourF, theirF) => (ourF && theirF ? priceDelta(Math.round((ourF.total - theirF.total) * 100) / 100) : <span style={{ color: textMuted }}>—</span>);
+
+  // Fee request items: Case A uses each seller's real price + fulfillment
+  const ourFeeItemA = ours && data ? { asin: data.asin, price: ours.listingPrice, shipping: ours.shipping || 0, isFba: ours.fulfillment === "FBA" } : null;
+  const rivalFeeItemA = rival && data ? { asin: data.asin, price: rival.listingPrice, shipping: rival.shipping || 0, isFba: rival.fulfillment === "FBA" } : null;
+  const ourFeesA = feesFor(ourFeeItemA);
+  const rivalFeesA = feesFor(rivalFeeItemA);
+  const ourNetA = netOf(ours?.landedPrice, ourFeesA);
+  const rivalNetA = netOf(rival?.landedPrice, rivalFeesA);
+
   const pricePerUnit = (price, unitValue, unitType) => (isNum(price) && isNum(unitValue) && Number(unitValue) > 0 ? `${currency}${(price / unitValue).toFixed(2)}/${unitType || t("unit")}` : null);
 
   /* ── Case A: matrix rows ── */
@@ -399,6 +458,24 @@ export default function CompetitorComparison() {
           <Badge isDark={isDark}>{t("Even")}</Badge>
         ),
     },
+    {
+      key: "dispatch",
+      label: t("Dispatch Time"),
+      ours: dispatchLabel(ours) || "—",
+      rival: dispatchLabel(rival) || "—",
+      delta:
+        isNum(ours?.shippingTime?.maxHours) && isNum(rival?.shippingTime?.maxHours) && ours.shippingTime.maxHours !== rival.shippingTime.maxHours ? (
+          ours.shippingTime.maxHours < rival.shippingTime.maxHours ? (
+            <Badge tone="good" isDark={isDark}>{t("We dispatch faster")}</Badge>
+          ) : (
+            <Badge tone="bad" isDark={isDark}>{t("Rival dispatches faster")}</Badge>
+          )
+        ) : (
+          <Badge isDark={isDark}>{t("Even")}</Badge>
+        ),
+    },
+    { key: "fees", label: t("Amazon Fees (est.)"), ours: ours ? feeCell(ourFeesA) : "—", rival: rival ? feeCell(rivalFeesA) : "—", delta: feeDelta(ourFeesA, rivalFeesA) },
+    { key: "net", label: t("Net After Amazon Fees"), ours: <b>{fmt(ourNetA)}</b>, rival: <b>{fmt(rivalNetA)}</b>, delta: netDelta(ourNetA, rivalNetA), emphasis: true },
   ];
 
   /* ── Case B: side-by-side rows ── */
@@ -427,6 +504,14 @@ export default function CompetitorComparison() {
     return priceDelta(Math.round((ourPrice / data.product.unitValue - sr.price / sr.unitValue) * 100) / 100);
   };
 
+  // Case B: rival fulfillment is unknown, so both sides are estimated without FBA fees (same basis)
+  const ourFeeItemB = data && isNum(ourPrice) ? { asin: data.asin, price: ourPrice, shipping: 0, isFba: false } : null;
+  const rivalFeeItemB = sr && isNum(sr.price) ? { asin: sr.asin, price: sr.price, shipping: 0, isFba: false } : null;
+  const ourFeesB = feesFor(ourFeeItemB);
+  const rivalFeesB = feesFor(rivalFeeItemB);
+  const ourNetB = netOf(ourPrice, ourFeesB);
+  const rivalNetB = netOf(sr?.price, rivalFeesB);
+
   const rivalRows = sr
     ? [
       { key: "brand", label: t("Brand"), ours: data?.product?.brand || "—", rival: sr.brand, delta: null },
@@ -448,8 +533,42 @@ export default function CompetitorComparison() {
         rival: isNum(sr.unitValue) ? `${sr.unitValue} ${sr.unitType || ""}` : "—",
         delta: null,
       },
+      { key: "fees", label: t("Selling Fees (est.)"), ours: isNum(ourPrice) ? feeCell(ourFeesB) : "—", rival: feeCell(rivalFeesB), delta: feeDelta(ourFeesB, rivalFeesB) },
+      { key: "net", label: t("Net After Selling Fees"), ours: <b>{fmt(ourNetB)}</b>, rival: <b>{fmt(rivalNetB)}</b>, delta: netDelta(ourNetB, rivalNetB), emphasis: true },
     ]
     : [];
+
+  // Load fee estimates for whatever is on screen (deduped, cached server-side for 12h)
+  const feeItems = [ourFeeItemA, rivalFeeItemA, ourFeeItemB, rivalFeeItemB].filter((it) => feeKey(it));
+  const feeItemsSig = feeItems.map(feeKey).sort().join(",");
+  useEffect(() => {
+    if (!pId || !feeItemsSig) return;
+    const wanted = [];
+    const seen = new Set();
+    for (const it of feeItems) {
+      const k = feeKey(it);
+      if (k && !seen.has(k) && fees[k] === undefined) {
+        seen.add(k);
+        wanted.push(it);
+      }
+    }
+    if (!wanted.length) return;
+    let cancelled = false;
+    ApiGetFeesEstimate({ profileId: pId, currency: data?.currency || currencyCode, items: wanted }).then((res) => {
+      if (cancelled) return;
+      setFees((prev) => {
+        const next = { ...prev };
+        wanted.forEach((it, i) => {
+          next[feeKey(it)] = res?.isSuccess ? res.data?.[i]?.fees ?? null : null;
+        });
+        return next;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pId, feeItemsSig]);
 
   /* ── Grids ── */
 
@@ -495,6 +614,7 @@ export default function CompetitorComparison() {
           o && cell(o.isOurs || !isNum(ours?.landedPrice) || !isNum(o.landedPrice) ? <span style={{ color: textMuted }}>—</span> : priceDelta(Math.round((ours.landedPrice - o.landedPrice) * 100) / 100)),
       },
       { headerName: t("Fulfillment"), field: "fulfillment", width: 120, cellRenderer: ({ data: o }) => o && cell(o.fulfillment || "—") },
+      { headerName: t("Dispatch Time"), field: "shippingTime", width: 140, cellRenderer: ({ data: o }) => o && cell(dispatchLabel(o) || <span style={{ color: textMuted }}>—</span>) },
       {
         headerName: t("Prime"),
         field: "isPrime",
@@ -829,10 +949,21 @@ export default function CompetitorComparison() {
                         <Badge isDark={isDark}>ASIN: {data.asin}</Badge>
                         {data.ourSku && <Badge isDark={isDark}>SKU: {data.ourSku}</Badge>}
                         {data.product?.brand && <Badge tone="info" isDark={isDark}>{data.product.brand}</Badge>}
-                        {data.product?.salesRank && (
-                          <Badge tone="info" icon="fa-ranking-star" isDark={isDark}>
-                            BSR #{Number(data.product.salesRank.rank).toLocaleString()}
-                            {data.product.salesRank.category ? ` · ${data.product.salesRank.category}` : ""}
+                        {(data.product?.allRanks?.length ? data.product.allRanks : data.product?.salesRank ? [data.product.salesRank] : []).map((r, i) => (
+                          <Badge key={`rank-${i}`} tone="info" icon="fa-ranking-star" isDark={isDark}>
+                            #{Number(r.rank).toLocaleString()}
+                            {r.category ? ` · ${r.category}` : ""}
+                          </Badge>
+                        ))}
+                        {data.product?.variations?.isParent && (
+                          <Badge icon="fa-layer-group" isDark={isDark}>
+                            {t("Parent of {{num}} variations", { num: data.product.variations.childCount })}
+                          </Badge>
+                        )}
+                        {data.product?.variations?.parentAsin && (
+                          <Badge icon="fa-layer-group" isDark={isDark}>
+                            {t("Variation of {{asin}}", { asin: data.product.variations.parentAsin })}
+                            {data.product.variations.attributes?.length ? ` · ${data.product.variations.attributes.join(" / ")}` : ""}
                           </Badge>
                         )}
                         {ours?.fulfillment && <Badge isDark={isDark}>{ours.fulfillment}</Badge>}
@@ -853,7 +984,7 @@ export default function CompetitorComparison() {
                     icon="fa-crown"
                     accent={cmp?.weHaveBuyBox ? P.success : data.buyBoxOffer ? P.danger : P.warning}
                   />
-                  <SummaryTile isDark={isDark} title={t("Sellers on ASIN")} value={summary?.newOfferCount ?? summary?.totalOfferCount ?? "—"} sub={t("New condition offers")} icon="fa-store" accent={P.primaryDeep} />
+                  <SummaryTile isDark={isDark} title={t("Sellers on ASIN")} value={summary?.newOfferCount ?? summary?.totalOfferCount ?? "—"} sub={isNum(summary?.buyBoxEligibleCount) ? t("{{num}} Buy Box eligible", { num: summary.buyBoxEligibleCount }) : t("New condition offers")} icon="fa-store" accent={P.primaryDeep} />
                   <SummaryTile isDark={isDark} title={t("Rival Brands Tracked")} value={rivals.totalRecords} sub={t("Similar products found on Amazon")} icon="fa-people-arrows" accent={P.warning} />
                   <SummaryTile
                     isDark={isDark}
@@ -965,6 +1096,9 @@ export default function CompetitorComparison() {
                           oursHeader={<ProductHeaderCell img={data.product?.image} title={data.product?.title || data.asin} sub={t("Our Product")} highlight />}
                           rivalHeader={<ProductHeaderCell img={sr.imageUrl} title={sr.name} sub={`${t("Rival")} · ${sr.asin}`} />}
                         />
+                        <div style={{ fontSize: 11.5, color: textMuted, padding: isMobile ? "0 12px 14px" : "0 24px 18px" }}>
+                          {t("Selling fees are Amazon's estimate of referral and closing fees at each product's current price. FBA fees are left out for both, because a rival's fulfillment method isn't known, so both products are compared on the same basis.")}
+                        </div>
                       </Section>
                     ) : null}
 

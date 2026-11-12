@@ -70,9 +70,14 @@ const normalizeSummary = (summary) => {
         .filter((x) => String(x.condition || "").toLowerCase() === "new")
         .reduce((acc, x) => acc + (Number(x.OfferCount) || 0), 0);
 
+    const buyBoxEligible = (summary.BuyBoxEligibleOffers || [])
+        .filter((x) => String(x.condition || "").toLowerCase() === "new")
+        .reduce((acc, x) => acc + (Number(x.OfferCount) || 0), 0);
+
     return {
         totalOfferCount: summary.TotalOfferCount ?? null,
         newOfferCount: totalNew || null,
+        buyBoxEligibleCount: Array.isArray(summary.BuyBoxEligibleOffers) ? buyBoxEligible : null,
         buyBoxPrice: bb
             ? {
                 landedPrice: round2(money(bb.LandedPrice)),
@@ -99,6 +104,25 @@ const normalizeCatalog = (item, marketplaceId) => {
     const displayGroup = rankSet?.displayGroupRanks?.[0];
     const a = item.attributes || {};
 
+    // Every rank Amazon reports: sub-categories first, then the overall (display group) rank
+    const allRanks = [
+        ...(rankSet?.classificationRanks || []).map((r) => ({ rank: r.rank, category: r.title, type: "category" })),
+        ...(rankSet?.displayGroupRanks || []).map((r) => ({ rank: r.rank, category: r.title, type: "overall" })),
+    ].filter((r) => r.rank !== undefined && r.rank !== null);
+
+    // Variation family (size/colour etc.)
+    const relSet = (item.relationships || []).find((s) => s.marketplaceId === marketplaceId) || item.relationships?.[0];
+    const variation = (relSet?.relationships || []).find((r) => r.type === "VARIATION");
+    const variations = variation
+        ? {
+            parentAsin: variation.parentAsins?.[0] ?? null,
+            childCount: Array.isArray(variation.childAsins) ? variation.childAsins.length : 0,
+            isParent: Array.isArray(variation.childAsins) && variation.childAsins.length > 0,
+            theme: variation.variationTheme?.theme ?? null,
+            attributes: variation.variationTheme?.attributes ?? [],
+        }
+        : null;
+
     return {
         asin: item.asin ?? null,
         title: summary.itemName ?? a.item_name?.[0]?.value ?? null,
@@ -114,6 +138,37 @@ const normalizeCatalog = (item, marketplaceId) => {
             : displayGroup
                 ? { rank: displayGroup.rank, category: displayGroup.title }
                 : null,
+        allRanks,
+        variations,
+    };
+};
+
+/**
+ * Product Fees API (getMyFeesEstimateForASIN) result -> { total, referral, fba, closing, other, currency }
+ */
+const normalizeFees = (result) => {
+    const est = result?.FeesEstimate;
+    if (!est || (result?.Status && result.Status !== "Success")) return null;
+    const amt = (fee) => money(fee?.FinalFee) ?? money(fee?.FeeAmount) ?? 0;
+    let referral = 0;
+    let fba = 0;
+    let closing = 0;
+    let other = 0;
+    for (const f of est.FeeDetailList || []) {
+        const type = String(f.FeeType || "");
+        if (type === "ReferralFee") referral += amt(f);
+        else if (/^FBA/i.test(type)) fba += amt(f);
+        else if (/Closing|PerItem/i.test(type)) closing += amt(f);
+        else other += amt(f);
+    }
+    const total = money(est.TotalFeesEstimate) ?? referral + fba + closing + other;
+    return {
+        total: round2(total),
+        referral: round2(referral),
+        fba: round2(fba),
+        closing: round2(closing),
+        other: round2(other),
+        currency: est.TotalFeesEstimate?.CurrencyCode ?? null,
     };
 };
 
@@ -208,4 +263,4 @@ const buildComparison = ({ offersPayload, catalogItem, ourSellerId, marketplaceI
     };
 };
 
-module.exports = { normalizeOffer, normalizeSummary, normalizeCatalog, buildComparison };
+module.exports = { normalizeOffer, normalizeSummary, normalizeCatalog, normalizeFees, buildComparison };

@@ -110,5 +110,11 @@ const ApiGetProductComparison = ({ asin, profileId, refresh = false }) => {
         .then(res => res.data).catch(err => err?.response?.data || { isSuccess: false, message: err?.message })
 }
 
-export { ApiGetProductComparison, ApiCreateProduct, ApiGenerateProductData, ApiAddProduct, ApiGetSPProduct, ApiChangeProductSetting, ApiFileUpload, ApiGetProductTypes, ApiGetProductDefinition, ApiCheckASIN, ApiCheckASINFromDB, ApiProductSearchOnAmazon, ApiParseFields, ApiUpdateProductPrice, ApiBulkUpdateProductPrice, ApiToggleProductFavorite, ApiGetListofCompetitorsProduct, ApiGetCompetitorsBrands, ApiGetCompetitorsLists }
+// Read-only fee estimates (Product Fees API): items = [{ asin, price, shipping, isFba }]
+const ApiGetFeesEstimate = (data) => {
+    return axios.post(`${apiProducts}fees-estimate`, data, { headers })
+        .then(res => res.data).catch(err => err?.response?.data || { isSuccess: false, message: err?.message })
+}
+
+export { ApiGetFeesEstimate, ApiGetProductComparison, ApiCreateProduct, ApiGenerateProductData, ApiAddProduct, ApiGetSPProduct, ApiChangeProductSetting, ApiFileUpload, ApiGetProductTypes, ApiGetProductDefinition, ApiCheckASIN, ApiCheckASINFromDB, ApiProductSearchOnAmazon, ApiParseFields, ApiUpdateProductPrice, ApiBulkUpdateProductPrice, ApiToggleProductFavorite, ApiGetListofCompetitorsProduct, ApiGetCompetitorsBrands, ApiGetCompetitorsLists }
 

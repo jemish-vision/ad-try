@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { buildComparison, normalizeOffer } = require('../api-server/helpers/competitorComparison.helper');
+const { buildComparison, normalizeOffer, normalizeFees } = require('../api-server/helpers/competitorComparison.helper');
 
 const offer = (o) => ({
   SellerId: o.id,
@@ -129,4 +129,46 @@ test('pack size falls back to number_of_items / item_package_quantity', () => {
 test('category falls back to the overall (display group) rank', () => {
   const p = buildComparison({ offersPayload: payload([]), catalogItem: { asin: 'B0X', summaries: [{ marketplaceId: 'M' }], salesRanks: [{ marketplaceId: 'M', displayGroupRanks: [{ title: 'Bags', rank: 1234 }] }] }, ourSellerId: 'ME', marketplaceId: 'M' }).product;
   assert.deepEqual(p.salesRank, { rank: 1234, category: 'Bags' });
+});
+
+test('normalizeFees splits referral / FBA / closing fees', () => {
+  const fees = normalizeFees({
+    Status: 'Success',
+    FeesEstimate: {
+      TotalFeesEstimate: { CurrencyCode: 'INR', Amount: 128.5 },
+      FeeDetailList: [
+        { FeeType: 'ReferralFee', FinalFee: { Amount: 74.85 } },
+        { FeeType: 'FBAFees', FinalFee: { Amount: 41.65 } },
+        { FeeType: 'FixedClosingFee', FinalFee: { Amount: 12 } },
+        { FeeType: 'VariableClosingFee', FinalFee: { Amount: 0 } },
+      ],
+    },
+  });
+  assert.deepEqual(fees, { total: 128.5, referral: 74.85, fba: 41.65, closing: 12, other: 0, currency: 'INR' });
+  assert.equal(normalizeFees({ Status: 'ClientError' }), null);
+});
+
+test('summary exposes Buy Box eligible offer count', () => {
+  const p = payload([]);
+  p.Summary.BuyBoxEligibleOffers = [{ condition: 'new', fulfillmentChannel: 'Amazon', OfferCount: 2 }, { condition: 'new', fulfillmentChannel: 'Merchant', OfferCount: 1 }, { condition: 'used', OfferCount: 5 }];
+  const data = buildComparison({ offersPayload: p, ourSellerId: 'ME', marketplaceId: 'M' });
+  assert.equal(data.summary.buyBoxEligibleCount, 3);
+});
+
+test('catalog exposes all ranks and variation family', () => {
+  const p = buildComparison({
+    offersPayload: payload([]),
+    catalogItem: {
+      asin: 'B0CHILD',
+      summaries: [{ marketplaceId: 'M' }],
+      salesRanks: [{ marketplaceId: 'M', classificationRanks: [{ title: 'Totes', rank: 40 }, { title: 'Shoulder Bags', rank: 310 }], displayGroupRanks: [{ title: 'Bags', rank: 5120 }] }],
+      relationships: [{ marketplaceId: 'M', relationships: [{ type: 'VARIATION', parentAsins: ['B0PARENT'], variationTheme: { theme: 'SIZE_NAME/COLOR_NAME', attributes: ['size', 'color'] } }] }],
+    },
+    ourSellerId: 'ME',
+    marketplaceId: 'M',
+  }).product;
+  assert.deepEqual(p.allRanks.map((r) => [r.rank, r.category, r.type]), [[40, 'Totes', 'category'], [310, 'Shoulder Bags', 'category'], [5120, 'Bags', 'overall']]);
+  assert.equal(p.variations.parentAsin, 'B0PARENT');
+  assert.equal(p.variations.isParent, false);
+  assert.deepEqual(p.variations.attributes, ['size', 'color']);
 });
