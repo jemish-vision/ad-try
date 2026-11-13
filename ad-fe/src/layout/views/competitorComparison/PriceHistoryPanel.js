@@ -59,8 +59,8 @@ function Tile({ title, value, sub, icon, accent, isDark }) {
 export default function PriceHistoryPanel({ asin, profileId, isDark, isMobile, currency, rivalAsin, Section }) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const canView = Boolean(PermissionCheck(SYSTEM_PAGES.COMPETITOR_PRICE_HISTORY, PAGE_ACTIONS.VIEW_ONLY));
-  const canEdit = Boolean(PermissionCheck(SYSTEM_PAGES.COMPETITOR_PRICE_HISTORY, PAGE_ACTIONS.UPDATE));
+  const canView = Boolean(PermissionCheck(SYSTEM_PAGES.COMPETITOR_COMPARISON, PAGE_ACTIONS.VIEW_ONLY));
+  const canEdit = Boolean(PermissionCheck(SYSTEM_PAGES.COMPETITOR_COMPARISON, PAGE_ACTIONS.UPDATE));
 
   const textPrimary = isDark ? "var(--text-primary)" : P.neutral800;
   const textSecondary = isDark ? "var(--text-secondary)" : P.neutral600;

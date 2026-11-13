@@ -323,19 +323,22 @@ function ProductList() {
                     {t("View Competitors")}
                   </Button>
 
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    id={"product-list-compare-offers-" + params.node.rowIndex}
-                    className="sku-btn-competitors"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigate(`/competitor-comparison?asin=${row?.asin}`);
-                    }}
-                  >
-                    <i className="fas fa-balance-scale" style={{ fontSize: "10px" }}></i>
-                    {t("Compare Offers")}
-                  </Button>
+                  {/* Competitor Comparison is an Enterprise page: only show the shortcut when the plan/role includes it */}
+                  {PermissionCheck(SYSTEM_PAGES.COMPETITOR_COMPARISON, PAGE_ACTIONS.VIEW_ONLY) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      id={"product-list-compare-offers-" + params.node.rowIndex}
+                      className="sku-btn-competitors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/competitor-comparison?asin=${row?.asin}`);
+                      }}
+                    >
+                      <i className="fas fa-balance-scale" style={{ fontSize: "10px" }}></i>
+                      {t("Compare Offers")}
+                    </Button>
+                  )}
 
                   {PermissionCheck(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.UPDATE) && (() => {
                     const batchJob = pendingAPlusJobs.get(row?.asin);

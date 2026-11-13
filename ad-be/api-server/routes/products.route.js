@@ -14,14 +14,14 @@ router.post("/competitors/brands", verifyToken, validateRoutePermission(SYSTEM_P
 router.post("/competitors/list", verifyToken, validateRoutePermission(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.VIEW_ONLY), getCompetitorsData);
 
 // Read-only fee estimates (Product Fees API) for the comparison page
-router.post("/fees-estimate", verifyToken, validateRoutePermission(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.VIEW_ONLY), getFeesEstimate);
+router.post("/fees-estimate", verifyToken, validateRoutePermission(SYSTEM_PAGES.COMPETITOR_COMPARISON, PAGE_ACTIONS.VIEW_ONLY), getFeesEstimate);
 
 // Read-only same-ASIN comparison: our offer vs other sellers / Buy Box (getCatalogItem + getItemOffers)
-router.get("/:asin/compare", verifyToken, validateRoutePermission(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.VIEW_ONLY), getProductComparison);
+router.get("/:asin/compare", verifyToken, validateRoutePermission(SYSTEM_PAGES.COMPETITOR_COMPARISON, PAGE_ACTIONS.VIEW_ONLY), getProductComparison);
 
-// Competitor Price History (Enterprise plans: page "Competitor Price History" in the plan)
-router.get("/history-settings", verifyToken, validateRoutePermission(SYSTEM_PAGES.COMPETITOR_PRICE_HISTORY, PAGE_ACTIONS.VIEW_ONLY), getHistorySettings);
-router.put("/history-settings", verifyToken, validateRoutePermission(SYSTEM_PAGES.COMPETITOR_PRICE_HISTORY, PAGE_ACTIONS.UPDATE), updateHistorySettings);
-router.get("/:asin/history", verifyToken, validateRoutePermission(SYSTEM_PAGES.COMPETITOR_PRICE_HISTORY, PAGE_ACTIONS.VIEW_ONLY), getAsinHistory);
+// Competitor Price History — part of the Competitor Comparison page (Enterprise plans)
+router.get("/history-settings", verifyToken, validateRoutePermission(SYSTEM_PAGES.COMPETITOR_COMPARISON, PAGE_ACTIONS.VIEW_ONLY), getHistorySettings);
+router.put("/history-settings", verifyToken, validateRoutePermission(SYSTEM_PAGES.COMPETITOR_COMPARISON, PAGE_ACTIONS.UPDATE), updateHistorySettings);
+router.get("/:asin/history", verifyToken, validateRoutePermission(SYSTEM_PAGES.COMPETITOR_COMPARISON, PAGE_ACTIONS.VIEW_ONLY), getAsinHistory);
 
 module.exports = router;

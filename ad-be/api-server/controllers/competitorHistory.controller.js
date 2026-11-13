@@ -1,9 +1,9 @@
 /**
  * Competitor Price History (Enterprise) — read APIs + organization retention setting.
  *
- * GET  /api/products/:asin/history?profileId=&days=&rivalAsin=   (Competitor Price History · View Only)
- * GET  /api/products/history-settings                            (Competitor Price History · View Only)
- * PUT  /api/products/history-settings  { retentionDays }         (Competitor Price History · Update)
+ * GET  /api/products/:asin/history?profileId=&days=&rivalAsin=   (Competitor Comparison · View Only)
+ * GET  /api/products/history-settings                            (Competitor Comparison · View Only)
+ * PUT  /api/products/history-settings  { retentionDays }         (Competitor Comparison · Update)
  */
 const moment = require("moment-timezone");
 

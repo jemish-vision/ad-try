@@ -3,7 +3,7 @@
  *
  * Runs hourly from the SP-API queue (task "asin-snapshot"). Each profile is snapshotted once per
  * local day, at or after SNAPSHOT_LOCAL_HOUR in the profile's timezone. A profile is included only if
- *   1. its organization's plan contains the "Competitor Price History" page (set in Super Admin → Plans),
+ *   1. its organization's plan contains the "Competitor Comparison" page (Enterprise; set in Super Admin → Plans),
  *   2. its SELLER_CATALOG sync is COMPLETED.
  *
  * Per profile:
@@ -143,12 +143,12 @@ const selectRivalsForSnapshot = (competitorDocs, cap = RIVALS_PER_ASIN) => {
 let historyPageIdCache = { id: null, at: 0 };
 const getHistoryPageId = async () => {
   if (historyPageIdCache.id && Date.now() - historyPageIdCache.at < 10 * 60 * 1000) return historyPageIdCache.id;
-  const page = await pageSchema.findOne({ pageName: SYSTEM_PAGES.COMPETITOR_PRICE_HISTORY, isActive: { $ne: false } }).select("_id").lean();
+  const page = await pageSchema.findOne({ pageName: SYSTEM_PAGES.COMPETITOR_COMPARISON, isActive: { $ne: false } }).select("_id").lean();
   historyPageIdCache = { id: page?._id || null, at: Date.now() };
   return historyPageIdCache.id;
 };
 
-/** True if the plan includes the Competitor Price History page (configured in Super Admin → Plans). */
+/** True if the plan includes the Competitor Comparison page (configured in Super Admin → Plans). */
 const planHasHistoryFeature = async (planId) => {
   if (!planId) return false;
   const pageId = await getHistoryPageId();

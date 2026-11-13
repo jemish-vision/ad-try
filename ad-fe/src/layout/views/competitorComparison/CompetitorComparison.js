@@ -800,7 +800,7 @@ export default function CompetitorComparison() {
       id: "history",
       label: t("Price History"),
       icon: "fa-chart-line",
-      locked: !PermissionCheck(SYSTEM_PAGES.COMPETITOR_PRICE_HISTORY, PAGE_ACTIONS.VIEW_ONLY),
+      locked: !PermissionCheck(SYSTEM_PAGES.COMPETITOR_COMPARISON, PAGE_ACTIONS.VIEW_ONLY),
     },
   ];
 

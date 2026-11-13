@@ -89,8 +89,7 @@ function App() {
         }
 
         // 3. Check dynamic permissions from BE
-        let isAllowed = role === ROLES.SUPER_ADMIN || allowedNames.some(name => currentRoute.name === name || currentRoute.name.includes(name)) || alwaysAllow.includes(currentRoute.name)
-          || (currentRoute.name === "Competitor Comparison" && allowedNames.includes(SYSTEM_PAGES.PRODUCT_LIST));
+        let isAllowed = role === ROLES.SUPER_ADMIN || allowedNames.some(name => currentRoute.name === name || currentRoute.name.includes(name)) || alwaysAllow.includes(currentRoute.name);
 
         if (currentRoute.name === SYSTEM_PAGES.DASHBOARD && role !== ROLES.SUPER_ADMIN) {
           const dashPerm = pagePermission.find(p => p.pageName === SYSTEM_PAGES.DASHBOARD);
