@@ -1,5 +1,5 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
-import React, { useContext, useEffect, useMemo } from "react";
+import React, { useContext, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { ProfileContext } from "../../usecontext/useContext";
 
@@ -8,18 +8,11 @@ function ConfigTypeDropdown({ compact = false }) {
     const { selectedAdType: selection, setSelectedAdType: setSelection } = useContext(ProfileContext);
 
     const typeList = useMemo(() => [
-        // "All" = SP + SB + SD combined. Listed first per request; SP remains the
-        // default (the seeding effect below seeds "SP" explicitly, not typeList[0]).
         { key: "All", label: t("All Ad Types") },
         { key: "SP", label: t("Sponsored Products") },
         { key: "SB", label: t("Sponsored Brands") },
         { key: "SD", label: t("Sponsored Display") }
     ], [t]);
-
-    useEffect(() => {
-        if (!selection) setSelection("SP");
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selection]);
 
     return (
         <Select value={selection || "SP"} onValueChange={(val) => {

@@ -15,7 +15,7 @@ export function UseContext({ children }) {
     }
   });
   const [profileData, setProfileData] = useState();
-  const [selectedAdType, setSelectedAdType] = useState(localStorage.getItem("adType"));
+  const [selectedAdType, setSelectedAdType] = useState(() => localStorage.getItem("adType") || "SP");
   const [selectedConfig, setSelectedConfig] = useState();
   const [selectedDate, setSelectedDate] = useState(() => {
     try {

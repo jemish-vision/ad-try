@@ -1,4 +1,4 @@
-const { buildTargetingMetricsPipeline } = require("../helper/targetingMetricsPipeline");
+const { buildTargetingMetricsPipeline, resolveSPAutoTargetBids } = require("../helper/targetingMetricsPipeline");
 const { applyBidHistoryAcos } = require("../helper/historyBidAcos");
 const { buildFilteredTargetingPipeline, canFilterWithoutCampaignJoin, buildArchivedCampaignPipeline } = require("../helper/filteredTargetingPipeline");
 const { getConditionRows, captureManualSelection, prepareSnapshotBulkUpdates, updateSnapshotHistory } = require("../helpers/ruleConditionSnapshotHelper");
@@ -1237,6 +1237,7 @@ exports.getTargeting = async (req, res) => {
 
         const baseGroupPipeline = [
             ...buildTargetingMetricsPipeline(query),
+            ...(adType === "SP" ? resolveSPAutoTargetBids(AD_TYPE_COLLECTIONS.SP.adGroup, resolvedConfigId) : []),
             {
                 $addFields: {
                     acos: {
@@ -9113,6 +9114,39 @@ exports.getTargetingHistory = async (req, res) => {
             }).lean().catch(() => []),
         ]);
 
+        const userIds = [...new Set((manualChanges || []).map(m => m.userId).filter(Boolean))];
+        const userDocs = userIds.length
+            ? await mongoose.connection.collection("users").find(
+                { _id: { $in: userIds.map(id => { try { return new mongoose.Types.ObjectId(id); } catch(e) { return id; } }) } },
+                { projection: { email: 1, name: 1 } }
+              ).toArray().catch(() => [])
+            : [];
+        const userMap = new Map();
+        for (const u of userDocs) {
+            userMap.set(String(u._id), u.email || u.name);
+        }
+
+        const adGroupCollection = AD_TYPE_COLLECTIONS?.[adType]?.["adGroup"] || "ad_groups";
+        const allAdGroupIds = [...new Set([
+            tRecord?.adGroupId,
+            ...(historyDocs || []).map(d => d.adGroupId),
+            ...(manualChanges || []).map(m => m.adGroupId),
+            ...(ruleActions || []).map(r => r.adGroupId),
+        ].filter(Boolean))];
+        const adGroupDocs = allAdGroupIds.length
+            ? await mongoose.connection.collection(adGroupCollection).find(
+                {
+                    configId: resolvedConfigId,
+                    adGroupId: { $in: allAdGroupIds.flatMap(id => [id, Number(id), String(id)].filter(x => (x !== undefined && x !== null && !isNaN(x)) || x)) }
+                },
+                { projection: { adGroupId: 1, name: 1 } }
+              ).toArray().catch(() => [])
+            : [];
+        const adGroupMap = new Map();
+        for (const ag of adGroupDocs) {
+            adGroupMap.set(String(ag.adGroupId), ag.name);
+        }
+
         const historyList = [];
 
         // Add entries from targetingHistory
@@ -9134,33 +9168,49 @@ exports.getTargetingHistory = async (req, res) => {
             const bidVal = doc.bid !== undefined && doc.bid !== null ? Number(doc.bid) : 0;
             const oldBidVal = doc.oldBid !== undefined && doc.oldBid !== null && Number(doc.oldBid) !== bidVal ? Number(doc.oldBid) : null;
 
-            let cSource = "Amazon";
+            let cSource = "Amazon API";
             const srcLower = String(doc.source || "").toLowerCase();
             if (srcLower.includes("dayparting")) cSource = "Dayparting";
             else if (srcLower.includes("rule")) cSource = "Rule";
+            else if (srcLower.includes("recommendation")) cSource = "Recommendation";
             else if (srcLower.includes("manual") || srcLower.includes("portal")) cSource = "Manual";
+            else if (srcLower.includes("amazon") || srcLower.includes("sqs") || srcLower.includes("stream")) cSource = "Amazon API";
 
+            const isPausedOrArchived = doc.state === "PAUSED" || doc.state === "ARCHIVED";
             let act = "Bid Updated";
-            if (doc.state && (doc.state === "PAUSED" || doc.state === "ARCHIVED")) {
+            if (isPausedOrArchived) {
                 act = `Status: ${doc.state.charAt(0) + doc.state.slice(1).toLowerCase()}`;
             } else if (oldBidVal !== null && oldBidVal !== undefined) {
                 act = bidVal > oldBidVal ? "Bid Increased" : bidVal < oldBidVal ? "Bid Decreased" : "Bid Updated";
             }
+            const cType = isPausedOrArchived ? "Update Targeting Status" : (doc.changeType || "Update Targeting Bid");
+            const resolvedAdGroupId = doc.adGroupId || tRecord?.adGroupId;
+            const resolvedAdGroupName = (resolvedAdGroupId && adGroupMap.get(String(resolvedAdGroupId))) || doc.adGroupName || tRecord?.adGroupName || "";
 
             historyList.push({
                 _id: doc._id,
                 lastChangeDate: date,
+                createdAt: date,
                 targeting: doc.targeting || targetName,
                 matchType: doc.match_type || doc.matchType || targetMatchType,
                 targetId: doc.targetId || doc.target_id || cleanTargetId,
-                ...(compareBids ? { campaignId: doc.campaignId || campaignId || tRecord?.campaignId, adGroupId: doc.adGroupId } : {}),
+                campaignId: doc.campaignId || campaignId || tRecord?.campaignId,
+                campaignName: targetCampaignName || doc.campaignName || "",
+                changeLevel: doc.campaignId || campaignId || tRecord?.campaignId,
+                adGroupId: resolvedAdGroupId,
+                adGroupName: resolvedAdGroupName || (resolvedAdGroupId ? `Ad Group #${resolvedAdGroupId}` : ""),
                 action: act,
+                changeType: cType,
                 previousValue: oldBidVal !== null && oldBidVal !== undefined ? oldBidVal : "—",
+                oldValue: oldBidVal !== null && oldBidVal !== undefined ? oldBidVal : "—",
                 updatedValue: bidVal !== null && bidVal !== undefined ? bidVal : doc.state || "—",
+                newValue: bidVal !== null && bidVal !== undefined ? bidVal : doc.state || "—",
                 bidAmount: bidVal,
                 oldBid: oldBidVal,
                 changeSource: cSource,
+                triggerSource: cSource,
                 source: doc.source || "Amazon Marketing Stream",
+                updatedBy: doc.updatedBy || "System",
                 acos: itemAcos,
                 oldAcos: itemOldAcos,
                 state: doc.state,
@@ -9191,7 +9241,11 @@ exports.getTargetingHistory = async (req, res) => {
             let cSource = "Manual";
             const rawSource = String(mc.source || mc.updatedFrom || mc.changeType || "").toLowerCase();
             if (rawSource.includes("dayparting")) cSource = "Dayparting";
-            else if (rawSource.includes("rule")) cSource = "Rule";
+            else if (rawSource.includes("recommendation")) cSource = "Recommendation";
+            else if (rawSource.includes("rule") || /cron/i.test(rawSource)) cSource = "Rule";
+            else if (rawSource.includes("amazon") || rawSource.includes("sqs") || rawSource.includes("stream")) cSource = "Amazon API";
+            else if (rawSource.includes("manual")) cSource = "Manual";
+            else if (/^update (targeting bid|target bid|camapign budget|campaign budget|placement bid|targeting status|target status)/i.test(String(mc.changeType || ""))) cSource = "Recommendation";
 
             let act = mc.changeType || "Bid Updated";
             if (/pause/i.test(String(mc.newValue)) || /status.*pause/i.test(String(mc.changeType))) {
@@ -9202,25 +9256,34 @@ exports.getTargetingHistory = async (req, res) => {
                 act = newValNum > oldValNum ? "Bid Increased" : newValNum < oldValNum ? "Bid Decreased" : "Bid Updated";
             }
 
+            const userEmail = mc.userId && userMap.get(String(mc.userId)) ? userMap.get(String(mc.userId)) : mc.updatedBy || (cSource === "Amazon API" ? "System" : cSource === "Rule" || cSource === "Dayparting" ? cSource : "System");
+            const resolvedMcAdGroupId = mc.adGroupId || tRecord?.adGroupId;
+            const resolvedMcAdGroupName = (resolvedMcAdGroupId && adGroupMap.get(String(resolvedMcAdGroupId))) || mc.adGroupDetails?.name || mc.adGroupName || tRecord?.adGroupName || "";
+
             historyList.push({
                 _id: mc._id,
                 lastChangeDate: mc.createdAt,
+                createdAt: mc.createdAt,
                 targeting: mc.targeting || targetName,
                 matchType: mc.matchType || targetMatchType,
                 targetId: mc.targetId || mc.changeLevel || cleanTargetId,
-                ...(compareBids ? {
-                    campaignId: campaignId || tRecord?.campaignId || mc.changeLevel,
-                    adGroupId: mc.adGroupId,
-                    targetId: mc.targetId || (targetId ? cleanTargetId : null),
-                    changeType: mc.changeType,
-                } : {}),
+                campaignId: campaignId || tRecord?.campaignId || mc.changeLevel,
+                campaignName: targetCampaignName || mc.campaignDetails?.name || "",
+                changeLevel: campaignId || tRecord?.campaignId || mc.changeLevel,
+                adGroupId: resolvedMcAdGroupId,
+                adGroupName: resolvedMcAdGroupName || (resolvedMcAdGroupId ? `Ad Group #${resolvedMcAdGroupId}` : ""),
                 action: act,
+                changeType: mc.changeType || "Update Targeting Bid",
                 previousValue: isOldNum ? oldValNum : (mc.oldValue || "—"),
+                oldValue: isOldNum ? oldValNum : (mc.oldValue || "—"),
                 updatedValue: isNewNum ? newValNum : (mc.newValue || "—"),
+                newValue: isNewNum ? newValNum : (mc.newValue || "—"),
                 oldBid: isOldNum ? oldValNum : null,
                 bidAmount: isNewNum ? newValNum : 0,
                 changeSource: cSource,
+                triggerSource: cSource,
                 source: mc.changeType || mc.updatedFrom || mc.source || "Manual (Platform)",
+                updatedBy: userEmail,
                 acos: currentAcos,
                 oldAcos: currentAcos,
             });
@@ -9241,24 +9304,33 @@ exports.getTargetingHistory = async (req, res) => {
                 act = newNum > oldNum ? "Bid Increased" : newNum < oldNum ? "Bid Decreased" : "Bid Updated";
             }
 
+            const resolvedRaAdGroupId = ra.adGroupId || (String(ra.amazonEntityId) === String(tRecord?.targetId) ? tRecord?.adGroupId : null);
+            const resolvedRaAdGroupName = (resolvedRaAdGroupId && adGroupMap.get(String(resolvedRaAdGroupId))) || tRecord?.adGroupName || "";
+
             historyList.push({
                 _id: ra._id,
                 lastChangeDate: ra.appliedAt || ra.startedAt || ra.createdAt,
+                createdAt: ra.appliedAt || ra.startedAt || ra.createdAt,
                 targeting: targetName,
                 matchType: targetMatchType,
                 targetId: ra.amazonEntityId || cleanTargetId,
-                ...(compareBids ? {
-                    campaignId: ra.campaignId || campaignId || tRecord?.campaignId,
-                    adGroupId: ra.adGroupId || (String(ra.amazonEntityId) === String(tRecord?.targetId) ? tRecord?.adGroupId : null),
-                    isRecordedBid: ra.state === "APPLIED" && !/status|state|budget/i.test(String(ra.actionType)),
-                } : {}),
+                campaignId: ra.campaignId || campaignId || tRecord?.campaignId,
+                campaignName: targetCampaignName || "",
+                changeLevel: ra.campaignId || campaignId || tRecord?.campaignId,
+                adGroupId: resolvedRaAdGroupId,
+                adGroupName: resolvedRaAdGroupName || (resolvedRaAdGroupId ? `Ad Group #${resolvedRaAdGroupId}` : ""),
                 action: act,
+                changeType: ra.ruleFamily === "dayparting-rules" ? "Dayparting Bid Adjustment" : "Targeting Rule Execution",
                 previousValue: isOldNum ? oldNum : (ra.previousValue || "—"),
+                oldValue: isOldNum ? oldNum : (ra.previousValue || "—"),
                 updatedValue: isNewNum ? newNum : (ra.desiredValue || "—"),
+                newValue: isNewNum ? newNum : (ra.desiredValue || "—"),
                 oldBid: isOldNum ? oldNum : null,
                 bidAmount: isNewNum ? newNum : 0,
                 changeSource: cSource,
+                triggerSource: cSource,
                 source: ra.ruleFamily === "dayparting-rules" ? "Dayparting Strategy" : "Targeting Rule Execution",
+                updatedBy: ra.ruleFamily === "dayparting-rules" ? "Dayparting" : "Rule Engine",
                 acos: currentAcos,
                 oldAcos: currentAcos,
                 state: ra.state,

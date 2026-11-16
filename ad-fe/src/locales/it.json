@@ -7936,5 +7936,9 @@
   "How often you held the Buy Box, your average price, the average Buy Box price and how your rank moved.": "Quanto spesso hai detenuto la Buy Box, il tuo prezzo medio, il prezzo medio della Buy Box e come è cambiato il tuo ranking.",
   "Buy Box Owner by Day": "Detentore Buy Box per giorno",
   "Green days you held the Buy Box, red days another seller did. Hover a day to see who.": "Giorni verdi: avevi la Buy Box; giorni rossi: ce l’aveva un altro venditore. Passa il mouse su un giorno per vedere chi.",
-  "Your price against the Buy Box price and the lowest FBA and FBM prices over time.": "Il tuo prezzo rispetto al prezzo della Buy Box e ai prezzi FBA e FBM più bassi nel tempo."
+  "Your price against the Buy Box price and the lowest FBA and FBM prices over time.": "Il tuo prezzo rispetto al prezzo della Buy Box e ai prezzi FBA e FBM più bassi nel tempo.",
+  "Applied": "Applicato",
+  "Applied in Amazon. Waiting for the change to sync.": "Applicato su Amazon. In attesa della sincronizzazione della modifica.",
+  "Some recommendations were applied. Check the remaining selected items.": "Alcune raccomandazioni sono state applicate. Controlla gli elementi selezionati rimanenti.",
+  "Recommendation applied successfully": "Raccomandazione applicata con successo"
 }

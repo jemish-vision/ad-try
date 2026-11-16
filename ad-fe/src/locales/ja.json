@@ -7936,5 +7936,9 @@
   "How often you held the Buy Box, your average price, the average Buy Box price and how your rank moved.": "Buy Boxの獲得頻度、自社の平均価格、平均Buy Box価格、ランキングの推移を表示します。",
   "Buy Box Owner by Day": "日別Buy Box獲得者",
   "Green days you held the Buy Box, red days another seller did. Hover a day to see who.": "緑の日はBuy Boxを獲得、赤の日は他の出品者が獲得しています。日にカーソルを合わせると獲得者を確認できます。",
-  "Your price against the Buy Box price and the lowest FBA and FBM prices over time.": "自社価格とBuy Box価格、FBA・FBM最安値の推移を比較します。"
+  "Your price against the Buy Box price and the lowest FBA and FBM prices over time.": "自社価格とBuy Box価格、FBA・FBM最安値の推移を比較します。",
+  "Applied": "適用済み",
+  "Applied in Amazon. Waiting for the change to sync.": "Amazonで適用されました。変更の同期を待機しています。",
+  "Some recommendations were applied. Check the remaining selected items.": "一部の推奨事項が適用されました。残りの選択した項目を確認してください。",
+  "Recommendation applied successfully": "推奨事項が正常に適用されました"
 }

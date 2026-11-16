@@ -66,6 +66,7 @@ const recommandationCampaignByRuleSchema = new mongoose.Schema(
     changed: {
       type: String
     },
+    pendingSyncOperationId: String,
     oldValue: {
       type: String,
       trim: true,

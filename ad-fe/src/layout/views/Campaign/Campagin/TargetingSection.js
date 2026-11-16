@@ -885,6 +885,8 @@ const TargetingSection = ({ campaignDetails, date, viewPress }) => {
         matchType={isSelectedTargetAuto ? undefined : (selectedTarget?.matchType || selectedTarget?.keywordType)}
         campaignId={campaignDetails?.campaignId || selectedTarget?.campaignId}
         campaignName={campaignDetails?.name || campaignDetails?.campaignName || selectedTarget?.campaignName}
+        adGroupId={selectedTarget?.adGroupId}
+        adGroupName={selectedTarget?.adGroupName || selectedTarget?.adGroupDetails?.name}
         profileId={profileId?.value}
         adType={campaignDetails?.adType || "SP"}
         fromDate={date?.[0] ? moment(date[0]).format("YYYY-MM-DD") : today}

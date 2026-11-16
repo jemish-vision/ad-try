@@ -7936,5 +7936,9 @@
   "How often you held the Buy Box, your average price, the average Buy Box price and how your rank moved.": "您持有 Buy Box 的频率、您的平均价格、平均 Buy Box 价格以及排名变化。",
   "Buy Box Owner by Day": "每日 Buy Box 持有者",
   "Green days you held the Buy Box, red days another seller did. Hover a day to see who.": "绿色表示您持有 Buy Box 的日子，红色表示其他卖家持有。将鼠标悬停在某天上可查看持有者。",
-  "Your price against the Buy Box price and the lowest FBA and FBM prices over time.": "您的价格与 Buy Box 价格以及 FBA 和 FBM 最低价随时间的对比。"
+  "Your price against the Buy Box price and the lowest FBA and FBM prices over time.": "您的价格与 Buy Box 价格以及 FBA 和 FBM 最低价随时间的对比。",
+  "Applied": "已应用",
+  "Applied in Amazon. Waiting for the change to sync.": "已在 Amazon 应用。正在等待更改同步。",
+  "Some recommendations were applied. Check the remaining selected items.": "已应用部分建议。请检查剩余选定的项目。",
+  "Recommendation applied successfully": "建议已成功应用"
 }

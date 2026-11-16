@@ -922,6 +922,21 @@
   border-right: 2px solid rgba(255, 255, 255, 0.22) !important;
 }
 
+/* ── Pinned right column ── */
+.iq-ag-table .ag-pinned-right-cols-container,
+.iq-ag-table .ag-pinned-right-cols-viewport {
+  background-color: transparent !important;
+}
+
+.iq-ag-table .ag-pinned-right-cols-container .ag-cell {
+  background-color: transparent !important;
+  border-left: 1px solid var(--ag-pinned-border-color) !important;
+}
+
+.iq-ag-table .ag-pinned-right-header {
+  border-left: 1px solid var(--ag-pinned-border-color) !important;
+}
+
 /* ── Total / pinned-bottom row ── */
 .iq-ag-table .ag-floating-bottom {
   background: linear-gradient(90deg, #1A9FD4 0%, #2374F2 100%) !important;

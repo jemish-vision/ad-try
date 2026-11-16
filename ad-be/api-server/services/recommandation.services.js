@@ -1,5 +1,6 @@
 const moment = require("moment");
 const { retryWithBackoff } = require("../helper/retryHelper");
+const { confirmedRecommendationIndexes } = require("../helper/recommendationAmazonConfirmation");
 const { recommendation_logs } = require("../../winston/recommendation/logger");
 
 const amazonAxios = require("../helper/amazonAxios");
@@ -165,7 +166,7 @@ const CampaignSPBudget = async (profile, checkConfigAds, rule, item, budget) => 
   }
 }
 
-const CampaignSBBudget = async (profile, checkConfigAds, rule, item, budget) => {
+const CampaignSBBudget = async (profile, checkConfigAds, rule, item, budget, operationId) => {
   try {
     const now = moment().tz(profile.timezone);
     const currentDate = now.format("YYYY-MM-DD");
@@ -200,7 +201,7 @@ const CampaignSBBudget = async (profile, checkConfigAds, rule, item, budget) => 
       message: `[Amazon API Response] [CampaignSBBudget] Status: ${response?.status} | Data: ${JSON.stringify(response?.data)}`
     });
 
-    if (response.status == 207) {
+    if (confirmedRecommendationIndexes(response, options.data).length === 1) {
       await recommandationCampaignByRuleSchema.findOneAndUpdate(
         {
           configId: rule.configId,
@@ -218,7 +219,8 @@ const CampaignSBBudget = async (profile, checkConfigAds, rule, item, budget) => 
             name: item?.campaignName,
             oldValue: item?.budget,
             newValue: budget,
-            changed: "Budget"
+            ...(operationId && { pendingSyncOperationId: operationId }),
+            changed: "Budget",
           }
         },
         { upsert: true, new: true }
@@ -265,7 +267,7 @@ const CampaignSBBudget = async (profile, checkConfigAds, rule, item, budget) => 
   }
 }
 
-const CampaignSDBudget = async (profile, checkConfigAds, rule, item, budget) => {
+const CampaignSDBudget = async (profile, checkConfigAds, rule, item, budget, operationId) => {
   try {
     const now = moment().tz(profile.timezone);
     const currentDate = now.format("YYYY-MM-DD");
@@ -298,7 +300,7 @@ const CampaignSDBudget = async (profile, checkConfigAds, rule, item, budget) => 
       message: `[Amazon API Response] [CampaignSDBudget] Status: ${response?.status} | Data: ${JSON.stringify(response?.data)}`
     });
 
-    if (response.status == 207) {
+    if (confirmedRecommendationIndexes(response, options.data).length === 1) {
       await recommandationCampaignByRuleSchema.findOneAndUpdate(
         {
           configId: rule.configId,
@@ -316,7 +318,8 @@ const CampaignSDBudget = async (profile, checkConfigAds, rule, item, budget) => 
             name: item?.campaignName,
             oldValue: item?.budget,
             newValue: budget,
-            changed: "Budget"
+            ...(operationId && { pendingSyncOperationId: operationId }),
+            changed: "Budget",
           }
         },
         { upsert: true, new: true }
@@ -464,7 +467,7 @@ const CampaignSPStatus = async (profile, checkConfigAds, rule, item, status) => 
   }
 }
 
-const CampaignSBStatus = async (profile, checkConfigAds, rule, item, status) => {
+const CampaignSBStatus = async (profile, checkConfigAds, rule, item, status, operationId) => {
   try {
     const now = moment().tz(profile.timezone);
     const currentDate = now.format("YYYY-MM-DD");
@@ -499,7 +502,7 @@ const CampaignSBStatus = async (profile, checkConfigAds, rule, item, status) => 
       message: `[Amazon API Response] [CampaignSBStatus] Status: ${response?.status} | Data: ${JSON.stringify(response?.data)}`
     });
 
-    if (response.status == 207) {
+    if (confirmedRecommendationIndexes(response, options.data).length === 1) {
       await recommandationCampaignByRuleSchema.findOneAndUpdate(
         {
           configId: rule?.configId,
@@ -517,7 +520,8 @@ const CampaignSBStatus = async (profile, checkConfigAds, rule, item, status) => 
             name: item?.campaignName,
             oldValue: item?.campaignStatus,
             newValue: status,
-            changed: "Status"
+            ...(operationId && { pendingSyncOperationId: operationId }),
+            changed: "Status",
           }
         },
         { upsert: true, new: true }
@@ -564,7 +568,7 @@ const CampaignSBStatus = async (profile, checkConfigAds, rule, item, status) => 
   }
 }
 
-const CampaignSDStatus = async (profile, checkConfigAds, rule, item, status) => {
+const CampaignSDStatus = async (profile, checkConfigAds, rule, item, status, operationId) => {
   try {
     const now = moment().tz(profile.timezone);
     const currentDate = now.format("YYYY-MM-DD");
@@ -597,7 +601,7 @@ const CampaignSDStatus = async (profile, checkConfigAds, rule, item, status) => 
       message: `[Amazon API Response] [CampaignSDStatus] Status: ${response?.status} | Data: ${JSON.stringify(response?.data)}`
     });
 
-    if (response.status == 207) {
+    if (confirmedRecommendationIndexes(response, options.data).length === 1) {
       await recommandationCampaignByRuleSchema.findOneAndUpdate(
         {
           configId: rule?.configId,
@@ -615,7 +619,8 @@ const CampaignSDStatus = async (profile, checkConfigAds, rule, item, status) => 
             name: item?.campaignName,
             oldValue: item?.campaignStatus,
             newValue: status,
-            changed: "Status"
+            ...(operationId && { pendingSyncOperationId: operationId }),
+            changed: "Status",
           }
         },
         { upsert: true, new: true }
@@ -771,7 +776,7 @@ const PlacementSPBid = async (profile, checkConfigAds, rule, item, newBid) => {
   }
 };
 
-const PlacementSBBid = async (profile, checkConfigAds, rule, item, newBid) => {
+const PlacementSBBid = async (profile, checkConfigAds, rule, item, newBid, operationId) => {
   try {
     const now = moment().tz(profile.timezone);
     const currentDate = now.format("YYYY-MM-DD");
@@ -819,7 +824,7 @@ const PlacementSBBid = async (profile, checkConfigAds, rule, item, newBid) => {
       message: `[Amazon API Response] [PlacementSBBid] Status: ${response?.status} | Data: ${JSON.stringify(response?.data)}`
     });
 
-    if (response.status == 207) {
+    if (confirmedRecommendationIndexes(response, options.data).length === 1) {
       await recommandationCampaignByRuleSchema.findOneAndUpdate(
         {
           configId: rule?.configId,
@@ -838,6 +843,7 @@ const PlacementSBBid = async (profile, checkConfigAds, rule, item, newBid) => {
             name: item?.campaignName,
             oldValue: item?.placementBid,
             newValue: newBid,
+            ...(operationId && { pendingSyncOperationId: operationId }),
             changed: "PlacementBid",
           },
         },
@@ -1006,7 +1012,7 @@ const TargetingSPBid = async (profile, checkConfigAds, rule, item, newBid) => {
   }
 };
 
-const TargetingSBBid = async (profile, checkConfigAds, rule, item, newBid) => {
+const TargetingSBBid = async (profile, checkConfigAds, rule, item, newBid, operationId) => {
   try {
     const now = moment().tz(profile.timezone);
     const currentDate = now.format("YYYY-MM-DD");
@@ -1056,7 +1062,7 @@ const TargetingSBBid = async (profile, checkConfigAds, rule, item, newBid) => {
       message: `[Amazon API Response] [TargetingSBBid] Status: ${response?.status} | Data: ${JSON.stringify(response?.data)}`
     });
 
-    if (response.status == 207) {
+    if (confirmedRecommendationIndexes(response, options.data).length === 1) {
       await recommandationCampaignByRuleSchema.findOneAndUpdate(
         {
           configId: rule?.configId,
@@ -1079,6 +1085,7 @@ const TargetingSBBid = async (profile, checkConfigAds, rule, item, newBid) => {
             targetType: item?.matchType,
             oldValue: item?.targetingBid,
             newValue: Number(newBid),
+            ...(operationId && { pendingSyncOperationId: operationId }),
             changed: "TargetingBid",
           },
         },
@@ -1129,7 +1136,7 @@ const TargetingSBBid = async (profile, checkConfigAds, rule, item, newBid) => {
   }
 };
 
-const TargetingSDBid = async (profile, checkConfigAds, rule, item, newBid) => {
+const TargetingSDBid = async (profile, checkConfigAds, rule, item, newBid, operationId) => {
   try {
     const now = moment().tz(profile.timezone);
     const currentDate = now.format("YYYY-MM-DD");
@@ -1166,7 +1173,7 @@ const TargetingSDBid = async (profile, checkConfigAds, rule, item, newBid) => {
       message: `[Amazon API Response] [TargetingSDBid] Status: ${response?.status} | Data: ${JSON.stringify(response?.data)}`
     });
 
-    if (response.status == 207) {
+    if (confirmedRecommendationIndexes(response, options.data).length === 1) {
       await recommandationCampaignByRuleSchema.findOneAndUpdate(
         {
           configId: rule?.configId,
@@ -1189,6 +1196,7 @@ const TargetingSDBid = async (profile, checkConfigAds, rule, item, newBid) => {
             targetType: item?.matchType,
             oldValue: item?.targetingBid,
             newValue: Number(newBid),
+            ...(operationId && { pendingSyncOperationId: operationId }),
             changed: "TargetingBid",
           },
         },
@@ -1356,7 +1364,7 @@ const TargetingSPStatus = async (profile, checkConfigAds, rule, item, status) =>
   }
 };
 
-const TargetingSBStatus = async (profile, checkConfigAds, rule, item, status) => {
+const TargetingSBStatus = async (profile, checkConfigAds, rule, item, status, operationId) => {
   try {
     const now = moment().tz(profile.timezone);
     const currentDate = now.format("YYYY-MM-DD");
@@ -1406,7 +1414,7 @@ const TargetingSBStatus = async (profile, checkConfigAds, rule, item, status) =>
       message: `[Amazon API Response] [TargetingSBStatus] Status: ${response?.status} | Data: ${JSON.stringify(response?.data)}`
     });
 
-    if (response.status == 207) {
+    if (confirmedRecommendationIndexes(response, options.data).length === 1) {
       await recommandationCampaignByRuleSchema.findOneAndUpdate(
         {
           configId: rule?.configId,
@@ -1429,6 +1437,7 @@ const TargetingSBStatus = async (profile, checkConfigAds, rule, item, status) =>
             targetType: item?.matchType,
             oldValue: item?.status,
             newValue: status,
+            ...(operationId && { pendingSyncOperationId: operationId }),
             changed: "TargetingStatus",
           },
         },
@@ -1475,7 +1484,7 @@ const TargetingSBStatus = async (profile, checkConfigAds, rule, item, status) =>
   }
 };
 
-const TargetingSDStatus = async (profile, checkConfigAds, rule, item, status) => {
+const TargetingSDStatus = async (profile, checkConfigAds, rule, item, status, operationId) => {
   try {
     const now = moment().tz(profile.timezone);
     const currentDate = now.format("YYYY-MM-DD");
@@ -1512,7 +1521,7 @@ const TargetingSDStatus = async (profile, checkConfigAds, rule, item, status) =>
       message: `[Amazon API Response] [TargetingSDStatus] Status: ${response?.status} | Data: ${JSON.stringify(response?.data)}`
     });
 
-    if (response.status == 207) {
+    if (confirmedRecommendationIndexes(response, options.data).length === 1) {
       await recommandationCampaignByRuleSchema.findOneAndUpdate(
         {
           configId: rule?.configId,
@@ -1535,6 +1544,7 @@ const TargetingSDStatus = async (profile, checkConfigAds, rule, item, status) =>
             targetType: item?.matchType,
             oldValue: item?.status,
             newValue: status,
+            ...(operationId && { pendingSyncOperationId: operationId }),
             changed: "TargetingStatus",
           },
         },

@@ -31,6 +31,7 @@ const synchronizeDetailsSchema = require("../models/synchronizeDetails.model");
 const retentionSchema = require("../models/retention.model");
 const coreGroupSchema = require("../models/coreGroup.model");
 const CRON_JOBS = require("../../worker-service/cronJobs.enum");
+const { historicalReportFilter } = require("../helper/historicalSyncReports");
 
 const { cronListProductAdsFromAmazon, cronGenerateAdProductReport, cronListProductFromAmazon } = require("./productAds.controller");
 const { cronListAdGroupsFromAmazon, cronGenerateAdGroupReport } = require("./adGroups.controller");
@@ -1286,6 +1287,15 @@ exports.amazonSPRedirect = async (req, res) => {
   }
 }
 
+async function resumeApprovedSellerSync(configId, profileId) {
+  if (!configId || !profileId) return;
+  const scope = { configId, profileId: Number(profileId) };
+  if (await synchronizeDetailsSchema.exists({ ...scope, type: "seller", requestStatus: "COMPLETED" })) {
+    await profileSchema.updateOne(scope, { $set: { isSpSyncEnabled: true } });
+    await Promise.all([clearProfileCache(String(configId), scope.profileId), clearActivePlanProfilesCache(scope.profileId)]);
+  }
+}
+
 exports.amazonSPCallback = async (req, res) => {
   const frontendUrl = process.env.FRONTEND_REDIRECT_URL || "http://localhost:3000";
   try {
@@ -1391,10 +1401,7 @@ exports.amazonSPCallback = async (req, res) => {
       }
       await clearSPAccessTokenCache(config.configId, config.profileId).catch((err) => { write_logs({ message: "[amazonSPCallback Silent Error] " + (err?.message || err), log_type: "error" }); });
 
-      await profileSchema.updateOne(
-        { profileId: Number(config.profileId), configId: config.configId },
-        { $set: { isSpSyncEnabled: true } }
-      );
+      await resumeApprovedSellerSync(config.configId, config.profileId);
     } else {
       const profile = await profileSchema.findOne({ profileId: Number(profileId), ...(stateConfigId && { configId: stateConfigId }) }).lean();
       if (!profile) {
@@ -1418,10 +1425,7 @@ exports.amazonSPCallback = async (req, res) => {
       }
       await clearSPAccessTokenCache(config.configId, config.profileId).catch((err) => { write_logs({ message: "[amazonSPCallback Silent Error] " + (err?.message || err), log_type: "error" }); });
 
-      await profileSchema.updateOne(
-        { profileId: Number(profileId), configId: profile?.configId },
-        { $set: { isSpSyncEnabled: true } }
-      );
+      await resumeApprovedSellerSync(profile?.configId, profileId);
     }
 
     if (!config.newConnectionEmailSentAt) {
@@ -1577,10 +1581,7 @@ exports.amazonSPRefreshToken = async (req, res) => {
         await seedAccessToken({ kind: "sp", configId: sellerConfig.configId.toString(), profileId: sellerConfig.profileId, accessToken: access_token, expiresIn: expires_in });
       }
 
-      await profileSchema.updateOne(
-        { profileId: Number(profileId), ...(profile?.configId && { configId: profile.configId }) },
-        { $set: { isSpSyncEnabled: true } }
-      );
+      await resumeApprovedSellerSync(profile?.configId, profileId);
       await clearSPAccessTokenCache(sellerConfig.configId, sellerConfig.profileId).catch((err) => { write_logs({ message: "[amazonSPRefreshToken Silent Error] " + (err?.message || err), log_type: "error" }); });
 
       await auditLogSchema.create({
@@ -1614,10 +1615,7 @@ exports.amazonSPRefreshToken = async (req, res) => {
       }
       await clearSPAccessTokenCache(sellerConfig.configId, sellerConfig.profileId).catch((err) => { write_logs({ message: "[amazonSPRefreshToken Silent Error] " + (err?.message || err), log_type: "error" }); });
 
-      await profileSchema.updateOne(
-        { profileId: Number(profileId), ...(profile?.configId && { configId: profile.configId }) },
-        { $set: { isSpSyncEnabled: true } }
-      );
+      await resumeApprovedSellerSync(profile?.configId, profileId);
 
       await auditLogSchema.create({
         userId,
@@ -2975,23 +2973,7 @@ exports.saveAmazonProfiles = async (req, res) => {
       return res.status(400).json({ isSuccess: false, message: 'Profile limit exceeded. Please upgrade your plan.' });
     }
 
-    const activeSellerConfigs = await sellerConfigSchema.find({
-      isActive: true,
-      $or: [
-        ...(orgId ? [{ organizationId: orgId }] : []),
-        { userId: userId },
-        { configId: configId }
-      ]
-    }).lean();
-    const activeSellerIds = activeSellerConfigs.map(s => s.sellerId).filter(Boolean);
-
     const profileBulkOps = selectedProfiles.map((p) => {
-      const pAdvId = p?.advertiserId || p?.accountInfo?.id;
-      const hasSellerIdMatch = Boolean(
-        p?.isSellerMatch ||
-        (pAdvId && activeSellerIds.some(sId => String(sId).trim() === String(pAdvId).trim()))
-      );
-
       return {
         updateOne: {
           filter: { configId, profileId: p.profileId },
@@ -3006,9 +2988,8 @@ exports.saveAmazonProfiles = async (req, res) => {
               name: p?.name,
               amazonUrl: p?.amazonUrl,
               isActive: true,
-              isAdsSyncEnabled: false,
-              isSpSyncEnabled: hasSellerIdMatch ? true : false,
             },
+            $setOnInsert: { isAdsSyncEnabled: false, isSpSyncEnabled: false },
           },
           upsert: true,
         },
@@ -3085,7 +3066,7 @@ exports.saveAmazonProfiles = async (req, res) => {
 
 exports.getReportDetails = async (req, res) => {
   try {
-    const list = await reportDetailsSchema.find({}).sort({ createdAt: -1 });
+    const list = await reportDetailsSchema.find(historicalReportFilter).sort({ createdAt: -1 });
     return res.status(200).send({
       isSuccess: true,
       message: "Report details fetched successfully",
@@ -3203,81 +3184,43 @@ exports.getSyncRequests = async (req, res) => {
   }
 };
 
-exports.executeSync = async (req, res) => {
-  try {
-    const { syncIds, configId, profileId, type } = req.body;
-
-    if (Array.isArray(syncIds) && syncIds.length > 0) {
-      await synchronizeDetailsSchema.updateMany(
-        { _id: { $in: syncIds } },
-        { $set: { requestStatus: "COMPLETED", updatedAt: new Date() } }
-      );
-      const syncRecords = await synchronizeDetailsSchema.find({ _id: { $in: syncIds } }).lean();
-      for (const rec of syncRecords) {
-        if (rec.profileId) {
-          const recType = rec.type || "ads";
-          const updateObj = { isActive: true };
-          if (recType === "seller") {
-            updateObj.isSpSyncEnabled = true;
-          } else {
-            updateObj.isAdsSyncEnabled = true;
-          }
-          await profileSchema.updateOne(
-            { profileId: rec.profileId, ...(rec.configId && { configId: rec.configId }) },
-            { $set: updateObj }
-          );
-          clearProfileCache(rec.configId?.toString(), rec.profileId);
-          clearActivePlanProfilesCache(rec.profileId);
-        }
-      }
-    } else if (configId && profileId) {
-      const syncType = type === "seller" ? "seller" : "ads";
-      await synchronizeDetailsSchema.updateMany(
-        { configId, profileId, ...(type && { type }) },
-        { $set: { requestStatus: "COMPLETED", updatedAt: new Date() } }
-      );
-      const updateObj = { isActive: true };
-      if (syncType === "seller") {
-        updateObj.isSpSyncEnabled = true;
-      } else {
-        updateObj.isAdsSyncEnabled = true;
-      }
-      await profileSchema.updateOne(
-        { configId, profileId: Number(profileId) },
-        { $set: updateObj }
-      );
-      clearProfileCache(configId?.toString(), Number(profileId));
-      clearActivePlanProfilesCache(Number(profileId));
-    }
-
-    return res.status(200).send({
-      isSuccess: true,
-      message: "Synchronization executed successfully",
-    });
-  } catch (error) {
-    write_logs({ message: `[executeSync Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
-    return res.status(500).send({
-      isSuccess: false,
-      message: error.message || "Failed to execute sync",
-    });
-  }
-};
-
 exports.updateProfileSyncSettings = async (req, res) => {
   try {
     const { profileId, configId, isAdsSyncEnabled, isSpSyncEnabled } = req.body;
 
-    if (!profileId) {
+    if (!configId || !mongoose.Types.ObjectId.isValid(configId) || !Number.isSafeInteger(Number(profileId)) || Number(profileId) <= 0) {
       return res.status(400).send({
         isSuccess: false,
-        message: "Missing profileId",
+        message: "Valid configId and profileId are required",
       });
+    }
+
+    const scope = { configId, profileId: Number(profileId) };
+    const userId = req.user?._id;
+    if (req.role?.roleName !== ROLES.SUPER_ADMIN) {
+      const hasProfileAccess = userId && await profileBasedPermissionSchema.exists({ ...scope, userId, hasAccess: true });
+      const ownsSellerConnection = !hasProfileAccess && userId && typeof isAdsSyncEnabled !== "boolean" &&
+        await sellerConfigSchema.exists({ ...scope, userId, isActive: true });
+      if (!hasProfileAccess && !ownsSellerConnection) {
+        return res.status(403).send({ isSuccess: false, message: "You do not have permission to change sync settings for this profile." });
+      }
+    }
+
+    const enablingTypes = [];
+    if (isAdsSyncEnabled === true) enablingTypes.push("ads");
+    if (isSpSyncEnabled === true) enablingTypes.push("seller");
+    if (enablingTypes.length) {
+      const approved = await synchronizeDetailsSchema.distinct("type", {
+        ...scope, type: { $in: enablingTypes }, requestStatus: "COMPLETED"
+      });
+      if (!enablingTypes.every(type => approved.includes(type))) {
+        return res.status(403).send({ isSuccess: false, message: "Super Admin must approve and complete the requested import before daily sync can be enabled." });
+      }
     }
 
     // Check if synchronization is currently IN_PROGRESS
     const activeSync = await synchronizeDetailsSchema.findOne({
-      profileId: Number(profileId),
-      ...(configId && { configId }),
+      ...scope,
       requestStatus: "IN_PROGRESS"
     }).lean();
 
@@ -3297,7 +3240,7 @@ exports.updateProfileSyncSettings = async (req, res) => {
     }
 
     await profileSchema.updateOne(
-      { profileId: Number(profileId), ...(configId && { configId }) },
+      scope,
       { $set: updateFields }
     );
 

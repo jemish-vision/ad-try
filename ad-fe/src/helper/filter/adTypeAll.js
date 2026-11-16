@@ -3,7 +3,7 @@
 // The ad type is sent to the backend as one global header. Not every screen has
 // been migrated to handle "All" yet, so this module gates where "All" is
 // actually sent: on an unsupported screen the effective ad type degrades to SP
-// (and the UI shows a note). This guarantees no screen ever silently shows
+// (and filterable screens show a note). This guarantees no screen ever silently shows
 // SP-only data while the user believes they are seeing "All".
 //
 // Grow ALL_SUPPORTED_ROUTES as each phase lands.
@@ -30,6 +30,15 @@ function normalizePath(pathname) {
 
 export function isAllSupportedRoute(pathname) {
   return ALL_SUPPORTED_ROUTES.includes(normalizePath(pathname));
+}
+
+// These pages use the selected type without supporting combined results.
+const AD_TYPE_FILTER_ROUTES = ["/keyword-tracker", "/targeting-rule"];
+const TARGETING_FILTER_PATH = /^\/targeting\/(?:[^/]+|(?:detail|history)\/[^/]+)$/;
+
+export function showsAdTypeFilter(pathname) {
+  const path = normalizePath(pathname).toLowerCase();
+  return isAllSupportedRoute(path) || AD_TYPE_FILTER_ROUTES.includes(path) || TARGETING_FILTER_PATH.test(path);
 }
 
 export function isSdExcludedRoute(pathname) {

@@ -7936,5 +7936,9 @@
   "How often you held the Buy Box, your average price, the average Buy Box price and how your rank moved.": "Buy Box कितनी बार आपके पास रहा, आपका औसत मूल्य, औसत Buy Box मूल्य और आपकी रैंक में कैसा बदलाव आया।",
   "Buy Box Owner by Day": "दिन-वार Buy Box धारक",
   "Green days you held the Buy Box, red days another seller did. Hover a day to see who.": "हरे दिनों में Buy Box आपके पास था, लाल दिनों में किसी अन्य विक्रेता के पास। किसका था, यह देखने के लिए किसी दिन पर होवर करें।",
-  "Your price against the Buy Box price and the lowest FBA and FBM prices over time.": "समय के साथ Buy Box मूल्य तथा न्यूनतम FBA और FBM मूल्यों की तुलना में आपका मूल्य।"
+  "Your price against the Buy Box price and the lowest FBA and FBM prices over time.": "समय के साथ Buy Box मूल्य तथा न्यूनतम FBA और FBM मूल्यों की तुलना में आपका मूल्य।",
+  "Applied": "लागू किया गया",
+  "Applied in Amazon. Waiting for the change to sync.": "Amazon में लागू किया गया। परिवर्तन सिंक होने की प्रतीक्षा है।",
+  "Some recommendations were applied. Check the remaining selected items.": "कुछ सिफारिशें लागू की गईं। शेष चयनित मदों की जाँच करें।",
+  "Recommendation applied successfully": "सिफारिश सफलतापूर्वक लागू की गई"
 }
