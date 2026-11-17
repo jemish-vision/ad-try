@@ -25,7 +25,6 @@ const {
   saveSynchronizationDetails,
   getRetentionDays,
   getSyncRequests,
-  executeSync,
   getProfileSyncDetails,
   updateProfileSyncSettings,
   initiateAmazonSellerAuth,
@@ -34,6 +33,8 @@ const {
 } = require("../controllers/config.controller");
 const express = require("express");
 const { verifyToken } = require("../middleware/user.auth");
+const { requireSuperAdmin } = require("../middleware/superAdmin.auth");
+const { executeProfileSyncCron } = require("../controllers/organization.controller");
 const { verifyCronAuth } = require("../middleware/cron.auth");
 const { cronDeleteExpiredAccountsData } = require("../services/accountDataCleanup.service");
 const router = express.Router();
@@ -55,7 +56,7 @@ router.post("/amazonRedirect", verifyToken, validateRoutePermission(SYSTEM_PAGES
 router.get("/amazonCallback", amazonCallback);
 router.post("/amazonDisconnect", verifyToken, validateRoutePermission(SYSTEM_PAGES.SETTINGS, PAGE_ACTIONS.UPDATE, [{ pageName: SYSTEM_PAGES.SETTINGS, actionType: PAGE_ACTIONS.REMOVE }]), amazonDisconnect);
 
-router.post("/syncLast30Days", verifyToken, validateRoutePermission(SYSTEM_PAGES.SETTINGS, PAGE_ACTIONS.CREATE), syncLast30Days);
+router.post("/syncLast30Days", verifyToken, requireSuperAdmin, syncLast30Days);
 
 router.post("/amazonSPRedirect", verifyToken, validateRoutePermission(SYSTEM_PAGES.SETTINGS, PAGE_ACTIONS.CREATE, [{ pageName: SYSTEM_PAGES.SETTINGS, actionType: PAGE_ACTIONS.UPDATE }]), amazonSPRedirect);
 router.get("/amazonSPCallback", amazonSPCallback);
@@ -73,9 +74,9 @@ router.get("/cronDeleteExpiredAccountsData", verifyToken, verifyCronAuth, cronDe
 router.get("/getReportDetails", verifyToken, getReportDetails);
 router.get("/getCoreGroups", verifyToken, getCoreGroups);
 router.get("/getRetentionDays", verifyToken, getRetentionDays);
-router.get("/getSyncRequests", verifyToken, getSyncRequests);
+router.get("/getSyncRequests", verifyToken, requireSuperAdmin, getSyncRequests);
 router.post("/saveSynchronizationDetails", verifyToken, saveSynchronizationDetails);
-router.post("/executeSync", verifyToken, executeSync);
+router.post("/executeSync", verifyToken, requireSuperAdmin, executeProfileSyncCron);
 router.get("/getProfileSyncDetails", verifyToken, getProfileSyncDetails);
 router.post("/updateProfileSyncSettings", verifyToken, updateProfileSyncSettings);
 router.post("/linkExistingSellerConfig", verifyToken, linkExistingSellerConfig);

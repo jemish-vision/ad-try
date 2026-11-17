@@ -7937,6 +7937,7 @@
   "Buy Box Owner by Day": "दिन-वार Buy Box धारक",
   "Green days you held the Buy Box, red days another seller did. Hover a day to see who.": "हरे दिनों में Buy Box आपके पास था, लाल दिनों में किसी अन्य विक्रेता के पास। किसका था, यह देखने के लिए किसी दिन पर होवर करें।",
   "Your price against the Buy Box price and the lowest FBA and FBM prices over time.": "समय के साथ Buy Box मूल्य तथा न्यूनतम FBA और FBM मूल्यों की तुलना में आपका मूल्य।",
+<<<<<<< HEAD
   "Regional Pricing": "क्षेत्रीय मूल्य निर्धारण",
   "Pricing Regions": "मूल्य क्षेत्र",
   "Add Region": "क्षेत्र जोड़ें",
@@ -7989,3 +7990,10 @@
   "Countries in this region will pay the default plan price on their next purchase. Running subscriptions keep their current price until they change plan.": "इस क्षेत्र के देश अपनी अगली खरीद पर डिफ़ॉल्ट कीमत चुकाएंगे। चल रही सदस्यताएं प्लान बदलने तक अपनी मौजूदा कीमत पर रहेंगी।",
   "This organization will see and pay the price of the selected country from its next payment.": "यह संगठन अपने अगले भुगतान से चुने गए देश की कीमत देखेगा और चुकाएगा।"
 }
+=======
+  "Applied": "लागू किया गया",
+  "Applied in Amazon. Waiting for the change to sync.": "Amazon में लागू किया गया। परिवर्तन सिंक होने की प्रतीक्षा है।",
+  "Some recommendations were applied. Check the remaining selected items.": "कुछ सिफारिशें लागू की गईं। शेष चयनित मदों की जाँच करें।",
+  "Recommendation applied successfully": "सिफारिश सफलतापूर्वक लागू की गई"
+}
+>>>>>>> 1d6e433c3c9a9fc8cd25a6b697bf183dfce7efe0

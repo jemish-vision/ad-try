@@ -15,6 +15,7 @@ import NotificationPanel from '../notification/NotificationPanel';
 
 import { ApiSelectAccount, ApiAddToFavorite } from '../../api-wrapper/campaign/ApiCampaign';
 import ConfigTypeDropdown from './ConfigDropDown/ConfigTypeDropdown';
+import { showsAdTypeFilter } from "./adTypeAll";
 import ConfigProfileDropdown from './ConfigDropDown/ConfigProfileDropdown';
 import { resolveProfileSelection } from './profileSelection';
 import LanguageSelector from '../../components/LanguageSelector';
@@ -631,7 +632,7 @@ function LayoutHeader({ nameShow = false, name, dateShow = false, profileShow, i
                         </div>
                     }
                     {
-                        role !== ROLES.SUPER_ADMIN && (
+                        role !== ROLES.SUPER_ADMIN && showsAdTypeFilter(location.pathname) && (
                             <div id="adtype-dropdown" className="adType-dropdown">
                                 <ConfigTypeDropdown compact={isCompact} />
                             </div>

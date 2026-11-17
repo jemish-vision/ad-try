@@ -597,11 +597,22 @@ function Sidebar({ open, setOpen }) {
     }
   }, [localStorage.getItem("connection"), pagePermission, isPlanActive]);
 
-  const handleMenuClick = (menuName, hasChildren) => {
+  const isMenuOpen = (menu) => {
+    if (!menu) return false;
+    const name = typeof menu === "string" ? menu : menu.name;
+    if (collapsedMenus[name] !== undefined) {
+      return Boolean(collapsedMenus[name]);
+    }
+    const route = typeof menu === "object" && menu.children ? menu : navRoutes?.find(r => r.name === name);
+    return Boolean(route?.children && route.children.some(c => isPathActive(c.path)));
+  };
+
+  const handleMenuClick = (menuItem, hasChildren) => {
+    const menuName = typeof menuItem === "string" ? menuItem : menuItem?.name;
     if (hasChildren) {
       setCollapsedMenus((prev) => ({
         ...prev,
-        [menuName]: !prev[menuName],
+        [menuName]: !isMenuOpen(menuItem),
       }));
     }
 
@@ -662,11 +673,11 @@ function Sidebar({ open, setOpen }) {
       }
     }
 
-    // Ensure parent group is open (not collapsed) on active route change
+    // Ensure parent group is open on active route change
     if (parentName) {
       setCollapsedMenus((prev) => ({
         ...prev,
-        [parentName]: false,
+        [parentName]: true,
       }));
     }
 
@@ -681,7 +692,7 @@ function Sidebar({ open, setOpen }) {
     }
   }, [location.pathname, navRoutes]);
 
-  const activeCatConfig = CATEGORIES[activeCategory];
+  const activeCatConfig = CATEGORIES[activeCategory] || CATEGORIES.optimize;
   const activeRoutes = navRoutes?.filter((route) => {
     if (activeCatConfig?.items.includes(route.name)) return true;
     if (route.children && route.children.some(child => activeCatConfig?.items.includes(child.name))) return true;
@@ -740,6 +751,9 @@ function Sidebar({ open, setOpen }) {
             <div
               className="sidebar-dock-logo"
               onClick={() => {
+                if (!activeCategory) {
+                  setActiveCategory("optimize");
+                }
                 if (window.innerWidth < 1024) {
                   setOpen(!showSubPanel);
                   setShowSubPanel(!showSubPanel);
@@ -1008,7 +1022,7 @@ function Sidebar({ open, setOpen }) {
 
             {/* Header: category title + collapse */}
             <div className="sidebar-right-header flex items-center justify-between mb-3 px-1">
-              <span className="font-bold">{t(activeCatConfig.name)}</span>
+              <span className="font-bold">{activeCatConfig?.name ? t(activeCatConfig.name) : ""}</span>
               <div
                 className="menu-toggle-arrow"
                 onClick={() => {
@@ -1067,12 +1081,12 @@ function Sidebar({ open, setOpen }) {
                       {el.children ? (
                         <a
                           className="sidebar_link"
-                          onClick={() => handleMenuClick(el.name, true)}
+                          onClick={() => handleMenuClick(el, true)}
                         >
                           <span className="sidebar_icon_wrapper">{el.icon}</span>
                           <span className="sidebar_link_text">{t(el.name)}</span>
                           <span className="sidebar_arrow">
-                            {!collapsedMenus[el.name] ? <CaretDown size={12} /> : <CaretRight size={12} />}
+                            {isMenuOpen(el) ? <CaretDown size={12} /> : <CaretRight size={12} />}
                           </span>
                         </a>
                       ) : (
@@ -1081,7 +1095,7 @@ function Sidebar({ open, setOpen }) {
                           className="sidebar_link"
                           onClick={() => {
                             setActivePath(el.path);
-                            handleMenuClick(el.name, false);
+                            handleMenuClick(el, false);
                           }}
                         >
                           <span className="sidebar_icon_wrapper">{el.icon}</span>
@@ -1095,7 +1109,7 @@ function Sidebar({ open, setOpen }) {
                       )}
 
                       {el.children && (
-                        <ul className={`submenu${!collapsedMenus[el.name] ? " show" : ""}`}>
+                        <ul className={`submenu${isMenuOpen(el) ? " show" : ""}`}>
                           {el.children.map((child, j) =>
                             role === ROLES.SUPER_ADMIN ||
                             pagePermission?.some((x) => x.pageName?.toLowerCase()?.includes(child.name?.toLowerCase()) || x.pageName === child.name || x.pageSlug === child.id) ||

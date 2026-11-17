@@ -2,7 +2,7 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { MongoClient, ObjectId } = require('mongoose').mongo;
 require('dotenv').config();
-const { buildTargetingMetricsPipeline } = require('../api-server/helper/targetingMetricsPipeline');
+const { buildTargetingMetricsPipeline, resolveSPAutoTargetBids } = require('../api-server/helper/targetingMetricsPipeline');
 
 let client, collection;
 const configId = new ObjectId();
@@ -50,6 +50,39 @@ test('latest bid uses latest-day maximum rather than a larger earlier bid', asyn
         { ...base, reportDate: '2026-10-30', targetId: 'R-1', keywordBid: 3 },
     ]);
     assert.equal(row.keywordBid, 3);
+});
+test('SP auto targets use the scoped ad group default for missing overrides only', async () => {
+    const adGroups = client.db().collection(`${collection.collectionName}_groups`);
+    const snapshot = { ...base, reportDate: '2026-10-30', keywordType: 'TARGETING_EXPRESSION_PREDEFINED' };
+    const group = { configId, profileId: 7, campaignId: 1, adGroupId: 2 };
+    await collection.deleteMany({});
+    await collection.insertMany([
+        { ...snapshot, targetId: 'T-1', targeting: 'close-match', keywordBid: 0 },
+        { ...snapshot, targetId: 'T-2', targeting: 'loose-match', keywordBid: 1.5 },
+        { ...snapshot, targetId: 'T-3', targeting: 'substitutes' },
+        { ...snapshot, targetId: 'T-4', targeting: 'complements', adGroupId: 9, keywordBid: 0 },
+        { ...snapshot, targetId: 'R-1', targeting: 'report-only', keywordBid: 0 },
+        { ...snapshot, targetId: 'T-5', targeting: 'manual', keywordType: 'TARGETING_EXPRESSION', keywordBid: 0 }
+    ]);
+    try {
+        await adGroups.insertMany([
+            { ...group, reportDate: '2026-10-29', defaultBid: 3 },
+            { ...group, reportDate: '2026-10-30' },
+            { ...group, reportDate: '2026-10-31', defaultBid: 4 },
+            { ...group, reportDate: '2026-10-30', configId: new ObjectId(), defaultBid: 99 },
+            { ...group, reportDate: '2026-10-30', profileId: 8, defaultBid: 99 },
+            { ...group, reportDate: '2026-10-30', campaignId: 3, defaultBid: 99 }
+        ]);
+        const rows = await collection.aggregate([
+            ...buildTargetingMetricsPipeline(scope),
+            ...resolveSPAutoTargetBids(adGroups.collectionName, configId),
+            { $match: { keywordBid: { $gt: 0 } } },
+            { $sort: { keywordBid: -1, targetId: 1 } }
+        ]).toArray();
+        assert.deepEqual(rows.map(row => [row.targetId, row.keywordBid]), [['T-1', 3], ['T-3', 3], ['T-2', 1.5]]);
+    } finally {
+        await adGroups.drop().catch(error => { if (error.codeName !== 'NamespaceNotFound') throw error; });
+    }
 });
 test('daily impression share maxima are averaged across observed days', async () => {
     const [row] = await aggregate([

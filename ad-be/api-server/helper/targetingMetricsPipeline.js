@@ -60,4 +60,46 @@ const buildTargetingMetricsPipeline = query => {
     ];
 };
 
-module.exports = { buildTargetingMetricsPipeline };
+// SP sync has historically stored a missing auto-target override as zero.
+// Resolve it from the latest known group default as of the target snapshot.
+const resolveSPAutoTargetBids = (adGroupCollection, configId) => [
+    {
+        $lookup: {
+            from: adGroupCollection,
+            let: {
+                groupId: { $cond: [
+                    { $and: [
+                        { $eq: ['$keywordType', 'TARGETING_EXPRESSION_PREDEFINED'] },
+                        { $regexMatch: { input: { $ifNull: ['$targetId', ''] }, regex: /^T-/i } },
+                        { $in: [{ $ifNull: ['$keywordBid', null] }, [null, 0]] },
+                        { $gt: ['$adGroupId', 0] }
+                    ] },
+                    '$adGroupId', -1
+                ] },
+                profileId: '$profileId',
+                campaignId: '$campaignId',
+                asOf: '$reportDate'
+            },
+            pipeline: [
+                { $match: {
+                    configId,
+                    defaultBid: { $gt: 0 },
+                    $expr: { $and: [
+                        { $eq: ['$profileId', '$$profileId'] },
+                        { $eq: ['$adGroupId', '$$groupId'] },
+                        { $eq: ['$campaignId', '$$campaignId'] },
+                        { $lte: ['$reportDate', '$$asOf'] }
+                    ] }
+                } },
+                { $sort: { reportDate: -1 } },
+                { $limit: 1 },
+                { $project: { _id: 0, defaultBid: 1 } }
+            ],
+            as: 'inheritedBid'
+        }
+    },
+    { $set: { keywordBid: { $ifNull: [{ $first: '$inheritedBid.defaultBid' }, '$keywordBid'] } } },
+    { $unset: 'inheritedBid' }
+];
+
+module.exports = { buildTargetingMetricsPipeline, resolveSPAutoTargetBids };

@@ -25,7 +25,7 @@ const { cronGeneratePlacementReport } = require("./placement.controller");
 const { cronGenerateSearchTermReport } = require("./searchTerm.controller");
 const { cronGenerateTargetingReport, cronListTargetingFromAmazon } = require("./targeting.controller");
 const { cronListKeywordsFromAmazon, cronGenerateKeywordReport } = require("./keyword.controller");
-const { cronBestPerformerGoogleReportGenerate, cronKeywordAnalysisReportGenerate } = require("./google.controller");
+const { historicalReportFilter } = require("../helper/historicalSyncReports");
 const { cronGenerateOrderReport, cronGenerateRefundReport, cronGenerateOrderListing, SyncProductListing } = require("./order.controller");
 const { cronGenerateTransactionsReport } = require("./transactions.controller");
 const { cronGenerateSalesReport, cronGenerateInvetoryReport, cronDetectDeadInventory } = require("./inventory.controller");
@@ -180,13 +180,11 @@ const runReportCronByName = async (reportName, pastSyncObj) => {
 
       if (updatedRecord && updatedRecord.status === "COMPLETED") {
         cron_logs({ message: `[runReportCronByName] ${reportName} completed successfully.`, log_type: "info" });
-        break;
+        return true;
       }
       else if (updatedRecord?.status === "FAILED") {
-        // Not retried and not fatal for the whole sync group (e.g. a profile without SD access
-        // fails only the SD part); the reason is kept on the cron history row.
         cron_logs({ message: `[runReportCronByName] ${reportName} FAILED for profile ${pastSyncObj?.profileId}: ${updatedRecord.error || "no reason recorded"}`, log_type: "warn" });
-        break;
+        return false;
       }
 
       if (attempt < maxRetries) {
@@ -710,35 +708,46 @@ exports.executeProfileSyncCron = async (req, res) => {
       });
     }
 
-    const syncRecords = await synchronizeDetailsSchema
-      .find({ _id: { $in: syncIds } })
-      .lean();
+    const syncRecords = [];
+    for (const id of new Set(syncIds.map(String))) {
+      if (!mongoose.Types.ObjectId.isValid(id)) continue;
+      const record = await synchronizeDetailsSchema.findOneAndUpdate(
+        { _id: id, requestStatus: { $in: ["PENDING", "FAILED"] } },
+        { $set: { requestStatus: "IN_PROGRESS" } },
+        { new: true }
+      ).lean();
+      if (record) syncRecords.push(record);
+    }
 
     if (!syncRecords || syncRecords.length === 0) {
       return res.status(404).send({
         isSuccess: false,
-        message: "No matching sync records found",
+        message: "No pending or failed sync requests found",
       });
     }
-
-    // Set requestStatus to IN_PROGRESS
-    await synchronizeDetailsSchema.updateMany(
-      { _id: { $in: syncIds } },
-      { $set: { requestStatus: "IN_PROGRESS", updatedAt: new Date() } }
-    );
 
     // Trigger report crons in background based on profileId, selectedSyncDays, and mapped reports for each group
     (async () => {
       cron_logs({ message: `[ExecuteProfileSyncCron] Sync started for ${syncRecords.length} record(s) [body] ${JSON.stringify(req?.body)}`, log_type: "info" });
       for (const rec of syncRecords) {
         try {
+          const groupReports = await reportDetailsSchema
+            .find({ groupId: rec.groupId, ...historicalReportFilter })
+            .lean();
+          if (!groupReports.length) throw new Error(`No historical reports configured for ${rec.groupId}`);
+
           if (rec.profileId) {
+            // Import handlers require the approved connection to be enabled.
+            // Recurring group jobs independently require a COMPLETED request.
+            const syncFlag = rec.type === "seller" ? "isSpSyncEnabled" : "isAdsSyncEnabled";
             await profileSchema.updateOne(
               { profileId: rec.profileId, ...(rec.configId && { configId: rec.configId }) },
-              { $set: { isActive: true } }
+              { $set: { isActive: true, [syncFlag]: true } }
             );
-            clearProfileCache(rec.configId?.toString(), rec.profileId);
-            clearActivePlanProfilesCache(rec.profileId);
+            await Promise.all([
+              clearProfileCache(rec.configId?.toString(), rec.profileId),
+              clearActivePlanProfilesCache(rec.profileId),
+            ]);
           }
           const days = Number(rec.selectedSyncDays);
           const startDate = moment().subtract(days, "days").format("YYYY-MM-DD");
@@ -755,30 +764,17 @@ exports.executeProfileSyncCron = async (req, res) => {
 
           cron_logs({ message: `[ExecuteProfileSyncCron] Processing Group: ${rec.groupId}, Profile: ${rec.profileId}, Days: ${days} (${startDate} to ${endDate}) [body] ${JSON.stringify(req?.body)}`, log_type: "info" });
 
-          const groupReports = await reportDetailsSchema
-            .find({ groupId: rec.groupId })
-            .lean();
-
-          if (groupReports && groupReports.length > 0) {
-            for (const r of groupReports) {
+          const failedReports = [];
+          for (const r of groupReports) {
+            try {
               cron_logs({ message: `[ExecuteProfileSyncCron] Running report: ${r.name} for Profile: ${rec.profileId} [body] ${JSON.stringify(req?.body)}`, log_type: "info" });
-              await runReportCronByName(r.name, pastSyncObj);
+              if (!await runReportCronByName(r.name, { ...pastSyncObj })) failedReports.push(r.name);
+            } catch (reportError) {
+              failedReports.push(r.name);
+              cron_logs({ message: `[ExecuteProfileSyncCron] ${r.name}: ${reportError.message}`, log_type: "error" });
             }
           }
-
-          const recType = rec.type || "ads";
-          const updateObj = { isActive: true };
-          if (recType === "seller") {
-            updateObj.isSpSyncEnabled = true;
-          } else {
-            updateObj.isAdsSyncEnabled = true;
-          }
-          await profileSchema.updateOne(
-            { profileId: Number(rec.profileId), ...(rec.configId && { configId: rec.configId }) },
-            { $set: updateObj }
-          );
-          clearProfileCache(rec.configId?.toString(), Number(rec.profileId));
-          clearActivePlanProfilesCache(Number(rec.profileId));
+          if (failedReports.length) throw new Error(`Reports failed: ${failedReports.join(", ")}`);
 
           await synchronizeDetailsSchema.findByIdAndUpdate(rec._id, {
             $set: { requestStatus: "COMPLETED", updatedAt: new Date() }

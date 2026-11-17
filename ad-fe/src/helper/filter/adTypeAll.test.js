@@ -3,6 +3,7 @@ import {
   isAllSupportedRoute,
   isSdExcludedRoute,
   isShowingAllAdTypes,
+  showsAdTypeFilter,
 } from "./adTypeAll";
 
 describe("adTypeAll guard", () => {
@@ -61,6 +62,23 @@ describe("adTypeAll guard", () => {
     expect(isSdExcludedRoute("/search-term")).toBe(true);
     expect(isSdExcludedRoute("/placement")).toBe(true);
     expect(isSdExcludedRoute("/campaigns")).toBe(false);
+  });
+
+  test.each([
+    "/", "/dashboard", "/campaigns/", "/placement", "/search-term", "/products",
+    "/recommandation", "/dayparting-stretegy", "/hourly-performance-tracking",
+    "/history", "/keyword-tracker", "/targeting-rule", "/targeting",
+    "/targeting/123", "/targeting/detail/456", "/targeting/history", "/targeting/history/123/",
+  ])("shows the topbar filter on %s", (path) => {
+    expect(showsAdTypeFilter(path)).toBe(true);
+  });
+
+  test.each([
+    "/orders", "/inventory-management", "/product-list", "/settings", "/ai-assistant",
+    "/campaign/setting", "/search-term-rule", "/placement-rule", "/targeting-rule-history",
+    "/dayparting-stretegy/rule-history", "/targeting/detail/456/extra",
+  ])("hides the topbar filter on %s", (path) => {
+    expect(showsAdTypeFilter(path)).toBe(false);
   });
 
   test("isShowingAllAdTypes reflects the effective type", () => {

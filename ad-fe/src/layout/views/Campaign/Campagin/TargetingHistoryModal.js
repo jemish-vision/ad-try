@@ -9,13 +9,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../../components/ui/select";
+import { Input } from "../../../../components/ui/input";
 import { ApiGetTargetingHistory } from "../../../../api-wrapper/targeting/ApiTargeting";
-import CurrencyCode from "../../../../helper/currencyCode/CurrencyCode";
-import { FiClock, FiRefreshCw } from "react-icons/fi";
+import CurrencyFormat from "../../../../helper/currencyCode/CurrencyFormat";
+import {
+  FiClock,
+  FiRefreshCw,
+  FiUser,
+  FiSearch,
+} from "react-icons/fi";
 import { MdOutlineClose } from "react-icons/md";
 import moment from "moment-timezone";
 import { ProfileContext } from "../../../../helper/usecontext/useContext";
-import { getNormalizedTargetingType } from "../../../../utility/targetingUtils";
+import {
+  getNormalizedTargetingType,
+  formatAmazonChangeType,
+  getStatusBadgeProps,
+  isAdGroupLevelChange,
+} from "../../../../utility/targetingUtils";
+import openCampaignViewInNewTab from "../../../../utility/campaignNavigation";
 import AgTable from "../../../../common/grid/AgTable";
 
 const STORAGE_KEY_PERIOD = "targeting_bid_history_acos_period";
@@ -29,13 +41,33 @@ const TargetingHistoryModal = ({
   matchType,
   campaignId,
   campaignName,
-  profileId,
+  adGroupId,
+  adGroupName,
+  profileId: propProfileId,
   adType = "SP",
   fromDate,
   toDate,
 }) => {
   const { t } = useTranslation();
-  const { currencyCode } = useContext(ProfileContext) || {};
+  const contextProfile = useContext(ProfileContext);
+
+  const profileId = useMemo(() => {
+    const raw =
+      (propProfileId && typeof propProfileId === "object" ? propProfileId.value || propProfileId.profileId : propProfileId) ||
+      contextProfile?.profileSendID ||
+      contextProfile?.profileValue ||
+      (contextProfile?.profileId && typeof contextProfile.profileId === "object" ? contextProfile.profileId.value : contextProfile?.profileId) ||
+      (() => {
+        try {
+          const stored = JSON.parse(localStorage.getItem("profile"));
+          return stored?.profile?.profileId || stored?.profileId;
+        } catch (e) {
+          return null;
+        }
+      })();
+    return raw;
+  }, [propProfileId, contextProfile]);
+
   const [loading, setLoading] = useState(false);
   const [historyList, setHistoryList] = useState([]);
   const [dailyStats, setDailyStats] = useState(null);
@@ -43,6 +75,8 @@ const TargetingHistoryModal = ({
 
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
   const [acosPeriod, setAcosPeriod] = useState(() => {
     try {
@@ -106,6 +140,15 @@ const TargetingHistoryModal = ({
     }
   }, [customDays]);
 
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   const historyRequest = useRef(0);
 
   const fetchHistory = useCallback(
@@ -162,11 +205,15 @@ const TargetingHistoryModal = ({
   useEffect(() => {
     if (show) {
       setPage(1);
+      setSearchQuery("");
+      setDebouncedSearch("");
       fetchHistory();
     } else {
       setHistoryList([]);
       setDailyStats(null);
       setPage(1);
+      setSearchQuery("");
+      setDebouncedSearch("");
     }
   }, [show, fetchHistory]);
 
@@ -191,7 +238,7 @@ const TargetingHistoryModal = ({
     };
 
     const getSourcePriority = (doc) => {
-      const src = String(doc.source || doc.changeSource || "").toUpperCase();
+      const src = String(doc.source || doc.triggerSource || doc.changeSource || "").toUpperCase();
       if (src.includes("RECOMMENDATION")) return 5;
       if (src.includes("DAYPARTING")) return 4;
       if (src.includes("RULE")) return 3;
@@ -201,20 +248,44 @@ const TargetingHistoryModal = ({
 
     const deduped = [];
     for (const doc of historyList) {
-      const cId = String(doc.campaignId || campaignId || "");
+      const cId = String(doc.changeLevel || doc.campaignId || campaignId || "");
       const tId = doc.targetId ? String(doc.targetId).replace(/^[TK]-/, "").trim() : "";
-      const target = doc.targeting ? String(doc.targeting).toLowerCase().trim() : "";
-      const cType = normalizeChangeType(doc.action || doc.changeType);
-      const oldV = normalizeVal(doc.previousValue !== undefined ? doc.previousValue : doc.oldBid);
-      const newV = normalizeVal(doc.updatedValue !== undefined ? doc.updatedValue : doc.bidAmount);
+      const target = (doc.targeting || targetText) ? String(doc.targeting || targetText).toLowerCase().trim() : "";
+      const cType = normalizeChangeType(doc.changeType || doc.action);
+      const oldV = normalizeVal(
+        doc.oldValue !== undefined
+          ? doc.oldValue
+          : doc.previousValue !== undefined
+          ? doc.previousValue
+          : doc.oldBid
+      );
+      const newV = normalizeVal(
+        doc.newValue !== undefined
+          ? doc.newValue
+          : doc.updatedValue !== undefined
+          ? doc.updatedValue
+          : doc.bidAmount
+      );
 
       const existingIdx = deduped.findIndex((ex) => {
-        const exCId = String(ex.campaignId || campaignId || "");
+        const exCId = String(ex.changeLevel || ex.campaignId || campaignId || "");
         const exTId = ex.targetId ? String(ex.targetId).replace(/^[TK]-/, "").trim() : "";
-        const exTarget = ex.targeting ? String(ex.targeting).toLowerCase().trim() : "";
-        const exCType = normalizeChangeType(ex.action || ex.changeType);
-        const exOldV = normalizeVal(ex.previousValue !== undefined ? ex.previousValue : ex.oldBid);
-        const exNewV = normalizeVal(ex.updatedValue !== undefined ? ex.updatedValue : ex.bidAmount);
+        const exTarget = (ex.targeting || targetText) ? String(ex.targeting || targetText).toLowerCase().trim() : "";
+        const exCType = normalizeChangeType(ex.changeType || ex.action);
+        const exOldV = normalizeVal(
+          ex.oldValue !== undefined
+            ? ex.oldValue
+            : ex.previousValue !== undefined
+            ? ex.previousValue
+            : ex.oldBid
+        );
+        const exNewV = normalizeVal(
+          ex.newValue !== undefined
+            ? ex.newValue
+            : ex.updatedValue !== undefined
+            ? ex.updatedValue
+            : ex.bidAmount
+        );
 
         const sameCamp = !cId || !exCId || exCId === cId;
         const sameTarget =
@@ -226,8 +297,8 @@ const TargetingHistoryModal = ({
 
         if (!sameCamp || !sameTarget || !sameType || !sameChange) return false;
 
-        const t1 = new Date(ex.lastChangeDate || ex.createdAt || 0).getTime();
-        const t2 = new Date(doc.lastChangeDate || doc.createdAt || 0).getTime();
+        const t1 = new Date(ex.createdAt || ex.lastChangeDate || 0).getTime();
+        const t2 = new Date(doc.createdAt || doc.lastChangeDate || 0).getTime();
         if (!isNaN(t1) && !isNaN(t2)) {
           return Math.abs(t1 - t2) <= 24 * 60 * 60 * 1000;
         }
@@ -243,7 +314,7 @@ const TargetingHistoryModal = ({
       }
     }
     return deduped;
-  }, [historyList, campaignId]);
+  }, [historyList, campaignId, targetText]);
 
   // Recalculate Old Bid ACOS in memory whenever lookback days change (0ms latency)
   const computedHistoryList = useMemo(() => {
@@ -260,8 +331,8 @@ const TargetingHistoryModal = ({
     const todayStr = moment().tz(tz).format("YYYY-MM-DD");
 
     return deduplicatedHistoryList.map((item) => {
-      const changeDateStr = item.lastChangeDate
-        ? moment(item.lastChangeDate).tz(tz).format("YYYY-MM-DD")
+      const changeDateStr = item.lastChangeDate || item.createdAt
+        ? moment(item.lastChangeDate || item.createdAt).tz(tz).format("YYYY-MM-DD")
         : todayStr;
       let endDate = changeDateStr;
       let startDate = moment(changeDateStr).subtract(lookbackNum, "days").format("YYYY-MM-DD");
@@ -285,8 +356,34 @@ const TargetingHistoryModal = ({
       const calculatedAcos =
         totalSales > 0 ? Number(((totalSpend / totalSales) * 100).toFixed(2)) : 0;
 
+      const rawOldValue =
+        item.oldValue !== undefined && item.oldValue !== null && item.oldValue !== ""
+          ? item.oldValue
+          : item.previousValue !== undefined && item.previousValue !== null && item.previousValue !== ""
+          ? item.previousValue
+          : item.oldBid;
+      const rawNewValue =
+        item.newValue !== undefined && item.newValue !== null && item.newValue !== ""
+          ? item.newValue
+          : item.updatedValue !== undefined && item.updatedValue !== null && item.updatedValue !== ""
+          ? item.updatedValue
+          : item.bidAmount;
+
       return {
         ...item,
+        createdAt: item.createdAt || item.lastChangeDate,
+        changeLevel: item.changeLevel || item.campaignId || campaignId,
+        campaignId: item.campaignId || campaignId,
+        campaignName: item.campaignName || campaignName,
+        adGroupId: item.adGroupId || adGroupId,
+        adGroupName: item.adGroupName || adGroupName,
+        targeting: item.targeting || targetText,
+        matchType: item.matchType || matchType,
+        changeType: item.changeType || item.action || "Update Targeting Bid",
+        oldValue: rawOldValue !== undefined && rawOldValue !== null ? rawOldValue : "—",
+        newValue: rawNewValue !== undefined && rawNewValue !== null ? rawNewValue : "—",
+        triggerSource: item.triggerSource || item.changeSource || item.source,
+        updatedBy: item.updatedBy || (item.changeSource === "Manual" ? "User" : "System"),
         oldAcos: calculatedAcos,
         acos: calculatedAcos,
         spend: Number(totalSpend.toFixed(2)),
@@ -295,7 +392,35 @@ const TargetingHistoryModal = ({
         dateRange: { startDate, endDate },
       };
     });
-  }, [historyList, deduplicatedHistoryList, dailyStats, acosPeriod, customDays, profileTimezone]);
+  }, [historyList, deduplicatedHistoryList, dailyStats, acosPeriod, customDays, profileTimezone, campaignId, campaignName, adGroupId, adGroupName, targetText, matchType]);
+
+  const filteredHistoryList = useMemo(() => {
+    if (!computedHistoryList || !computedHistoryList.length) return [];
+    if (!debouncedSearch) return computedHistoryList;
+    const q = debouncedSearch.toLowerCase();
+    return computedHistoryList.filter((item) => {
+      const targetStr = String(item.targeting || "").toLowerCase();
+      const changeTypeStr = String(item.changeType || item.action || "").toLowerCase();
+      const formattedType = formatAmazonChangeType(item).toLowerCase();
+      const sourceStr = String(item.triggerSource || item.source || "").toLowerCase();
+      const userStr = String(item.updatedBy || "").toLowerCase();
+      const oldValStr = String(item.oldValue || "").toLowerCase();
+      const newValStr = String(item.newValue || "").toLowerCase();
+      const campStr = String(item.campaignName || campaignName || "").toLowerCase();
+      const adGroupStr = String(item.adGroupName || adGroupName || "").toLowerCase();
+      return (
+        targetStr.includes(q) ||
+        changeTypeStr.includes(q) ||
+        formattedType.includes(q) ||
+        sourceStr.includes(q) ||
+        userStr.includes(q) ||
+        oldValStr.includes(q) ||
+        newValStr.includes(q) ||
+        campStr.includes(q) ||
+        adGroupStr.includes(q)
+      );
+    });
+  }, [computedHistoryList, debouncedSearch, campaignName, adGroupName]);
 
   const handleAcosPeriodChange = (val) => {
     acosPeriodRef.current = val;
@@ -306,56 +431,113 @@ const TargetingHistoryModal = ({
     }
   };
 
-  const formatBid = (val) => {
-    if (val === null || val === undefined || isNaN(Number(val))) return "—";
-    return CurrencyCode(Number(val));
+  const formatValue = (val) => {
+    if (val === undefined || val === null) return "—";
+    if (!isNaN(Number(val)) && typeof val !== "boolean") {
+      return CurrencyFormat(val);
+    }
+    return String(val);
   };
 
-  const totalRecords = computedHistoryList.length;
+  const getSourceBadge = (item) => {
+    const rawSource =
+      item?.triggerSource ||
+      (item?.source === "DAYPARTING"
+        ? "Dayparting"
+        : item?.source === "RECOMMENDATION"
+        ? "Recommendation"
+        : item?.source === "AMAZON_SQS" || item?.source === "AMAZON_API"
+        ? "Amazon API"
+        : item?.source === "RULE"
+        ? "Rule"
+        : item?.source === "MANUAL"
+        ? "Manual"
+        : item?.updatedFrom === "Amazon Stream"
+        ? "Amazon API"
+        : (item?.changeType || "").toLowerCase().includes("dayparting")
+        ? "Dayparting"
+        : (item?.changeType || "").toLowerCase().match(/^update (targeting bid|camapign budget|campaign budget|placement bid|product pages placement bid|rest of search placement bid|top of search placement bid|targeting status|camapign status|campaign status)$/)
+        ? "Recommendation"
+        : (item?.changeType || "").toLowerCase().match(/rule|cron/)
+        ? "Rule"
+        : "Manual");
+
+    if (rawSource === "Dayparting") {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-violet-500/10 text-violet-700 dark:text-violet-300 border border-violet-500/25">
+          <span className="w-1.5 h-1.5 rounded-full bg-violet-500" />
+          {t("Dayparting")}
+        </span>
+      );
+    }
+    if (rawSource === "Recommendation") {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+          {t("Recommendation")}
+        </span>
+      );
+    }
+    if (rawSource === "Amazon API" || rawSource === "Amazon SQS") {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/25">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+          {t("Amazon API")}
+        </span>
+      );
+    }
+    if (rawSource === "Rule") {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25">
+          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+          {t("Rule")}
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/25">
+        <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+        {t("Manual")}
+      </span>
+    );
+  };
+
+  const totalRecords = filteredHistoryList.length;
   const paginatedHistoryList = useMemo(() => {
-    if (!computedHistoryList || !computedHistoryList.length) return [];
+    if (!filteredHistoryList || !filteredHistoryList.length) return [];
     const start = (page - 1) * perPage;
-    return computedHistoryList.slice(start, start + perPage);
-  }, [computedHistoryList, page, perPage]);
+    return filteredHistoryList.slice(start, start + perPage);
+  }, [filteredHistoryList, page, perPage]);
 
   const gridHeight = useMemo(() => {
     if (loading) return "220px";
     const count = paginatedHistoryList.length;
     if (count === 0) return "220px";
-    const calculated = 48 + count * 48 + 2 + 16;
-    return `min(${calculated}px, 52vh)`;
+    const calculated = 48 + count * 48 + 2 + 24;
+    return `min(${calculated}px, 54vh)`;
   }, [paginatedHistoryList.length, loading]);
 
-  useEffect(() => {
-    const handleResize = () => {
-      if (gridApiRef.current && typeof gridApiRef.current.sizeColumnsToFit === "function") {
-        gridApiRef.current.sizeColumnsToFit();
-      }
-    };
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  // ── AG-Grid Column Definitions matching Recommendation History UI ─────────────
+  // ── AG-Grid Column Definitions matching Recommendation History Modal ─────────
   const columns = useMemo(() => [
     {
-      headerName: t("Last Updated Time"),
-      field: "lastChangeDate",
-      colId: "lastChangeDate",
-      lockPosition: "left",
-      minWidth: 160,
+      headerName: t("Date & Time"),
+      field: "createdAt",
+      colId: "createdAt",
+      minWidth: 165,
       width: 175,
-      flex: 1.1,
       sortable: false,
       resizable: true,
+      suppressMenu: true,
+      pinned: null,
+      lockPinned: true,
       cellRenderer: (params) => {
         const item = params.data;
         if (!item) return null;
-        const dateVal = item.lastChangeDate || item.createdAt;
-        const formattedDate = dateVal ? moment(dateVal).format("DD/MM/YYYY, hh:mm A") : "—";
-        const dateParts = formattedDate.split(", ");
+        const dateVal = item.createdAt || item.lastChangeDate;
+        const formattedDate = moment(dateVal).format("DD/MM/YYYY hh:mm:ss A");
+        const dateParts = formattedDate.split(" ");
         const datePart = dateParts[0] || "";
-        const timePart = dateParts[1] || "";
+        const timePart = dateParts.slice(1).join(" ") || "";
         return (
           <div className="flex flex-col justify-center h-full leading-tight">
             <div className="flex items-center gap-1 font-semibold text-[12px] text-slate-700 dark:text-slate-200">
@@ -370,69 +552,216 @@ const TargetingHistoryModal = ({
       },
     },
     {
-      headerName: t("Old Bid"),
-      field: "oldBid",
-      colId: "oldBid",
-      minWidth: 95,
-      width: 105,
-      flex: 0.7,
+      headerName: t("Change level", "Change level"),
+      field: "changeLevel",
+      colId: "changeLevel",
+      minWidth: 210,
+      width: 240,
       sortable: false,
       resizable: true,
-      cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      suppressMenu: true,
+      pinned: null,
+      lockPinned: true,
       cellRenderer: (params) => {
         const item = params.data;
         if (!item) return null;
-        const hasChange =
-          item.oldBid !== null &&
-          item.oldBid !== undefined &&
-          Number(item.oldBid) !== Number(item.bidAmount);
-        if (!hasChange) {
-          return <span className="text-slate-400 font-medium">—</span>;
+        const rowCampaignName = item?.campaignDetails?.name || item?.campaignName || campaignName || "";
+        const rowCampaignId = item?.campaignDetails?.campaignId || item?.campaignId || item?.changeLevel || campaignId;
+        const rawAdGroupName = item?.adGroupDetails?.name || item?.adGroupName || adGroupName || "";
+        const rawAdGroupId = item?.adGroupId || item?.adGroupDetails?.adGroupId || adGroupId;
+        const isAdGroup = isAdGroupLevelChange(item);
+
+        let primaryAdGroup = "";
+        if (rawAdGroupName && rawAdGroupName.toLowerCase() !== rowCampaignName.toLowerCase()) {
+          primaryAdGroup = rawAdGroupName;
+        } else if (rawAdGroupId && String(rawAdGroupId) !== String(rowCampaignId)) {
+          primaryAdGroup = `Ad Group #${rawAdGroupId}`;
         }
+
         return (
-          <span className="font-semibold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[12px]">
-            {formatBid(item.oldBid)}
-          </span>
+          <div className="flex flex-col justify-center h-full leading-tight min-w-0">
+            {isAdGroup && (primaryAdGroup || rowCampaignName) ? (
+              <div className="flex flex-col gap-0.5 min-w-0">
+                {primaryAdGroup ? (
+                  <div className="flex items-center min-w-0 text-[12px] font-semibold">
+                    <span className="text-slate-400 dark:text-slate-500 mr-1 flex-shrink-0 font-medium">
+                      {t("Ad Group")}:
+                    </span>
+                    <span
+                      className="truncate cursor-pointer text-sky-600 dark:text-[#38bdf8] hover:underline font-semibold"
+                      title={primaryAdGroup}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openCampaignViewInNewTab(item, rowCampaignName, {
+                          campaignId: rowCampaignId,
+                          adGroupId: rawAdGroupId,
+                          adGroupName: primaryAdGroup,
+                        });
+                      }}
+                    >
+                      {primaryAdGroup}
+                    </span>
+                  </div>
+                ) : null}
+                {rowCampaignName ? (
+                  <div className="flex items-center min-w-0 text-[11px]">
+                    <span className="text-slate-400 dark:text-slate-500 mr-1 flex-shrink-0">
+                      {t("Campaign")}:
+                    </span>
+                    <span
+                      className="truncate cursor-pointer text-slate-500 dark:text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 hover:underline"
+                      title={rowCampaignName}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openCampaignViewInNewTab(item, rowCampaignName, { campaignId: rowCampaignId });
+                      }}
+                    >
+                      {rowCampaignName}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="flex items-center min-w-0 text-[12px]">
+                <span className="text-slate-400 dark:text-slate-500 mr-1 flex-shrink-0 font-medium">
+                  {t("Campaign")}:
+                </span>
+                <span
+                  className="truncate cursor-pointer text-sky-600 dark:text-[#38bdf8] hover:underline font-semibold"
+                  title={rowCampaignName}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openCampaignViewInNewTab(item, rowCampaignName, { campaignId: rowCampaignId });
+                  }}
+                >
+                  {rowCampaignName || "—"}
+                </span>
+              </div>
+            )}
+          </div>
         );
       },
     },
     {
-      headerName: t("New Bid"),
-      field: "bidAmount",
-      colId: "bidAmount",
-      minWidth: 105,
-      width: 115,
-      flex: 0.8,
+      headerName: t("Change type", "Change type"),
+      field: "changeType",
+      colId: "changeType",
+      minWidth: 200,
+      width: 230,
       sortable: false,
       resizable: true,
-      cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
+      suppressMenu: true,
+      pinned: null,
+      lockPinned: true,
       cellRenderer: (params) => {
         const item = params.data;
         if (!item) return null;
-        const hasChange =
-          item.oldBid !== null &&
-          item.oldBid !== undefined &&
-          Number(item.oldBid) !== Number(item.bidAmount);
-        const isIncrease = hasChange && Number(item.bidAmount) > Number(item.oldBid);
-
-        if (hasChange) {
-          return (
+        const formattedChangeType = formatAmazonChangeType(item);
+        return (
+          <div className="flex items-center h-full w-full min-w-0">
             <span
-              className={`inline-flex items-center gap-1 font-semibold px-2.5 py-0.5 rounded-md border text-[12px] ${
-                isIncrease
-                  ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-200/50 dark:border-emerald-800/40"
-                  : "bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 border-amber-200/50 dark:border-amber-800/40"
-              }`}
+              className="truncate text-[12px] font-medium text-slate-800 dark:text-slate-200"
+              title={formattedChangeType}
             >
-              <span>{formatBid(item.bidAmount)}</span>
-              <span className="text-[10px] font-normal">{isIncrease ? "↑" : "↓"}</span>
+              {formattedChangeType}
             </span>
+          </div>
+        );
+      },
+    },
+    {
+      headerName: t("From"),
+      field: "oldValue",
+      colId: "oldValue",
+      minWidth: 85,
+      width: 95,
+      sortable: false,
+      resizable: true,
+      suppressMenu: true,
+      pinned: null,
+      lockPinned: true,
+      cellRenderer: (params) => {
+        const item = params.data;
+        if (!item) return null;
+        const val =
+          item.oldValue !== undefined && item.oldValue !== null && item.oldValue !== "" && item.oldValue !== "—"
+            ? item.oldValue
+            : item.previousValue !== undefined && item.previousValue !== null && item.previousValue !== "" && item.previousValue !== "—"
+            ? item.previousValue
+            : item.oldBid !== undefined && item.oldBid !== null && item.oldBid !== ""
+            ? item.oldBid
+            : null;
+        if (val !== null && val !== undefined && val !== "" && val !== "—") {
+          const badgeProps = getStatusBadgeProps(val);
+          if (badgeProps) {
+            return (
+              <div className="flex items-center h-full">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${badgeProps.className}`}>
+                  {t(badgeProps.label)}
+                </span>
+              </div>
+            );
+          }
+          return (
+            <div className="flex items-center h-full">
+              <span className="text-rose-600 dark:text-rose-400 font-semibold text-[12px] truncate" title={formatValue(val)}>
+                {formatValue(val)}
+              </span>
+            </div>
           );
         }
         return (
-          <span className="inline-block font-semibold px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-200/50 dark:border-blue-800/40 text-[12px]">
-            {formatBid(item.bidAmount)}
-          </span>
+          <div className="flex items-center h-full">
+            <span className="text-slate-400">—</span>
+          </div>
+        );
+      },
+    },
+    {
+      headerName: t("To"),
+      field: "newValue",
+      colId: "newValue",
+      minWidth: 85,
+      width: 95,
+      sortable: false,
+      resizable: true,
+      suppressMenu: true,
+      pinned: null,
+      lockPinned: true,
+      cellRenderer: (params) => {
+        const item = params.data;
+        if (!item) return null;
+        const val =
+          item.newValue !== undefined && item.newValue !== null && item.newValue !== "" && item.newValue !== "—"
+            ? item.newValue
+            : item.updatedValue !== undefined && item.updatedValue !== null && item.updatedValue !== "" && item.updatedValue !== "—"
+            ? item.updatedValue
+            : item.bidAmount !== undefined && item.bidAmount !== null && item.bidAmount !== ""
+            ? item.bidAmount
+            : null;
+        if (val !== null && val !== undefined && val !== "" && val !== "—") {
+          const badgeProps = getStatusBadgeProps(val);
+          if (badgeProps) {
+            return (
+              <div className="flex items-center h-full">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${badgeProps.className}`}>
+                  {t(badgeProps.label)}
+                </span>
+              </div>
+            );
+          }
+          return (
+            <div className="flex items-center h-full">
+              <span className="text-emerald-600 dark:text-emerald-400 font-semibold text-[12px] truncate" title={formatValue(val)}>
+                {formatValue(val)}
+              </span>
+            </div>
+          );
+        }
+        return (
+          <div className="flex items-center h-full">
+            <span className="text-slate-400">—</span>
+          </div>
         );
       },
     },
@@ -440,11 +769,13 @@ const TargetingHistoryModal = ({
       headerName: t("Old Bid ACOS"),
       field: "oldAcos",
       colId: "oldAcos",
-      minWidth: 125,
-      width: 135,
-      flex: 0.95,
+      minWidth: 130,
+      width: 140,
       sortable: false,
       resizable: true,
+      suppressMenu: true,
+      pinned: null,
+      lockPinned: true,
       cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" },
       cellRenderer: (params) => {
         const item = params.data;
@@ -452,9 +783,7 @@ const TargetingHistoryModal = ({
         const displayAcos =
           item.oldAcos !== undefined && item.oldAcos !== null
             ? Number(item.oldAcos)
-            : acosPeriod !== BID_TO_BID && item.acos !== undefined && item.acos !== null
-            ? Number(item.acos)
-            : null;
+            : (acosPeriod !== BID_TO_BID && item.acos !== undefined && item.acos !== null ? Number(item.acos) : null);
 
         return (
           <div className="flex flex-col items-center justify-center h-full leading-tight text-center">
@@ -471,7 +800,7 @@ const TargetingHistoryModal = ({
                 }`}
                 title={
                   acosPeriod !== BID_TO_BID && item.dateRange
-                    ? `Spend: ${formatBid(item.spend)} | Sales: ${formatBid(item.sales)} (${item.dateRange.startDate} to ${item.dateRange.endDate})`
+                    ? `Spend: ${formatValue(item.spend)} | Sales: ${formatValue(item.sales)} (${item.dateRange.startDate} to ${item.dateRange.endDate})`
                     : t("ACOS when old bid was active")
                 }
               >
@@ -486,88 +815,68 @@ const TargetingHistoryModal = ({
       },
     },
     {
-      headerName: t("Source / Change Details"),
-      field: "source",
-      colId: "source",
-      minWidth: 190,
-      flex: 1.35,
+      headerName: t("Triggered From"),
+      field: "triggerSource",
+      colId: "triggerSource",
+      minWidth: 135,
+      width: 145,
       sortable: false,
       resizable: true,
+      suppressMenu: true,
+      pinned: null,
+      lockPinned: true,
       cellRenderer: (params) => {
         const item = params.data;
         if (!item) return null;
-        const rawSource =
-          item?.triggerSource ||
-          (item?.source === "DAYPARTING"
-            ? "Dayparting"
-            : item?.source === "RECOMMENDATION"
-            ? "Recommendation"
-            : item?.source === "AMAZON_SQS" || item?.source === "AMAZON_API"
-            ? "Amazon API"
-            : item?.source === "RULE"
-            ? "Rule"
-            : item?.source === "MANUAL"
-            ? "Manual"
-            : item?.updatedFrom === "Amazon Stream"
-            ? "Amazon API"
-            : (item?.changeType || "").toLowerCase().includes("dayparting")
-            ? "Dayparting"
-            : (item?.changeType || "").toLowerCase().match(/^update (targeting bid|camapign budget|campaign budget|placement bid|product pages placement bid|rest of search placement bid|top of search placement bid|targeting status|camapign status|campaign status)$/)
-            ? "Recommendation"
-            : (item?.changeType || "").toLowerCase().match(/rule|cron/)
-            ? "Rule"
-            : "Manual");
-
-        const badgeClass =
-          rawSource === "Dayparting"
-            ? "bg-violet-500/10 text-violet-700 dark:text-violet-300 border-violet-500/25"
-            : rawSource === "Recommendation"
-            ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/25"
-            : rawSource === "Amazon API"
-            ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/25"
-            : rawSource === "Rule"
-            ? "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/25"
-            : "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/25";
-
-        const dotColor =
-          rawSource === "Dayparting"
-            ? "bg-violet-500"
-            : rawSource === "Recommendation"
-            ? "bg-emerald-500"
-            : rawSource === "Amazon API"
-            ? "bg-amber-500"
-            : rawSource === "Rule"
-            ? "bg-indigo-500"
-            : "bg-blue-500";
-
-        const label = item?.source || rawSource;
-
         return (
           <div className="flex items-center h-full">
-            <span
-              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${badgeClass}`}
-              title={label}
-            >
-              <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
-              <span>{label}</span>
-            </span>
+            {getSourceBadge(item)}
           </div>
         );
       },
     },
-  ], [t, acosPeriod]);
+    {
+      headerName: t("Changed By"),
+      field: "updatedBy",
+      colId: "updatedBy",
+      minWidth: 200,
+      width: 220,
+      sortable: false,
+      resizable: true,
+      suppressMenu: true,
+      pinned: null,
+      lockPinned: true,
+      cellRenderer: (params) => {
+        const item = params.data;
+        if (!item) return null;
+        const user = item.updatedBy || "System";
+        return (
+          <div className="flex items-center h-full">
+            <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-200">
+              <FiUser size={13} className="opacity-60 text-slate-400 flex-shrink-0" />
+              <span className="truncate max-w-[190px] font-medium" title={user}>
+                {user}
+              </span>
+            </div>
+          </div>
+        );
+      },
+    },
+  ], [t, campaignName, campaignId, adGroupName, adGroupId, acosPeriod]);
 
   return (
     <Dialog open={show} onOpenChange={setShow}>
       <DialogContent
         hideCloseButton={true}
-        className="max-w-[1100px] w-[95vw] p-0 gap-0 overflow-hidden border border-slate-200/90 dark:border-white/10 rounded-2xl shadow-2xl bg-white dark:bg-[#0c1322] text-slate-800 dark:text-slate-100 z-[1050] flex flex-col max-h-[90vh]"
+        style={{ zIndex: 100050 }}
+        className="max-w-[1260px] w-[95vw] max-h-[88vh] p-0 gap-0 overflow-hidden border border-slate-200/80 dark:border-slate-800 rounded-2xl shadow-2xl bg-white dark:bg-[#0b1329] text-slate-800 dark:text-slate-100 z-[100050] flex flex-col"
+        onInteractOutside={(e) => e.preventDefault()}
       >
         {/* Header */}
         <DialogHeader className="px-6 py-4 border-b border-slate-200 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-900/60 flex-shrink-0">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center flex-shrink-0 shadow-sm border border-blue-500/20">
+              <div className="w-10 h-10 rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center flex-shrink-0 shadow-sm border border-sky-500/20">
                 <FiClock size={20} />
               </div>
               <div className="min-w-0">
@@ -577,7 +886,7 @@ const TargetingHistoryModal = ({
                 <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-500 dark:text-slate-400">
                   {targetText && (
                     <span
-                      className="font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-md truncate max-w-[260px]"
+                      className="font-semibold text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-900/30 px-2 py-0.5 rounded-md truncate max-w-[260px]"
                       title={targetText}
                     >
                       {targetText}
@@ -605,8 +914,30 @@ const TargetingHistoryModal = ({
               </div>
             </div>
 
-            {/* ACOS Lookback Dropdown + Refresh and Close buttons */}
+            {/* Right: Search, Old ACOS dropdown, Refresh and Close */}
             <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+              {/* Search bar */}
+              <div className="relative min-w-[180px] max-w-[240px]">
+                <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+                <Input
+                  type="text"
+                  placeholder={t("Search history...")}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full h-8 pl-8 pr-7 text-xs bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 rounded-lg shadow-sm"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  >
+                    <MdOutlineClose size={13} />
+                  </button>
+                )}
+              </div>
+
+              {/* Old ACOS lookback */}
               <div className="flex items-center gap-1.5">
                 <span className="text-xs font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap">
                   {t("Old ACOS")}:
@@ -616,7 +947,7 @@ const TargetingHistoryModal = ({
                     <SelectTrigger className="h-8 w-full text-xs font-medium bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm">
                       <SelectValue placeholder={t("Last 7 Days")} />
                     </SelectTrigger>
-                    <SelectContent className="z-[99999] min-w-[145px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg">
+                    <SelectContent className="z-[100060] min-w-[145px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg">
                       <SelectItem value="7" className="text-xs py-1.5 cursor-pointer">
                         {t("Last 7 Days")}
                       </SelectItem>
@@ -674,7 +1005,7 @@ const TargetingHistoryModal = ({
                 className="w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center text-slate-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all cursor-pointer opacity-80 hover:opacity-100 shadow-sm"
                 title={t("Refresh History")}
               >
-                <FiRefreshCw size={14} className={loading ? "animate-spin text-blue-500" : ""} />
+                <FiRefreshCw size={14} className={loading ? "animate-spin text-sky-500" : ""} />
               </button>
               <button
                 type="button"
@@ -691,14 +1022,14 @@ const TargetingHistoryModal = ({
         {/* Content Body / AgTable */}
         <div className="overflow-hidden px-5 pt-2 pb-3 w-full max-w-full flex flex-col min-h-0">
           <div
-            className="data_table flex flex-col min-h-0 [&_.glass-grid-container]:!rounded-xl [&_.iq-ag-table]:!rounded-t-xl [&_.ag-root-wrapper]:!rounded-t-xl [&_.iq-pagination]:!rounded-b-xl [&_.iq-pagination]:!flex-shrink-0"
+            className="data_table flex flex-col min-h-0 [&_.glass-grid-container]:!rounded-xl [&_.iq-ag-table]:!rounded-t-xl [&_.ag-root-wrapper]:!rounded-t-xl [&_.iq-pagination]:!rounded-b-xl [&_.iq-pagination]:!flex-shrink-0 [&_.ag-cell]:!bg-transparent [&_.ag-row-even]:!bg-white dark:[&_.ag-row-even]:!bg-[#0F172A] [&_.ag-row-odd]:!bg-[#f4f9fd] dark:[&_.ag-row-odd]:!bg-[#111827] [&_.ag-pinned-right-cols-container]:!bg-transparent [&_.ag-pinned-left-cols-container]:!bg-transparent [&_.ag-body-horizontal-scroll]:!opacity-100"
             id="targeting-bid-history-modal-grid-wrapper"
           >
             <AgTable
               ref={gridRef}
-              tableId="targeting-bid-history-modal-grid"
+              tableId="targeting-bid-history-v2-grid"
               height={gridHeight}
-              minHeight={computedHistoryList.length === 0 || loading ? "220px" : "auto"}
+              minHeight={filteredHistoryList.length === 0 || loading ? "220px" : "auto"}
               rowHeight={48}
               rowData={paginatedHistoryList}
               columnDefs={columns}
@@ -713,22 +1044,19 @@ const TargetingHistoryModal = ({
               paginationOptions={[10, 25, 50]}
               isCustomSaveColumns={false}
               enableCustomizeColumns={false}
+              alwaysShowHorizontalScroll={true}
+              suppressHorizontalScroll={false}
               loading={loading}
               onRefresh={() => fetchHistory(acosPeriod, customDays)}
-              defaultColDef={{ resizable: true, suppressSizeToFit: false, sortable: false }}
+              defaultColDef={{
+                resizable: true,
+                sortable: false,
+                suppressMenu: true,
+                lockPinned: true,
+                suppressSizeToFit: true,
+              }}
               onGridReady={(params) => {
                 gridApiRef.current = params?.api;
-                setTimeout(() => {
-                  if (params?.api && typeof params.api.sizeColumnsToFit === "function") {
-                    params.api.sizeColumnsToFit();
-                  }
-                }, 100);
-              }}
-              onFirstDataRendered={(params) => {
-                params?.api?.sizeColumnsToFit?.();
-              }}
-              onRowDataUpdated={(params) => {
-                params?.api?.sizeColumnsToFit?.();
               }}
             />
           </div>

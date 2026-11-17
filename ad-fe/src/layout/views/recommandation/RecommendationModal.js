@@ -452,7 +452,18 @@ const DecimalCell = ({ value }) => (
     <span className="text-slate-700 dark:text-slate-200 font-medium">{value != null ? parseFloat(value).toFixed(2) : "—"}</span>
 );
 
-const IsNewCell = ({ value }) => {
+const IsNewCell = ({ value, data }) => {
+    const { t } = useTranslation();
+    if (data?.appliedPendingSync === true) {
+        return (
+            <span
+                title={t("Applied in Amazon. Waiting for the change to sync.")}
+                className="bg-sky-500/10 text-sky-700 dark:text-sky-300 border border-sky-500/30 px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center justify-center whitespace-nowrap leading-tight select-none"
+            >
+                {t("Applied")}
+            </span>
+        );
+    }
     const isNew = Boolean(value);
     if (isNew) {
         return (
@@ -679,9 +690,17 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
     const [applyLoading, setApplyLoading] = useState(false);
     const [selectAllLoading, setSelectAllLoading] = useState(false);
     const allFetchedDataRef = useRef(null);
+    const detailRequestRef = useRef(0);
+    const detailQueryRef = useRef(null);
+    const viewKey = JSON.stringify([show, snapshot?.rule?._id || snapshot?._id, profileId || snapshot?.profileId, adType]);
+    const viewKeyRef = useRef(viewKey);
+    viewKeyRef.current = viewKey;
 
     // Seed date range and data whenever the snapshot or show changes
     useEffect(() => {
+        detailRequestRef.current += 1;
+        detailQueryRef.current = null;
+        setDateLoading(false);
         if (!show || !snapshot) {
             setInternalData([]);
             setInternalCount(0);
@@ -958,7 +977,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         setCurrentPage(1);
     }, [show, snapshot?._id, adType]);
 
-    const fetchData = useCallback(async (targetPage = 1, targetPerPage = perPage, targetDateRange = dateRange, targetFilter = historyFilter) => {
+    const fetchData = useCallback(async (targetPage = 1, targetPerPage = perPage, targetDateRange = dateRange, targetFilter = historyFilter, keepRowsVisible = false) => {
         const ruleId = snapshot?.rule?._id || snapshot?._id || internalRule?._id;
         if (!ruleId) return;
 
@@ -975,9 +994,13 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
             payload.toDate = toYMD(targetDateRange[1]);
         }
 
-        setDateLoading(true);
+        const request = ++detailRequestRef.current;
+        detailQueryRef.current = { viewKey, page: targetPage, perPage: targetPerPage, dateRange: targetDateRange, filter: targetFilter };
+        const isCurrentRequest = () => request === detailRequestRef.current && viewKeyRef.current === viewKey;
+        setDateLoading(!keepRowsVisible);
         try {
             const res = await ApiGetRecommendationData(ruleId, payload);
+            if (!isCurrentRequest()) return;
             if (res?.isSuccess) {
                 setInternalData(res.data || []);
                 const total = res?.totalRecords ?? res?.count ?? (res.data ? res.data.length : 0);
@@ -991,12 +1014,13 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                 Toast.error(res?.message || t("Failed to load recommendation data"));
             }
         } catch (err) {
+            if (!isCurrentRequest()) return;
             console.error("Failed to load recommendation data:", err);
             Toast.error(t("Failed to load recommendation data"));
         } finally {
-            setDateLoading(false);
+            if (isCurrentRequest()) setDateLoading(false);
         }
-    }, [snapshot, internalRule, profileId, perPage, dateRange, historyFilter, t]);
+    }, [snapshot, internalRule, profileId, perPage, dateRange, historyFilter, viewKey, t]);
 
     const handleRefreshModal = useCallback(async () => {
         lastFetchedKeyRef.current = "";
@@ -1037,7 +1061,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
     const getRowId = useCallback((row) => {
         if (!row) return "";
         if (gridName === "Campaign") return String(row.campaignId || row.campaignName || "");
-        if (gridName === "Placement") return `${row.campaignId}-${row.placement}`;
+        if (gridName === "Placement") return `${row.campaignId}-${row.placement || row.placementType}`;
         if (gridName === "Targeting") return `${row.campaignId}-${row.adGroupId}-${row.targetId || row.keywordId || row.targeting || ""}`;
         if (gridName === "Search Term") return `${row.campaignId}-${row.adGroupId}-${row.searchTerm}`;
         return String(row._id || `${row.campaignId}-${row.targetId || row.placement || ""}`);
@@ -1762,47 +1786,70 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                     headerType && ["SP", "SB", "SD"].includes(headerType) ? { headers: { adType: headerType } } : {}
                 );
 
-            let res;
-            if (adType === "All") {
-                // Under the combined view the selected items can span ad types.
-                // The apply endpoint is ad-type-specific (no "All" branch), so
-                // group the items by their own ad type and fan out one call per
-                // type, pinning that type's header.
-                const groups = selectedRows.reduce((acc, row) => {
-                    const t = ["SP", "SB", "SD"].includes(row?.adType) ? row.adType : "SP";
-                    (acc[t] = acc[t] || []).push(row);
-                    return acc;
-                }, {});
-                const entries = Object.entries(groups);
-                const settled = await Promise.allSettled(entries.map(([t, items]) => applyOne(items, t)));
-                const rejected = settled.find(result => result.status === "rejected");
-                if (rejected) throw rejected.reason;
-                const results = settled.map(result => result.value);
-                const okFor = (r) => r?.isSuccess && (r?.data?.isSuccess ?? true);
-                res = results.every(okFor)
-                    ? { isSuccess: true, data: { isSuccess: true, message: `Recommendation applied (${entries.map(([t]) => t).join(", ")})` } }
-                    : (results.find((r) => !okFor(r)) || { isSuccess: false });
-            } else {
-                res = await applyOne(selectedRows, null);
+            // The apply endpoint accepts one ad type per request.
+            const rowAdType = (row) => adType === "All"
+                ? (["SP", "SB", "SD"].includes(row.adType) ? row.adType : "SP")
+                : adType;
+            const groups = new Map();
+            for (const row of selectedRows) {
+                const type = rowAdType(row);
+                if (!groups.has(type)) groups.set(type, []);
+                groups.get(type).push(row);
             }
+            const rowKey = (row, type = rowAdType(row)) => `${type}:${getRowId(row)}`;
+            const entries = [...groups.entries()];
+            const responses = await Promise.allSettled(entries.map(([type, items]) => applyOne(items, type)));
+            const confirmed = new Set();
+            const completed = new Set();
+            let errorMessage;
+            let successMessage;
+            responses.forEach((response, index) => {
+                const [type, rows] = entries[index];
+                const result = response.status === "fulfilled" ? response.value : null;
+                const outcome = result?.data;
+                if (Array.isArray(outcome?.appliedItems)) {
+                    const requested = new Set(rows.map((row) => rowKey(row)));
+                    for (const item of outcome.appliedItems) {
+                        const key = rowKey(item, type);
+                        if (!requested.has(key)) continue;
+                        confirmed.add(key);
+                        completed.add(key);
+                    }
+                } else if (result?.isSuccess && outcome?.isSuccess) {
+                    // Older responses cannot identify which rows should show a tag.
+                    for (const row of rows) completed.add(rowKey(row));
+                }
+                if (result?.isSuccess && outcome?.isSuccess) successMessage = outcome.message || result.message;
+                else errorMessage ??= outcome?.message || result?.message;
+            });
 
-            if (res?.isSuccess && (res?.data?.isSuccess ?? true)) {
+            if (viewKeyRef.current !== viewKey) return;
+            if (completed.size > 0) {
                 applyOperationRef.current = null;
-                Toast.success(res?.data?.message || "Recommendation applied successfully");
                 setShowReviewModal(false);
-                const appliedRowIds = new Set(selectedRows.map((r) => getRowId(r)));
-                setSelectedRows([]);
-                setInternalData((prev) => (prev || []).filter((r) => !appliedRowIds.has(getRowId(r))));
-                setInternalCount((prev) => Math.max(0, prev - appliedRowIds.size));
-                setTotalRecords((prev) => Math.max(0, prev - appliedRowIds.size));
-                allFetchedDataRef.current = null;
-                lastFetchedKeyRef.current = "";
-                await fetchData(currentPage, perPage, dateRange);
-                if (typeof refreshGrid === "function") {
-                    refreshGrid();
+                setSelectedRows((previous) => previous.filter((row) => !completed.has(rowKey(row))));
+                setInternalData((previous) => previous.map((row) => confirmed.has(rowKey(row))
+                    ? { ...row, appliedPendingSync: true } : row));
+                setTimeout(refreshCheckboxCells, 0);
+                if (completed.size < selectedRows.length) {
+                    Toast.warning(t("Some recommendations were applied. Check the remaining selected items."));
+                } else {
+                    Toast.success(successMessage || t("Recommendation applied successfully"));
                 }
             } else {
-                Toast.error(res?.data?.message || "Failed to apply recommendation");
+                Toast.error(errorMessage || t("Failed to apply recommendation"));
+            }
+
+            allFetchedDataRef.current = null;
+            lastFetchedKeyRef.current = "";
+            const latestQuery = detailQueryRef.current;
+            if (latestQuery?.viewKey === viewKey) {
+                await fetchData(latestQuery.page, latestQuery.perPage, latestQuery.dateRange, latestQuery.filter, true);
+            } else {
+                await fetchData(currentPage, perPage, dateRange, historyFilter, true);
+            }
+            if (completed.size > 0 && typeof refreshGrid === "function") {
+                refreshGrid();
             }
         } catch (error) {
             console.error("Error applying recommendation:", error);

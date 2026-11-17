@@ -5,6 +5,7 @@ const moment = require("moment");
 const { default: mongoose } = require("mongoose");
 const crypto = require("crypto");
 const { insertOperationHistory } = require("../helper/operationHistory");
+const { annotateAppliedRecommendations } = require("../helper/recommendationAppliedStatus");
 
 const pLimit = require("p-limit").default;
 const limit = pLimit(Number(process.env.PROCESS_LIMIT));
@@ -4059,6 +4060,16 @@ exports.getRecommendationData = async (req, res) => {
 
         allItems.sort((a, b) => (b.isNew ? 1 : 0) - (a.isNew ? 1 : 0));
 
+        try {
+            await annotateAppliedRecommendations({
+                rows: allItems, rule, adType, models: req.models,
+                receiptModel: recommandationCampaignByRuleSchema,
+                onCleanupError: error => recommendation_logs({ message: `[Applied tag cleanup] ${error.message}`, log_type: "error" })
+            });
+        } catch (error) {
+            recommendation_logs({ message: `[Applied tag status] ${error.message}`, log_type: "error" });
+        }
+
         const filterType = req?.body?.filterType || req?.query?.filterType || "all";
 
         const lessThanOneList = [];
@@ -4486,7 +4497,27 @@ exports.applyRuleRecommendation = async (req, res) => {
 
         let result = [];
 
-        const auditEntries = items.map((item) => ({
+        /** Grid based handler */
+        if (rule?.gridName === "Campaign") {
+            result = await applyCampaignRecommendation(rule, items, profile, checkConfigAds, adType, operationId);
+        }
+
+        if (rule.gridName === "Placement") {
+            result = await applyPlacementRecommendation(rule, items, profile, checkConfigAds, adType, operationId);
+        }
+
+        if (rule.gridName === "Targeting") {
+            result = await applyTargetingRecommendation(rule, items, profile, checkConfigAds, adType, operationId);
+        }
+
+        if (rule.gridName === "Search Term") {
+            result = await applySearchTermRecommendation(rule, items, profile, checkConfigAds, adType, operationId);
+        }
+
+        const appliedKeys = new Set((result?.appliedItems || []).map(item => JSON.stringify(item)));
+        const auditEntries = items.filter((item) => appliedKeys.has(
+            JSON.stringify(getRecommendationApplyIdentity(item, adType))
+        )).map((item) => ({
             event: "RECOMMENDATION_APPLIED",
             message: `Recommendation applied: ${rule?.ruleName}`,
             userId: req?.user?.id,
@@ -4523,30 +4554,13 @@ exports.applyRuleRecommendation = async (req, res) => {
             await logAuditBatch(auditEntries);
         }
 
-        /** Grid based handler */
-        if (rule?.gridName === "Campaign") {
-            result = await applyCampaignRecommendation(rule, items, profile, checkConfigAds, adType, operationId);
-        }
-
-        if (rule.gridName === "Placement") {
-            result = await applyPlacementRecommendation(rule, items, profile, checkConfigAds, adType, operationId);
-        }
-
-        if (rule.gridName === "Targeting") {
-            result = await applyTargetingRecommendation(rule, items, profile, checkConfigAds, adType, operationId);
-        }
-
-        if (rule.gridName === "Search Term") {
-            result = await applySearchTermRecommendation(rule, items, profile, checkConfigAds, adType, operationId);
-        }
-
         if (profileId) {
             try { await deletePatternWithLog(`rec_counts:*_${profileId}_*`); } catch (_) { }
         }
 
         return res.status(200).send({
-            isSuccess: true,
-            message: "Recommendation applied successfully.",
+            isSuccess: Boolean(result?.isSuccess),
+            message: result?.message || "Recommendation action was not confirmed.",
             data: result,
         });
 
@@ -4558,6 +4572,42 @@ exports.applyRuleRecommendation = async (req, res) => {
             error: "An internal server error occurred",
         });
     }
+};
+
+const { confirmedRecommendationIndexes } = require("../helper/recommendationAmazonConfirmation");
+
+const getRecommendationApplyIdentity = (item, adType) => ({
+    adType,
+    campaignId: item?.campaignId,
+    adGroupId: item?.adGroupId,
+    targetId: item?.targetId,
+    targeting: item?.targeting,
+    placement: item?.placement,
+    searchTerm: item?.searchTerm,
+    keywordId: item?.keywordId
+});
+
+const confirmRecommendationChunk = (response, payload, chunk, results, options) => {
+    const confirmed = confirmedRecommendationIndexes(response, payload, options).map(index => chunk[index]);
+    if (confirmed.length < chunk.length) {
+        results.push({ isSuccess: false, count: chunk.length - confirmed.length, message: "Amazon did not confirm every item" });
+    }
+    return confirmed;
+};
+
+const summarizeRecommendationApply = (items, confirmedItems, results, adType, subject) => {
+    const appliedItems = Array.from(confirmedItems, item => getRecommendationApplyIdentity(item, adType));
+    const appliedCount = appliedItems.length;
+    const failed = results.some(result => !result?.isSuccess) || appliedCount < items.length;
+    return {
+        isSuccess: appliedCount > 0,
+        message: appliedCount === 0
+            ? 'Failed to apply recommendation to ' + subject
+            : failed ? 'Applied to ' + appliedCount + ' of ' + items.length + ' ' + subject
+                : 'Applied to all ' + appliedCount + ' ' + subject,
+        appliedItems,
+        appliedCount
+    };
 };
 
 const chunkArray = (array, size = 1000) => {
@@ -4587,7 +4637,8 @@ const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds,
     const currentDate = now.format("YYYY-MM-DD");
     const currentTime = now.format("HH:mm");
 
-    let results = [];
+    const results = [];
+    const appliedItems = new Set();
 
     // ─── BUDGET ACTIONS (SetBudget, IncreaseBudget, DecreaseBudget) ─────────
     if (['SetBudget', 'IncreaseBudget', 'DecreaseBudget'].includes(action?.actionName)) {
@@ -4647,8 +4698,9 @@ const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds,
                         meta: { configId: checkConfigAds?._id, tokenKey: "adsAccessToken" }
                     }));
 
-                    if (response?.status === 207 || response?.status === 200) {
-                        const bulkOps = chunk.map(({ item, actionValue }) => ({
+                    const confirmed = confirmRecommendationChunk(response, payload, chunk, results);
+                    if (confirmed.length) {
+                        const bulkOps = confirmed.map(({ item, actionValue }) => ({
                             updateOne: {
                                 filter: {
                                     configId: rule.configId,
@@ -4666,6 +4718,7 @@ const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds,
                                         name: item?.campaignName,
                                         oldValue: item?.budget,
                                         newValue: actionValue,
+                                        pendingSyncOperationId: operationId,
                                         changed: "Budget"
                                     }
                                 },
@@ -4674,7 +4727,7 @@ const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds,
                         }));
                         await recommandationCampaignByRuleSchema.bulkWrite(bulkOps);
 
-                        const historyDocs = chunk.map(({ item, actionValue }) => ({
+                        const historyDocs = confirmed.map(({ item, actionValue }) => ({
                             configId: profile?.configId,
                             profileId: profile?.profileId,
                             changeLevel: item?.campaignId,
@@ -4689,7 +4742,7 @@ const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds,
                         }));
                         await safeInsertRecommendationHistory(historyDocs, operationId);
 
-                        const campBulkOps = chunk.map(({ item, actionValue }) => ({
+                        const campBulkOps = confirmed.map(({ item, actionValue }) => ({
                             updateMany: {
                                 filter: {
                                     configId: profile?.configId,
@@ -4706,9 +4759,7 @@ const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds,
                         }));
                         await campaignSchema.bulkWrite(campBulkOps).catch(() => { });
 
-                        results.push({ isSuccess: true, count: chunk.length });
-                    } else {
-                        results.push({ isSuccess: false, count: chunk.length, message: `Status: ${response?.status}` });
+                        confirmed.forEach(({ item }) => appliedItems.add(item));
                     }
                 } catch (err) {
                         if (err?.historyPersistenceFailure) throw err;
@@ -4722,9 +4773,10 @@ const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds,
         } else {
             for (const { item, actionValue } of validCampaigns) {
                 const res = adType === "SB"
-                    ? await CampaignSBBudget(profile, checkConfigAds, rule, item, actionValue)
-                    : await CampaignSDBudget(profile, checkConfigAds, rule, item, actionValue);
+                    ? await CampaignSBBudget(profile, checkConfigAds, rule, item, actionValue, operationId)
+                    : await CampaignSDBudget(profile, checkConfigAds, rule, item, actionValue, operationId);
                 results.push(res);
+                if (res?.isSuccess) appliedItems.add(item);
             }
         }
     }
@@ -4757,8 +4809,9 @@ const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds,
                         meta: { configId: checkConfigAds?._id, tokenKey: "adsAccessToken" }
                     }));
 
-                    if (response?.status === 207 || response?.status === 200) {
-                        const bulkOps = chunk.map(item => ({
+                    const confirmed = confirmRecommendationChunk(response, payload, chunk, results);
+                    if (confirmed.length) {
+                        const bulkOps = confirmed.map(item => ({
                             updateOne: {
                                 filter: {
                                     configId: rule.configId,
@@ -4776,6 +4829,7 @@ const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds,
                                         name: item?.campaignName,
                                         oldValue: item?.campaignStatus || item?.status,
                                         newValue: newStatus,
+                                        pendingSyncOperationId: operationId,
                                         changed: "Status"
                                     }
                                 },
@@ -4784,7 +4838,7 @@ const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds,
                         }));
                         await recommandationCampaignByRuleSchema.bulkWrite(bulkOps);
 
-                        const historyDocs = chunk.map(item => ({
+                        const historyDocs = confirmed.map(item => ({
                             configId: profile?.configId,
                             profileId: profile?.profileId,
                             changeLevel: item?.campaignId,
@@ -4799,7 +4853,7 @@ const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds,
                         }));
                         await safeInsertRecommendationHistory(historyDocs, operationId);
 
-                        const campBulkOps = chunk.map(item => ({
+                        const campBulkOps = confirmed.map(item => ({
                             updateMany: {
                                 filter: {
                                     configId: profile?.configId,
@@ -4817,9 +4871,7 @@ const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds,
                         }));
                         await campaignSchema.bulkWrite(campBulkOps).catch(() => { });
 
-                        results.push({ isSuccess: true, count: chunk.length });
-                    } else {
-                        results.push({ isSuccess: false, count: chunk.length, message: `Status: ${response?.status}` });
+                        confirmed.forEach(item => appliedItems.add(item));
                     }
                 } catch (err) {
                         if (err?.historyPersistenceFailure) throw err;
@@ -4833,24 +4885,17 @@ const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds,
         } else {
             for (const item of items) {
                 const res = adType === "SB"
-                    ? await CampaignSBStatus(profile, checkConfigAds, rule, item, newStatus)
-                    : await CampaignSDStatus(profile, checkConfigAds, rule, item, newStatus);
+                    ? await CampaignSBStatus(profile, checkConfigAds, rule, item, newStatus, operationId)
+                    : await CampaignSDStatus(profile, checkConfigAds, rule, item, newStatus, operationId);
                 results.push(res);
+                if (res?.isSuccess) appliedItems.add(item);
             }
         }
     } else {
         return { isSuccess: false, message: "Invalid action type" };
     }
 
-    const hasAnyError = results.some(r => r.isSuccess === false);
-    const hasAnySuccess = results.some(r => r.isSuccess === true);
-    if (hasAnySuccess && !hasAnyError) {
-        return { isSuccess: true, message: `All ${items.length} campaign(s) updated successfully` };
-    } else if (hasAnySuccess && hasAnyError) {
-        return { isSuccess: true, message: `Campaigns updated with some partial errors` };
-    } else {
-        return { isSuccess: false, message: `Failed to update campaign(s)` };
-    }
+    return summarizeRecommendationApply(items, appliedItems, results, adType, "campaigns");
 };
 
 const computeBidValue = (currentBid, action, bidThreshold) => {
@@ -4895,7 +4940,8 @@ const applyPlacementRecommendation = async (rule, items, profile, checkConfigAds
         return { isSuccess: false, message: "No valid placement adjustments found" };
     }
 
-    let results = [];
+    const results = [];
+    const appliedItems = new Set();
 
     if (adType === "SP") {
         const chunks = chunkArray(validEntries, 1000);
@@ -4926,8 +4972,9 @@ const applyPlacementRecommendation = async (rule, items, profile, checkConfigAds
                     meta: { configId: checkConfigAds?._id, tokenKey: "adsAccessToken" }
                 }));
 
-                if (response?.status === 207 || response?.status === 200) {
-                    const bulkOps = chunk.map(({ item, newBid }) => ({
+                const confirmed = confirmRecommendationChunk(response, payload, chunk, results);
+                if (confirmed.length) {
+                    const bulkOps = confirmed.map(({ item, newBid }) => ({
                         updateOne: {
                             filter: {
                                 configId: rule?.configId,
@@ -4946,6 +4993,7 @@ const applyPlacementRecommendation = async (rule, items, profile, checkConfigAds
                                     name: item?.campaignName,
                                     oldValue: item?.placementBid,
                                     newValue: newBid,
+                                    pendingSyncOperationId: operationId,
                                     changed: "PlacementBid",
                                 }
                             },
@@ -4954,7 +5002,7 @@ const applyPlacementRecommendation = async (rule, items, profile, checkConfigAds
                     }));
                     await recommandationCampaignByRuleSchema.bulkWrite(bulkOps);
 
-                    const historyDocs = chunk.map(({ item, newBid }) => ({
+                    const historyDocs = confirmed.map(({ item, newBid }) => ({
                         configId: profile?.configId,
                         profileId: profile?.profileId,
                         changeLevel: item?.campaignId,
@@ -4969,7 +5017,7 @@ const applyPlacementRecommendation = async (rule, items, profile, checkConfigAds
                     }));
                     await safeInsertRecommendationHistory(historyDocs, operationId);
 
-                    const placementBulkOps = chunk.map(({ item, newBid }) => ({
+                    const placementBulkOps = confirmed.map(({ item, newBid }) => ({
                         updateMany: {
                             filter: {
                                 configId: profile?.configId,
@@ -4987,9 +5035,7 @@ const applyPlacementRecommendation = async (rule, items, profile, checkConfigAds
                     }));
                     await placementSchema.bulkWrite(placementBulkOps).catch(() => { });
 
-                    results.push({ isSuccess: true, count: chunk.length });
-                } else {
-                    results.push({ isSuccess: false, count: chunk.length, message: `Status: ${response?.status}` });
+                    confirmed.forEach(({ item }) => appliedItems.add(item));
                 }
             } catch (err) {
                         if (err?.historyPersistenceFailure) throw err;
@@ -5002,20 +5048,13 @@ const applyPlacementRecommendation = async (rule, items, profile, checkConfigAds
         }
     } else {
         for (const { item, newBid } of validEntries) {
-            const res = await PlacementSBBid(profile, checkConfigAds, rule, item, newBid);
+            const res = await PlacementSBBid(profile, checkConfigAds, rule, item, newBid, operationId);
             results.push(res);
+            if (res?.isSuccess) appliedItems.add(item);
         }
     }
 
-    const hasAnyError = results.some(r => r.isSuccess === false);
-    const hasAnySuccess = results.some(r => r.isSuccess === true);
-    if (hasAnySuccess && !hasAnyError) {
-        return { isSuccess: true, message: `All ${validEntries.length} placement(s) updated successfully` };
-    } else if (hasAnySuccess && hasAnyError) {
-        return { isSuccess: true, message: `Placement(s) updated with some partial errors` };
-    } else {
-        return { isSuccess: false, message: `Failed to update placement(s)` };
-    }
+    return summarizeRecommendationApply(items, appliedItems, results, adType, "placements");
 };
 
 const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds, adType, operationId) => {
@@ -5027,7 +5066,8 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
     const currentDate = now.format("YYYY-MM-DD");
     const currentTime = now.format("HH:mm");
 
-    let results = [];
+    const results = [];
+    const appliedItems = new Set();
 
     // ─── BID ACTIONS (IncreaseBid, DecreaseBid, SetBid) ─────────────────────
     if (['IncreaseBid', 'DecreaseBid', 'SetBid'].includes(action?.actionName)) {
@@ -5077,8 +5117,9 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                             data: payload,
                             meta: { configId: rule.configId, tokenKey: "adsAccessToken" }
                         }));
-                        if (response?.status === 207 || response?.status === 200) {
-                            const bulkOps = chunk.map(({ item, actionValue }) => ({
+                        const confirmed = confirmRecommendationChunk(response, payload, chunk, results);
+                        if (confirmed.length) {
+                            const bulkOps = confirmed.map(({ item, actionValue }) => ({
                                 updateOne: {
                                     filter: {
                                         configId: rule?.configId,
@@ -5101,6 +5142,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                                             targetType: item?.matchType || item?.targetType || item?.keywordType,
                                             oldValue: item?.targetingBid,
                                             newValue: actionValue,
+                                            pendingSyncOperationId: operationId,
                                             changed: "TargetingBid",
                                         }
                                     },
@@ -5109,7 +5151,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                             }));
                             await recommandationCampaignByRuleSchema.bulkWrite(bulkOps);
 
-                            const historyDocs = chunk.map(({ item, actionValue }) => ({
+                            const historyDocs = confirmed.map(({ item, actionValue }) => ({
                                 configId: profile?.configId,
                                 profileId: profile?.profileId,
                                 changeLevel: item?.campaignId,
@@ -5129,23 +5171,15 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                             }));
                             await safeInsertRecommendationHistory(historyDocs, operationId);
 
-                            const targetBulkOps = chunk.map(({ item, actionValue }) => {
-                                const cleanId = item.targetId ? String(item.targetId).replace(/^[TK]-/, "") : null;
-                                const filterOr = [{ targetId: item.targetId }];
-                                if (cleanId) {
-                                    filterOr.push({ targetId: cleanId });
-                                    filterOr.push({ targetId: `T-${cleanId}` });
-                                    filterOr.push({ targetId: `K-${cleanId}` });
-                                }
-                                if (item.targeting) {
-                                    filterOr.push({ targeting: item.targeting, campaignId: item.campaignId });
-                                }
+                            const targetBulkOps = confirmed.map(({ item, actionValue }) => {
                                 return {
                                     updateMany: {
                                         filter: {
                                             configId: profile?.configId,
                                             profileId: profile?.profileId,
-                                            $or: filterOr
+                                            campaignId: item?.campaignId ?? null,
+                                            adGroupId: item?.adGroupId ?? null,
+                                            targetId: item.targetId,
                                         },
                                         update: {
                                             $set: {
@@ -5158,9 +5192,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                             });
                             await targetingSchema.bulkWrite(targetBulkOps).catch(() => { });
 
-                            results.push({ isSuccess: true, count: chunk.length });
-                        } else {
-                            results.push({ isSuccess: false, count: chunk.length, message: `Status: ${response?.status}` });
+                            confirmed.forEach(({ item }) => appliedItems.add(item));
                         }
                     } catch (err) {
                         if (err?.historyPersistenceFailure) throw err;
@@ -5196,8 +5228,9 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                             data: payload,
                             meta: { configId: rule.configId, tokenKey: "adsAccessToken" }
                         }));
-                        if (response?.status === 207 || response?.status === 200) {
-                            const bulkOps = chunk.map(({ item, actionValue }) => ({
+                        const confirmed = confirmRecommendationChunk(response, payload, chunk, results);
+                        if (confirmed.length) {
+                            const bulkOps = confirmed.map(({ item, actionValue }) => ({
                                 updateOne: {
                                     filter: {
                                         configId: rule?.configId,
@@ -5220,6 +5253,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                                             targetType: item?.matchType || item?.targetType || item?.keywordType,
                                             oldValue: item?.targetingBid,
                                             newValue: actionValue,
+                                            pendingSyncOperationId: operationId,
                                             changed: "TargetingBid",
                                         }
                                     },
@@ -5228,7 +5262,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                             }));
                             await recommandationCampaignByRuleSchema.bulkWrite(bulkOps);
 
-                            const historyDocs = chunk.map(({ item, actionValue }) => ({
+                            const historyDocs = confirmed.map(({ item, actionValue }) => ({
                                 configId: profile?.configId,
                                 profileId: profile?.profileId,
                                 changeLevel: item?.campaignId,
@@ -5248,23 +5282,15 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                             }));
                             await safeInsertRecommendationHistory(historyDocs, operationId);
 
-                            const keywordBulkOps = chunk.map(({ item, actionValue }) => {
-                                const cleanId = item.targetId ? String(item.targetId).replace(/^[TK]-/, "") : null;
-                                const filterOr = [{ targetId: item.targetId }];
-                                if (cleanId) {
-                                    filterOr.push({ targetId: cleanId });
-                                    filterOr.push({ targetId: `T-${cleanId}` });
-                                    filterOr.push({ targetId: `K-${cleanId}` });
-                                }
-                                if (item.targeting) {
-                                    filterOr.push({ targeting: item.targeting, campaignId: item.campaignId });
-                                }
+                            const keywordBulkOps = confirmed.map(({ item, actionValue }) => {
                                 return {
                                     updateMany: {
                                         filter: {
                                             configId: profile?.configId,
                                             profileId: profile?.profileId,
-                                            $or: filterOr
+                                            campaignId: item?.campaignId ?? null,
+                                            adGroupId: item?.adGroupId ?? null,
+                                            targetId: item.targetId,
                                         },
                                         update: {
                                             $set: {
@@ -5277,9 +5303,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                             });
                             await targetingSchema.bulkWrite(keywordBulkOps).catch(() => { });
 
-                            results.push({ isSuccess: true, count: chunk.length });
-                        } else {
-                            results.push({ isSuccess: false, count: chunk.length, message: `Status: ${response?.status}` });
+                            confirmed.forEach(({ item }) => appliedItems.add(item));
                         }
                     } catch (err) {
                         if (err?.historyPersistenceFailure) throw err;
@@ -5294,9 +5318,10 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
         } else {
             for (const { item, actionValue } of validEntries) {
                 const res = adType === "SB"
-                    ? await TargetingSBBid(profile, checkConfigAds, rule, item, actionValue)
-                    : await TargetingSDBid(profile, checkConfigAds, rule, item, actionValue);
+                    ? await TargetingSBBid(profile, checkConfigAds, rule, item, actionValue, operationId)
+                    : await TargetingSDBid(profile, checkConfigAds, rule, item, actionValue, operationId);
                 results.push(res);
+                if (res?.isSuccess) appliedItems.add(item);
             }
         }
     }
@@ -5331,8 +5356,9 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                             data: payload,
                             meta: { configId: rule.configId, tokenKey: "adsAccessToken" }
                         }));
-                        if (response?.status === 207 || response?.status === 200) {
-                            const bulkOps = chunk.map(item => ({
+                        const confirmed = confirmRecommendationChunk(response, payload, chunk, results);
+                        if (confirmed.length) {
+                            const bulkOps = confirmed.map(item => ({
                                 updateOne: {
                                     filter: {
                                         configId: rule?.configId,
@@ -5355,6 +5381,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                                             targetType: item?.matchType || item?.targetType || item?.keywordType,
                                             oldValue: item?.keywordStatus || item?.status,
                                             newValue: newStatus,
+                                            pendingSyncOperationId: operationId,
                                             changed: "TargetingStatus",
                                         }
                                     },
@@ -5363,7 +5390,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                             }));
                             await recommandationCampaignByRuleSchema.bulkWrite(bulkOps);
 
-                            const historyDocs = chunk.map(item => ({
+                            const historyDocs = confirmed.map(item => ({
                                 configId: profile?.configId,
                                 profileId: profile?.profileId,
                                 changeLevel: item?.campaignId,
@@ -5383,23 +5410,15 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                             }));
                             await safeInsertRecommendationHistory(historyDocs, operationId);
 
-                            const statusBulkOps = chunk.map(item => {
-                                const cleanId = item.targetId ? String(item.targetId).replace(/^[TK]-/, "") : null;
-                                const filterOr = [{ targetId: item.targetId }];
-                                if (cleanId) {
-                                    filterOr.push({ targetId: cleanId });
-                                    filterOr.push({ targetId: `T-${cleanId}` });
-                                    filterOr.push({ targetId: `K-${cleanId}` });
-                                }
-                                if (item.targeting) {
-                                    filterOr.push({ targeting: item.targeting, campaignId: item.campaignId });
-                                }
+                            const statusBulkOps = confirmed.map(item => {
                                 return {
                                     updateMany: {
                                         filter: {
                                             configId: profile?.configId,
                                             profileId: profile?.profileId,
-                                            $or: filterOr
+                                            campaignId: item?.campaignId ?? null,
+                                            adGroupId: item?.adGroupId ?? null,
+                                            targetId: item.targetId,
                                         },
                                         update: {
                                             $set: {
@@ -5413,9 +5432,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                             await targetingSchema.bulkWrite(statusBulkOps).catch(() => { });
 
 
-                            results.push({ isSuccess: true, count: chunk.length });
-                        } else {
-                            results.push({ isSuccess: false, count: chunk.length, message: `Status: ${response?.status}` });
+                            confirmed.forEach(item => appliedItems.add(item));
                         }
                     } catch (err) {
                         if (err?.historyPersistenceFailure) throw err;
@@ -5451,8 +5468,9 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                             data: payload,
                             meta: { configId: rule.configId, tokenKey: "adsAccessToken" }
                         }));
-                        if (response?.status === 207 || response?.status === 200) {
-                            const bulkOps = chunk.map(item => ({
+                        const confirmed = confirmRecommendationChunk(response, payload, chunk, results);
+                        if (confirmed.length) {
+                            const bulkOps = confirmed.map(item => ({
                                 updateOne: {
                                     filter: {
                                         configId: rule?.configId,
@@ -5475,6 +5493,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                                             targetType: item?.matchType || item?.targetType || item?.keywordType,
                                             oldValue: item?.keywordStatus || item?.status,
                                             newValue: newStatus,
+                                            pendingSyncOperationId: operationId,
                                             changed: "TargetingStatus",
                                         }
                                     },
@@ -5483,7 +5502,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                             }));
                             await recommandationCampaignByRuleSchema.bulkWrite(bulkOps);
 
-                            const historyDocs = chunk.map(item => ({
+                            const historyDocs = confirmed.map(item => ({
                                 configId: profile?.configId,
                                 profileId: profile?.profileId,
                                 changeLevel: item?.campaignId,
@@ -5503,23 +5522,15 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                             }));
                             await safeInsertRecommendationHistory(historyDocs, operationId);
 
-                            const keywordStatusBulkOps = chunk.map(item => {
-                                const cleanId = item.targetId ? String(item.targetId).replace(/^[TK]-/, "") : null;
-                                const filterOr = [{ targetId: item.targetId }];
-                                if (cleanId) {
-                                    filterOr.push({ targetId: cleanId });
-                                    filterOr.push({ targetId: `T-${cleanId}` });
-                                    filterOr.push({ targetId: `K-${cleanId}` });
-                                }
-                                if (item.targeting) {
-                                    filterOr.push({ targeting: item.targeting, campaignId: item.campaignId });
-                                }
+                            const keywordStatusBulkOps = confirmed.map(item => {
                                 return {
                                     updateMany: {
                                         filter: {
                                             configId: profile?.configId,
                                             profileId: profile?.profileId,
-                                            $or: filterOr
+                                            campaignId: item?.campaignId ?? null,
+                                            adGroupId: item?.adGroupId ?? null,
+                                            targetId: item.targetId,
                                         },
                                         update: {
                                             $set: {
@@ -5532,9 +5543,7 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
                             });
                             await targetingSchema.bulkWrite(keywordStatusBulkOps).catch(() => { });
 
-                            results.push({ isSuccess: true, count: chunk.length });
-                        } else {
-                            results.push({ isSuccess: false, count: chunk.length, message: `Status: ${response?.status}` });
+                            confirmed.forEach(item => appliedItems.add(item));
                         }
                     } catch (err) {
                         if (err?.historyPersistenceFailure) throw err;
@@ -5549,24 +5558,17 @@ const applyTargetingRecommendation = async (rule, items, profile, checkConfigAds
         } else {
             for (const item of items) {
                 const res = adType === "SB"
-                    ? await TargetingSBStatus(profile, checkConfigAds, rule, item, newStatus)
-                    : await TargetingSDStatus(profile, checkConfigAds, rule, item, newStatus);
+                    ? await TargetingSBStatus(profile, checkConfigAds, rule, item, newStatus, operationId)
+                    : await TargetingSDStatus(profile, checkConfigAds, rule, item, newStatus, operationId);
                 results.push(res);
+                if (res?.isSuccess) appliedItems.add(item);
             }
         }
     } else {
         return { isSuccess: false, message: "Invalid action type" };
     }
 
-    const hasAnyError = results.some(r => r.isSuccess === false);
-    const hasAnySuccess = results.some(r => r.isSuccess === true);
-    if (hasAnySuccess && !hasAnyError) {
-        return { isSuccess: true, message: `All ${items.length} targeting(s) updated successfully` };
-    } else if (hasAnySuccess && hasAnyError) {
-        return { isSuccess: true, message: `Targeting(s) updated with some partial errors` };
-    } else {
-        return { isSuccess: false, message: `Failed to update targeting(s)` };
-    }
+    return summarizeRecommendationApply(items, appliedItems, results, adType, "targets");
 };
 
 const applySearchTermRecommendation = async (rule, items, profile, checkConfigAds, adType, operationId) => {
@@ -5581,7 +5583,8 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
     const currentDate = now.format("YYYY-MM-DD");
     const currentTime = now.format("HH:mm");
 
-    let results = [];
+    const results = [];
+    const appliedItems = new Set();
 
     if (!actions.length) {
         return { isSuccess: false, message: "No actions configured for this rule" };
@@ -5627,12 +5630,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                                 data: payload,
                                 meta: { configId: checkConfigAds?._id, tokenKey: "adsAccessToken" }
                             }));
-                            if (response?.status === 207 || response?.status === 200) {
-                                successfulItems.push(...chunk);
-                                results.push({ isSuccess: true, count: chunk.length });
-                            } else {
-                                results.push({ isSuccess: false, message: `Status: ${response?.status}`, count: chunk.length });
-                            }
+                            successfulItems.push(...confirmRecommendationChunk(response, payload, chunk, results, { create: true }));
                         } else if (adType === "SB") {
                             const payload = {
                                 negativeKeywords: chunk.map(it => ({
@@ -5655,12 +5653,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                                 data: payload,
                                 meta: { configId: checkConfigAds?._id, tokenKey: "adsAccessToken" }
                             }));
-                            if (response?.status === 207 || response?.status === 200) {
-                                successfulItems.push(...chunk);
-                                results.push({ isSuccess: true, count: chunk.length });
-                            } else {
-                                results.push({ isSuccess: false, message: `Status: ${response?.status}`, count: chunk.length });
-                            }
+                            successfulItems.push(...confirmRecommendationChunk(response, payload, chunk, results, { create: true }));
                         }
                     } catch (err) {
                         if (err?.historyPersistenceFailure) throw err;
@@ -5700,12 +5693,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                                 data: payload,
                                 meta: { configId: checkConfigAds?._id, tokenKey: "adsAccessToken" }
                             }));
-                            if (response?.status === 207 || response?.status === 200) {
-                                successfulItems.push(...chunk);
-                                results.push({ isSuccess: true, count: chunk.length });
-                            } else {
-                                results.push({ isSuccess: false, message: `Status: ${response?.status}`, count: chunk.length });
-                            }
+                            successfulItems.push(...confirmRecommendationChunk(response, payload, chunk, results, { create: true }));
                         } else if (adType === "SB") {
                             const payload = {
                                 negativeTargets: chunk.map(it => ({
@@ -5727,12 +5715,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                                 data: payload,
                                 meta: { configId: checkConfigAds?._id, tokenKey: "adsAccessToken" }
                             }));
-                            if (response?.status === 207 || response?.status === 200) {
-                                successfulItems.push(...chunk);
-                                results.push({ isSuccess: true, count: chunk.length });
-                            } else {
-                                results.push({ isSuccess: false, message: `Status: ${response?.status}`, count: chunk.length });
-                            }
+                            successfulItems.push(...confirmRecommendationChunk(response, payload, chunk, results, { create: true }));
                         }
                     } catch (err) {
                         if (err?.historyPersistenceFailure) throw err;
@@ -5769,6 +5752,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                                 adGroupName: item?.adGroupName,
                                 searchTerm: item?.searchTerm,
                                 targetType: action?.matchType,
+                                pendingSyncOperationId: operationId,
                                 changed: action?.actionName,
                             }
                         },
@@ -5776,6 +5760,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                     }
                 }));
                 await recommandationCampaignByRuleSchema.bulkWrite(bulkOps);
+                successfulItems.forEach(item => appliedItems.add(item));
 
                 const historyDocs = successfulItems.map(item => ({
                     configId: rule?.configId,
@@ -5846,12 +5831,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                                 data: payload,
                                 meta: { configId: checkConfigAds?._id, tokenKey: "adsAccessToken" }
                             }));
-                            if (response?.status === 207 || response?.status === 200) {
-                                successfulItems.push(...chunk);
-                                results.push({ isSuccess: true, count: chunk.length });
-                            } else {
-                                results.push({ isSuccess: false, message: `Status: ${response?.status}`, count: chunk.length });
-                            }
+                            successfulItems.push(...confirmRecommendationChunk(response, payload, chunk, results, { create: true }));
                         } else if (adType === "SB") {
                             const payload = {
                                 keywords: chunk.map(it => ({
@@ -5876,12 +5856,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                                 data: payload,
                                 meta: { configId: checkConfigAds?._id, tokenKey: "adsAccessToken" }
                             }));
-                            if (response?.status === 207 || response?.status === 200) {
-                                successfulItems.push(...chunk);
-                                results.push({ isSuccess: true, count: chunk.length });
-                            } else {
-                                results.push({ isSuccess: false, message: `Status: ${response?.status}`, count: chunk.length });
-                            }
+                            successfulItems.push(...confirmRecommendationChunk(response, payload, chunk, results, { create: true }));
                         }
                     } catch (err) {
                         if (err?.historyPersistenceFailure) throw err;
@@ -5922,12 +5897,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                                 data: payload,
                                 meta: { configId: checkConfigAds?._id, tokenKey: "adsAccessToken" }
                             }));
-                            if (response?.status === 207 || response?.status === 200) {
-                                successfulItems.push(...chunk);
-                                results.push({ isSuccess: true, count: chunk.length });
-                            } else {
-                                results.push({ isSuccess: false, message: `Status: ${response?.status}`, count: chunk.length });
-                            }
+                            successfulItems.push(...confirmRecommendationChunk(response, payload, chunk, results, { create: true }));
                         } else if (adType === "SB") {
                             const payload = {
                                 targets: chunk.map(it => ({
@@ -5950,12 +5920,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                                 data: payload,
                                 meta: { configId: checkConfigAds?._id, tokenKey: "adsAccessToken" }
                             }));
-                            if (response?.status === 207 || response?.status === 200) {
-                                successfulItems.push(...chunk);
-                                results.push({ isSuccess: true, count: chunk.length });
-                            } else {
-                                results.push({ isSuccess: false, message: `Status: ${response?.status}`, count: chunk.length });
-                            }
+                            successfulItems.push(...confirmRecommendationChunk(response, payload, chunk, results, { create: true }));
                         }
                     } catch (err) {
                         if (err?.historyPersistenceFailure) throw err;
@@ -5991,6 +5956,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                                 adGroupName: item?.adGroupName,
                                 searchTerm: item?.searchTerm,
                                 targetType: action?.matchType,
+                                pendingSyncOperationId: operationId,
                                 changed: action?.actionName,
                             }
                         },
@@ -5998,6 +5964,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                     }
                 }));
                 await recommandationCampaignByRuleSchema.bulkWrite(bulkOps);
+                successfulItems.forEach(item => appliedItems.add(item));
 
                 const historyDocs = successfulItems.map(item => ({
                     configId: rule?.configId,
@@ -6039,22 +6006,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
         }
     }
 
-    const hasAnyError = results.some(r => r.isSuccess === false);
-    const hasAnySuccess = results.some(r => r.isSuccess === true);
-
-    const summaryMsg = `Total chunks/calls: ${results.length}, Success: ${hasAnySuccess}, Error: ${hasAnyError}`;
-    recommendation_logs({
-        log_type: hasAnySuccess && !hasAnyError ? "info" : "warn",
-        message: `[ApplySearchTermRecommendation Completed] RuleId: ${rule?._id} | Summary: ${summaryMsg}`
-    });
-
-    if (hasAnySuccess && !hasAnyError) {
-        return { isSuccess: true, message: `All ${items.length} search term action(s) applied successfully` };
-    } else if (hasAnySuccess && hasAnyError) {
-        return { isSuccess: true, message: `Search term actions applied with some warnings/partial updates` };
-    } else {
-        return { isSuccess: false, message: `Failed to apply search term actions` };
-    }
+    return summarizeRecommendationApply(items, appliedItems, results, adType, "search terms");
 };
 
 exports.cronRecommendationSnapshot = async (req, res) => {
