@@ -23,6 +23,8 @@ import { PermissionCheck } from "../../../helper/permission/PermissionCheck";
 import { Button } from "../../../components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "src/components/ui/card";
 import { AppTooltip } from "../../../components/ui/AppTooltip";
+import RegionalPricing from "../regionalPricing/RegionalPricing";
+import PlanRegionPricesModal from "../regionalPricing/PlanRegionPricesModal";
 
 // Portal-based tooltip immune to AG-Grid CSS transform offsets
 
@@ -33,6 +35,10 @@ const Packages = () => {
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(null);
   const [replacementPlanId, setReplacementPlanId] = useState("");
+  // Regional pricing: plan whose per-region prices are being edited; counters to refresh / open "Add Region".
+  const [regionPricesPlan, setRegionPricesPlan] = useState(null);
+  const [regionsRefreshKey, setRegionsRefreshKey] = useState(0);
+  const [addRegionSignal, setAddRegionSignal] = useState(0);
 
   const [isDark, setIsDark] = useState(document.documentElement.getAttribute("data-theme") === "dark");
 
@@ -128,7 +134,7 @@ const Packages = () => {
         headerName: t("Action"),
         field: "action",
         title: t("Action"),
-        width: 110,
+        width: 150,
         sortable: false,
         resizable: false,
         cellRenderer: (params) => {
@@ -136,6 +142,15 @@ const Packages = () => {
           if (!row) return null;
           return (
             <div className="action_container gap-2 flex items-center" style={{ height: "100%" }}>
+              {PermissionCheck(SYSTEM_PAGES.PLANS, PAGE_ACTIONS.UPDATE) && (
+                <AppTooltip text={t("Regional Prices")}>
+                  <i
+                    className="fa fa-earth-americas cursor-pointer"
+                    id={`plan-region-prices-${row._id}`}
+                    onClick={() => setRegionPricesPlan(row)}
+                  />
+                </AppTooltip>
+              )}
               {PermissionCheck(SYSTEM_PAGES.PLANS, PAGE_ACTIONS.UPDATE) && (
                 <AppTooltip text={t("Edit Plan")}>
                   <i
@@ -339,10 +354,22 @@ const Packages = () => {
                 isCustomSaveColumns={true}
                 customSaveColumnName={"Subscription Plans"}
                 handleSaveColumns={undefined}
+                height={`${Math.max(packages?.length || 0, 3) * 48 + 60}px`}
+                minHeight="0"
               />
             </div>
           </div>
         </div>
+
+        {/* Regional pricing: regions + organization billing country */}
+        <RegionalPricing refreshKey={regionsRefreshKey} isDark={isDark} addRegionSignal={addRegionSignal} />
+
+        <PlanRegionPricesModal
+          plan={regionPricesPlan}
+          onClose={() => setRegionPricesPlan(null)}
+          onSaved={() => setRegionsRefreshKey((k) => k + 1)}
+          onAddRegion={() => setAddRegionSignal((k) => k + 1)}
+        />
 
         {/* Add / Edit */}
         <EditPackageModal

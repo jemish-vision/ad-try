@@ -51,13 +51,25 @@ async function buildRegion(body, regionId = null) {
   return { doc: { name, currency, countries, prices, isActive } };
 }
 
+const escapeRegex = (v) => String(v).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const paging = (body) => {
+  const pageNo = Math.max(1, parseInt(body?.pageNo, 10) || 1);
+  const perPage = Math.min(200, Math.max(1, parseInt(body?.perPage, 10) || 10));
+  return { pageNo, perPage, skip: (pageNo - 1) * perPage };
+};
+
+/** Paginated regions, searchable by region name. */
 exports.getRegions = async (req, res) => {
   try {
-    const [regions, plans] = await Promise.all([
-      PricingRegion.find({}).sort({ name: 1 }).lean(),
+    const { pageNo, perPage, skip } = paging(req.body);
+    const search = String(req.body?.search || "").trim();
+    const filter = search ? { name: { $regex: escapeRegex(search), $options: "i" } } : {};
+    const [regions, totalRecords, plans] = await Promise.all([
+      PricingRegion.find(filter).sort({ name: 1 }).skip(skip).limit(perPage).lean(),
+      PricingRegion.countDocuments(filter),
       packageSchema.find({}).select("name monthlyPrice yearlyPrice price currency isActive").sort({ price: 1 }).lean(),
     ]);
-    return res.status(200).json({ isSuccess: true, data: regions, plans });
+    return res.status(200).json({ isSuccess: true, data: regions, plans, totalRecords, currentPageNo: pageNo, totalPages: Math.ceil(totalRecords / perPage) });
   } catch (error) {
     return serverError(res, "getRegions", error, req);
   }
@@ -124,19 +136,28 @@ exports.deleteRegion = async (req, res) => {
 /** Organizations with a locked billing country, default pricing, or a flagged country mismatch. */
 exports.getOrganizationBilling = async (req, res) => {
   try {
-    const orgs = await organizationSchema
-      .find({
-        $or: [
-          { billingCountry: { $nin: [null, ""] } },
-          { pricingMode: "default" },
-          { "billingCountryMismatch.detectedAt": { $ne: null } },
-        ],
-      })
-      .select("organizationName pricingMode billingCountry billingCountrySetAt billingCountrySource billingCountryMismatch planId endDate")
-      .populate({ path: "planId", select: "name" })
-      .sort({ billingCountrySetAt: -1 })
-      .lean();
-    return res.status(200).json({ isSuccess: true, data: orgs });
+    const { pageNo, perPage, skip } = paging(req.body);
+    const search = String(req.body?.search || "").trim();
+    const filter = {
+      $or: [
+        { billingCountry: { $nin: [null, ""] } },
+        { pricingMode: "default" },
+        { "billingCountryMismatch.detectedAt": { $ne: null } },
+      ],
+      ...(search ? { organizationName: { $regex: escapeRegex(search), $options: "i" } } : {}),
+    };
+    const [orgs, totalRecords] = await Promise.all([
+      organizationSchema
+        .find(filter)
+        .select("organizationName pricingMode billingCountry billingCountrySetAt billingCountrySource billingCountryMismatch planId endDate")
+        .populate({ path: "planId", select: "name" })
+        .sort({ billingCountrySetAt: -1, _id: -1 })
+        .skip(skip)
+        .limit(perPage)
+        .lean(),
+      organizationSchema.countDocuments(filter),
+    ]);
+    return res.status(200).json({ isSuccess: true, data: orgs, totalRecords, currentPageNo: pageNo, totalPages: Math.ceil(totalRecords / perPage) });
   } catch (error) {
     return serverError(res, "getOrganizationBilling", error, req);
   }
@@ -210,5 +231,61 @@ exports.previewCountry = async (req, res) => {
     });
   } catch (error) {
     return serverError(res, "previewCountry", error, req);
+  }
+};
+
+/** One plan's price in every region (for the "Regional prices" button on the Plans page). */
+exports.getPlanRegionPrices = async (req, res) => {
+  try {
+    const { packageId } = req.body || {};
+    if (!mongoose.Types.ObjectId.isValid(packageId)) return fail(res, "Invalid plan");
+    const plan = await packageSchema.findById(packageId).select("name monthlyPrice yearlyPrice price currency").lean();
+    if (!plan) return fail(res, "Plan not found");
+    const regions = await PricingRegion.find({}).sort({ name: 1 }).lean();
+    const data = regions.map((r) => {
+      const entry = (r.prices || []).find((p) => String(p.packageId) === String(packageId));
+      return {
+        regionId: r._id,
+        name: r.name,
+        currency: r.currency,
+        countries: r.countries,
+        isActive: r.isActive,
+        monthlyPrice: entry?.monthlyPrice || 0,
+        yearlyPrice: entry?.yearlyPrice || 0,
+      };
+    });
+    return res.status(200).json({ isSuccess: true, data, plan });
+  } catch (error) {
+    return serverError(res, "getPlanRegionPrices", error, req);
+  }
+};
+
+/**
+ * Sets one plan's price per region. A region with monthlyPrice 0/empty drops the plan from that
+ * region (it then pays the plan's default price there).
+ */
+exports.updatePlanRegionPrices = async (req, res) => {
+  try {
+    const { packageId, prices } = req.body || {};
+    if (!mongoose.Types.ObjectId.isValid(packageId)) return fail(res, "Invalid plan");
+    if (!(await packageSchema.exists({ _id: packageId }))) return fail(res, "Plan not found");
+    const planObjectId = new mongoose.Types.ObjectId(String(packageId));
+    for (const p of Array.isArray(prices) ? prices : []) {
+      if (!mongoose.Types.ObjectId.isValid(p?.regionId)) continue;
+      const monthlyPrice = Number(p.monthlyPrice || 0);
+      const yearlyPrice = Number(p.yearlyPrice || 0);
+      if (!(monthlyPrice >= 0) || !(yearlyPrice >= 0)) return fail(res, "Prices can't be negative");
+      await PricingRegion.updateOne({ _id: p.regionId }, { $pull: { prices: { packageId: planObjectId } } });
+      if (monthlyPrice > 0) {
+        await PricingRegion.updateOne(
+          { _id: p.regionId },
+          { $push: { prices: { packageId: planObjectId, monthlyPrice, yearlyPrice, isActive: true } } }
+        );
+      }
+    }
+    clearRegionCache();
+    return res.status(200).json({ isSuccess: true, message: "Regional prices updated" });
+  } catch (error) {
+    return serverError(res, "updatePlanRegionPrices", error, req);
   }
 };

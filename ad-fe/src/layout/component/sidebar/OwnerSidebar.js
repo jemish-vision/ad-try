@@ -15,7 +15,7 @@ import { changePWDSchema } from "../../../utility/validator";
 import passwordImage from "../../../assets/images/passwordChange.jpg";
 import {
   Moon, Sun, UserCircle,
-  House, Users, Globe, Gear, Package, GlobeHemisphereWest,
+  House, Users, Globe, Gear, Package,
   CalendarCheck, Prohibit, BookOpen, Headset, Buildings,
   ShieldCheck, ChartLineUp, CaretRight, List, SignOut, FileText, X, ClockCountdown, ChatCenteredText, Gauge,
 } from "@phosphor-icons/react";
@@ -49,7 +49,6 @@ const OWNER_NAV_SECTIONS = [
       { name: "Users", icon: <Users size={17} weight="regular" />, path: "/users" },
       { name: "Pages", icon: <FileText size={17} weight="regular" />, path: "/pages" },
       { name: "Plans", icon: <Package size={17} weight="regular" />, path: "/packages" },
-      { name: "Regional Pricing", icon: <GlobeHemisphereWest size={17} weight="regular" />, path: "/regional-pricing" },
       { name: "Role", icon: <ShieldCheck size={17} weight="regular" />, path: "/role" },
       { name: "Retention", icon: <ClockCountdown size={17} weight="regular" />, path: "/retention" },
       { name: "Chatbot Gaps", icon: <ChatCenteredText size={17} weight="regular" />, path: "/unanswered-questions" },

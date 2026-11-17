@@ -7991,5 +7991,11 @@
   "Always use default price": "Always use default price",
   "Clear warning": "Clear warning",
   "Countries in this region will pay the default plan price on their next purchase. Running subscriptions keep their current price until they change plan.": "Countries in this region will pay the default plan price on their next purchase. Running subscriptions keep their current price until they change plan.",
-  "This organization will see and pay the price of the selected country from its next payment.": "This organization will see and pay the price of the selected country from its next payment."
+  "This organization will see and pay the price of the selected country from its next payment.": "This organization will see and pay the price of the selected country from its next payment.",
+  "Regional Prices": "Regional Prices",
+  "Regional prices updated": "Regional prices updated",
+  "Save Prices": "Save Prices",
+  "Search region name": "Search region name",
+  "No pricing regions yet. Add a region first.": "No pricing regions yet. Add a region first.",
+  "Leave a region empty to charge the default price there. Empty yearly price = monthly × 10.": "Leave a region empty to charge the default price there. Empty yearly price = monthly × 10."
 }

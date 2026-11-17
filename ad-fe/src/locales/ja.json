@@ -7991,5 +7991,11 @@
   "Always use default price": "常に標準価格を使用",
   "Clear warning": "警告をクリア",
   "Countries in this region will pay the default plan price on their next purchase. Running subscriptions keep their current price until they change plan.": "この地域の国は次回の購入時に標準価格を支払います。継続中のサブスクリプションはプラン変更まで現在の価格のままです。",
-  "This organization will see and pay the price of the selected country from its next payment.": "この組織は次回の支払いから選択した国の価格が表示され、その価格で支払います。"
+  "This organization will see and pay the price of the selected country from its next payment.": "この組織は次回の支払いから選択した国の価格が表示され、その価格で支払います。",
+  "Regional Prices": "地域別価格",
+  "Regional prices updated": "地域別価格を更新しました",
+  "Save Prices": "価格を保存",
+  "Search region name": "地域名で検索",
+  "No pricing regions yet. Add a region first.": "価格地域がまだありません。先に地域を追加してください。",
+  "Leave a region empty to charge the default price there. Empty yearly price = monthly × 10.": "地域を空欄にすると、その地域では標準価格が適用されます。年額が空欄の場合 = 月額 × 10。"
 }

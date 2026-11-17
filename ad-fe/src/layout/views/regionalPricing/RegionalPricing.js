@@ -3,14 +3,15 @@ import { useTranslation } from "react-i18next";
 import moment from "moment";
 import AgTable from "../../../common/grid/AgTable";
 import Toast from "../../../common/helper/toast/Toast";
-import Filter from "../../../helper/filter/Filter";
+import { MdOutlineClose } from "react-icons/md";
 import { CustomModal } from "../../../helper/modal/CustomModal";
 import { Switch } from "../../../components/ui/switch";
 import { Button } from "../../../components/ui/button";
 import { CardTitle } from "src/components/ui/card";
 import { AppTooltip } from "../../../components/ui/AppTooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
-import { paginationRowsPerPageOptions } from "../../../helper/table/TableStyle";
+
+const PAGE_SIZES = [10, 25, 50, 100];
 import { countryName, countryOptions, currencySymbol } from "../../../common/constants/countries";
 import RegionModal from "./RegionModal";
 import {
@@ -34,7 +35,6 @@ const gridHeight = (rowHeights) => `${HEADER_PX + Math.max(rowHeights.reduce((a,
 const regionRowPx = (r) => Math.max(46, (r.prices?.length || 0) * 20 + 18, Math.ceil((r.countries?.length || 0) / 14) * 26 + 14);
 const compactGrid = {
   minHeight: "0",
-  showPagination: false,
   autoSizeStrategy: GRID_AUTO_SIZE,
   onGridSizeChanged: fitColumns,
   onFirstDataRendered: fitColumns,
@@ -58,7 +58,11 @@ function CountryPicker({ value, onChange, placeholder, className = "w-[230px]" }
   );
 }
 
-const RegionalPricing = () => {
+/**
+ * Pricing regions + organization billing country. Rendered under the Plans grid (Super Admin).
+ * refreshKey: bump to reload the regions (e.g. after a plan's regional prices were saved).
+ */
+const RegionalPricing = ({ refreshKey = 0, isDark = false, addRegionSignal = 0 }) => {
   const { t, i18n } = useTranslation();
   const lang = i18n.language;
   const [regions, setRegions] = useState([]);
@@ -76,29 +80,52 @@ const RegionalPricing = () => {
   const [newCountry, setNewCountry] = useState("");
   const regionGrid = useRef(null);
   const orgGrid = useRef(null);
+  const [regionArg, setRegionArg] = useState({ pageNo: 1, perPage: PAGE_SIZES[0] });
+  const [regionTotal, setRegionTotal] = useState(0);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [orgArg, setOrgArg] = useState({ pageNo: 1, perPage: PAGE_SIZES[0] });
+  const [orgTotal, setOrgTotal] = useState(0);
 
-  const fetchRegions = useCallback(async (skip = false) => {
+  useEffect(() => {
+    const h = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setRegionArg((prev) => (prev.pageNo === 1 ? prev : { ...prev, pageNo: 1 }));
+    }, 350);
+    return () => clearTimeout(h);
+  }, [search]);
+
+  const fetchRegions = useCallback(async (skip = true) => {
     setLoading(true);
-    const res = await ApiPricingRegionList(skip);
+    const res = await ApiPricingRegionList({ ...regionArg, search: debouncedSearch }, skip);
     if (res?.isSuccess) {
       setRegions(res.data || []);
       setPlans(res.plans || []);
+      setRegionTotal(res.totalRecords || 0);
     } else Toast.error(res?.message || t("Something went wrong"));
     setLoading(false);
-  }, [t]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regionArg, debouncedSearch, refreshKey]);
 
-  const fetchOrgs = useCallback(async (skip = false) => {
+  const fetchOrgs = useCallback(async (skip = true) => {
     setOrgLoading(true);
-    const res = await ApiOrganizationBillingList(skip);
-    if (res?.isSuccess) setOrgs(res.data || []);
+    const res = await ApiOrganizationBillingList(orgArg, skip);
+    if (res?.isSuccess) {
+      setOrgs(res.data || []);
+      setOrgTotal(res.totalRecords || 0);
+    }
     setOrgLoading(false);
-  }, []);
+  }, [orgArg]);
 
+  useEffect(() => { fetchRegions(); }, [fetchRegions]);
+  // "Add Region" requested from elsewhere (e.g. the plan's regional prices modal when no region exists).
   useEffect(() => {
-    fetchRegions();
-    fetchOrgs(true);
+    if (addRegionSignal) setModal({ open: true, region: null });
+  }, [addRegionSignal]);
+  useEffect(() => { fetchOrgs(); }, [fetchOrgs]);
+  useEffect(() => {
     ApiDetectPricingCountry().then((res) => res?.isSuccess && setDetected(res.data));
-  }, [fetchRegions, fetchOrgs]);
+  }, []);
 
   useEffect(() => {
     if (!previewCountry) return;
@@ -234,9 +261,7 @@ const RegionalPricing = () => {
 
   return (
     <>
-      <Filter name={t("Regional Pricing")} nameShow={false} dateShow={false} profileShow={false} />
-
-      <div className="middle_container budget_container">
+      <div>
         {/* Regions */}
         <div className="data_content data_content_btn glass-grid-container h-maxContent" style={{ marginTop: "12px" }}>
           <div className="camapgin_btn flex flex-wrap justify-between items-center gap-3 pt-4 pb-2 px-6">
@@ -249,6 +274,30 @@ const RegionalPricing = () => {
                   : <span className="text-amber-600">{t("Cloudflare country header not received — check the Cloudflare setup.")}</span>)}
               </span>
             </div>
+            <div className="flex items-center gap-2 flex-wrap">
+            <div
+              id="regional-pricing-search"
+              className="search_option m-0"
+              style={{
+                display: "flex", alignItems: "center", position: "relative", minWidth: "240px",
+                backgroundColor: isDark ? "#1e293b" : "#fff",
+                border: isDark ? "1px solid #334155" : "1px solid #cbd5e1",
+              }}
+            >
+              <input
+                type="text"
+                placeholder={t("Search region name")}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                style={{ width: "100%", height: "36px", backgroundColor: "transparent", color: isDark ? "#f8fafc" : "#1e293b", border: "none", paddingRight: search ? "30px" : "10px" }}
+              />
+              {search && (
+                <MdOutlineClose
+                  onClick={() => setSearch("")}
+                  style={{ position: "absolute", right: "10px", cursor: "pointer", color: "var(--text-secondary)", fontSize: "18px", opacity: 0.7 }}
+                />
+              )}
+            </div>
             <Button
               id="regional-pricing-add-btn"
               onClick={() => setModal({ open: true, region: null })}
@@ -257,6 +306,7 @@ const RegionalPricing = () => {
             >
               <i className="fa fa-plus" /> {t("Add Region")}
             </Button>
+            </div>
           </div>
           <div className="data_table">
             <AgTable
@@ -266,13 +316,13 @@ const RegionalPricing = () => {
               onRefresh={() => fetchRegions(true)}
               rowData={regions}
               columnDefs={regionColumns}
-              totalRecords={regions.length}
-              perPage={Math.max(regions.length, 10)}
-              currentPage={1}
-              onPageChange={() => {}}
-              onPerPageChange={() => {}}
+              totalRecords={regionTotal}
+              perPage={regionArg.perPage}
+              currentPage={regionArg.pageNo}
+              onPageChange={(page) => setRegionArg((prev) => ({ ...prev, pageNo: page }))}
+              onPerPageChange={(perPage) => setRegionArg({ pageNo: 1, perPage })}
               onSortChanged={() => {}}
-              paginationOptions={paginationRowsPerPageOptions}
+              paginationOptions={PAGE_SIZES}
               isCustomSaveColumns={true}
               customSaveColumnName={"Pricing Regions"}
               {...compactGrid}
@@ -322,13 +372,13 @@ const RegionalPricing = () => {
               onRefresh={() => fetchOrgs(true)}
               rowData={orgs}
               columnDefs={orgColumns}
-              totalRecords={orgs.length}
-              perPage={Math.max(orgs.length, 10)}
-              currentPage={1}
-              onPageChange={() => {}}
-              onPerPageChange={() => {}}
+              totalRecords={orgTotal}
+              perPage={orgArg.perPage}
+              currentPage={orgArg.pageNo}
+              onPageChange={(page) => setOrgArg((prev) => ({ ...prev, pageNo: page }))}
+              onPerPageChange={(perPage) => setOrgArg({ pageNo: 1, perPage })}
               onSortChanged={() => {}}
-              paginationOptions={paginationRowsPerPageOptions}
+              paginationOptions={PAGE_SIZES}
               isCustomSaveColumns={true}
               customSaveColumnName={"Organization Billing Country"}
               {...compactGrid}

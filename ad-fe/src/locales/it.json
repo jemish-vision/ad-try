@@ -7991,5 +7991,11 @@
   "Always use default price": "Usa sempre il prezzo predefinito",
   "Clear warning": "Cancella avviso",
   "Countries in this region will pay the default plan price on their next purchase. Running subscriptions keep their current price until they change plan.": "I paesi di questa regione pagheranno il prezzo predefinito al prossimo acquisto. Gli abbonamenti attivi mantengono il prezzo finché non cambiano piano.",
-  "This organization will see and pay the price of the selected country from its next payment.": "Questa organizzazione vedrà e pagherà il prezzo del paese selezionato dal prossimo pagamento."
+  "This organization will see and pay the price of the selected country from its next payment.": "Questa organizzazione vedrà e pagherà il prezzo del paese selezionato dal prossimo pagamento.",
+  "Regional Prices": "Prezzi regionali",
+  "Regional prices updated": "Prezzi regionali aggiornati",
+  "Save Prices": "Salva prezzi",
+  "Search region name": "Cerca nome regione",
+  "No pricing regions yet. Add a region first.": "Nessuna regione di prezzo. Aggiungi prima una regione.",
+  "Leave a region empty to charge the default price there. Empty yearly price = monthly × 10.": "Lascia vuota una regione per applicare lì il prezzo predefinito. Prezzo annuale vuoto = mensile × 10."
 }

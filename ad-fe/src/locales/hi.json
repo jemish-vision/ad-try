@@ -7991,5 +7991,11 @@
   "Always use default price": "हमेशा डिफ़ॉल्ट कीमत उपयोग करें",
   "Clear warning": "चेतावनी हटाएं",
   "Countries in this region will pay the default plan price on their next purchase. Running subscriptions keep their current price until they change plan.": "इस क्षेत्र के देश अपनी अगली खरीद पर डिफ़ॉल्ट कीमत चुकाएंगे। चल रही सदस्यताएं प्लान बदलने तक अपनी मौजूदा कीमत पर रहेंगी।",
-  "This organization will see and pay the price of the selected country from its next payment.": "यह संगठन अपने अगले भुगतान से चुने गए देश की कीमत देखेगा और चुकाएगा।"
+  "This organization will see and pay the price of the selected country from its next payment.": "यह संगठन अपने अगले भुगतान से चुने गए देश की कीमत देखेगा और चुकाएगा।",
+  "Regional Prices": "क्षेत्रीय कीमतें",
+  "Regional prices updated": "क्षेत्रीय कीमतें अपडेट की गईं",
+  "Save Prices": "कीमतें सहेजें",
+  "Search region name": "क्षेत्र का नाम खोजें",
+  "No pricing regions yet. Add a region first.": "अभी कोई मूल्य क्षेत्र नहीं है। पहले एक क्षेत्र जोड़ें।",
+  "Leave a region empty to charge the default price there. Empty yearly price = monthly × 10.": "वहाँ डिफ़ॉल्ट कीमत लेने के लिए क्षेत्र खाली छोड़ें। खाली वार्षिक कीमत = मासिक × 10।"
 }

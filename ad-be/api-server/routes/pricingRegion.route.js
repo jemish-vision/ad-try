@@ -12,6 +12,8 @@ const {
   updateOrganizationBilling,
   detectCountry,
   previewCountry,
+  getPlanRegionPrices,
+  updatePlanRegionPrices,
 } = require("../controllers/pricingRegion.controller");
 
 router.get("/detect", verifyToken, detectCountry);
@@ -22,6 +24,8 @@ router.post("/update", verifyToken, requireSuperAdmin, updateRegion);
 router.post("/changeStatus", verifyToken, requireSuperAdmin, changeRegionStatus);
 router.post("/delete", verifyToken, requireSuperAdmin, deleteRegion);
 router.post("/preview", verifyToken, requireSuperAdmin, previewCountry);
+router.post("/plan-prices", verifyToken, requireSuperAdmin, getPlanRegionPrices);
+router.post("/plan-prices/update", verifyToken, requireSuperAdmin, updatePlanRegionPrices);
 router.post("/organizations", verifyToken, requireSuperAdmin, getOrganizationBilling);
 router.post("/organizations/update", verifyToken, requireSuperAdmin, updateOrganizationBilling);
 

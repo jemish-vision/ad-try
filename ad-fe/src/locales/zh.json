@@ -7991,5 +7991,11 @@
   "Always use default price": "始终使用默认价格",
   "Clear warning": "清除警告",
   "Countries in this region will pay the default plan price on their next purchase. Running subscriptions keep their current price until they change plan.": "该区域的国家将在下次购买时按默认价格付费。现有订阅在更换套餐前保持当前价格。",
-  "This organization will see and pay the price of the selected country from its next payment.": "该组织将从下次付款起看到并支付所选国家的价格。"
+  "This organization will see and pay the price of the selected country from its next payment.": "该组织将从下次付款起看到并支付所选国家的价格。",
+  "Regional Prices": "区域价格",
+  "Regional prices updated": "区域价格已更新",
+  "Save Prices": "保存价格",
+  "Search region name": "搜索区域名称",
+  "No pricing regions yet. Add a region first.": "尚无定价区域。请先添加区域。",
+  "Leave a region empty to charge the default price there. Empty yearly price = monthly × 10.": "区域留空则在该区域按默认价格收费。年付价格留空 = 月付 × 10。"
 }
