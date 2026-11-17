@@ -42,11 +42,18 @@ app.use("/public", express.static(path.join(__dirname, "../public"), {
 
 app.set("view engine", "ejs");
 
-const allowedOrigins = `${process.env.ALLOWED_ORIGINS},${process.env.BASE_URL}`.split(",").map(o => o.trim());
+const allowedOrigins = `${process.env.ALLOWED_ORIGINS},${process.env.BASE_URL}`.split(",").map(o => o.trim()).filter(Boolean);
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins?.includes(origin)) {
+    if (
+      !origin ||
+      allowedOrigins.includes(origin) ||
+      origin.endsWith("advertiseiq.co") ||
+      origin.endsWith("advertiseiq.com") ||
+      origin.includes("localhost") ||
+      origin.includes("127.0.0.1")
+    ) {
       callback(null, true);
     } else {
       callback(new Error("Not allowed by CORS"));

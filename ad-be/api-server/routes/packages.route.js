@@ -4,6 +4,8 @@ const { verifyToken } = require("../middleware/user.auth");
 const { getAllPackages, createPackages, changeStatusPackages, updatePackages, deletePackages, getSubscriptionHistory, getPackagePermissions, updatePackagePermissions } = require("../controllers/packages.controller");
 const { requireSuperAdmin } = require("../middleware/superAdmin.auth");
 
+router.get("/public", getAllPackages);
+router.post("/public", getAllPackages);
 router.post("/getAll", verifyToken, getAllPackages);
 
 router.post("/create", verifyToken, requireSuperAdmin, createPackages);
