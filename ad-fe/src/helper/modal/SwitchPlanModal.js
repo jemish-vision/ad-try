@@ -26,9 +26,9 @@ const SwitchPlanModal = ({
 
   const isYearly = billingCycle === "yearly";
   const targetPrice = isYearly
-    ? (targetPlan?.yearlyPrice !== undefined && targetPlan?.yearlyPrice !== null && Number(targetPlan.yearlyPrice) >= 0
+    ? (targetPlan?.yearlyPrice !== undefined && targetPlan?.yearlyPrice !== null && Number(targetPlan.yearlyPrice) > 0
         ? targetPlan.yearlyPrice
-        : Math.round(Number(targetPlan?.monthlyPrice || targetPlan?.price || 0) * 12 * 0.8))
+        : Number(targetPlan?.monthlyPrice || targetPlan?.price || 0) * 10)
     : (targetPlan?.monthlyPrice !== undefined && targetPlan?.monthlyPrice !== null
         ? targetPlan.monthlyPrice
         : targetPlan?.price || 0);

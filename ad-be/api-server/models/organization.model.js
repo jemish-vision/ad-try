@@ -83,6 +83,25 @@ const organizationSchema = new mongoose.Schema(
       enum: [7, 14, 30, 60],
       default: 30,
     },
+    // Regional pricing. "auto": price by billingCountry once locked, else by the visitor's country
+    // (Cloudflare CF-IPCountry). "default": always the plan's default price (customers who were already
+    // paying before regional pricing, or set by Super Admin).
+    pricingMode: {
+      type: String,
+      enum: ["auto", "default"],
+      default: "auto",
+    },
+    // ISO country locked at the first paid checkout; renewals and plan switches keep this price.
+    billingCountry: { type: String, trim: true, uppercase: true, default: null },
+    billingCountrySetAt: { type: Date, default: null },
+    billingCountrySource: { type: String, enum: ["checkout", "admin", null], default: null },
+    // Set when the card or billing address country of a regional-price checkout is outside that region.
+    billingCountryMismatch: {
+      pricingCountry: { type: String, default: null },
+      cardCountry: { type: String, default: null },
+      addressCountry: { type: String, default: null },
+      detectedAt: { type: Date, default: null },
+    },
   },
   { timestamps: true }
 );

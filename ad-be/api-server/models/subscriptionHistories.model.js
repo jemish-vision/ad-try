@@ -28,6 +28,9 @@ const subscriptionHistorySchema = new mongoose.Schema(
       min: 0,
     },
 
+    // Currency actually charged (regional pricing); older records have none → the plan's currency.
+    currency: { type: String, trim: true, uppercase: true },
+
     paymentDate: {
       type: Date,
       required: true,

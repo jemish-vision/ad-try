@@ -13,7 +13,11 @@ const subscriptionSchema = new mongoose.Schema(
     stripeSubscriptionId: { type: String, trim: true },
     paymentDate: { type: Date, trim: true },
     nextBillingDate: { type: Date, trim: true },
-    subscriptionStatus: { type: String }
+    subscriptionStatus: { type: String },
+    // Regional pricing used at checkout
+    pricingCountry: { type: String, trim: true },
+    pricingRegionId: { type: String, trim: true },
+    currency: { type: String, trim: true, uppercase: true },
 
   },
 

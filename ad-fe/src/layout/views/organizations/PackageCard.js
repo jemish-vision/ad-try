@@ -1,12 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { ROLES } from "../../../common/constants";
-
-export const currencySymbol = {
-  INR: "₹",
-  USD: "$",
-  EUR: "€",
-};
+import { currencySymbol as symbolFor } from "../../../common/constants/countries";
 
 export const getFeatures = (t) => [
   { icon: "fa-link", label: (pkg) => t("{{count}} Amazon Accounts Connection", { count: pkg.amazonConnectLimit !== undefined ? pkg.amazonConnectLimit : (pkg.allowAmazonConnection ?? 0) }) },
@@ -44,9 +39,9 @@ const PackageCard = ({
   
   const isYearly = billingCycle === "yearly";
   const displayPrice = isYearly
-    ? (pkg.yearlyPrice !== undefined && pkg.yearlyPrice !== null && Number(pkg.yearlyPrice) >= 0
+    ? (pkg.yearlyPrice !== undefined && pkg.yearlyPrice !== null && Number(pkg.yearlyPrice) > 0
       ? Number(pkg.yearlyPrice)
-      : Math.round(Number(pkg.monthlyPrice || pkg.price || 0) * 12 * 0.8))
+      : Number(pkg.monthlyPrice || pkg.price || 0) * 10)
     : (pkg.monthlyPrice !== undefined && pkg.monthlyPrice !== null && Number(pkg.monthlyPrice) >= 0
       ? Number(pkg.monthlyPrice)
       : Number(pkg.price || 0));
@@ -74,7 +69,7 @@ const PackageCard = ({
 
           {/* Price */}
           <div className="plan-price-block">
-            <span className="price-sym">{currencySymbol[pkg.currency] || "$"}</span>
+            <span className="price-sym">{symbolFor(pkg.currency)}</span>
             <span className="price-num">{displayPrice}</span>
             <span className="price-cycle">/{isYearly ? t("year") : (t("month") === "month" ? "mo" : t("month"))}</span>
           </div>

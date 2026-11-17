@@ -10,6 +10,7 @@ import CancelPlanModal from "../../helper/modal/CancelSubscriptionModal";
 import SwitchPlanModal from "../../helper/modal/SwitchPlanModal";
 
 import PackageCard from "./organizations/PackageCard";
+import { currencySymbol as currencySymbolFor } from "../../common/constants/countries";
 
 
 
@@ -388,7 +389,7 @@ const PurchasePlans = () => {
           currentPlan={checkPackages}
           targetPlan={pendingSwitchPlan?.pkg}
           effectiveDate={upcomingStartDate || effectiveEndDate}
-          currencySymbol="$"
+          currencySymbol={currencySymbolFor(pendingSwitchPlan?.pkg?.currency)}
           billingCycle={pendingSwitchPlan?.billingCycle || billingCycle}
         />
       </div>

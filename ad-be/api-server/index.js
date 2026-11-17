@@ -158,6 +158,7 @@ app.use("/api/dayparting-stretegy", require("./routes/daypartingstretegy.route")
 app.use("/api/user", require("./routes/user.route"));
 app.use("/api/config", require("./routes/config.route"));
 app.use("/api/packages", require("./routes/packages.route"));
+app.use("/api/pricing-regions", require("./routes/pricingRegion.route"));
 app.use("/api/asana", require("./routes/asana.route"));
 app.use("/api/holiday", require("./routes/holiday.route"));
 app.use("/api/health-score", require("./routes/healthScoreSetting.route"));

@@ -5,6 +5,7 @@ const pageSchema = require("../models/superAdmin/pages.model");
 const organizationSchema = require("../models/organization.model");
 const mongoose = require("mongoose");
 const { ROLES } = require("../constants/roles");
+const { getPricingContext, priceForPlan } = require("../helper/regionalPricing");
 
 exports.getAllPackages = async (req, res) => {
   try {
@@ -15,12 +16,27 @@ exports.getAllPackages = async (req, res) => {
       { $sort: { price: 1 } }
     ];
 
-    const packages = await packageSchema.aggregate(pipeline);
+    let packages = await packageSchema.aggregate(pipeline);
+
+    // Customers see the price for their country (regional pricing); Super Admin sees the stored plans.
+    let pricing = null;
+    if (!isOwner) {
+      const org = req.organizationId && mongoose.Types.ObjectId.isValid(req.organizationId)
+        ? await organizationSchema.findById(req.organizationId).select("pricingMode billingCountry").lean()
+        : null;
+      const ctx = await getPricingContext(org, req);
+      packages = packages.map((pkg) => {
+        const p = priceForPlan(pkg, ctx);
+        return { ...pkg, monthlyPrice: p.monthlyPrice, yearlyPrice: p.yearlyPrice, price: p.monthlyPrice, currency: p.currency, pricing: p };
+      });
+      pricing = { country: ctx.country, countrySource: ctx.source, regionName: ctx.region?.name || null, currency: ctx.region?.currency || null };
+    }
 
     return res.status(200).json({
       isSuccess: true,
       message: "Packages fetched successfully",
       data: packages,
+      pricing,
     });
 
   } catch (error) {
@@ -361,6 +377,7 @@ exports.getSubscriptionHistory = async (req, res) => {
               $project: {
                 _id: 1,
                 price: 1,
+                currency: { $ifNull: ["$currency", "$package.currency"] },
                 paymentDate: 1,
                 startDate: 1,
                 endDate: 1,
@@ -381,6 +398,11 @@ exports.getSubscriptionHistory = async (req, res) => {
             { $match: { price: { $gt: 0 } } },
             { $group: { _id: null, amount: { $sum: "$price" } } },
           ],
+          revenueByCurrency: [
+            { $match: { price: { $gt: 0 } } },
+            { $group: { _id: { $toUpper: { $ifNull: ["$currency", { $ifNull: ["$package.currency", "USD"] }] } }, amount: { $sum: "$price" } } },
+            { $sort: { amount: -1 } },
+          ],
         },
       },
     ];
@@ -395,6 +417,8 @@ exports.getSubscriptionHistory = async (req, res) => {
       isSuccess: true,
       data,
       revenue: totalRevenue,
+      // With regional pricing, payments are in several currencies: totals per currency.
+      revenueByCurrency: (result[0]?.revenueByCurrency || []).map((r) => ({ currency: r._id, amount: r.amount })),
       totalRow: totalRecords ? { count: totalRecords } : {},
       currentPageNo: Number(pageNo),
       totalRecords,

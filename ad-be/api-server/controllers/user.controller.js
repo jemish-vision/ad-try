@@ -39,6 +39,7 @@ const { write_logs } = require("../../winston/subscription/logger");
 const { generateOtp, encryptData } = require("../helper/common");
 const { buildOtpVerificationEmail } = require("../../emailTemplate/buildOtpVerificationEmail");
 const { ROLES } = require("../constants/roles");
+const { getPricingContext, priceForPlan, toMinorUnits, fromMinorUnits } = require("../helper/regionalPricing");
 
 exports.registortUser = async (req, res) => {
   const {
@@ -683,11 +684,12 @@ async function findProductByName(name) {
 async function findRecurringPrice(productId, amount, currency, interval = "month") {
   const prices = await stripe.prices.search({
     query: `product:'${productId}' AND active:'true' AND type:'recurring'`,
+    limit: 100,
   });
 
-  // Check if there is an existing price with the exact interval and amount
+  // Reuse an existing price with the same interval, amount AND currency (regional prices share a product)
   let price = prices.data.find(
-    (p) => p.recurring?.interval === interval && p.unit_amount === amount
+    (p) => p.recurring?.interval === interval && p.unit_amount === amount && p.currency === String(currency).toLowerCase()
   );
 
   if (!price) {
@@ -705,6 +707,54 @@ async function findRecurringPrice(productId, amount, currency, interval = "month
 
 async function findMonthlyPrice(productId, amount, currency) {
   return findRecurringPrice(productId, amount, currency, "month");
+}
+
+/** Currency (lower case) of the customer's active/trialing subscriptions, or null. */
+async function getActiveSubscriptionCurrency(customerId) {
+  try {
+    const subs = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 20 });
+    const live = subs.data.find((s) => ["active", "trialing", "past_due"].includes(s.status));
+    return live ? (live.currency || live.items?.data?.[0]?.price?.currency || null) : null;
+  } catch (error) {
+    write_logs({ message: `[getActiveSubscriptionCurrency] ${error?.message || error}`, log_type: "error" });
+    return null;
+  }
+}
+
+/**
+ * After a paid checkout: lock the organization's billing country (first purchase only) and flag a
+ * regional-price checkout whose card or billing address country is outside the priced region.
+ */
+async function applyBillingCountry(orgQuery, existingOrg, session, subscription) {
+  const meta = session.metadata || {};
+  const pricingCountry = meta.pricingCountry || null;
+  const $set = {};
+
+  if (existingOrg && existingOrg.pricingMode !== "default" && !existingOrg.billingCountry && pricingCountry) {
+    Object.assign($set, { billingCountry: pricingCountry, billingCountrySetAt: new Date(), billingCountrySource: "checkout" });
+  }
+
+  if (meta.pricingRegionId) {
+    const allowed = new Set(String(meta.pricingRegionCountries || pricingCountry || "").split(",").filter(Boolean));
+    const addressCountry = session.customer_details?.address?.country || null;
+    let cardCountry = null;
+    try {
+      const pmId = subscription.default_payment_method;
+      if (pmId) {
+        const pm = typeof pmId === "string" ? await stripe.paymentMethods.retrieve(pmId) : pmId;
+        cardCountry = pm?.card?.country || null;
+      }
+    } catch (error) {
+      write_logs({ message: `[applyBillingCountry] payment method lookup failed: ${error?.message || error}`, log_type: "error" });
+    }
+    const outside = [cardCountry, addressCountry].filter((c) => c && !allowed.has(c));
+    if (outside.length) {
+      $set.billingCountryMismatch = { pricingCountry, cardCountry, addressCountry, detectedAt: new Date() };
+      write_logs({ message: `[applyBillingCountry] country mismatch org=${existingOrg?._id} pricing=${pricingCountry} card=${cardCountry} address=${addressCountry}`, log_type: "error" });
+    }
+  }
+
+  if (Object.keys($set).length) await organizationSchema.updateMany(orgQuery, { $set });
 }
 
 async function findCustomerByEmail(email) {
@@ -864,21 +914,39 @@ exports.createSubscription = async (req, res) => {
       });
     }
 
-    const product = await findProductByName(packageName);
     const isYearly = billingCycle === "yearly";
     const interval = isYearly ? "year" : "month";
-    const baseAmount = isYearly
-      ? (package.yearlyPrice > 0 ? package.yearlyPrice : (package.monthlyPrice ? package.monthlyPrice * 10 : package.price * 10))
-      : (package.monthlyPrice > 0 ? package.monthlyPrice : package.price);
-    const currency = (package.currency || "USD").toUpperCase();
-    const price = await findRecurringPrice(product.id, baseAmount * 100, currency, interval);
-    const customer = await findCustomerByEmail(user.email);
 
     const orgId = req.organizationId || req.headers["x-organization-id"] || user.organizationId;
     const orgQuery = orgId && mongoose.Types.ObjectId.isValid(orgId)
       ? { _id: new mongoose.Types.ObjectId(orgId) }
       : { $or: [{ userId: new mongoose.Types.ObjectId(userId) }, { userId: String(userId) }] };
     const existingOrg = await organizationSchema.findOne(orgQuery).lean();
+
+    // Price is always worked out here (never taken from the browser): locked billing country, else the
+    // Cloudflare country of this request; no region → the plan's default price.
+    const pricingCtx = await getPricingContext(existingOrg, req);
+    const planPrice = priceForPlan(package, pricingCtx);
+    const baseAmount = isYearly ? planPrice.yearlyPrice : planPrice.monthlyPrice;
+    const currency = planPrice.currency;
+    if (!(baseAmount > 0)) {
+      return res.status(200).send({ message: "This plan has no price for your region. Please contact support.", isSuccess: false });
+    }
+
+    const customer = await findCustomerByEmail(user.email);
+
+    // Stripe can't hold active subscriptions in two currencies for one customer.
+    const activeCurrency = await getActiveSubscriptionCurrency(customer.id);
+    if (activeCurrency && activeCurrency !== currency.toLowerCase()) {
+      write_logs({ message: `[createSubscription] currency conflict org=${orgId} active=${activeCurrency} new=${currency} country=${pricingCtx.country}`, log_type: "error" });
+      return res.status(200).send({
+        message: "Your current subscription is billed in a different currency. Please contact support to change your billing country.",
+        isSuccess: false,
+      });
+    }
+
+    const product = await findProductByName(packageName);
+    const price = await findRecurringPrice(product.id, toMinorUnits(baseAmount, currency), currency, interval);
 
     if (existingOrg?.isUpcomingPlanPaid) {
       return res.status(200).send({
@@ -893,7 +961,12 @@ exports.createSubscription = async (req, res) => {
       userId: user?._id.toString(),
       packageId: package._id.toString(),
       organizationId: orgId ? orgId.toString() : "",
-      isSwitch: hasActivePlan ? "true" : "false"
+      isSwitch: hasActivePlan ? "true" : "false",
+      pricingCountry: planPrice.country || "",
+      pricingCountrySource: planPrice.countrySource || "",
+      pricingRegionId: planPrice.regionId || "",
+      pricingRegionCountries: (pricingCtx.region?.countries || []).join(",").slice(0, 450),
+      pricingCurrency: currency,
     };
 
     const subscription_data = {
@@ -911,6 +984,8 @@ exports.createSubscription = async (req, res) => {
       ],
       metadata: metadata,
       subscription_data: subscription_data,
+      // Needed for the card/billing-country check against the regional price.
+      billing_address_collection: "required",
       success_url: `${process.env.FRONTEND_REDIRECT_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.FRONTEND_REDIRECT_URL}/payment-failed`,
     });
@@ -1041,6 +1116,9 @@ const handleCheckoutCompleted = async (session) => {
             paymentDate: packageStartDate,
             nextBillingDate: packageEndDate,
             subscriptionStatus: subscription.status,
+            pricingCountry: session.metadata?.pricingCountry || undefined,
+            pricingRegionId: session.metadata?.pricingRegionId || undefined,
+            currency: (session.currency || "").toUpperCase() || undefined,
           }
         },
         { new: true, upsert: true }
@@ -1056,6 +1134,7 @@ const handleCheckoutCompleted = async (session) => {
 
       const existingOrg = await organizationSchema.findOne(orgQuery).lean();
       const isSwitch = session.metadata?.isSwitch === "true" || Boolean(existingOrg?.planId && existingOrg?.endDate && new Date(existingOrg.endDate) > new Date());
+      await applyBillingCountry(orgQuery, existingOrg, session, subscription);
 
       if (!isSwitch) {
         // Mark all other subscriptions for this user as canceled (prevent multiple active subscriptions)
@@ -1124,7 +1203,8 @@ const handleCheckoutCompleted = async (session) => {
         userId,
         packageId,
         subscriptionId: subscription.id,
-        price: package?.price || 0,
+        price: session.amount_total != null ? fromMinorUnits(session.amount_total, session.currency) : (package?.price || 0),
+        currency: (session.currency || package?.currency || "").toUpperCase() || undefined,
         paymentDate: packageStartDate,
         startDate: packageStartDate,
         endDate: packageEndDate,
@@ -1261,7 +1341,8 @@ const handleInvoicePaymentSucceeded = async (invoice) => {
         userId,
         packageId,
         subscriptionId: subscription.id,
-        price: package.price,
+        price: invoice.amount_paid != null ? fromMinorUnits(invoice.amount_paid, invoice.currency) : (package?.price || 0),
+        currency: (invoice.currency || package?.currency || "").toUpperCase() || undefined,
         paymentDate: packageStartDate,
         startDate: packageStartDate,
         endDate: packageEndDate,

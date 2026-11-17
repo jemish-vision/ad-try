@@ -54,6 +54,7 @@ const AdminRoles = lazy(() => import("../layout/views/role/AdminRoles"));
 const Pages = lazy(() => import("../layout/views/pages/Pages"));
 const CronJob = lazy(() => import("../layout/views/cronJob/CronJob"));
 const Packages = lazy(() => import("../layout/views/packages/Packages"));
+const RegionalPricing = lazy(() => import("../layout/views/regionalPricing/RegionalPricing"));
 const Retention = lazy(() => import("../layout/views/retention/Retention"));
 const SupportTicket = lazy(() => import("../layout/views/supportTicket/SupportTicket"));
 const UnansweredQuestions = lazy(() => import("../layout/views/unansweredQuestions/UnansweredQuestions"));
@@ -408,6 +409,12 @@ const PagesRoutes = [
     component: <Packages />,
     exact: true,
     name: "Plans",
+  },
+  {
+    path: "/regional-pricing",
+    component: <RegionalPricing />,
+    exact: true,
+    name: "Regional Pricing",
   },
   {
     path: "/purchase-plans",
