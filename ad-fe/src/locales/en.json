@@ -7937,7 +7937,10 @@
   "Buy Box Owner by Day": "Buy Box Owner by Day",
   "Green days you held the Buy Box, red days another seller did. Hover a day to see who.": "Green days you held the Buy Box, red days another seller did. Hover a day to see who.",
   "Your price against the Buy Box price and the lowest FBA and FBM prices over time.": "Your price against the Buy Box price and the lowest FBA and FBM prices over time.",
-<<<<<<< HEAD
+  "Applied": "Applied",
+  "Applied in Amazon. Waiting for the change to sync.": "Applied in Amazon. Waiting for the change to sync.",
+  "Some recommendations were applied. Check the remaining selected items.": "Some recommendations were applied. Check the remaining selected items.",
+  "Recommendation applied successfully": "Recommendation applied successfully",
   "Regional Pricing": "Regional Pricing",
   "Pricing Regions": "Pricing Regions",
   "Add Region": "Add Region",
@@ -7990,10 +7993,3 @@
   "Countries in this region will pay the default plan price on their next purchase. Running subscriptions keep their current price until they change plan.": "Countries in this region will pay the default plan price on their next purchase. Running subscriptions keep their current price until they change plan.",
   "This organization will see and pay the price of the selected country from its next payment.": "This organization will see and pay the price of the selected country from its next payment."
 }
-=======
-  "Applied": "Applied",
-  "Applied in Amazon. Waiting for the change to sync.": "Applied in Amazon. Waiting for the change to sync.",
-  "Some recommendations were applied. Check the remaining selected items.": "Some recommendations were applied. Check the remaining selected items.",
-  "Recommendation applied successfully": "Recommendation applied successfully"
-}
->>>>>>> 1d6e433c3c9a9fc8cd25a6b697bf183dfce7efe0

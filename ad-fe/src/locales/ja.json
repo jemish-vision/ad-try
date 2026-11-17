@@ -7937,7 +7937,10 @@
   "Buy Box Owner by Day": "日別Buy Box獲得者",
   "Green days you held the Buy Box, red days another seller did. Hover a day to see who.": "緑の日はBuy Boxを獲得、赤の日は他の出品者が獲得しています。日にカーソルを合わせると獲得者を確認できます。",
   "Your price against the Buy Box price and the lowest FBA and FBM prices over time.": "自社価格とBuy Box価格、FBA・FBM最安値の推移を比較します。",
-<<<<<<< HEAD
+  "Applied": "適用済み",
+  "Applied in Amazon. Waiting for the change to sync.": "Amazonで適用されました。変更の同期を待機しています。",
+  "Some recommendations were applied. Check the remaining selected items.": "一部の推奨事項が適用されました。残りの選択した項目を確認してください。",
+  "Recommendation applied successfully": "推奨事項が正常に適用されました",
   "Regional Pricing": "地域別価格",
   "Pricing Regions": "価格地域",
   "Add Region": "地域を追加",
@@ -7990,10 +7993,3 @@
   "Countries in this region will pay the default plan price on their next purchase. Running subscriptions keep their current price until they change plan.": "この地域の国は次回の購入時に標準価格を支払います。継続中のサブスクリプションはプラン変更まで現在の価格のままです。",
   "This organization will see and pay the price of the selected country from its next payment.": "この組織は次回の支払いから選択した国の価格が表示され、その価格で支払います。"
 }
-=======
-  "Applied": "適用済み",
-  "Applied in Amazon. Waiting for the change to sync.": "Amazonで適用されました。変更の同期を待機しています。",
-  "Some recommendations were applied. Check the remaining selected items.": "一部の推奨事項が適用されました。残りの選択した項目を確認してください。",
-  "Recommendation applied successfully": "推奨事項が正常に適用されました"
-}
->>>>>>> 1d6e433c3c9a9fc8cd25a6b697bf183dfce7efe0

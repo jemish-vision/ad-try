@@ -7937,7 +7937,10 @@
   "Buy Box Owner by Day": "Detentore Buy Box per giorno",
   "Green days you held the Buy Box, red days another seller did. Hover a day to see who.": "Giorni verdi: avevi la Buy Box; giorni rossi: ce l’aveva un altro venditore. Passa il mouse su un giorno per vedere chi.",
   "Your price against the Buy Box price and the lowest FBA and FBM prices over time.": "Il tuo prezzo rispetto al prezzo della Buy Box e ai prezzi FBA e FBM più bassi nel tempo.",
-<<<<<<< HEAD
+  "Applied": "Applicato",
+  "Applied in Amazon. Waiting for the change to sync.": "Applicato su Amazon. In attesa della sincronizzazione della modifica.",
+  "Some recommendations were applied. Check the remaining selected items.": "Alcune raccomandazioni sono state applicate. Controlla gli elementi selezionati rimanenti.",
+  "Recommendation applied successfully": "Raccomandazione applicata con successo",
   "Regional Pricing": "Prezzi regionali",
   "Pricing Regions": "Regioni di prezzo",
   "Add Region": "Aggiungi regione",
@@ -7990,10 +7993,3 @@
   "Countries in this region will pay the default plan price on their next purchase. Running subscriptions keep their current price until they change plan.": "I paesi di questa regione pagheranno il prezzo predefinito al prossimo acquisto. Gli abbonamenti attivi mantengono il prezzo finché non cambiano piano.",
   "This organization will see and pay the price of the selected country from its next payment.": "Questa organizzazione vedrà e pagherà il prezzo del paese selezionato dal prossimo pagamento."
 }
-=======
-  "Applied": "Applicato",
-  "Applied in Amazon. Waiting for the change to sync.": "Applicato su Amazon. In attesa della sincronizzazione della modifica.",
-  "Some recommendations were applied. Check the remaining selected items.": "Alcune raccomandazioni sono state applicate. Controlla gli elementi selezionati rimanenti.",
-  "Recommendation applied successfully": "Raccomandazione applicata con successo"
-}
->>>>>>> 1d6e433c3c9a9fc8cd25a6b697bf183dfce7efe0
