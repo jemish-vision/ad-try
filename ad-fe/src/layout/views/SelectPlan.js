@@ -161,7 +161,7 @@ const SelectPlan = () => {
 
     setActionLoadingId(`buy-${pkgId}`);
     try {
-      const res = await ApiCreateSubscription({ packageName, billingCycle });
+      const res = await ApiCreateSubscription({ packageId: pkgId, packageName, billingCycle });
       if (res?.isSuccess && res.data) {
         Toast.success(t("Redirecting to checkout…"));
         window.location.href = res.data;

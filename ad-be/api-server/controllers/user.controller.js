@@ -663,6 +663,25 @@ exports.changePassword = async (req, res) => {
   }
 }
 
+/**
+ * Stripe product for a plan, found by the plan's id (product metadata.packageId) so renaming a plan
+ * keeps the same product. Older products were matched by name: the first match by the (new or old)
+ * name is adopted and tagged with the plan id. The product name follows the plan name.
+ */
+async function findProductForPackage(pkg) {
+  const packageId = String(pkg._id);
+  const byId = await stripe.products.search({ query: `metadata['packageId']:'${packageId}'`, limit: 1 });
+  let product = byId.data[0];
+  if (!product) {
+    product = await findProductByName(pkg.name);
+    product = await stripe.products.update(product.id, { metadata: { ...(product.metadata || {}), packageId } });
+  }
+  if (product.name !== pkg.name) {
+    product = await stripe.products.update(product.id, { name: pkg.name });
+  }
+  return product;
+}
+
 async function findProductByName(name) {
   const escapedName = typeof name === 'string' ? name.replace(/(['"\\])/g, '\\$1') : name;
   const products = await stripe.products.search({
@@ -896,7 +915,7 @@ exports.saveTrialSubscription = async (userId, resObj = null) => {
 exports.createSubscription = async (req, res) => {
   try {
     const { _id: userId } = req.user;
-    const { packageName, billingCycle = "monthly" } = req.body;
+    const { packageId, packageName, billingCycle = "monthly" } = req.body;
 
     const user = await userSchema.findOne({ _id: userId }).lean();
     if (!user) {
@@ -906,7 +925,10 @@ exports.createSubscription = async (req, res) => {
       });
     }
 
-    const package = await packageSchema.findOne({ name: packageName }).lean();
+    // By id (stable when a plan is renamed); name only for older clients.
+    const package = packageId && mongoose.Types.ObjectId.isValid(packageId)
+      ? await packageSchema.findById(packageId).lean()
+      : await packageSchema.findOne({ name: packageName }).lean();
     if (!package) {
       return res.status(200).send({
         message: "Package not found!",
@@ -945,7 +967,7 @@ exports.createSubscription = async (req, res) => {
       });
     }
 
-    const product = await findProductByName(packageName);
+    const product = await findProductForPackage(package);
     const price = await findRecurringPrice(product.id, toMinorUnits(baseAmount, currency), currency, interval);
 
     if (existingOrg?.isUpcomingPlanPaid) {

@@ -5,7 +5,8 @@ const pageSchema = require("../models/superAdmin/pages.model");
 const organizationSchema = require("../models/organization.model");
 const mongoose = require("mongoose");
 const { ROLES } = require("../constants/roles");
-const { getPricingContext, priceForPlan } = require("../helper/regionalPricing");
+const { getPricingContext, priceForPlan, clearRegionCache } = require("../helper/regionalPricing");
+const PricingRegion = require("../models/pricingRegion.model");
 
 exports.getAllPackages = async (req, res) => {
   try {
@@ -294,6 +295,11 @@ exports.deletePackages = async (req, res) => {
     }
 
     const deletedPackage = await packageSchema.findByIdAndDelete(packageId);
+    // Drop this plan's regional prices too.
+    if (deletedPackage) {
+      await PricingRegion.updateMany({}, { $pull: { prices: { packageId: deletedPackage._id } } });
+      clearRegionCache();
+    }
     if (!deletedPackage) {
       return res.status(203).json({
         isSuccess: false,
