@@ -7970,7 +7970,6 @@
   "Select at least one country": "Select at least one country",
   "Enter a monthly price for at least one plan": "Enter a monthly price for at least one plan",
   "Visitors from these countries see and pay the prices below. A country can be in only one active region.": "Visitors from these countries see and pay the prices below. A country can be in only one active region.",
-  "Leave a plan empty to charge its default price in this region. Empty yearly price = monthly × 10.": "Leave a plan empty to charge its default price in this region. Empty yearly price = monthly × 10.",
   "Countries without a region pay the plan's default price.": "Countries without a region pay the plan's default price.",
   "Your country (Cloudflare): {{country}}": "Your country (Cloudflare): {{country}}",
   "Cloudflare country header not received — check the Cloudflare setup.": "Cloudflare country header not received — check the Cloudflare setup.",
@@ -7997,5 +7996,6 @@
   "Save Prices": "Save Prices",
   "Search region name": "Search region name",
   "No pricing regions yet. Add a region first.": "No pricing regions yet. Add a region first.",
-  "Leave a region empty to charge the default price there. Empty yearly price = monthly × 10.": "Leave a region empty to charge the default price there. Empty yearly price = monthly × 10."
+  "Leave a region empty to charge the default price there. Empty yearly price = 12 months with 20% off.": "Leave a region empty to charge the default price there. Empty yearly price = 12 months with 20% off.",
+  "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.": "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off."
 }

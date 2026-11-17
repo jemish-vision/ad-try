@@ -7970,7 +7970,6 @@
   "Select at least one country": "कम से कम एक देश चुनें",
   "Enter a monthly price for at least one plan": "कम से कम एक प्लान के लिए मासिक कीमत दर्ज करें",
   "Visitors from these countries see and pay the prices below. A country can be in only one active region.": "इन देशों के विज़िटर नीचे दी गई कीमतें देखते और चुकाते हैं। एक देश केवल एक सक्रिय क्षेत्र में हो सकता है।",
-  "Leave a plan empty to charge its default price in this region. Empty yearly price = monthly × 10.": "इस क्षेत्र में डिफ़ॉल्ट कीमत लेने के लिए प्लान खाली छोड़ें। खाली वार्षिक कीमत = मासिक × 10।",
   "Countries without a region pay the plan's default price.": "जिन देशों का कोई क्षेत्र नहीं है वे प्लान की डिफ़ॉल्ट कीमत चुकाते हैं।",
   "Your country (Cloudflare): {{country}}": "आपका देश (Cloudflare): {{country}}",
   "Cloudflare country header not received — check the Cloudflare setup.": "Cloudflare देश हेडर नहीं मिला — Cloudflare सेटअप जांचें।",
@@ -7997,5 +7996,6 @@
   "Save Prices": "कीमतें सहेजें",
   "Search region name": "क्षेत्र का नाम खोजें",
   "No pricing regions yet. Add a region first.": "अभी कोई मूल्य क्षेत्र नहीं है। पहले एक क्षेत्र जोड़ें।",
-  "Leave a region empty to charge the default price there. Empty yearly price = monthly × 10.": "वहाँ डिफ़ॉल्ट कीमत लेने के लिए क्षेत्र खाली छोड़ें। खाली वार्षिक कीमत = मासिक × 10।"
+  "Leave a region empty to charge the default price there. Empty yearly price = 12 months with 20% off.": "वहाँ डिफ़ॉल्ट कीमत लेने के लिए क्षेत्र खाली छोड़ें। खाली वार्षिक कीमत = 12 महीने पर 20% छूट।",
+  "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.": "इस क्षेत्र में डिफ़ॉल्ट कीमत लेने के लिए प्लान खाली छोड़ें। खाली वार्षिक कीमत = 12 महीने पर 20% छूट।"
 }

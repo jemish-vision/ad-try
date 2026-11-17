@@ -52,6 +52,14 @@ describe("plan price", () => {
     assert.equal(P.priceForPlan(PLAN, await P.getPricingContext({ pricingMode: "default" }, req("IN"))).currency, "USD");
   });
 
+  test("regional yearly price left blank = 12 months with 20% off, rounded", async () => {
+    regionsInDb = [{ ...INDIA, prices: [{ packageId: "p1", monthlyPrice: 999, yearlyPrice: 0 }] }];
+    P.clearRegionCache();
+    const p = P.priceForPlan(PLAN, await P.getPricingContext(null, req("IN")));
+    assert.equal(p.yearlyPrice, 9590); // 999 × 12 × 0.8 = 9590.4
+    assert.equal(P.regionalYearlyPrice(2999), 28790);
+  });
+
   test("an organization locked to India keeps INR when visiting from abroad", async () => {
     assert.equal(P.priceForPlan(PLAN, await P.getPricingContext({ billingCountry: "IN" }, req("US"))).currency, "INR");
   });

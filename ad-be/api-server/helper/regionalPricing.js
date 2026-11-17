@@ -7,7 +7,8 @@
  *
  * Price rule (same for default and regional prices):
  *   monthly = monthlyPrice (or legacy `price`)
- *   yearly  = yearlyPrice when > 0, else monthly × 10
+ *   default price:  yearly = yearlyPrice when > 0, else monthly × 10
+ *   regional price: yearly = region yearlyPrice when > 0, else monthly × 12 with 20% off (rounded)
  */
 const PricingRegion = require("../models/pricingRegion.model");
 
@@ -16,6 +17,9 @@ const ZERO_DECIMAL = new Set(["BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "
 const THREE_DECIMAL = new Set(["BHD", "JOD", "KWD", "OMR", "TND"]);
 
 const YEARLY_MULTIPLIER = 10;
+const REGIONAL_YEARLY_DISCOUNT = 0.2;
+/** Yearly price for a region left blank: 12 months less 20%, rounded to a whole amount. */
+const regionalYearlyPrice = (monthly) => Math.round(Number(monthly || 0) * 12 * (1 - REGIONAL_YEARLY_DISCOUNT));
 const CACHE_MS = 60 * 1000;
 
 function currencyFactor(currency) {
@@ -94,7 +98,7 @@ function priceForPlan(pkg, { region, country, source }) {
   const monthly = Number(entry.monthlyPrice || 0);
   return {
     monthlyPrice: monthly,
-    yearlyPrice: Number(entry.yearlyPrice > 0 ? entry.yearlyPrice : monthly * YEARLY_MULTIPLIER),
+    yearlyPrice: Number(entry.yearlyPrice > 0 ? entry.yearlyPrice : regionalYearlyPrice(monthly)),
     currency: String(region.currency).toUpperCase(),
     country: country || null,
     countrySource: source,
@@ -113,6 +117,7 @@ async function getPricingContext(org, req) {
 
 module.exports = {
   YEARLY_MULTIPLIER,
+  regionalYearlyPrice,
   currencyFactor,
   toMinorUnits,
   fromMinorUnits,

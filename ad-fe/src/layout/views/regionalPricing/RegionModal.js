@@ -6,7 +6,7 @@ import { Input } from "../../../components/ui/input";
 import { Switch } from "../../../components/ui/switch";
 import { MultiSelect } from "../../../components/ui/multi-select";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
-import { CURRENCY_CODES, countryOptions, currencySymbol } from "../../../common/constants/countries";
+import { CURRENCY_CODES, countryOptions, currencySymbol, regionalYearlyPrice } from "../../../common/constants/countries";
 
 const YEARLY_MULTIPLIER = 10;
 const labelCls = "text-[11px] font-bold uppercase tracking-wider text-[#475569] dark:text-[#cbd5e1] mb-2 block";
@@ -140,7 +140,7 @@ export default function RegionModal({ open, onClose, region, plans, onSave, savi
                         </td>
                         <td className="px-3 py-2">
                           <Input type="number" min="0" className="h-9 w-32" value={row.yearlyPrice ?? ""}
-                            placeholder={monthly > 0 ? String(monthly * YEARLY_MULTIPLIER) : t("Default")}
+                            placeholder={monthly > 0 ? String(regionalYearlyPrice(monthly)) : t("Default")}
                             onChange={(e) => setPrice(plan._id, "yearlyPrice", e.target.value)} />
                         </td>
                       </tr>
@@ -150,7 +150,7 @@ export default function RegionModal({ open, onClose, region, plans, onSave, savi
               </table>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
-              {t("Leave a plan empty to charge its default price in this region. Empty yearly price = monthly × 10.")}
+              {t("Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.")}
             </p>
           </div>
 

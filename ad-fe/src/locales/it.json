@@ -7970,7 +7970,6 @@
   "Select at least one country": "Seleziona almeno un paese",
   "Enter a monthly price for at least one plan": "Inserisci un prezzo mensile per almeno un piano",
   "Visitors from these countries see and pay the prices below. A country can be in only one active region.": "I visitatori di questi paesi vedono e pagano i prezzi seguenti. Un paese può appartenere a una sola regione attiva.",
-  "Leave a plan empty to charge its default price in this region. Empty yearly price = monthly × 10.": "Lascia vuoto un piano per applicare il suo prezzo predefinito in questa regione. Prezzo annuale vuoto = mensile × 10.",
   "Countries without a region pay the plan's default price.": "I paesi senza regione pagano il prezzo predefinito del piano.",
   "Your country (Cloudflare): {{country}}": "Il tuo paese (Cloudflare): {{country}}",
   "Cloudflare country header not received — check the Cloudflare setup.": "Intestazione paese di Cloudflare non ricevuta — controlla la configurazione di Cloudflare.",
@@ -7997,5 +7996,6 @@
   "Save Prices": "Salva prezzi",
   "Search region name": "Cerca nome regione",
   "No pricing regions yet. Add a region first.": "Nessuna regione di prezzo. Aggiungi prima una regione.",
-  "Leave a region empty to charge the default price there. Empty yearly price = monthly × 10.": "Lascia vuota una regione per applicare lì il prezzo predefinito. Prezzo annuale vuoto = mensile × 10."
+  "Leave a region empty to charge the default price there. Empty yearly price = 12 months with 20% off.": "Lascia vuota una regione per applicare lì il prezzo predefinito. Prezzo annuale vuoto = 12 mesi con il 20% di sconto.",
+  "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.": "Lascia vuoto un piano per applicare il suo prezzo predefinito in questa regione. Prezzo annuale vuoto = 12 mesi con il 20% di sconto."
 }

@@ -12,7 +12,7 @@ import { AppTooltip } from "../../../components/ui/AppTooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 
 const PAGE_SIZES = [10, 25, 50, 100];
-import { countryName, countryOptions, currencySymbol } from "../../../common/constants/countries";
+import { countryName, countryOptions, currencySymbol, regionalYearlyPrice } from "../../../common/constants/countries";
 import RegionModal from "./RegionModal";
 import {
   ApiPricingRegionList,
@@ -195,7 +195,7 @@ const RegionalPricing = ({ refreshKey = 0, isDark = false, addRegionSignal = 0 }
         <div className="flex flex-col py-1.5 text-xs leading-5">
           {(data.prices || []).map((p) => {
             const plan = plans.find((pl) => String(pl._id) === String(p.packageId));
-            const yearly = p.yearlyPrice > 0 ? p.yearlyPrice : p.monthlyPrice * 10;
+            const yearly = p.yearlyPrice > 0 ? p.yearlyPrice : regionalYearlyPrice(p.monthlyPrice);
             return (
               <span key={String(p.packageId)}>
                 <b>{plan?.name || t("Deleted plan")}</b>: {currencySymbol(data.currency)}{p.monthlyPrice}/{t("mo")} · {currencySymbol(data.currency)}{yearly}/{t("year")}

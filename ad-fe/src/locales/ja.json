@@ -7970,7 +7970,6 @@
   "Select at least one country": "国を1つ以上選択してください",
   "Enter a monthly price for at least one plan": "少なくとも1つのプランに月額料金を入力してください",
   "Visitors from these countries see and pay the prices below. A country can be in only one active region.": "これらの国の訪問者には以下の価格が表示され、その価格で支払います。1つの国は1つの有効な地域にのみ所属できます。",
-  "Leave a plan empty to charge its default price in this region. Empty yearly price = monthly × 10.": "プランを空欄にすると、この地域では標準価格が適用されます。年額が空欄の場合 = 月額 × 10。",
   "Countries without a region pay the plan's default price.": "地域に属さない国はプランの標準価格を支払います。",
   "Your country (Cloudflare): {{country}}": "あなたの国 (Cloudflare): {{country}}",
   "Cloudflare country header not received — check the Cloudflare setup.": "Cloudflare の国ヘッダーを受信していません — Cloudflare の設定を確認してください。",
@@ -7997,5 +7996,6 @@
   "Save Prices": "価格を保存",
   "Search region name": "地域名で検索",
   "No pricing regions yet. Add a region first.": "価格地域がまだありません。先に地域を追加してください。",
-  "Leave a region empty to charge the default price there. Empty yearly price = monthly × 10.": "地域を空欄にすると、その地域では標準価格が適用されます。年額が空欄の場合 = 月額 × 10。"
+  "Leave a region empty to charge the default price there. Empty yearly price = 12 months with 20% off.": "地域を空欄にすると、その地域では標準価格が適用されます。年額が空欄の場合 = 12か月分から20%割引。",
+  "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.": "プランを空欄にすると、この地域では標準価格が適用されます。年額が空欄の場合 = 12か月分から20%割引。"
 }

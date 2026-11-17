@@ -20,6 +20,9 @@ export const currencySymbols = {
   ILS: "₪", PHP: "₱", THB: "฿", VND: "₫", IDR: "Rp ", MYR: "RM ", NGN: "₦", PKR: "Rs ", BDT: "৳", EGP: "E£", KWD: "KD ",
 };
 
+/** Regional yearly price when left blank: 12 months less 20%, rounded (same rule as the API). */
+export const regionalYearlyPrice = (monthly) => Math.round(Number(monthly || 0) * 12 * 0.8);
+
 /** Symbol (or "CODE ") for a currency. */
 export const currencySymbol = (code) => {
   const c = String(code || "USD").toUpperCase();

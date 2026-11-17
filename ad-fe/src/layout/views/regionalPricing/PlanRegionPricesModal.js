@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../compo
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import Toast from "../../../common/helper/toast/Toast";
-import { currencySymbol } from "../../../common/constants/countries";
+import { currencySymbol, regionalYearlyPrice } from "../../../common/constants/countries";
 import { ApiPlanRegionPrices, ApiUpdatePlanRegionPrices } from "../../../api-wrapper/ApiPricingRegions";
 
 const YEARLY_MULTIPLIER = 10;
@@ -64,7 +64,7 @@ export default function PlanRegionPricesModal({ plan, onClose, onSaved, onAddReg
         <div className="p-5 flex flex-col gap-3 max-h-[65vh] overflow-y-auto">
           <div className="text-xs text-slate-500 dark:text-slate-400">
             {t("Default price")}: <b>{currencySymbol(plan?.currency)}{defMonthly}</b> / {t("mo")} · <b>{currencySymbol(plan?.currency)}{defYearly}</b> / {t("year")}.{" "}
-            {t("Leave a region empty to charge the default price there. Empty yearly price = monthly × 10.")}
+            {t("Leave a region empty to charge the default price there. Empty yearly price = 12 months with 20% off.")}
           </div>
 
           {loading ? (
@@ -113,7 +113,7 @@ export default function PlanRegionPricesModal({ plan, onClose, onSaved, onAddReg
                           <div className="flex items-center gap-1.5">
                             <span className="text-xs text-slate-500 w-8 text-right shrink-0">{sym}</span>
                             <Input type="number" min="0" className="h-9 w-32" value={r.yearlyPrice}
-                              placeholder={monthly > 0 ? String(monthly * YEARLY_MULTIPLIER) : t("Default")}
+                              placeholder={monthly > 0 ? String(regionalYearlyPrice(monthly)) : t("Default")}
                               onChange={(e) => setValue(r.regionId, "yearlyPrice", e.target.value)} />
                           </div>
                         </td>
