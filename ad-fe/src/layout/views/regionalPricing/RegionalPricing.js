@@ -20,7 +20,6 @@ import {
   ApiUpdatePricingRegion,
   ApiChangePricingRegionStatus,
   ApiDeletePricingRegion,
-  ApiPreviewPricingCountry,
   ApiOrganizationBillingList,
   ApiUpdateOrganizationBilling,
   ApiDetectPricingCountry,
@@ -74,8 +73,6 @@ const RegionalPricing = ({ refreshKey = 0, isDark = false, addRegionSignal = 0 }
   const [saving, setSaving] = useState(false);
   const [deleteRow, setDeleteRow] = useState(null);
   const [detected, setDetected] = useState(null);
-  const [previewCountry, setPreviewCountry] = useState("");
-  const [preview, setPreview] = useState(null);
   const [setCountryFor, setSetCountryFor] = useState(null);
   const [newCountry, setNewCountry] = useState("");
   const regionGrid = useRef(null);
@@ -127,10 +124,6 @@ const RegionalPricing = ({ refreshKey = 0, isDark = false, addRegionSignal = 0 }
     ApiDetectPricingCountry().then((res) => res?.isSuccess && setDetected(res.data));
   }, []);
 
-  useEffect(() => {
-    if (!previewCountry) return;
-    ApiPreviewPricingCountry({ country: previewCountry }).then((res) => setPreview(res?.isSuccess ? res.data : null));
-  }, [previewCountry, regions]);
 
   const saveRegion = async (data) => {
     setSaving(true);
@@ -329,31 +322,6 @@ const RegionalPricing = ({ refreshKey = 0, isDark = false, addRegionSignal = 0 }
               height={gridHeight(regions.map(regionRowPx))}
             />
           </div>
-        </div>
-
-        {/* Preview */}
-        <div className="data_content glass-grid-container h-maxContent px-6 py-4" style={{ marginTop: "12px" }}>
-          <div className="flex flex-wrap items-center gap-3">
-            <CardTitle className="m-0 cron-title-bar" style={{ fontSize: 14 }}>{t("Preview Prices for a Country")}</CardTitle>
-            <CountryPicker value={previewCountry} onChange={setPreviewCountry} placeholder={t("Select country")} />
-            {preview && (
-              <span className="text-xs text-slate-500 dark:text-slate-400">
-                {preview.regionName ? t("Region: {{name}}", { name: preview.regionName }) : t("No region — default prices")}
-              </span>
-            )}
-          </div>
-          {preview && (
-            <div className="flex flex-wrap gap-3 mt-3">
-              {preview.plans.map((p) => (
-                <div key={p._id} className="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2.5 min-w-[170px]">
-                  <div className="text-xs font-bold text-slate-700 dark:text-slate-200">{p.name}</div>
-                  <div className="text-sm font-extrabold text-slate-900 dark:text-white">{currencySymbol(p.currency)}{p.monthlyPrice} <span className="text-[11px] font-medium text-slate-500">/ {t("mo")}</span></div>
-                  <div className="text-xs text-blue-500 font-semibold">{currencySymbol(p.currency)}{p.yearlyPrice} / {t("year")}</div>
-                  {!p.isRegional && <div className="text-[10px] text-slate-400">{t("Default price")}</div>}
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* Organization billing */}

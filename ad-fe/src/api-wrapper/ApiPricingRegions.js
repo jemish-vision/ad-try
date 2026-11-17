@@ -18,7 +18,6 @@ export const ApiCreatePricingRegion = (data) => post("create", data);
 export const ApiUpdatePricingRegion = (data) => post("update", data);
 export const ApiChangePricingRegionStatus = (data) => post("changeStatus", data);
 export const ApiDeletePricingRegion = (data) => post("delete", data);
-export const ApiPreviewPricingCountry = (data) => post("preview", data, true);
 export const ApiOrganizationBillingList = (params = {}, skip = false) => post("organizations", params, skip);
 export const ApiPlanRegionPrices = (data) => post("plan-prices", data, true);
 export const ApiUpdatePlanRegionPrices = (data) => post("plan-prices/update", data);

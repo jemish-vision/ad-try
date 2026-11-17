@@ -3,7 +3,7 @@ const { write_logs } = require("../../winston/utility/logger");
 const PricingRegion = require("../models/pricingRegion.model");
 const packageSchema = require("../models/packages.model");
 const organizationSchema = require("../models/organization.model");
-const { isCountryCode, clearRegionCache, getRequestCountry, getPricingContext, priceForPlan } = require("../helper/regionalPricing");
+const { isCountryCode, clearRegionCache, getRequestCountry, getPricingContext } = require("../helper/regionalPricing");
 
 const fail = (res, message, status = 200) => res.status(status).json({ isSuccess: false, message });
 const serverError = (res, where, error, req) => {
@@ -218,21 +218,6 @@ exports.detectCountry = async (req, res) => {
   }
 };
 
-/** Super Admin: preview what a country sees for every plan. */
-exports.previewCountry = async (req, res) => {
-  try {
-    const country = String(req.body?.country || "").trim().toUpperCase();
-    if (!isCountryCode(country)) return fail(res, "Invalid country code");
-    const ctx = await getPricingContext({ pricingMode: "auto", billingCountry: country }, req);
-    const plans = await packageSchema.find({ isActive: true }).sort({ price: 1 }).lean();
-    return res.status(200).json({
-      isSuccess: true,
-      data: { country, regionName: ctx.region?.name || null, plans: plans.map((p) => ({ _id: p._id, name: p.name, ...priceForPlan(p, ctx) })) },
-    });
-  } catch (error) {
-    return serverError(res, "previewCountry", error, req);
-  }
-};
 
 /** One plan's price in every region (for the "Regional prices" button on the Plans page). */
 exports.getPlanRegionPrices = async (req, res) => {
