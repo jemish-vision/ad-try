@@ -67,6 +67,16 @@ import usePageFilter from "../../../helper/filter/usePageFilter";
 import { AppTooltip } from "../../../components/ui/AppTooltip";
 import { openCampaignViewInNewTab, CampaignNameCell } from "../../../utility/campaignNavigation";
 
+/** "SD" / "Sponsored Display" / "sd" → "SD" (same for SP, SB). Unknown → null. */
+const normalizeAdType = (value) => {
+  const v = String(value || "").trim().toUpperCase();
+  if (["SP", "SB", "SD"].includes(v)) return v;
+  if (v === "SPONSORED PRODUCTS") return "SP";
+  if (v === "SPONSORED BRANDS") return "SB";
+  if (v === "SPONSORED DISPLAY") return "SD";
+  return null;
+};
+
 const P = {
   primary: "#1A9FD4",
   primary50: "#E0F4FD",
@@ -420,7 +430,7 @@ function Campaign() {
   }, []);
 
   const { t } = useTranslation();
-  let { profileId, selectedAdType, selectedDate, setSelectedDate, loginUser } = useContext(ProfileContext);
+  let { profileId, selectedAdType, setSelectedAdType, selectedDate, setSelectedDate, loginUser } = useContext(ProfileContext);
   const isMockUser = Boolean(loginUser?.isMockUser || localStorage.getItem("isMockUser") === "true");
   // Combined SP+SB+SD view active on the /campaigns screen?
   const showAllTypes = isShowingAllAdTypes(
@@ -1309,10 +1319,17 @@ function Campaign() {
     const isView = Boolean(paramCampaignId) || Boolean(paramCampaignName) || searchParams.get("view") === "true" || searchParams.get("viewCampaign") === "true" || location.state?.viewCampaign;
 
     if (isView && (paramCampaignId || paramCampaignName)) {
+      // A campaign link (dashboard, search, new tab…) carries the campaign's ad type: switch the global
+      // ad type selector to it, otherwise an SD/SB campaign opened while "SP" is selected shows no data.
+      const linkAdType = normalizeAdType(searchParams.get("type") || location.state?.type);
+      if (linkAdType && linkAdType !== selectedAdType && setSelectedAdType) {
+        setSelectedAdType(linkAdType);
+        localStorage.setItem("adType", linkAdType);
+      }
       setCampaignDetails({
         campaignId: paramCampaignId ? (Number(paramCampaignId) || paramCampaignId) : undefined,
         name: paramCampaignName || "",
-        type: searchParams.get("type") || location.state?.type || "SP",
+        type: normalizeAdType(searchParams.get("type") || location.state?.type) || "SP",
         status: searchParams.get("status") || location.state?.status || "ENABLED",
         budget: searchParams.get("budget") ? Number(searchParams.get("budget")) : (location.state?.budget ?? 0),
         budgetType: searchParams.get("budgetType") || location.state?.budgetType || "",
