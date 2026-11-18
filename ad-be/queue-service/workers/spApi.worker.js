@@ -12,6 +12,7 @@ const { closeMongoConnection } = require("../../shared/connection");
 const { cron_logs } = require("../../winston/cronAutomation/logger");
 
 let worker = null;
+let snapshotWorker = null;
 let heartbeat = null;
 let workerRedis = null;
 let heartbeatRedis = null;
@@ -40,50 +41,61 @@ async function startSpApiWorker() {
     lockDuration,
   });
 
-  worker.on("active", (job) => {
-    const task = job.data?.task || "UNKNOWN_TASK";
-    const attempt = job.attemptsMade ? job.attemptsMade + 1 : 1;
-    const maxAttempts = job.opts?.attempts || 1;
-    const timeBlock = job.data?.timeBlock || "N/A";
-    cron_logs({
-      message: `[SpApiWorker] >>> STARTING Job ${job.id} | Task: ${task} [TimeBlock: ${timeBlock}] (Attempt ${attempt}/${maxAttempts})`,
-      log_type: "info",
-    });
+  // A long-running historical import must not occupy the daily snapshot slot.
+  snapshotWorker = new Worker(QUEUES.ASIN_SNAPSHOT, processor, {
+    connection: workerRedis,
+    prefix: getBullMQPrefix(),
+    concurrency: 1,
+    maxStalledCount,
+    lockDuration,
   });
 
-  worker.on("completed", (job, result) => {
-    const task = job.data?.task || "UNKNOWN_TASK";
-    const duration = job.processedOn ? `${Date.now() - job.processedOn}` : "unknown";
-    let detail = "";
-    if (result?.dryRun) {
-      detail = " (DryRun - Shadow Mode)";
-    }
-    cron_logs({
-      message: `[SpApiWorker] <<< COMPLETED Job ${job.id} | Task: ${task} | Duration: ${duration}ms${detail}`,
-      log_type: "info",
+  for (const queueWorker of [worker, snapshotWorker]) {
+    queueWorker.on("active", (job) => {
+      const task = job.data?.task || "UNKNOWN_TASK";
+      const attempt = job.attemptsMade ? job.attemptsMade + 1 : 1;
+      const maxAttempts = job.opts?.attempts || 1;
+      const timeBlock = job.data?.timeBlock || "N/A";
+      cron_logs({
+        message: `[SpApiWorker] >>> STARTING Job ${job.id} | Task: ${task} [TimeBlock: ${timeBlock}] (Attempt ${attempt}/${maxAttempts})`,
+        log_type: "info",
+      });
     });
-  });
 
-  worker.on("failed", (job, err) => {
-    const task = job?.data?.task || "UNKNOWN_TASK";
-    const attempt = job?.attemptsMade || 0;
-    const maxAttempts = job?.opts?.attempts || 1;
-    const duration = job?.processedOn ? `${Date.now() - job.processedOn}` : "unknown";
-    cron_logs({
-      message: `[SpApiWorker] !!! FAILED Job ${job?.id} | Task: ${task} | Duration: ${duration}ms | Attempt ${attempt}/${maxAttempts} | Error: ${err?.stack || err?.message || err}`,
-      log_type: "error",
+    queueWorker.on("completed", (job, result) => {
+      const task = job.data?.task || "UNKNOWN_TASK";
+      const duration = job.processedOn ? `${Date.now() - job.processedOn}` : "unknown";
+      let detail = "";
+      if (result?.dryRun) {
+        detail = " (DryRun - Shadow Mode)";
+      }
+      cron_logs({
+        message: `[SpApiWorker] <<< COMPLETED Job ${job.id} | Task: ${task} | Duration: ${duration}ms${detail}`,
+        log_type: "info",
+      });
     });
-  });
 
-  worker.on("error", (err) => {
-    cron_logs({
-      message: `[SpApiWorker] Worker Error: ${err?.stack || err?.message || err}`,
-      log_type: "error",
+    queueWorker.on("failed", (job, err) => {
+      const task = job?.data?.task || "UNKNOWN_TASK";
+      const attempt = job?.attemptsMade || 0;
+      const maxAttempts = job?.opts?.attempts || 1;
+      const duration = job?.processedOn ? `${Date.now() - job.processedOn}` : "unknown";
+      cron_logs({
+        message: `[SpApiWorker] !!! FAILED Job ${job?.id} | Task: ${task} | Duration: ${duration}ms | Attempt ${attempt}/${maxAttempts} | Error: ${err?.stack || err?.message || err}`,
+        log_type: "error",
+      });
     });
-  });
+
+    queueWorker.on("error", (err) => {
+      cron_logs({
+        message: `[SpApiWorker] Worker Error: ${err?.stack || err?.message || err}`,
+        log_type: "error",
+      });
+    });
+  }
 
   cron_logs({
-    message: `[SpApiWorker] Running with concurrency ${concurrency} (lockDuration: ${lockDuration}ms) on PID ${process.pid}`,
+    message: `[SpApiWorker] Running with concurrency ${concurrency} and dedicated snapshot concurrency 1 (lockDuration: ${lockDuration}ms) on PID ${process.pid}`,
     log_type: "info",
   });
 
@@ -95,7 +107,7 @@ async function startSpApiWorker() {
         log_type: "info",
       });
       if (heartbeat) await heartbeat.stop();
-      if (worker) await worker.close();
+      await Promise.all([worker?.close(), snapshotWorker?.close()]);
       if (heartbeatRedis) await heartbeatRedis.quit().catch(() => {});
       if (workerRedis) await workerRedis.quit().catch(() => {});
       await closeMongoConnection();

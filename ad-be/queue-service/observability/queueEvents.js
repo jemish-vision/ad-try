@@ -7,6 +7,7 @@ const { cron_logs } = require("../../winston/cronAutomation/logger");
 let rulesEvents = null;
 let syncEvents = null;
 let spApiEvents = null;
+let snapshotEvents = null;
 let eventsConnection = null;
 
 function setupQueueEventListeners(eventsInstance, queueName) {
@@ -49,8 +50,8 @@ function setupQueueEventListeners(eventsInstance, queueName) {
 }
 
 function startQueueEventsObserver() {
-  if (rulesEvents && syncEvents && spApiEvents) {
-    return { rulesEvents, syncEvents, spApiEvents };
+  if (rulesEvents && syncEvents && spApiEvents && snapshotEvents) {
+    return { rulesEvents, syncEvents, spApiEvents, snapshotEvents };
   }
 
   eventsConnection = getEventsConnection();
@@ -69,14 +70,19 @@ function startQueueEventsObserver() {
     connection: eventsConnection,
     prefix: getBullMQPrefix(),
   });
+  snapshotEvents = new QueueEvents(QUEUES.ASIN_SNAPSHOT, {
+    connection: eventsConnection,
+    prefix: getBullMQPrefix(),
+  });
 
   setupQueueEventListeners(rulesEvents, QUEUES.RULES);
   setupQueueEventListeners(syncEvents, QUEUES.HOURLY_SYNC);
   setupQueueEventListeners(spApiEvents, QUEUES.SP_API);
+  setupQueueEventListeners(snapshotEvents, QUEUES.ASIN_SNAPSHOT);
 
   console.log(`[QueueEvents] Started observer on ${os.hostname()} (pid: ${process.pid})`);
 
-  return { rulesEvents, syncEvents, spApiEvents };
+  return { rulesEvents, syncEvents, spApiEvents, snapshotEvents };
 }
 
 async function closeQueueEventsObserver() {
@@ -92,6 +98,10 @@ async function closeQueueEventsObserver() {
   if (spApiEvents) {
     promises.push(spApiEvents.close());
     spApiEvents = null;
+  }
+  if (snapshotEvents) {
+    promises.push(snapshotEvents.close());
+    snapshotEvents = null;
   }
   await Promise.allSettled(promises);
 

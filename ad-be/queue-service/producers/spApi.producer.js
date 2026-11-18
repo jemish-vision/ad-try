@@ -29,8 +29,10 @@ async function enqueueSpApiForOccurrence({ task, scheduledFor = new Date(), trig
     trigger,
   });
 
-  const { spApiQueue } = getQueues();
-  const job = await spApiQueue.add(task, data, {
+  const { spApiQueue, asinSnapshotQueue } = getQueues();
+  // Daily observations need capacity independent of historical report imports.
+  const queue = task === SP_API_TASKS.ASIN_SNAPSHOT ? asinSnapshotQueue : spApiQueue;
+  const job = await queue.add(task, data, {
     jobId,
   });
 

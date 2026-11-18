@@ -2,6 +2,7 @@ const QUEUES = Object.freeze({
   RULES: "rules-queue",
   HOURLY_SYNC: "hourly-sync-queue",
   SP_API: "sp-api-queue",
+  ASIN_SNAPSHOT: "asin-snapshot-queue",
 });
 
 const RULE_TASKS = Object.freeze({

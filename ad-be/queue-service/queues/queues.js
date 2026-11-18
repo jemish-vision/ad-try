@@ -6,6 +6,7 @@ const { getProducerConnection, getBullMQPrefix } = require("../config/bullmq.con
 let rulesQueue = null;
 let hourlySyncQueue = null;
 let spApiQueue = null;
+let asinSnapshotQueue = null;
 let producerConnection = null;
 
 function getQueues() {
@@ -37,10 +38,19 @@ function getQueues() {
     });
   }
 
+  if (!asinSnapshotQueue) {
+    asinSnapshotQueue = new Queue(QUEUES.ASIN_SNAPSHOT, {
+      connection: producerConnection,
+      prefix: getBullMQPrefix(),
+      defaultJobOptions: spApiJobOptions,
+    });
+  }
+
   return {
     rulesQueue,
     hourlySyncQueue,
     spApiQueue,
+    asinSnapshotQueue,
   };
 }
 
@@ -57,6 +67,10 @@ async function closeQueues() {
   if (spApiQueue) {
     closePromises.push(spApiQueue.close());
     spApiQueue = null;
+  }
+  if (asinSnapshotQueue) {
+    closePromises.push(asinSnapshotQueue.close());
+    asinSnapshotQueue = null;
   }
   await Promise.allSettled(closePromises);
 
