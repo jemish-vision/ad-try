@@ -26,7 +26,13 @@ export function switchTheme(event, setTheme) {
   const updateTheme = () => {
     if (currentRevision !== revision) return;
     const commit = () => {
-      setTheme(nextTheme);
+      if (typeof setTheme === "function") {
+        try {
+          setTheme(nextTheme);
+        } catch (e) {
+          console.warn("setTheme callback error:", e);
+        }
+      }
       localStorage.setItem("theme", nextTheme);
       root.setAttribute("data-theme", nextTheme);
       window.dispatchEvent(new Event("themeChanged"));

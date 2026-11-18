@@ -52,6 +52,7 @@ import { ApiGetTotalRecommendationCount } from "../../../api-wrapper/recommendat
 import { useTour } from "../../../tour";
 import { PAGE_ACTIONS, ROLES, SYSTEM_PAGES } from "src/common/constants";
 import { PermissionCheck } from "src/helper/permission/PermissionCheck";
+import { SHORTCUTS_BY_PATH } from "../../../utility/shortcuts/shortcutRegistry";
 
 function Sidebar({ open, setOpen }) {
   const { t } = useTranslation();
@@ -1100,8 +1101,13 @@ function Sidebar({ open, setOpen }) {
                         >
                           <span className="sidebar_icon_wrapper">{el.icon}</span>
                           <span className="sidebar_link_text">{t(el.name)}</span>
+                          {SHORTCUTS_BY_PATH[el.path] && (
+                            <span className="sidebar_shortcut_badge ml-auto text-[10px] font-mono text-slate-400 dark:text-slate-500 font-semibold px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 shrink-0">
+                              {SHORTCUTS_BY_PATH[el.path].altDisplay}
+                            </span>
+                          )}
                           {el.name === "Recommendation" && totalNewRecommendations > 0 && (
-                            <span className="badge rounded-full bg-red-500 ml-auto px-2 py-0.5 text-xs text-white">
+                            <span className={`badge rounded-full bg-red-500 ${SHORTCUTS_BY_PATH[el.path] ? "ml-1.5" : "ml-auto"} px-2 py-0.5 text-xs text-white`}>
                               {totalNewRecommendations > 99 ? "99+" : totalNewRecommendations}
                             </span>
                           )}
@@ -1136,6 +1142,11 @@ function Sidebar({ open, setOpen }) {
                                 >
                                   <span className="sidebar_icon_wrapper">{child.icon}</span>
                                   <span className="submenu_text">{t(child.name)}</span>
+                                  {SHORTCUTS_BY_PATH[child.path] && (
+                                    <span className="sidebar_shortcut_badge ml-auto text-[10px] font-mono text-slate-400 dark:text-slate-500 font-semibold px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5 shrink-0">
+                                      {SHORTCUTS_BY_PATH[child.path].altDisplay}
+                                    </span>
+                                  )}
                                 </Link>
                               </li>
                             ) : null
