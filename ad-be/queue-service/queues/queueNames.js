@@ -57,6 +57,8 @@ const SP_API_TASKS = Object.freeze({
   SYNC_PAST_DATA: "sync-past-data",
   ASIN_SNAPSHOT: "asin-snapshot",
   OUT_OF_STOCK_ADS: "out-of-stock-ads",
+  FC_INVENTORY_LEDGER: "fc-inventory-ledger",
+  FC_STORAGE_FEE: "fc-storage-fee",
 });
 
 module.exports = {

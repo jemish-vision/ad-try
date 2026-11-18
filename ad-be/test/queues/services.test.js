@@ -14,7 +14,11 @@ const { getLeaseKey } = require("../../queue-service/utils/profileLease");
 
 describe("1. Automation Execution Mode Coordination", () => {
   test("Identifies migrated tasks correctly", () => {
-    assert.strictEqual(MIGRATED_TASKS.size, 42);
+    assert.strictEqual(MIGRATED_TASKS.size, 46);
+    // Daily jobs with their own queues + FC reports moved from worker-report.js
+    for (const task of ["ASINSnapshot", "OutOfStockAds", "FCInventoryLedger", "FCStorageFee"]) {
+      assert.strictEqual(isMigratedTask(task), true, task);
+    }
     assert.strictEqual(isMigratedTask("BudgetRuleSchedules"), true);
     assert.strictEqual(isMigratedTask("DaypartingRuleSchedules"), true);
     assert.strictEqual(isMigratedTask("CampaignListing"), true);

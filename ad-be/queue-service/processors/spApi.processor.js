@@ -179,6 +179,19 @@ function createSpApiProcessor() {
           result = await cronAsinSnapshot();
           break;
         }
+        // Previously only scheduled by the retired worker-service/worker-report.js
+        case SP_API_TASKS.FC_INVENTORY_LEDGER: {
+          const { cronGenerateFcInventoryLedgerReport } = require("../../api-server/controllers/fcInventory.controller");
+          result = await cronGenerateFcInventoryLedgerReport();
+          break;
+        }
+
+        case SP_API_TASKS.FC_STORAGE_FEE: {
+          const { cronGenerateFcStorageFeeReport } = require("../../api-server/controllers/fcInventory.controller");
+          result = await cronGenerateFcStorageFeeReport();
+          break;
+        }
+
         case SP_API_TASKS.OUT_OF_STOCK_ADS: {
           const { cronOutOfStockAds } = require("../../api-server/services/automation/outOfStockAds.service");
           result = await cronOutOfStockAds();
