@@ -8013,5 +8013,8 @@
   "Running in campaigns": "配信中のキャンペーン",
   "Search ASIN, SKU, product or campaign": "ASIN、SKU、商品、キャンペーンを検索",
   "Showing {{from}}–{{to}} of {{total}}": "{{total}} 件中 {{from}}–{{to}}",
-  "Spend (7d)": "広告費（7日）"
+  "Spend (7d)": "広告費（7日）",
+  "{{count}} campaigns": "{{count}} 件のキャンペーン",
+  "Show less": "表示を減らす",
+  "1 campaign": "1 件のキャンペーン"
 }

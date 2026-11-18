@@ -1166,17 +1166,6 @@ export default function AdminDashboard() {
           />
         </div>
 
-        {/* ── Out-of-stock products still advertised in running campaigns (seller / vendor) ── */}
-        {isSellerOrVendor && (
-          <div className="w-full">
-            <OutOfStockAdsWidget
-              profileId={currentProfileId}
-              currencyCode={activeCurrencyCode}
-              marketplace={activeCountryCode}
-            />
-          </div>
-        )}
-
         {/* ── Row 4: Assigned vs. Without Assign Campaigns ── */}
         <div id="dashboard-campaign-breakdowns" className="w-full mb-5">
           <AssignedCampaignsWidget
@@ -1257,6 +1246,17 @@ export default function AdminDashboard() {
             />
           </div>
         </div>
+
+        {/* ── Out-of-stock products still advertised in running campaigns (seller / vendor); above the Product Performance Matrix ── */}
+        {isSellerOrVendor && (
+          <div className="w-full">
+            <OutOfStockAdsWidget
+              profileId={currentProfileId}
+              currencyCode={activeCurrencyCode}
+              marketplace={activeCountryCode}
+            />
+          </div>
+        )}
 
         {/* ── Product Performance Matrix & Top Products: Only visible in Seller View ── */}
         {dashboardMode === "seller" && (

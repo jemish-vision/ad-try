@@ -6,6 +6,7 @@ import { ApiGetOutOfStockAds } from "../../../../api-wrapper/dashboard/ApiDashbo
 import { formatRegionalCurrency } from "../../../../utility/regionalNumberFormat";
 
 const PER_PAGE = 10;
+const VISIBLE_CAMPAIGNS = 2; // campaigns shown per product before "+N more"
 
 /** URL of the campaign view (Campaigns page opens the campaign when campaignId is in the query). */
 export const campaignViewUrl = (c) => {
@@ -33,6 +34,14 @@ export default function OutOfStockAdsWidget({ profileId, currencyCode = "INR", m
   const [pageNo, setPageNo] = useState(1);
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
+  const [expanded, setExpanded] = useState(() => new Set()); // ASINs with all campaigns shown
+  const toggleExpanded = (asin) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(asin)) next.delete(asin);
+      else next.add(asin);
+      return next;
+    });
 
   useEffect(() => {
     const h = setTimeout(() => {
@@ -126,18 +135,17 @@ export default function OutOfStockAdsWidget({ profileId, currencyCode = "INR", m
         <table className="w-full text-[12.5px]">
           <thead className="bg-slate-50 dark:bg-white/[0.04] text-slate-500 dark:text-slate-400">
             <tr>
-              <th className="text-left font-semibold px-3 py-2.5 min-w-[280px]">{t("Product")}</th>
-              <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">{t("Availability")}</th>
-              <th className="text-left font-semibold px-3 py-2.5 min-w-[320px]">{t("Running in campaigns")}</th>
-              <th className="text-right font-semibold px-3 py-2.5 whitespace-nowrap">{t("Spend (7d)")}</th>
+              <th className="text-left font-semibold px-3 py-2.5 w-[42%] min-w-[280px]">{t("Product")}</th>
+              <th className="text-left font-semibold px-3 py-2.5 min-w-[340px]">{t("Running in campaigns")}</th>
+              <th className="text-right font-semibold px-3 py-2.5 whitespace-nowrap w-[110px]">{t("Spend (7d)")}</th>
             </tr>
           </thead>
           <tbody>
             {loading && !rows.length ? (
-              <tr><td colSpan={4} className="px-3 py-8 text-center text-slate-400">{t("Loading...")}</td></tr>
+              <tr><td colSpan={3} className="px-3 py-8 text-center text-slate-400">{t("Loading...")}</td></tr>
             ) : !rows.length ? (
               <tr>
-                <td colSpan={4} className="px-3 py-8 text-center text-slate-400">
+                <td colSpan={3} className="px-3 py-8 text-center text-slate-400">
                   {debounced
                     ? t("No matching products.")
                     : lastChecked
@@ -146,52 +154,78 @@ export default function OutOfStockAdsWidget({ profileId, currencyCode = "INR", m
                 </td>
               </tr>
             ) : (
-              rows.map((row) => (
-                <tr key={row.asin} className="border-t border-slate-200/80 dark:border-white/[0.06] align-top">
-                  <td className="px-3 py-2.5">
-                    <div className="flex items-start gap-2.5">
-                      {row.imageUrl ? (
-                        <img src={row.imageUrl} alt="" className="w-9 h-9 rounded-md object-contain bg-white border border-slate-200 dark:border-white/10 shrink-0" />
-                      ) : (
-                        <div className="w-9 h-9 rounded-md bg-slate-100 dark:bg-white/5 shrink-0" />
-                      )}
-                      <div className="min-w-0">
-                        <div className="font-semibold text-slate-800 dark:text-slate-100 line-clamp-2" title={row.title || ""}>{row.title || row.asin}</div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">
-                          ASIN {row.asin}{row.sku ? ` · SKU ${row.sku}` : ""}
+              rows.map((row) => {
+                const campaigns = row.campaigns || [];
+                const isOpen = expanded.has(row.asin);
+                const shown = isOpen ? campaigns : campaigns.slice(0, VISIBLE_CAMPAIGNS);
+                const hidden = campaigns.length - shown.length;
+                const spCount = campaigns.filter((c) => c.adType === "SP").length;
+                const sdCount = campaigns.length - spCount;
+                return (
+                  <tr key={row.asin} className="border-t border-slate-200/80 dark:border-white/[0.06] align-top hover:bg-slate-50/60 dark:hover:bg-white/[0.02]">
+                    {/* Product */}
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-2.5">
+                        {row.imageUrl ? (
+                          <img src={row.imageUrl} alt="" className="w-9 h-9 rounded-md object-contain bg-white border border-slate-200 dark:border-white/10 shrink-0" />
+                        ) : (
+                          <div className="w-9 h-9 rounded-md bg-slate-100 dark:bg-white/5 shrink-0" />
+                        )}
+                        <div className="min-w-0">
+                          <div className="font-semibold text-slate-800 dark:text-slate-100 truncate max-w-[520px]" title={row.title || ""}>{row.title || row.asin}</div>
+                          <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-400">
+                            <span className="px-1.5 py-px rounded-full text-[10px] font-bold bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400 border border-rose-200/70 dark:border-rose-800/40">
+                              {t("Out of stock")}
+                            </span>
+                            <span className="truncate">ASIN {row.asin}{row.sku ? ` · SKU ${row.sku}` : ""}</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5 whitespace-nowrap">
-                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400 border border-rose-200/70 dark:border-rose-800/40">
-                      {t("Out of stock")}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <div className="flex flex-col gap-1">
-                      {(row.campaigns || []).map((c) => (
-                        <a
-                          key={`${c.adType}-${c.campaignId}`}
-                          href={campaignViewUrl(c)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="group inline-flex items-center gap-1.5 text-blue-600 dark:text-blue-400 hover:underline w-fit"
-                          title={t("Open campaign in a new tab")}
-                        >
-                          <span className="px-1.5 py-px rounded text-[10px] font-bold bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/40">
-                            {c.adType}
-                          </span>
-                          <span className="font-medium">{c.campaignName || c.campaignId}</span>
-                          <ExternalLink className="w-3 h-3 opacity-60 group-hover:opacity-100" />
-                          {c.spend7d > 0 && <span className="text-[11px] text-slate-400 no-underline">· {money(c.spend7d)}</span>}
-                        </a>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap">{money(row.spend7d)}</td>
-                </tr>
-              ))
+                    </td>
+
+                    {/* Campaigns: count + top campaigns as chips, the rest behind "+N more" */}
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-1.5 mb-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                        <span className="font-semibold text-slate-700 dark:text-slate-200">
+                          {campaigns.length === 1 ? t("1 campaign") : t("{{count}} campaigns", { count: campaigns.length })}
+                        </span>
+                        {spCount > 0 && <span className="px-1.5 rounded bg-slate-100 dark:bg-white/[0.06]">SP {spCount}</span>}
+                        {sdCount > 0 && <span className="px-1.5 rounded bg-slate-100 dark:bg-white/[0.06]">SD {sdCount}</span>}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {shown.map((c) => (
+                          <a
+                            key={`${c.adType}-${c.campaignId}`}
+                            href={campaignViewUrl(c)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={`${c.campaignName || c.campaignId} — ${t("Open campaign in a new tab")}`}
+                            className="group inline-flex items-center gap-1.5 max-w-[260px] h-6 pl-1 pr-2 rounded-md border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.03] hover:border-blue-400 dark:hover:border-blue-500/60 transition-colors"
+                          >
+                            <span className={`px-1 rounded text-[9.5px] font-bold ${c.adType === "SD" ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300" : "bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-300"}`}>
+                              {c.adType}
+                            </span>
+                            <span className="truncate text-[12px] font-medium text-blue-600 dark:text-blue-400 group-hover:underline">{c.campaignName || c.campaignId}</span>
+                            {c.spend7d > 0 && <span className="text-[10.5px] text-slate-400 shrink-0">{money(c.spend7d)}</span>}
+                            <ExternalLink className="w-3 h-3 text-slate-400 group-hover:text-blue-500 shrink-0" />
+                          </a>
+                        ))}
+                        {campaigns.length > VISIBLE_CAMPAIGNS && (
+                          <button
+                            type="button"
+                            onClick={() => toggleExpanded(row.asin)}
+                            className="h-6 px-2 rounded-md text-[11.5px] font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/10"
+                          >
+                            {isOpen ? t("Show less") : t("+{{count}} more", { count: hidden })}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+
+                    <td className="px-3 py-2.5 text-right font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap">{money(row.spend7d)}</td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

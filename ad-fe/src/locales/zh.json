@@ -8013,5 +8013,8 @@
   "Running in campaigns": "投放于广告活动",
   "Search ASIN, SKU, product or campaign": "搜索 ASIN、SKU、商品或广告活动",
   "Showing {{from}}–{{to}} of {{total}}": "共 {{total}} 条，第 {{from}}–{{to}} 条",
-  "Spend (7d)": "花费（7 天）"
+  "Spend (7d)": "花费（7 天）",
+  "{{count}} campaigns": "{{count}} 个广告活动",
+  "Show less": "收起",
+  "1 campaign": "1 个广告活动"
 }

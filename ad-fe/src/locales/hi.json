@@ -8013,5 +8013,8 @@
   "Running in campaigns": "इन कैंपेन में चल रहा है",
   "Search ASIN, SKU, product or campaign": "ASIN, SKU, उत्पाद या कैंपेन खोजें",
   "Showing {{from}}–{{to}} of {{total}}": "{{total}} में से {{from}}–{{to}}",
-  "Spend (7d)": "खर्च (7 दिन)"
+  "Spend (7d)": "खर्च (7 दिन)",
+  "{{count}} campaigns": "{{count}} कैंपेन",
+  "Show less": "कम दिखाएं",
+  "1 campaign": "1 कैंपेन"
 }

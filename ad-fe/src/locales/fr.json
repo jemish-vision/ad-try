@@ -8013,5 +8013,8 @@
   "Running in campaigns": "Diffusé dans les campagnes",
   "Search ASIN, SKU, product or campaign": "Rechercher ASIN, SKU, produit ou campagne",
   "Showing {{from}}–{{to}} of {{total}}": "{{from}}–{{to}} sur {{total}}",
-  "Spend (7d)": "Dépenses (7 j)"
+  "Spend (7d)": "Dépenses (7 j)",
+  "{{count}} campaigns": "{{count}} campagnes",
+  "Show less": "Afficher moins",
+  "1 campaign": "1 campagne"
 }

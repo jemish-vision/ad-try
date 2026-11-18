@@ -8014,5 +8014,8 @@
   "Running in campaigns": "Activo en campañas",
   "Search ASIN, SKU, product or campaign": "Buscar ASIN, SKU, producto o campaña",
   "Showing {{from}}–{{to}} of {{total}}": "{{from}}–{{to}} de {{total}}",
-  "Spend (7d)": "Gasto (7 d)"
+  "Spend (7d)": "Gasto (7 d)",
+  "{{count}} campaigns": "{{count}} campañas",
+  "Show less": "Mostrar menos",
+  "1 campaign": "1 campaña"
 }
