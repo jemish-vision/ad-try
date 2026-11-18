@@ -8,6 +8,7 @@ let rulesEvents = null;
 let syncEvents = null;
 let spApiEvents = null;
 let snapshotEvents = null;
+let outOfStockAdsEvents = null;
 let eventsConnection = null;
 
 function setupQueueEventListeners(eventsInstance, queueName) {
@@ -50,8 +51,8 @@ function setupQueueEventListeners(eventsInstance, queueName) {
 }
 
 function startQueueEventsObserver() {
-  if (rulesEvents && syncEvents && spApiEvents && snapshotEvents) {
-    return { rulesEvents, syncEvents, spApiEvents, snapshotEvents };
+  if (rulesEvents && syncEvents && spApiEvents && snapshotEvents && outOfStockAdsEvents) {
+    return { rulesEvents, syncEvents, spApiEvents, snapshotEvents, outOfStockAdsEvents };
   }
 
   eventsConnection = getEventsConnection();
@@ -74,15 +75,20 @@ function startQueueEventsObserver() {
     connection: eventsConnection,
     prefix: getBullMQPrefix(),
   });
+  outOfStockAdsEvents = new QueueEvents(QUEUES.OUT_OF_STOCK_ADS, {
+    connection: eventsConnection,
+    prefix: getBullMQPrefix(),
+  });
 
   setupQueueEventListeners(rulesEvents, QUEUES.RULES);
   setupQueueEventListeners(syncEvents, QUEUES.HOURLY_SYNC);
   setupQueueEventListeners(spApiEvents, QUEUES.SP_API);
   setupQueueEventListeners(snapshotEvents, QUEUES.ASIN_SNAPSHOT);
+  setupQueueEventListeners(outOfStockAdsEvents, QUEUES.OUT_OF_STOCK_ADS);
 
   console.log(`[QueueEvents] Started observer on ${os.hostname()} (pid: ${process.pid})`);
 
-  return { rulesEvents, syncEvents, spApiEvents, snapshotEvents };
+  return { rulesEvents, syncEvents, spApiEvents, snapshotEvents, outOfStockAdsEvents };
 }
 
 async function closeQueueEventsObserver() {
@@ -102,6 +108,10 @@ async function closeQueueEventsObserver() {
   if (snapshotEvents) {
     promises.push(snapshotEvents.close());
     snapshotEvents = null;
+  }
+  if (outOfStockAdsEvents) {
+    promises.push(outOfStockAdsEvents.close());
+    outOfStockAdsEvents = null;
   }
   await Promise.allSettled(promises);
 

@@ -52,7 +52,22 @@ describe("out-of-stock ads list", () => {
     assert.ok(!ELIGIBLE_PROFILE_TYPES.has("agency"));
   });
 
-  test("the Mongo cron name maps to the queue task", () => {
-    assert.deepEqual(resolveMigratedSchedule("Out Of Stock Ads"), { queue: "sp-api-queue", task: "out-of-stock-ads", family: "sp-api" });
+  test("the Mongo cron name maps to its own queue (not the shared sp-api-queue)", () => {
+    assert.deepEqual(resolveMigratedSchedule("Out Of Stock Ads"), { queue: "out-of-stock-ads-queue", task: "out-of-stock-ads", family: "sp-api" });
+  });
+
+  test("the producer puts the job on the dedicated queue; other SP-API tasks stay on sp-api-queue", async () => {
+    const added = [];
+    const fakeQueue = (name) => ({ add: async (task, data, { jobId }) => (added.push({ name, task }), { id: jobId }) });
+    stub("queue-service/queues/queues.js", {
+      getQueues: () => ({ spApiQueue: fakeQueue("sp-api"), asinSnapshotQueue: fakeQueue("snapshot"), outOfStockAdsQueue: fakeQueue("oos") }),
+    });
+    delete require.cache[require.resolve("../queue-service/producers/spApi.producer")];
+    const { enqueueSpApiForOccurrence } = require("../queue-service/producers/spApi.producer");
+    const scheduledFor = "2026-11-18T03:00:00.000Z";
+    await enqueueSpApiForOccurrence({ task: "out-of-stock-ads", scheduledFor });
+    await enqueueSpApiForOccurrence({ task: "sync-past-data", scheduledFor });
+    await enqueueSpApiForOccurrence({ task: "asin-snapshot", scheduledFor });
+    assert.deepEqual(added.map((a) => [a.task, a.name]), [["out-of-stock-ads", "oos"], ["sync-past-data", "sp-api"], ["asin-snapshot", "snapshot"]]);
   });
 });

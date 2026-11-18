@@ -3,6 +3,7 @@ const QUEUES = Object.freeze({
   HOURLY_SYNC: "hourly-sync-queue",
   SP_API: "sp-api-queue",
   ASIN_SNAPSHOT: "asin-snapshot-queue",
+  OUT_OF_STOCK_ADS: "out-of-stock-ads-queue",
 });
 
 const RULE_TASKS = Object.freeze({

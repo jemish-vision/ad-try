@@ -82,7 +82,7 @@ test("snapshot queue inherits SP-API retries and closes with the other producers
   assert.equal(disconnected, true);
 });
 
-test("SP-API service starts an independent snapshot worker and drains both on shutdown", async () => {
+test("SP-API service starts independent snapshot and out-of-stock-ads workers and drains all on shutdown", async () => {
   const workers = [];
   let shutdown;
   let heartbeatStopped = false;
@@ -118,10 +118,13 @@ test("SP-API service starts an independent snapshot worker and drains both on sh
   });
   const originalWorker = await service.startSpApiWorker();
   assert.equal(originalWorker, workers[0]);
-  assert.deepEqual(workers.map(worker => worker.name), [QUEUES.SP_API, QUEUES.ASIN_SNAPSHOT]);
-  assert.equal(workers[1].options.concurrency, 1);
-  assert.equal(workers[1].options.prefix, workers[0].options.prefix);
-  assert.equal(workers[1].processor, workers[0].processor);
+  // sp-api-queue + dedicated daily lanes (ASIN snapshot, out-of-stock ads)
+  assert.deepEqual(workers.map(worker => worker.name), [QUEUES.SP_API, QUEUES.ASIN_SNAPSHOT, QUEUES.OUT_OF_STOCK_ADS]);
+  for (const dedicated of workers.slice(1)) {
+    assert.equal(dedicated.options.concurrency, 1);
+    assert.equal(dedicated.options.prefix, workers[0].options.prefix);
+    assert.equal(dedicated.processor, workers[0].processor);
+  }
   for (const worker of workers) {
     for (const event of ["active", "completed", "failed", "error"]) {
       assert.equal(typeof worker.listeners[event], "function");

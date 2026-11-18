@@ -38,7 +38,7 @@ async function printStatus() {
     console.clear();
   }
 
-  const { rulesQueue, hourlySyncQueue, spApiQueue } = getQueues();
+  const { rulesQueue, hourlySyncQueue, spApiQueue, asinSnapshotQueue, outOfStockAdsQueue } = getQueues();
   if (!redisClient) {
     redisClient = createRedisClient("producer");
   }
@@ -87,6 +87,8 @@ async function printStatus() {
     { name: "rules-queue", queue: rulesQueue },
     { name: "hourly-sync-queue", queue: hourlySyncQueue },
     { name: "sp-api-queue", queue: spApiQueue },
+    { name: "asin-snapshot-queue", queue: asinSnapshotQueue },
+    { name: "out-of-stock-ads-queue", queue: outOfStockAdsQueue },
   ];
 
   let totalFailedAllQueues = 0;

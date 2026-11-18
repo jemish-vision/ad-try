@@ -29,9 +29,12 @@ async function enqueueSpApiForOccurrence({ task, scheduledFor = new Date(), trig
     trigger,
   });
 
-  const { spApiQueue, asinSnapshotQueue } = getQueues();
-  // Daily observations need capacity independent of historical report imports.
-  const queue = task === SP_API_TASKS.ASIN_SNAPSHOT ? asinSnapshotQueue : spApiQueue;
+  const { spApiQueue, asinSnapshotQueue, outOfStockAdsQueue } = getQueues();
+  // Daily jobs get their own lanes so long historical imports on sp-api-queue can't delay them.
+  const queue =
+    task === SP_API_TASKS.ASIN_SNAPSHOT ? asinSnapshotQueue
+      : task === SP_API_TASKS.OUT_OF_STOCK_ADS ? outOfStockAdsQueue
+        : spApiQueue;
   const job = await queue.add(task, data, {
     jobId,
   });

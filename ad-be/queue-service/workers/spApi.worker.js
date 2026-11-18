@@ -13,6 +13,7 @@ const { cron_logs } = require("../../winston/cronAutomation/logger");
 
 let worker = null;
 let snapshotWorker = null;
+let outOfStockAdsWorker = null;
 let heartbeat = null;
 let workerRedis = null;
 let heartbeatRedis = null;
@@ -50,7 +51,16 @@ async function startSpApiWorker() {
     lockDuration,
   });
 
-  for (const queueWorker of [worker, snapshotWorker]) {
+  // Daily out-of-stock ads list (dashboard): its own slot, same reason as the snapshot worker.
+  outOfStockAdsWorker = new Worker(QUEUES.OUT_OF_STOCK_ADS, processor, {
+    connection: workerRedis,
+    prefix: getBullMQPrefix(),
+    concurrency: 1,
+    maxStalledCount,
+    lockDuration,
+  });
+
+  for (const queueWorker of [worker, snapshotWorker, outOfStockAdsWorker]) {
     queueWorker.on("active", (job) => {
       const task = job.data?.task || "UNKNOWN_TASK";
       const attempt = job.attemptsMade ? job.attemptsMade + 1 : 1;
@@ -95,7 +105,7 @@ async function startSpApiWorker() {
   }
 
   cron_logs({
-    message: `[SpApiWorker] Running with concurrency ${concurrency} and dedicated snapshot concurrency 1 (lockDuration: ${lockDuration}ms) on PID ${process.pid}`,
+    message: `[SpApiWorker] Running with concurrency ${concurrency} and dedicated snapshot / out-of-stock-ads concurrency 1 (lockDuration: ${lockDuration}ms) on PID ${process.pid}`,
     log_type: "info",
   });
 
@@ -107,7 +117,7 @@ async function startSpApiWorker() {
         log_type: "info",
       });
       if (heartbeat) await heartbeat.stop();
-      await Promise.all([worker?.close(), snapshotWorker?.close()]);
+      await Promise.all([worker?.close(), snapshotWorker?.close(), outOfStockAdsWorker?.close()]);
       if (heartbeatRedis) await heartbeatRedis.quit().catch(() => {});
       if (workerRedis) await workerRedis.quit().catch(() => {});
       await closeMongoConnection();

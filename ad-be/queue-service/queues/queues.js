@@ -7,6 +7,7 @@ let rulesQueue = null;
 let hourlySyncQueue = null;
 let spApiQueue = null;
 let asinSnapshotQueue = null;
+let outOfStockAdsQueue = null;
 let producerConnection = null;
 
 function getQueues() {
@@ -46,11 +47,21 @@ function getQueues() {
     });
   }
 
+  // Daily dashboard list; own lane so long SP-API imports can't delay it.
+  if (!outOfStockAdsQueue) {
+    outOfStockAdsQueue = new Queue(QUEUES.OUT_OF_STOCK_ADS, {
+      connection: producerConnection,
+      prefix: getBullMQPrefix(),
+      defaultJobOptions: spApiJobOptions,
+    });
+  }
+
   return {
     rulesQueue,
     hourlySyncQueue,
     spApiQueue,
     asinSnapshotQueue,
+    outOfStockAdsQueue,
   };
 }
 
@@ -71,6 +82,10 @@ async function closeQueues() {
   if (asinSnapshotQueue) {
     closePromises.push(asinSnapshotQueue.close());
     asinSnapshotQueue = null;
+  }
+  if (outOfStockAdsQueue) {
+    closePromises.push(outOfStockAdsQueue.close());
+    outOfStockAdsQueue = null;
   }
   await Promise.allSettled(closePromises);
 
