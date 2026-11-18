@@ -52,6 +52,11 @@ const actionSchema = new mongoose.Schema(
         // Search Term
         "AddAsTargeting",
         "AddAsNegativeTargeting",
+        // Products
+        "EnableProduct",
+        "DisableProduct",
+        // Out of Budget optional no-action
+        "None",
       ],
     },
     actionValue: {
@@ -113,7 +118,7 @@ const recommendationRuleSchema = new mongoose.Schema(
     gridName: {
       type: String,
       trim: true,
-      enum: ["Campaign", "Placement", "Targeting", "Search Term"],
+      enum: ["Campaign", "Placement", "Targeting", "Search Term", "Products"],
       required: true,
     },
 

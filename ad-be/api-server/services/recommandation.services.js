@@ -250,7 +250,16 @@ const CampaignSBBudget = async (profile, checkConfigAds, rule, item, budget, ope
       ).lean();
       await sbCampaignsSchema.updateMany(
         { configId: profile?.configId, profileId: profile?.profileId, campaignId: item?.campaignId },
-        { $set: { budget } }
+        {
+          $set: {
+            budget,
+            isOutOfBudget: false,
+            status: "ENABLED",
+            campaignStatus: "ENABLED",
+            "budgetTracking.lastUsagePercentage": 0,
+            "budgetTracking.lastUpdated": new Date(),
+          },
+        }
       ).catch(() => {});
 
       return { isSuccess: true, message: "Campaign Budget Updated Successfully" }
@@ -349,7 +358,16 @@ const CampaignSDBudget = async (profile, checkConfigAds, rule, item, budget, ope
       ).lean();
       await sdCampaignsSchema.updateMany(
         { configId: profile?.configId, profileId: profile?.profileId, campaignId: item?.campaignId },
-        { $set: { budget } }
+        {
+          $set: {
+            budget,
+            isOutOfBudget: false,
+            status: "ENABLED",
+            campaignStatus: "ENABLED",
+            "budgetTracking.lastUsagePercentage": 0,
+            "budgetTracking.lastUpdated": new Date(),
+          },
+        }
       ).catch(() => {});
 
       return { isSuccess: true, message: "Campaign Budget Updated Successfully" }

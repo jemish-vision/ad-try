@@ -78,6 +78,10 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    isMockUser: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,

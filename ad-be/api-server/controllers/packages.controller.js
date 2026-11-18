@@ -22,10 +22,7 @@ exports.getAllPackages = async (req, res) => {
     // Customers see the price for their country (regional pricing); Super Admin sees the stored plans.
     let pricing = null;
     if (!isOwner) {
-      const org = req.organizationId && mongoose.Types.ObjectId.isValid(req.organizationId)
-        ? await organizationSchema.findById(req.organizationId).select("pricingMode billingCountry").lean()
-        : null;
-      const ctx = await getPricingContext(org, req);
+      const ctx = await getPricingContext(null, req);
       packages = packages.map((pkg) => {
         const p = priceForPlan(pkg, ctx);
         return { ...pkg, monthlyPrice: p.monthlyPrice, yearlyPrice: p.yearlyPrice, price: p.monthlyPrice, currency: p.currency, pricing: p };

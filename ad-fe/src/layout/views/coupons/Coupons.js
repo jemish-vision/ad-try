@@ -464,7 +464,7 @@ const Coupons = () => {
       minWidth: 120,
       sortable: true,
       resizable: true,
-      cellRenderer: (params) => fmtDate(params.value),
+      cellRenderer: (params) => fmtDate(params.value || params.data?.startDate),
     },
 
     // ④ End date
@@ -475,7 +475,7 @@ const Coupons = () => {
       minWidth: 120,
       sortable: true,
       resizable: true,
-      cellRenderer: (params) => fmtDate(params.value),
+      cellRenderer: (params) => fmtDate(params.value || params.data?.endDate),
     },
 
     // ⑤ Discount — percentage stays as-is, fixed amount uses CurrencyCode

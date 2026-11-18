@@ -3815,6 +3815,7 @@ exports.importBidPlacementRule = async (req, res) => {
 
 
 exports.getAllPlacements = async (req, res) => {
+  if (req.user?.isMockUser) return require("../services/mockTestingData.service").getAllPlacements(req, res);
   try {
     const configId = req?.config?.configId;
     const { adTypePlacementSchema } = req.models;

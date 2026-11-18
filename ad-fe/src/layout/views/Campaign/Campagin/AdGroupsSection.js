@@ -182,6 +182,7 @@ const NestedProductAdsTable = ({
               <th className="px-3 py-2.5 text-center border-r border-b border-slate-200 dark:border-slate-700">{t("Status")}</th>
               <th className="px-3 py-2.5 min-w-[150px] border-r border-b border-slate-200 dark:border-slate-700">{t("SKU / ASIN")}</th>
               <th className="px-3 py-2.5 text-right border-r border-b border-slate-200 dark:border-slate-700">{t("Total cost")}</th>
+              <th className="px-3 py-2.5 text-right border-r border-b border-slate-200 dark:border-slate-700">{t("Spend")}</th>
               <th className="px-3 py-2.5 text-right border-r border-b border-slate-200 dark:border-slate-700">{t("Purchases")}</th>
               <th className="px-3 py-2.5 text-right border-r border-b border-slate-200 dark:border-slate-700">{t("Sales")}</th>
               <th className="px-3 py-2.5 text-right border-r border-b border-slate-200 dark:border-slate-700">{t("ROAS")}</th>
@@ -195,7 +196,7 @@ const NestedProductAdsTable = ({
           <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
             {loading ? (
               <tr>
-                <td colSpan={13} className="px-4 py-8 text-center text-slate-500 dark:text-slate-400">
+                <td colSpan={14} className="px-4 py-8 text-center text-slate-500 dark:text-slate-400">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <i className="fa-solid fa-circle-notch fa-spin text-xl text-sky-500" />
                     <span className="text-xs font-semibold">{t("Loading products in ad group...")}</span>
@@ -204,7 +205,7 @@ const NestedProductAdsTable = ({
               </tr>
             ) : !ads.length ? (
               <tr>
-                <td colSpan={13} className="px-4 py-6 text-center text-slate-500 dark:text-slate-400">
+                <td colSpan={14} className="px-4 py-6 text-center text-slate-500 dark:text-slate-400">
                   {t("No products found for this ad group.")}
                 </td>
               </tr>
@@ -262,6 +263,7 @@ const NestedProductAdsTable = ({
                       </div>
                     </td>
                     <td className="px-3 py-2 text-right font-medium border-r border-b border-slate-200 dark:border-slate-700/70">{ad.totalSpend ? CurrencyCode(ad.totalSpend) : "-"}</td>
+                    <td className="px-3 py-2 text-right font-medium border-r border-b border-slate-200 dark:border-slate-700/70">{CurrencyCode(ad.totalSpend || 0)}</td>
                     <td className="px-3 py-2 text-right border-r border-b border-slate-200 dark:border-slate-700/70">{ad.totalOrders ? CurrencyFormat(ad.totalOrders) : "-"}</td>
                     <td className="px-3 py-2 text-right font-medium border-r border-b border-slate-200 dark:border-slate-700/70">{ad.totalSales ? CurrencyCode(ad.totalSales) : "-"}</td>
                     <td className="px-3 py-2 text-right border-r border-b border-slate-200 dark:border-slate-700/70">{ad.totalRoas || "-"}</td>
@@ -279,6 +281,7 @@ const NestedProductAdsTable = ({
                     <td colSpan={4} className="px-3 py-2.5 text-center border-r border-slate-200 dark:border-slate-700">
                       {t("Total (Products)")}
                     </td>
+                    <td className="px-3 py-2.5 text-right border-r border-slate-200 dark:border-slate-700">{CurrencyCode(totalRow.totalSpend)}</td>
                     <td className="px-3 py-2.5 text-right border-r border-slate-200 dark:border-slate-700">{CurrencyCode(totalRow.totalSpend)}</td>
                     <td className="px-3 py-2.5 text-right border-r border-slate-200 dark:border-slate-700">{CurrencyFormat(totalRow.totalOrders || 0)}</td>
                     <td className="px-3 py-2.5 text-right border-r border-slate-200 dark:border-slate-700">{CurrencyCode(totalRow.totalSales)}</td>
@@ -540,6 +543,12 @@ export default function AdGroupsSection({
               </th>
               <th
                 className="px-3 py-3 text-right cursor-pointer hover:text-sky-600 transition border-r border-b border-slate-200 dark:border-slate-700"
+                onClick={() => handleSort("totalSpend")}
+              >
+                {t("Spend")}
+              </th>
+              <th
+                className="px-3 py-3 text-right cursor-pointer hover:text-sky-600 transition border-r border-b border-slate-200 dark:border-slate-700"
                 onClick={() => handleSort("totalOrders")}
               >
                 {t("Purchases")}
@@ -591,7 +600,7 @@ export default function AdGroupsSection({
           <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
             {loading ? (
               <tr>
-                <td colSpan={16} className="px-4 py-16 text-center text-slate-500 dark:text-slate-400">
+                <td colSpan={17} className="px-4 py-16 text-center text-slate-500 dark:text-slate-400">
                   <div className="flex flex-col items-center justify-center gap-3">
                     <i className="fa-solid fa-circle-notch fa-spin text-3xl text-sky-500" />
                     <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
@@ -602,7 +611,7 @@ export default function AdGroupsSection({
               </tr>
             ) : !adGroups.length ? (
               <tr>
-                <td colSpan={16} className="px-4 py-12 text-center text-slate-500 dark:text-slate-400">
+                <td colSpan={17} className="px-4 py-12 text-center text-slate-500 dark:text-slate-400">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <Layers className="w-8 h-8 text-slate-300 dark:text-slate-700" />
                     <p className="font-semibold text-sm m-0">{t("No ad groups found")}</p>
@@ -680,6 +689,7 @@ export default function AdGroupsSection({
 
                         {/* Performance metrics */}
                         <td className="px-3 py-3 text-right font-semibold border-r border-b border-slate-200 dark:border-slate-700/70">{CurrencyCode(ag.totalSpend)}</td>
+                        <td className="px-3 py-3 text-right font-semibold border-r border-b border-slate-200 dark:border-slate-700/70">{CurrencyCode(ag.totalSpend || 0)}</td>
                         <td className="px-3 py-3 text-right border-r border-b border-slate-200 dark:border-slate-700/70">{CurrencyFormat(ag.totalOrders || 0)}</td>
                         <td className="px-3 py-3 text-right font-semibold border-r border-b border-slate-200 dark:border-slate-700/70">{CurrencyCode(ag.totalSales)}</td>
                         <td className="px-3 py-3 text-right border-r border-b border-slate-200 dark:border-slate-700/70">{ag.totalRoas || "-"}</td>
@@ -693,7 +703,7 @@ export default function AdGroupsSection({
                       {/* Expanded Sub-Row */}
                       {isExpanded ? (
                         <tr>
-                          <td colSpan={16} className="p-3 bg-slate-100/50 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-700">
+                          <td colSpan={17} className="p-3 bg-slate-100/50 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-700">
                             <NestedProductAdsTable
                               adGroup={ag}
                               campaignId={campaignDetails?.campaignId}
@@ -721,6 +731,7 @@ export default function AdGroupsSection({
                     <td className="px-3 py-3 text-center border-r border-slate-200 dark:border-slate-700">
                       {adGroups.reduce((acc, curr) => acc + (curr.totalProducts || 0), 0)}
                     </td>
+                    <td className="px-3 py-3 text-right font-bold border-r border-slate-200 dark:border-slate-700">{CurrencyCode(totalRow.totalSpend)}</td>
                     <td className="px-3 py-3 text-right font-bold border-r border-slate-200 dark:border-slate-700">{CurrencyCode(totalRow.totalSpend)}</td>
                     <td className="px-3 py-3 text-right font-bold border-r border-slate-200 dark:border-slate-700">{CurrencyFormat(totalRow.totalOrders || 0)}</td>
                     <td className="px-3 py-3 text-right font-bold border-r border-slate-200 dark:border-slate-700">{CurrencyCode(totalRow.totalSales)}</td>

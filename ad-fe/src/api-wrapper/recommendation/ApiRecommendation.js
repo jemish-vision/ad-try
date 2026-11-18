@@ -70,6 +70,11 @@ const ApiBulkUpdateRuleDateFilter = (data) => {
         .then(res => res.data).catch(res => res.data);
 };
 
+const ApiCopyRulesToProfiles = (data) => {
+    return axios.post(`${api}copyRulesToProfiles`, data, { headers })
+        .then(res => res.data).catch(res => res.data);
+};
+
 const ApiExportRecommandationRule = (data) => {
     return axios.post(`${api}exportRecommandationRule`, data, { headers, responseType: "blob" })
     // .then(res => res.data).catch(res => res.data)
@@ -102,6 +107,7 @@ export {
     ApiApplyRuleRecommendation,
 
     ApiBulkUpdateRuleDateFilter,
+    ApiCopyRulesToProfiles,
     ApiExportRecommandationRule,
     ApiImportRecommandationRule,
     ApiGetRecommendationsHub,

@@ -12,7 +12,7 @@ const zlib = require("node:zlib");
 const path = require("path");
 const axios = require("axios");
 const pLimit = require("p-limit").default;
-const limit = pLimit(Number(process.env.PROCESS_LIMIT));
+const limit = pLimit(Number(process.env.PROCESS_LIMIT) || 5);
 const ExcelJS = require("exceljs");
 const { chain } = require("stream-chain");
 const { parser } = require("stream-json");
@@ -1059,6 +1059,14 @@ exports.saveSearchTermData = async (req, res) => {
 // };
 
 exports.getSearchTermDetailsData = async (req, res) => {
+    const isMock = Boolean(
+      req.user?.isMockUser ||
+      req.isMockTestingUser ||
+      String(req.body?.profileId) === "99999901" ||
+      String(req.params?.id) === "800001" ||
+      (Number(req.params?.id) >= 800001 && Number(req.params?.id) <= 800020)
+    );
+    if (isMock) return require("../services/mockTestingData.service").getSearchTermDetailsData(req, res);
     try {
         const id = Number(req.params.id);
         const configId = req.body.configId || req.query.configId || req?.config?.configId || req?.headers?.["x-config-id"];
@@ -1285,6 +1293,8 @@ exports.getSearchTermDetailsData = async (req, res) => {
 
 
 exports.getAllSearchTerms = async (req, res) => {
+    const isMock = Boolean(req.user?.isMockUser || req.isMockTestingUser || String(req.body?.profileId) === "99999901");
+    if (isMock) return require("../services/mockTestingData.service").getAllSearchTerms(req, res);
     try {
         const configId = req?.config?.configId;
         const { adTypeSearchTermSchema, adTypeTargetingSchema } = req.models;
@@ -1698,6 +1708,8 @@ exports.getAllSearchTerms = async (req, res) => {
 };
 
 exports.getSearchTermsProductView = async (req, res) => {
+  if (req.user?.isMockUser || req.isMockTestingUser) return mockTestingDataService.getSearchTermsProductView(req, res);
+    if (req.user?.isMockUser) return require("../services/mockTestingData.service").getAllSearchTerms(req, res);
     try {
         const configId = req?.config?.configId;
         const typedConfigId = (configId && mongoose.Types.ObjectId.isValid(configId)) ? new mongoose.Types.ObjectId(configId) : configId;
@@ -2538,6 +2550,7 @@ exports.addNegativeToCampaign = async (req, res) => {
 }
 
 exports.ruleHistory = async (req, res) => {
+  if (req.user?.isMockUser || req.isMockTestingUser) return mockTestingDataService.getSearchTermRuleHistory(req, res);
     const configId = req?.config?.configId;
     // const userId = req.user._id;
     let { profileId, pageNo, perPage, search, fromDate, toDate, affectedFilter } = req.body;
@@ -2936,6 +2949,7 @@ exports.searchTermPipeline = (query, lastDate, type, actionName, valueType) => {
 
 
 exports.getSearchTermRule = async (req, res) => {
+  if (req.user?.isMockUser || req.isMockTestingUser) return mockTestingDataService.getSearchTermRules(req, res);
     const configId = req?.config?.configId;
     const profileId = req.body.profileId;
     const pageNo = req.body.pageNo ? req.body.pageNo : 1;
@@ -5334,6 +5348,8 @@ const createProductAds = async ({ profileId, getAccount, checkConfigAds, campaig
 };
 
 exports.getKeywordAnalysisData = async (req, res) => {
+    const isMock = Boolean(req.user?.isMockUser || req.isMockTestingUser || String(req.body?.profileId) === "99999901");
+    if (isMock) return require("../services/mockTestingData.service").getKeywordAnalysisData(req, res);
     try {
         const configId = req?.config?.configId;
 

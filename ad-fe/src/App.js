@@ -21,6 +21,7 @@ import NoPagePermission from './common/pages/NoPagePermission';
 import { TourProvider, JoyrideWrapper } from './tour';
 import { ROLES, PAGE_ACTIONS, SYSTEM_PAGES } from './common/constants';
 import AmazonAuthHandler from './components/AmazonAuthHandler';
+import DemoModeSubmitGuard from './components/DemoModeSubmitGuard';
 import ErrorBoundary from './common/helper/ErrorBoundary';
 
 const Login = lazy(() => import('./common/pages/Login'));
@@ -175,6 +176,7 @@ function App() {
           <AgGridProvider modules={[AllCommunityModule, RowGroupingModule, MasterDetailModule, TreeDataModule, PivotModule]}>
             <BrowserRouter>
               <AmazonAuthHandler />
+              <DemoModeSubmitGuard />
               {/* Floating bottom-right chatbot widget commented out per request */}
               {/* <ChatbotWidget isGlobal /> */}
               <ErrorBoundary>

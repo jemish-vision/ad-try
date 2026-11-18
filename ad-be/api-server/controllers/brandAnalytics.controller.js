@@ -443,6 +443,7 @@ exports.storeMonthlyBrandAnalysisData = async ({ profile, checkSPConfig, marketP
 };
 
 exports.getBrandAnalyticsFilters = async (req, res) => {
+    if (req.user?.isMockUser || req.isMockTestingUser) return require("../services/mockTestingData.service").getBrandAnalyticsFilters(req, res);
     try {
 
         const { configId } = req?.config;
@@ -558,6 +559,7 @@ exports.getBrandAnalyticsFilters = async (req, res) => {
 };
 
 exports.getAllBrandAnalytics = async (req, res) => {
+    if (req.user?.isMockUser || req.isMockTestingUser) return require("../services/mockTestingData.service").getAllBrandAnalytics(req, res);
     try {
         const { configId } = req?.config;
         const { profileId, asin, searchQuery, reportPeriod, year, month, page = 1, limit = 10, fieldName = "totalQueryImpressionCount", sortOrder = -1 } = req.body;

@@ -7,8 +7,12 @@ import { Button } from "../../../components/ui/button";
 import { Switch } from "../../../components/ui/switch";
 import AddRule from "./AddRule";
 import RecommendationCampaignModal from "./RecommendationCampaignModal";
-import { ApiDeleteRule, ApiGetRules, ApiStatusChange, ApiExportRecommandationRule, ApiImportRecommandationRule, ApiUpdateRules, ApiBulkUpdateRuleDateFilter } from "../../../api-wrapper/recommendation/ApiRecommendation";
+import { ApiDeleteRule, ApiGetRules, ApiStatusChange, ApiExportRecommandationRule, ApiImportRecommandationRule, ApiUpdateRules, ApiBulkUpdateRuleDateFilter, ApiCopyRulesToProfiles } from "../../../api-wrapper/recommendation/ApiRecommendation";
+import { ApiSelectAccount } from "../../../api-wrapper/campaign/ApiCampaign";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
+import { MultiSelect } from "../../../components/ui/popover-multi-select";
+import { isProfileAvailable } from "../../../helper/filter/profileSelection";
+import { FiCopy } from "react-icons/fi";
 import { ProfileContext } from "../../../helper/usecontext/useContext";
 import { handleLoader, Toast, useDispatch, useNavigate } from "../../../helper/links/Link";
 import moment from "moment";
@@ -20,6 +24,13 @@ import { t } from "i18next";
 import { CustomModal } from "../../../helper/modal/CustomModal";
 import { StyledCheckbox } from "../../../common/grid/StyledCheckbox";
 import ImportExportMenu from "../../../helper/ImportExport/ImportExportMenu";
+import {
+    RECOMMENDATION_FILTER_OPTIONS,
+    RecommendationFilterDropdown,
+    RecommendationAppliedFilters,
+    RecommendationFilterModal,
+    buildRecommendationAppliedFilters,
+} from "../recommandation/RecommendationFilterBar";
 
 const DATE_FILTER_OPTION = [
     { value: "TODAY", label: t("Today") },
@@ -55,6 +66,10 @@ const ACTION_LABEL_MAP = {
     // Search Term actions
     AddAsTargeting: "Add as Targeting",
     AddAsNegativeTargeting: "Add as Negative Targeting",
+
+    // Products actions
+    EnableProduct: "Enabled Product",
+    DisableProduct: "Disabled Product",
 };
 
 // Match type label mapping
@@ -230,6 +245,120 @@ function RecomandationRules({ hideFilter = false } = {}) {
 
     const [bulkDateFilter, setBulkDateFilter] = useState("");
     const [bulkApplyLoading, setBulkApplyLoading] = useState(false);
+
+    // Copy to other profile states
+    const [showCopyProfileModal, setShowCopyProfileModal] = useState(false);
+    const [selectedCopyProfiles, setSelectedCopyProfiles] = useState([]);
+    const [copyProfileLoading, setCopyProfileLoading] = useState(false);
+    const [availableAccountGroups, setAvailableAccountGroups] = useState([]);
+    const [loadingProfiles, setLoadingProfiles] = useState(false);
+
+    const handleOpenCopyProfileModal = async () => {
+        if (!selectedRows.length) {
+            Toast.error(t("Please select at least one recommendation rule"));
+            return;
+        }
+        setSelectedCopyProfiles([]);
+        setShowCopyProfileModal(true);
+
+        if (selectedCampagin?.profileList?.length > 0) {
+            setAvailableAccountGroups(selectedCampagin.profileList);
+        } else {
+            setLoadingProfiles(true);
+            try {
+                const res = await ApiSelectAccount();
+                if (res?.isSuccess && Array.isArray(res?.data)) {
+                    setAvailableAccountGroups(res.data);
+                    selectedCampagin?.setProfileList?.(res.data);
+                }
+            } catch (err) {
+                console.error("Failed to fetch profiles:", err);
+            } finally {
+                setLoadingProfiles(false);
+            }
+        }
+    };
+
+    const otherProfileOptions = useMemo(() => {
+        const currentPId = Number(selectedCampagin?.profileSendID);
+        const groups = availableAccountGroups.length > 0 ? availableAccountGroups : (selectedCampagin?.profileList || []);
+        const map = new Map();
+
+        groups.forEach((cfg) => {
+            const configId = cfg?.configId || cfg?._id;
+            const companyName = cfg?.config?.companyName || cfg?.companyName || t("Profiles");
+            (cfg?.profiles || []).forEach((p) => {
+                if (!isProfileAvailable(p)) return;
+                if (Number(p?.profileId) === currentPId) return; // Exclude current profile
+                const key = `${configId} || ${p?.profileId}`;
+                if (!map.has(key)) {
+                    map.set(key, {
+                        value: key,
+                        label: `${companyName} | ${p?.countryCode ? `${p.countryCode} - ` : ""}${p?.name}`,
+                        configId: String(configId),
+                        companyName,
+                        countryCode: p?.countryCode,
+                        profileName: p?.name,
+                        profileId: p?.profileId,
+                    });
+                }
+            });
+        });
+
+        return Array.from(map.values());
+    }, [availableAccountGroups, selectedCampagin?.profileList, selectedCampagin?.profileSendID, t]);
+
+    const handleApplyCopyToProfiles = async () => {
+        if (!selectedRows.length) {
+            Toast.error(t("Please select at least one recommendation rule"));
+            return;
+        }
+        if (!selectedCopyProfiles.length) {
+            Toast.error(t("Please select at least one profile"));
+            return;
+        }
+
+        const targetProfiles = selectedCopyProfiles.map((val) => {
+            const opt = otherProfileOptions.find((o) => o.value === val);
+            const [configId, profileId] = String(val).split(" || ");
+            return {
+                configId: opt?.configId || configId,
+                profileId: Number(opt?.profileId || profileId),
+                profileName: opt ? `${opt.countryCode ? `${opt.countryCode} - ` : ""}${opt.profileName}` : String(profileId),
+            };
+        });
+
+        setCopyProfileLoading(true);
+        try {
+            const res = await ApiCopyRulesToProfiles({
+                ruleIds: selectedRows,
+                targetProfiles,
+            });
+
+            if (res?.insertedCount > 0 && !res?.hasDuplicates) {
+                Toast.success(res?.message || t("Configuration copied successfully."));
+                setShowCopyProfileModal(false);
+                setSelectedCopyProfiles([]);
+                setSelectedRows([]);
+                setSelectAll(false);
+            } else if (res?.insertedCount > 0 && res?.hasDuplicates) {
+                Toast.warning ? Toast.warning(res.message) : Toast.success(res.message);
+                setShowCopyProfileModal(false);
+                setSelectedCopyProfiles([]);
+                setSelectedRows([]);
+                setSelectAll(false);
+            } else if (res?.hasDuplicates) {
+                Toast.error(res?.message || t("You already have this configuration in the selected profile, so we didn't add it."));
+            } else {
+                Toast.error(res?.message || t("Failed to copy configuration"));
+            }
+        } catch (err) {
+            console.error("Copy rules to profiles error:", err);
+            Toast.error(t("Failed to copy configuration"));
+        } finally {
+            setCopyProfileLoading(false);
+        }
+    };
 
     const handleBulkApplyDateFilter = async () => {
         if (!selectedRows.length) {
@@ -547,8 +676,11 @@ function RecomandationRules({ hideFilter = false } = {}) {
                 const e = params.data;
                 if (!e) return null;
                 const hasOob = Array.isArray(e.conditions) && e.conditions.some(c => String(c?.conditionType || "").toLowerCase().replace(/[\s_]+/g, "") === "outofbudget");
+                const validActions = Array.isArray(e.actions)
+                    ? e.actions.filter(a => a && a.actionName && String(a.actionName).toLowerCase() !== "none")
+                    : [];
 
-                if (!e.actions || e.actions.length === 0) {
+                if (validActions.length === 0) {
                     return (
                         <div className="rule_type">
                             <span className="badge badge-light-warning text-warning" style={{ fontSize: "12px", padding: "4px 8px" }}>
@@ -562,7 +694,7 @@ function RecomandationRules({ hideFilter = false } = {}) {
 
                 return (
                     <div className="rule_type">
-                        {e.actions.map((action, index) => (
+                        {validActions.map((action, index) => (
                             <p key={index} className="py-1 ml-3" style={{ margin: "6px 0", fontSize: "13px" }}>
                                 <strong>Action {index + 1}:</strong> {formatActionDisplay(action, gridName)}
                             </p>
@@ -621,6 +753,70 @@ function RecomandationRules({ hideFilter = false } = {}) {
 
     const [statusChange, setStatusChange] = useState(null);
 
+    // Filter states (Affected Parameter & Action)
+    const [showFilterModal, setShowFilterModal] = useState(false);
+    const [selectedFilterOption, setSelectedFilterOption] = useState(null);
+    const [appliedGridNames, setAppliedGridNames] = useState([]);
+    const [appliedActions, setAppliedActions] = useState([]);
+    const [tempGridNames, setTempGridNames] = useState([]);
+    const [tempActions, setTempActions] = useState([]);
+
+    const appliedFilters = useMemo(
+        () => buildRecommendationAppliedFilters(appliedGridNames, appliedActions, t),
+        [appliedGridNames, appliedActions, t]
+    );
+
+    const handleFilterOptionClick = (option) => {
+        setTempGridNames([...appliedGridNames]);
+        setTempActions([...appliedActions]);
+        setSelectedFilterOption(option);
+        setShowFilterModal(true);
+    };
+
+    const handleApplyFilter = () => {
+        let nextGridNames = appliedGridNames;
+        let nextActions = appliedActions;
+        if (selectedFilterOption?.value === "AffectedParameter") {
+            nextGridNames = [...tempGridNames];
+            setAppliedGridNames(nextGridNames);
+        } else if (selectedFilterOption?.value === "Action") {
+            nextActions = [...tempActions];
+            setAppliedActions(nextActions);
+        }
+        setShowFilterModal(false);
+        const nextArg = { pageNo: 1, perPage };
+        setArg(nextArg);
+        getRule(nextArg, { gridName: nextGridNames, actionName: nextActions });
+    };
+
+    const handleRemoveFilter = (filterId) => {
+        let nextGridNames = appliedGridNames;
+        let nextActions = appliedActions;
+        if (filterId === "AffectedParameter") {
+            nextGridNames = [];
+            setAppliedGridNames([]);
+        } else if (filterId === "Action") {
+            nextActions = [];
+            setAppliedActions([]);
+        }
+        const nextArg = { pageNo: 1, perPage };
+        setArg(nextArg);
+        getRule(nextArg, { gridName: nextGridNames, actionName: nextActions });
+    };
+
+    const handleClearAllFilters = () => {
+        setAppliedGridNames([]);
+        setAppliedActions([]);
+        const nextArg = { pageNo: 1, perPage };
+        setArg(nextArg);
+        getRule(nextArg, { gridName: [], actionName: [] });
+    };
+
+    const handleEditFilter = (filter) => {
+        const opt = RECOMMENDATION_FILTER_OPTIONS.find((o) => o.value === filter.type);
+        if (opt) handleFilterOptionClick(opt);
+    };
+
     const deleteHandler = () => {
         dispatch(handleLoader(true));
         ApiDeleteRule(deleteId)
@@ -664,15 +860,20 @@ function RecomandationRules({ hideFilter = false } = {}) {
         setEditId(rows._id);
     };
 
-    const getRule = (queryArg = arg) => {
+    const getRule = (queryArg = arg, filterOverrides = {}) => {
         if (selectedCampagin?.profileSendID && selectedCampagin?.selectedAdType) {
             setLoading(true);
             dispatch(handleLoader(true));
+            const safeQueryArg = (queryArg && typeof queryArg === "object" && "pageNo" in queryArg) ? queryArg : arg;
+            const gridNameFilter = filterOverrides.gridName ?? appliedGridNames;
+            const actionNameFilter = filterOverrides.actionName ?? appliedActions;
             let data = {
                 profileId: selectedCampagin?.profileSendID,
                 fieldName: "createdAt",
                 sortType: "DESC",
-                ...queryArg,
+                ...safeQueryArg,
+                ...(Array.isArray(gridNameFilter) && gridNameFilter.length > 0 ? { gridName: gridNameFilter } : {}),
+                ...(Array.isArray(actionNameFilter) && actionNameFilter.length > 0 ? { actionName: actionNameFilter } : {}),
             };
             ApiGetRules(data)
                 .then((res) => {
@@ -831,10 +1032,24 @@ function RecomandationRules({ hideFilter = false } = {}) {
                                     >
                                         {bulkApplyLoading ? t("Applying...") : t("Apply")}
                                     </Button>
+                                    <Button
+                                        id="copy-to-other-profile-btn"
+                                        type="button"
+                                        className="customize-button m-0 h-[34px] px-3 text-xs flex items-center gap-1.5"
+                                        onClick={handleOpenCopyProfileModal}
+                                    >
+                                        <FiCopy size={13} />
+                                        <span>{t("Copy to Other Profile")}</span>
+                                    </Button>
                                 </div>
                             )}
 
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <RecommendationFilterDropdown
+                                    appliedFilters={appliedFilters}
+                                    onSelectOption={handleFilterOptionClick}
+                                    id="rule-config-filter-by-btn"
+                                />
                                 {PermissionCheck(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.CREATE) && (
                                     <Button
                                         id="add-recommendation-btn"
@@ -866,6 +1081,17 @@ function RecomandationRules({ hideFilter = false } = {}) {
                             </div>
                         </div>
                     </div>
+                    {appliedFilters.length > 0 && (
+                        <div style={{ padding: "0 24px" }}>
+                            <RecommendationAppliedFilters
+                                appliedFilters={appliedFilters}
+                                onRemove={handleRemoveFilter}
+                                onClearAll={handleClearAllFilters}
+                                onEdit={handleEditFilter}
+                                id="rule-config-applied-filters"
+                            />
+                        </div>
+                    )}
                     {PermissionCheck(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.VIEW_ONLY) && (
                         <div className="p-0">
                             <div className="data_table" id="recommandation-rule-table" style={{ padding: "0 24px 24px 24px" }}>
@@ -965,6 +1191,95 @@ function RecomandationRules({ hideFilter = false } = {}) {
                 gridName={selectedRuleForCampaign?.gridName}
                 actions={selectedRuleForCampaign?.actions || []}
                 ruleName={selectedRuleForCampaign?.ruleName || ""}
+            />
+
+            {/* Copy to Other Profile Modal */}
+            <Dialog
+                open={showCopyProfileModal}
+                onOpenChange={(open) => {
+                    if (!open && !copyProfileLoading) {
+                        setShowCopyProfileModal(false);
+                        setSelectedCopyProfiles([]);
+                    }
+                }}
+            >
+                <DialogContent
+                    className="sm:max-w-[520px] p-0 rounded-[16px] bg-white text-slate-900 border border-slate-200 dark:bg-[#0c1222] dark:border-white/10 dark:text-white flex flex-col overflow-visible gap-0 shadow-2xl"
+                    onInteractOutside={(e) => {
+                        if (copyProfileLoading) e.preventDefault();
+                    }}
+                >
+                    <DialogHeader className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#131b2e] rounded-t-[16px]">
+                        <DialogTitle className="text-base font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                            <FiCopy className="text-[#1A9FD4]" />
+                            {t("Copy Configuration to Other Profile")}
+                        </DialogTitle>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-0">
+                            {t("Select one or more profiles to copy the selected")} <b>{selectedRows.length}</b> {t("recommendation configuration(s) into.")}
+                        </p>
+                    </DialogHeader>
+
+                    <div className="p-6 flex flex-col gap-4">
+                        <div>
+                            <label className="block mb-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                {t("Select Profile(s)")} <span className="text-danger">*</span>
+                            </label>
+                            <MultiSelect
+                                options={otherProfileOptions}
+                                value={selectedCopyProfiles}
+                                onChange={setSelectedCopyProfiles}
+                                loading={loadingProfiles}
+                                placeholder={t("Select profile(s)...")}
+                                maxCount={2}
+                                disabled={copyProfileLoading}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 rounded-b-[16px] flex justify-end items-center gap-2">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="px-4 py-2 text-xs font-semibold h-9"
+                            disabled={copyProfileLoading}
+                            onClick={() => {
+                                setShowCopyProfileModal(false);
+                                setSelectedCopyProfiles([]);
+                            }}
+                        >
+                            {t("Cancel")}
+                        </Button>
+                        <Button
+                            id="apply-copy-to-profile-btn"
+                            type="button"
+                            disabled={!selectedCopyProfiles.length || copyProfileLoading}
+                            onClick={handleApplyCopyToProfiles}
+                            className="px-4 py-2 bg-[#1A9FD4] text-white hover:opacity-90 rounded-md text-xs font-semibold h-9 flex items-center justify-center"
+                        >
+                            {copyProfileLoading ? (
+                                <>
+                                    <i className="fa fa-spinner fa-spin mr-1.5" />
+                                    {t("Applying...")}
+                                </>
+                            ) : (
+                                t("Apply")
+                            )}
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Filter Modal */}
+            <RecommendationFilterModal
+                showFilterModal={showFilterModal}
+                handleModalClose={() => setShowFilterModal(false)}
+                selectedFilterOption={selectedFilterOption}
+                selectedGridNames={tempGridNames}
+                setSelectedGridNames={setTempGridNames}
+                selectedActions={tempActions}
+                setSelectedActions={setTempActions}
+                onApply={handleApplyFilter}
+                isDark={isDark}
             />
         </>
     );

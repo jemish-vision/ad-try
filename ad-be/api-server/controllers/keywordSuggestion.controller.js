@@ -4,8 +4,12 @@ const searchTermSchema = require("../models/searchTerm.model");
 const campaignSchema = require("../models/campaign.model");
 const moment = require("moment-timezone");
 const AD_TYPE_COLLECTIONS = require("../helper/adTypeCollections");
+const mockTestingDataService = require("../services/mockTestingData.service");
 
 exports.getKeywordSuggestions = async (req, res) => {
+    if (req.user?.isMockUser) {
+        return mockTestingDataService.getKeywordSuggestions(req, res);
+    }
     try {
         const configId = req?.config?.configId;
         const { adTypeSearchTermSchema, adTypeCampaignSchema, adTypeTargetingSchema } = req.models || {};
@@ -339,6 +343,9 @@ exports.getKeywordSuggestions = async (req, res) => {
 };
 
 exports.getKeywordUniqueFilterValues = async (req, res) => {
+    if (req.user?.isMockUser) {
+        return mockTestingDataService.getKeywordUniqueFilterValues(req, res);
+    }
     try {
         const configId = req?.config?.configId;
         const { profileId, fieldName, campaignType } = req.body;

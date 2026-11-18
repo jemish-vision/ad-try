@@ -13,9 +13,11 @@ import { ProfileContext } from "../usecontext/useContext";
  * }}
  */
 export const useSpConnection = () => {
-    const { selectedConfig, profileData, profileId } = useContext(ProfileContext);
+    const { selectedConfig, profileData, profileId, loginUser } = useContext(ProfileContext);
 
     const result = useMemo(() => {
+        const isMockUser = Boolean(loginUser?.isMockUser || localStorage.getItem("isMockUser") === "true");
+
         // 1. Context selectedConfig profile
         const contextProfile = selectedConfig?.profile;
 
@@ -36,16 +38,16 @@ export const useSpConnection = () => {
         );
 
         const activeProfile = listMatch || contextProfile || storedProfile;
-        const isLoaded = Boolean(activeProfile && currentProfileId);
-        const isConnected = Boolean(activeProfile?.isSpSyncEnabled === true);
+        const isLoaded = Boolean(isMockUser || (activeProfile && currentProfileId));
+        const isConnected = Boolean(isMockUser || activeProfile?.isSpSyncEnabled === true);
 
         return {
             isConnected,
             isLoaded,
             profile: activeProfile,
-            profileId: currentProfileId || null,
+            profileId: currentProfileId || (isMockUser ? 99999901 : null),
         };
-    }, [selectedConfig, profileData, profileId]);
+    }, [selectedConfig, profileData, profileId, loginUser]);
 
     return result;
 };

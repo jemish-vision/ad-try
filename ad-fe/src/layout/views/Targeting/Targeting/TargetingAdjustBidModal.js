@@ -24,7 +24,8 @@ import { getCurrencySymbol, getMarketplaceMinBid } from '../../../../helper/curr
 
 const TargetingAdjustBidModal = (props) => {
     const { t } = useTranslation();
-    const { currencyCode, countryCode } = useContext(ProfileContext);
+    const { currencyCode, countryCode, loginUser } = useContext(ProfileContext);
+    const isMockUser = Boolean(loginUser?.isMockUser || localStorage.getItem("isMockUser") === "true");
     const minBid = getMarketplaceMinBid(currencyCode, countryCode);
     const currSymbol = getCurrencySymbol(currencyCode);
 
@@ -46,6 +47,11 @@ const TargetingAdjustBidModal = (props) => {
 
     const handleSave = async () => {
         const numericValue = parseFloat(bidValue);
+
+        if (isMockUser) {
+            Toast.error(t("Bid changes are disabled in Demo Mode"));
+            return;
+        }
 
         // Validation 1: Check if action selected
         if (!selectedAction) {
@@ -190,7 +196,8 @@ const TargetingAdjustBidModal = (props) => {
                     </Button>
                     <Button
                         onClick={handleSave}
-                        disabled={!!error || loading}
+                        disabled={!!error || loading || isMockUser}
+                        title={isMockUser ? t("Bid changes are disabled in Demo Mode") : undefined}
                         className="btn-campaign-primary flex items-center gap-1.5"
                     >
                         {loading && <i className="fa-solid fa-spinner fa-spin mr-1.5" />}

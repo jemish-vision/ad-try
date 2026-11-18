@@ -155,11 +155,13 @@ exports.listProfiles = async (req, res) => {
         $match: {
           $and: [
             { $or: [{ isAdsActive: true }, { isSpActive: true }] },
-            ...(matchOrgId ? [{ $or: [
-              { "config.organizationId": matchOrgId },
-              { "config.organizationId": null },
-              { "config.organizationId": { $exists: false } },
-            ] }] : []),
+            ...(matchOrgId ? [{
+              $or: [
+                { "config.organizationId": matchOrgId },
+                { "config.organizationId": null },
+                { "config.organizationId": { $exists: false } },
+              ]
+            }] : []),
           ],
         },
       },
@@ -197,10 +199,46 @@ exports.listProfiles = async (req, res) => {
 
     const getProfiles = await profileBasedPermissionSchema.aggregate(pipeline);
 
+    const mockConfigId = new mongoose.Types.ObjectId("000000000000000000000001");
+    const demoAccountDoc = {
+      _id: mockConfigId,
+      configId: mockConfigId,
+      config: { companyName: "ApexGear Demo Account (Mock)" },
+      isDemoAccount: true,
+      profiles: [
+        {
+          _id: new mongoose.Types.ObjectId("000000000000000000000002"),
+          profileId: 99999901,
+          countryCode: "US",
+          currencyCode: "USD",
+          name: "ApexGear US Store (Mock)",
+          type: "seller",
+          advertiserId: "MOCK-ADV-01",
+          isFavorite: !getProfiles?.length,
+          isAdsSyncEnabled: true,
+          isSpSyncEnabled: true,
+          isAdsActive: true,
+          isSpActive: true,
+          isSpConfigured: true,
+          isDemoProfile: true,
+        },
+      ],
+    };
+
+    // Only include Demo Account when user is in Mock Mode
+    if (req.user?.isMockUser) {
+      return res.status(200).send({
+        isSuccess: true,
+        message: "Profiles list successfully.",
+        data: [demoAccountDoc, ...(getProfiles || [])],
+      });
+    }
+
+    // Normal mode: return only the user's real connected profiles
     return res.status(200).send({
       isSuccess: true,
       message: "Profiles list successfully.",
-      data: getProfiles,
+      data: getProfiles || [],
     });
   } catch (error) {
     write_logs({ message: `[listProfiles Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
@@ -960,9 +998,9 @@ exports.amazonCallback = async (req, res) => {
         sellerConfig.spTokenExpiresAt = tokenExpiresAt;
         sellerConfig.isActive = true;
         sellerConfig.disconnectedAt = null;
-      sellerConfig.deletionReminder15SentAt = null;
-      sellerConfig.deletionReminder1SentAt = null;
-      sellerConfig.isDataDeletionStopped = false;
+        sellerConfig.deletionReminder15SentAt = null;
+        sellerConfig.deletionReminder1SentAt = null;
+        sellerConfig.isDataDeletionStopped = false;
         sellerConfig.deletionReminder15SentAt = null;
         sellerConfig.deletionReminder1SentAt = null;
         sellerConfig.isDataDeletionStopped = false;
@@ -1843,9 +1881,9 @@ exports.amazonSPDisconnect = async (req, res) => {
     );
 
     if (config.configId && config.profileId) {
-      await clearSPAccessTokenCache(config.configId.toString(), config.profileId).catch(() => {});
-      await clearProfileCache(config.configId.toString(), config.profileId).catch(() => {});
-      await clearActivePlanProfilesCache(config.profileId).catch(() => {});
+      await clearSPAccessTokenCache(config.configId.toString(), config.profileId).catch(() => { });
+      await clearProfileCache(config.configId.toString(), config.profileId).catch(() => { });
+      await clearActivePlanProfilesCache(config.profileId).catch(() => { });
     }
 
     await auditLogSchema.create({
@@ -2383,7 +2421,7 @@ exports.SyncPastData = async () => {
               },
             });
             await getCronData.save();
-          } catch (_e) {}
+          } catch (_e) { }
 
           try {
             if (p.sync == "N") {
@@ -3495,7 +3533,7 @@ exports.confirmDeactivateProfile = async (req, res) => {
       );
       profile.isSpSyncEnabled = false;
       if (profile.configId) {
-        await clearSPAccessTokenCache(profile.configId.toString(), numProfileId).catch(() => {});
+        await clearSPAccessTokenCache(profile.configId.toString(), numProfileId).catch(() => { });
       }
     }
 
@@ -3512,7 +3550,7 @@ exports.confirmDeactivateProfile = async (req, res) => {
           { _id: profile.configId },
           { $set: { isActive: false, disconnectedAt: now } }
         );
-        await clearAccessTokenCache(profile.configId.toString()).catch(() => {});
+        await clearAccessTokenCache(profile.configId.toString()).catch(() => { });
       }
     }
 
@@ -3523,9 +3561,9 @@ exports.confirmDeactivateProfile = async (req, res) => {
     await profile.save();
 
     if (profile.configId) {
-      await clearProfileCache(profile.configId.toString(), numProfileId).catch(() => {});
+      await clearProfileCache(profile.configId.toString(), numProfileId).catch(() => { });
     }
-    await clearActivePlanProfilesCache(numProfileId).catch(() => {});
+    await clearActivePlanProfilesCache(numProfileId).catch(() => { });
 
     await auditLogSchema.create({
       userId,
@@ -3535,7 +3573,7 @@ exports.confirmDeactivateProfile = async (req, res) => {
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
       metadata: { profileId: numProfileId, type, deactivatedAt: now },
-    }).catch(() => {});
+    }).catch(() => { });
 
     return res.status(200).json({
       isSuccess: true,

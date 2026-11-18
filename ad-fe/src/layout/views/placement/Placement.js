@@ -103,7 +103,8 @@ function Placement() {
     new Date()
   ]);
 
-  let { profileId, selectedAdType, currencyCode, selectedDate, setSelectedDate } = useContext(ProfileContext);
+  let { profileId, selectedAdType, currencyCode, selectedDate, setSelectedDate, loginUser } = useContext(ProfileContext);
+  const isMockUser = Boolean(loginUser?.isMockUser || localStorage.getItem("isMockUser") === "true");
   // Combined SP+SB view active on this screen? (Placements have no SD data.)
   const showAllTypes = isShowingAllAdTypes(
     typeof window !== "undefined" ? window.location.pathname : "",
@@ -239,7 +240,7 @@ function Placement() {
   }, [visibleColumns]);
 
   // Helper: get all eligible row IDs (non-total rows with a valid PLACEMENT_BID placement)
-  const getEligibleRowIds = (rows) => rows.filter(row => !row?.isTotalRow && PLACEMENT_BID.includes(row.placement)).map(row => `${row?.campaignId}-${row.placement.replace(/\s+/g, "_")}`);
+  const getEligibleRowIds = (rows) => (rows || []).filter(row => !row?.isTotalRow && row?.placement && PLACEMENT_BID.includes(row.placement)).map(row => `${row?.campaignId}-${String(row?.placement || "").replace(/\s+/g, "_")}`);
 
   const columns = useMemo(() => [
     {
@@ -275,7 +276,7 @@ function Placement() {
       cellRenderer: (params) => {
         const row = params.data;
         if (!row || row?.isTotalRow) return null;
-        const rowId = `${row?.campaignId}-${row.placement.replace(/\s+/g, "_")}`;
+        const rowId = `${row?.campaignId}-${String(row?.placement || "").replace(/\s+/g, "_")}`;
         const isEligible = PLACEMENT_BID.includes(row.placement);
         const isDisabled = !PermissionCheck(SYSTEM_PAGES.PLACEMENT, PAGE_ACTIONS.UPDATE) || !isEligible;
         return (
@@ -1641,7 +1642,18 @@ function Placement() {
           </div>
 
           <DialogFooter className="flex justify-end gap-2">
-            <ShadcnButton onClick={handleSubmit} className="bg-gradient-to-br from-[#1A9FD4] to-[#2374F2] hover:opacity-90 border-0 text-white font-semibold">
+            <ShadcnButton
+              onClick={() => {
+                if (isMockUser) {
+                  Toast.error(t("Bid changes are disabled in Demo Mode"));
+                  return;
+                }
+                handleSubmit();
+              }}
+              disabled={isMockUser}
+              title={isMockUser ? t("Bid changes are disabled in Demo Mode") : undefined}
+              className={`bg-gradient-to-br from-[#1A9FD4] to-[#2374F2] hover:opacity-90 border-0 text-white font-semibold ${isMockUser ? "opacity-50 cursor-not-allowed" : ""}`}
+            >
               {t("submit")}
             </ShadcnButton>
           </DialogFooter>

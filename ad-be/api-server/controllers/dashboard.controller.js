@@ -32,6 +32,7 @@ const { write_logs } = require("../../winston/utility/logger");
 const { getCacheWithLog, setCacheWithLog } = require("../services/redis.service");
 
 exports.getChangesByCampaign = async (req, res) => {
+  if (req.user?.isMockUser || req.isMockTestingUser) return require("../services/mockTestingData.service").getChangesByCampaign(req, res);
     const configId = req?.config?.configId;
     const { adTypeCampaignSchema } = req?.models
 
@@ -293,6 +294,7 @@ exports.getChangesByCampaign = async (req, res) => {
 };
 
 exports.getChangesByKeyword = async (req, res) => {
+  if (req.user?.isMockUser || req.isMockTestingUser) return require("../services/mockTestingData.service").getChangesByKeyword(req, res);
     const configId = req?.config?.configId;
     const { adTypeTargetingSchema, adTypeCampaignSchema } = req?.models;
 
@@ -540,6 +542,7 @@ exports.getChangesByKeyword = async (req, res) => {
 
 
 exports.getChangesByProduct = async (req, res) => {
+  if (req.user?.isMockUser || req.isMockTestingUser) return require("../services/mockTestingData.service").getChangesByProduct(req, res);
     const configId = req?.config?.configId;
     const { adTypeProductAdsSchema } = req?.models;
 
@@ -1014,6 +1017,7 @@ const round1 = (val) => Math.round((Number(val) || 0) * 10) / 10;
 
 // ─── Phase 3: Assigned vs. Without Assign Campaign Comparison ────────────────
 exports.getAssignedCampaignComparison = async (req, res) => {
+  if (req.user?.isMockUser || req.isMockTestingUser) return require("../services/mockTestingData.service").getAssignedCampaignComparison(req, res);
     const configId = req?.config?.configId;
     const adType = (req.body?.adType || "SP").toUpperCase();
     let campaignModel = req?.models?.adTypeCampaignSchema;
@@ -1340,6 +1344,7 @@ exports.getAssignedCampaignComparison = async (req, res) => {
 
 // ─── Phase 3: SP / SB / SD Ad Type Breakdown Widget ─────────────────────────
 exports.getAdTypeBreakdown = async (req, res) => {
+  if (req.user?.isMockUser || req.isMockTestingUser) return require("../services/mockTestingData.service").getAdTypeBreakdown(req, res);
     const configId = req?.config?.configId;
     try {
         let { profileId, fromDate, toDate } = req.body;
@@ -1524,6 +1529,7 @@ exports.getAdTypeBreakdown = async (req, res) => {
 
 // ─── Phase 4: Time-Based Analytics (Tasks 5 & 6) ───────────────────────────
 exports.getTimeBasedAnalytics = async (req, res) => {
+  if (req.user?.isMockUser || req.isMockTestingUser) return require("../services/mockTestingData.service").getTimeBasedAnalytics(req, res);
     const configId = req?.config?.configId || req?.headers?.["x-config-id"] || req?.body?.configId;
     const { adTypeCampaignSchema } = req?.models || {};
     const campaignModel = adTypeCampaignSchema || campaignSchema;

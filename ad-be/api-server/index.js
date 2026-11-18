@@ -67,6 +67,8 @@ app.use(express.static("template"));
 //DataBase Configration
 require("../shared/connection");
 const GlobalSettings = require("./models/globalSettings.model");
+const { ensureMockDataSeeded } = require("./services/mockTestingData.service");
+ensureMockDataSeeded().catch(err => console.error("Error seeding MockTestingData:", err));
 
 GlobalSettings.findOne().lean().then(settings => {
   if (settings) {

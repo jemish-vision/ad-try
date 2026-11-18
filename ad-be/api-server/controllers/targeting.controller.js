@@ -197,28 +197,28 @@ exports.cronGenerateTargetingReport = async (generateWeeklyReport = false, gener
                 }
 
                 let getCronData = null;
-              if (recurring) {
-                try {
-                  getCronData = new cronJobHistorySchema({
-                    configId: profile.configId,
-                    profileId: profile.profileId,
-                    cronName: cronName,
-                    historyDate: currentDate,
-                    status: "PENDING",
-                    details: {
-                      startedAt: new Date().toISOString(),
-                      startDate,
-                      endDate,
-                    },
-                  });
-                  await getCronData.save();
-                } catch (saveErr) {
-                  cron_logs({
-                    message: `[${cronName}] Failed to create cron history for profile ${profile.profileId}: ${saveErr.message}`,
-                    log_type: "warn",
-                  });
+                if (recurring) {
+                    try {
+                        getCronData = new cronJobHistorySchema({
+                            configId: profile.configId,
+                            profileId: profile.profileId,
+                            cronName: cronName,
+                            historyDate: currentDate,
+                            status: "PENDING",
+                            details: {
+                                startedAt: new Date().toISOString(),
+                                startDate,
+                                endDate,
+                            },
+                        });
+                        await getCronData.save();
+                    } catch (saveErr) {
+                        cron_logs({
+                            message: `[${cronName}] Failed to create cron history for profile ${profile.profileId}: ${saveErr.message}`,
+                            log_type: "warn",
+                        });
+                    }
                 }
-              }
 
                 const reportSpResponse = await spGenerateReport(
                     profile.profileId,
@@ -946,6 +946,7 @@ const stageTargetingReport = async ({
 };
 
 exports.getTargeting = async (req, res) => {
+    if (req.user?.isMockUser) return require("../services/mockTestingData.service").getTargeting(req, res);
     const configId = req?.config?.configId;
     const { adTypeTargetingSchema } = req.models;
     const adType = req.adType;
@@ -7722,6 +7723,7 @@ exports.getFilteredTargetingIds = async function (req, targetingPipeline) {
 }
 
 exports.getTargetingChartData = async (req, res) => {
+    if (req.user?.isMockUser) return require("../services/mockTestingData.service").getTargetingChartData(req, res);
     const configId = req?.config?.configId;
     const { adTypeTargetingSchema } = req.models;
     const adType = req.adType;
@@ -8133,6 +8135,7 @@ exports.importTargetingRule = async (req, res) => {
 };
 
 exports.addTarget = async (req, res) => {
+    if (req.user?.isMockUser) return require("../services/mockTestingData.service").addMockTargets(req, res);
     try {
         const configId = req?.config?.configId;
         const {
@@ -8186,6 +8189,7 @@ exports.addTarget = async (req, res) => {
 }
 
 exports.getLifeTimeTargetingMatrix = async (req, res) => {
+    if (req.user?.isMockUser) return require("../services/mockTestingData.service").getLifeTimeTargetingMatrix(req, res);
     const configId = req?.config?.configId;
     const { adTypeCampaignSchema, adTypeTargetingSchema, adTypeProductAdsSchema } = req.models;
 
@@ -8424,6 +8428,7 @@ exports.getLifeTimeTargetingMatrix = async (req, res) => {
 }
 
 exports.getTargetingKeywordDetails = async (req, res) => {
+    if (req.user?.isMockUser) return require("../services/mockTestingData.service").getTargetingKeywordDetails(req, res);
     const configId = req?.config?.configId;
     const { adTypeCampaignSchema, adTypeProductAdsSchema, adTypeProductSchema } = req.models;
 
@@ -8570,6 +8575,7 @@ exports.getTargetingKeywordDetails = async (req, res) => {
 };
 
 exports.getTargetingByCampaigns = async (req, res) => {
+    if (req.user?.isMockUser) return require("../services/mockTestingData.service").getTargetingByCampaigns(req, res);
     try {
         const configId = req.body.configId || req.query.configId || req?.config?.configId || req?.headers?.["x-config-id"];
         const { profileId, campaigns } = req.body;
@@ -8628,6 +8634,7 @@ exports.getTargetingByCampaigns = async (req, res) => {
 };
 
 exports.createKeywords = async (req, res) => {
+    if (req.user?.isMockUser) return require("../services/mockTestingData.service").addMockTargets(req, res);
     try {
         let configId = req?.config?.configId || req.body?.configId;
         const { profileId, campaignId, adGroupId, keywords } = req.body;

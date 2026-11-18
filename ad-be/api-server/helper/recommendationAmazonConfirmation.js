@@ -1,4 +1,4 @@
-const ENTITY_ID_FIELDS = ['targetId', 'keywordId', 'campaignId'];
+const ENTITY_ID_FIELDS = ['targetId', 'keywordId', 'campaignId', 'adId'];
 const RESPONSE_GROUPS = {
     targets: ['targetingClauses'],
     targetingClauses: ['targets'],

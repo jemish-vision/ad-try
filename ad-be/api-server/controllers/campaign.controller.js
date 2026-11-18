@@ -80,6 +80,7 @@ const {
 const { stageReportFileInRedis } = require("../services/reportFileStager.service");
 const { processStagedReportBatches } = require("../services/reportBatchWriter.service");
 const { linkReportHistory, finalizeReportHistory } = require("../services/reportHistoryCompletion.service");
+const mockTestingDataService = require("../services/mockTestingData.service");
 const { getCacheWithLog, setCacheWithLog, deletePatternWithLog } = require("../services/redis.service");
 
 const { write_logs: ams_write_logs } = require("../../winston/ams/logger");
@@ -486,6 +487,9 @@ async function resolveMatchingCampaignIdsByStatus({
 }
 
 exports.getCampaigns = async (req, res) => {
+  if (req.user?.isMockUser) {
+    return mockTestingDataService.getCampaigns(req, res);
+  }
   const configId = req?.config?.configId;
   const { adTypeCampaignSchema, adTypePlacementSchema } = req.models;
 
@@ -1706,6 +1710,9 @@ function buildFieldFilter(fieldName, operator, value) {
 }
 
 exports.getCampaignDataTable = async (req, res) => {
+  if (req.user?.isMockUser) {
+    return mockTestingDataService.getCampaignDataTable(req, res);
+  }
   try {
     const configId = req?.config?.configId;
     const campaignId = Number(req.params.id);
@@ -1804,6 +1811,9 @@ exports.getCampaignDataTable = async (req, res) => {
 };
 
 exports.getCampaignDetailsData = async (req, res) => {
+  if (req.user?.isMockUser) {
+    return mockTestingDataService.getCampaignDetailsData(req, res);
+  }
   try {
     const id = Number(req.params.id);
     const configId = req?.config?.configId;
@@ -4025,6 +4035,9 @@ const processReportFileStream = async (
 };
 
 exports.listCampaignName = async (req, res) => {
+  if (req.user?.isMockUser) {
+    return mockTestingDataService.listCampaignName(req, res);
+  }
   try {
     const configId = req?.config?.configId;
     const { profileId, type } = req.body;
@@ -4803,6 +4816,9 @@ const AddNegativeTargeting = async (
 };
 
 exports.createSPCampaigns = async (req, res) => {
+  if (req.user?.isMockUser) {
+    return mockTestingDataService.createMockCampaign(req, res, "SP");
+  }
   try {
     const configId = req?.config?.configId;
     const { campaignName, profileId } = req.body;
@@ -4889,6 +4905,9 @@ exports.createSPCampaigns = async (req, res) => {
 };
 
 exports.addCampaigns = async (req, res) => {
+  if (req.user?.isMockUser) {
+    return mockTestingDataService.createMockCampaign(req, res);
+  }
   try {
     const configId = req?.config?.configId;
     const { profileId, step, campaignId, adGroupId } = req.body;
@@ -5369,6 +5388,9 @@ const AddSBNegativeTargeting = async (
 };
 
 exports.createSBCampaigns = async (req, res) => {
+  if (req.user?.isMockUser) {
+    return mockTestingDataService.createMockCampaign(req, res, "SB");
+  }
   try {
     const configId = req?.config?.configId;
     const { profileId } = req.body;
@@ -5457,6 +5479,9 @@ const handleError = (res, error, label) => {
 };
 
 exports.getBrands = async (req, res) => {
+  if (req.user?.isMockUser) {
+    return mockTestingDataService.getCampaignHelperEntities(req, res, "BRANDS");
+  }
   try {
     const configId = req?.config?.configId;
     const { profileId } = req.body;
@@ -5484,6 +5509,9 @@ exports.getBrands = async (req, res) => {
 };
 
 exports.getPortfolios = async (req, res) => {
+  if (req.user?.isMockUser) {
+    return mockTestingDataService.getCampaignHelperEntities(req, res, "PORTFOLIOS");
+  }
   try {
     const configId = req?.config?.configId;
     const { profileId, ...body } = req.body;
@@ -5511,6 +5539,9 @@ exports.getPortfolios = async (req, res) => {
 };
 
 exports.getStores = async (req, res) => {
+  if (req.user?.isMockUser) {
+    return mockTestingDataService.getCampaignHelperEntities(req, res, "STORES");
+  }
   try {
     const configId = req?.config?.configId;
     const { profileId, ...body } = req.body;
@@ -5538,6 +5569,9 @@ exports.getStores = async (req, res) => {
 };
 
 exports.getStorePages = async (req, res) => {
+  if (req.user?.isMockUser) {
+    return mockTestingDataService.getCampaignHelperEntities(req, res, "STORE_PAGES");
+  }
   try {
     const configId = req?.config?.configId;
     const {
@@ -5581,6 +5615,7 @@ exports.getStorePages = async (req, res) => {
 };
 
 exports.getBrandDetails = async (req, res) => {
+  if (req.user?.isMockUser || req.isMockTestingUser) return mockTestingDataService.getBrandDetails(req, res);
   try {
     const configId = req?.config?.configId;
     const { profileId, ...body } = req.body;
@@ -5637,6 +5672,7 @@ exports.fileUpload = async (req, res) => {
 };
 
 exports.previewSDCreative = async (req, res) => {
+  if (req.user?.isMockUser || req.isMockTestingUser) return mockTestingDataService.previewSDCreative(req, res);
   try {
     const configId = req?.config?.configId;
     const { profileId, campaignId } = req.body;
@@ -6083,6 +6119,8 @@ exports.manualGenerateReport = async (req, res) => {
 };
 
 exports.getHistory = async (req, res) => {
+  const isMock = Boolean(req.user?.isMockUser || req.isMockTestingUser || String(req.body?.profileId) === "99999901");
+  if (isMock) return mockTestingDataService.getHistory(req, res);
   try {
     const configId = new mongoose.Types.ObjectId(req?.config?.configId);
     const adType = req.adType;
@@ -7466,6 +7504,8 @@ exports.getHistory = async (req, res) => {
 };
 
 exports.getLatestCampaignHistory = async (req, res) => {
+  const isMock = Boolean(req.user?.isMockUser || req.isMockTestingUser || String(req.body?.profileId) === "99999901");
+  if (isMock) return mockTestingDataService.getLatestCampaignHistory(req, res);
   const configId = req?.config?.configId;
   const { profileId, campaignIds, historyScope } = req.body;
 
@@ -7999,6 +8039,9 @@ async function getFilteredCampaignIds(req) {
 
 
 exports.getCampaignChartData = async (req, res) => {
+  if (req.user?.isMockUser) {
+    return mockTestingDataService.getCampaignChartData(req, res);
+  }
   const configId = req?.config?.configId;
   const { adTypeCampaignSchema } = req.models;
 
@@ -8259,6 +8302,7 @@ exports.AIAnalysis = async (req, res) => {
 };
 
 exports.hourlyCampaignTracking = async (req, res) => {
+  if (req.user?.isMockUser || req.isMockTestingUser) return mockTestingDataService.getHourlyCampaignTracking(req, res);
   try {
     const configId = req?.config?.configId;
     const { campaignId, profileId, startDate, endDate } = req.body;
@@ -8614,6 +8658,7 @@ exports.hourlyCampaignTracking = async (req, res) => {
 };
 
 exports.hourlyPlacementTracking = async (req, res) => {
+  if (req.user?.isMockUser || req.isMockTestingUser) return mockTestingDataService.getHourlyPlacementTracking(req, res);
   try {
     const configId = req?.config?.configId;
     const { campaignId = [], profileId, startDate, endDate } = req.body;

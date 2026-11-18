@@ -27,6 +27,7 @@ const {
   verifyAndEnable2fa,
   disable2fa,
   verifyPaymentSession,
+  toggleMockMode,
 } = require("../controllers/user.controller");
 
 const { requireSuperAdmin } = require("../middleware/superAdmin.auth");
@@ -42,6 +43,7 @@ router.post("/updateProfileAccess", verifyToken, validateRoutePermission(SYSTEM_
 router.post("/deleteUser", verifyToken, validateRoutePermission(SYSTEM_PAGES.USERS, PAGE_ACTIONS.REMOVE), deleteUser);
 router.post("/changePassword", verifyToken, changePassword);
 router.post("/updateProfile", verifyToken, profileFileUpload, updateProfile);
+router.post("/toggleMockMode", verifyToken, toggleMockMode);
 
 router.post("/generate2fa", verifyToken, generate2fa);
 router.post("/verifyAndEnable2fa", verifyToken, verifyAndEnable2fa);

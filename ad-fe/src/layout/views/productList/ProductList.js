@@ -407,27 +407,81 @@ function ProductList() {
       },
     },
     {
-      headerName: t("Rank"),
+      headerName: t("Best Seller Rank"),
       field: "classificationRank",
       title: "Rank",
-      width: 250,
+      width: 280,
+      minWidth: 260,
       sortable: true,
       resizable: true,
       wrapText: true,
       autoHeight: true,
+      exportFormatter: (val, row) => {
+        const classList =
+          Array.isArray(row?.classificationRanks) && row.classificationRanks.length
+            ? row.classificationRanks
+            : row?.classificationRank
+              ? [{ rank: row.classificationRank, title: row.classificationTitle, link: row.classificationLink }]
+              : [];
+        const groupList =
+          Array.isArray(row?.displayGroupRanksList) && row.displayGroupRanksList.length
+            ? row.displayGroupRanksList
+            : (row?.displayGroupRank || row?.displayGroupRanks)
+              ? [{ rank: row.displayGroupRank || row.displayGroupRanks, title: row.displayGroupTitle, link: row.displayGroupLink }]
+              : [];
+        const parts = [...classList, ...groupList]
+          .filter((item) => item?.rank)
+          .map(
+            (item) =>
+              `#${item.rank}${item.title ? ` in ${item.title}` : ""}${item.link ? ` (${item.link})` : ""}`
+          );
+        return parts.length ? parts.join(" | ") : "—";
+      },
       cellRenderer: (params) => {
         const row = params.data;
         if (!row) return null;
+
+        const classList =
+          Array.isArray(row.classificationRanks) && row.classificationRanks.length
+            ? row.classificationRanks.filter((item) => item?.rank)
+            : row.classificationRank
+              ? [{ rank: row.classificationRank, title: row.classificationTitle, link: row.classificationLink }]
+              : [];
+
+        const groupList =
+          Array.isArray(row.displayGroupRanksList) && row.displayGroupRanksList.length
+            ? row.displayGroupRanksList.filter((item) => item?.rank)
+            : (row.displayGroupRank || row.displayGroupRanks)
+              ? [{ rank: row.displayGroupRank || row.displayGroupRanks, title: row.displayGroupTitle, link: row.displayGroupLink }]
+              : [];
+
+        const allRanks = [...classList, ...groupList];
+        if (!allRanks.length) return <span>—</span>;
+
         return (
-          <div className="flex flex-col gap-1">
-            <div>
-              <span className="fw-bolder">{t("classification")}:</span>{" "}
-              <span>{row?.classificationRank ? CurrencyFormat(row?.classificationRank) : "-"}</span>
-            </div>
-            <div>
-              <span className="fw-bolder">{t("displayGroup")}:</span>{" "}
-              <span>{row?.displayGroupRanks ? CurrencyFormat(row?.displayGroupRanks) : "-"}</span>
-            </div>
+          <div className="flex flex-col gap-1 my-1.5" style={{ lineHeight: "1.35" }}>
+            {allRanks.map((item, idx) => (
+              <div key={`${item.rank}-${item.title || idx}`} className="flex flex-wrap items-center gap-1 text-xs">
+                <span className="font-semibold">
+                  #{CurrencyFormat(item.rank)}
+                </span>
+                {item.title && (
+                  <span className="text-gray-500">in {item.title}</span>
+                )}
+                {item.link && (
+                  <a
+                    href={item.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-blue-600 dark:text-blue-400 underline font-medium ml-1"
+                    title={`View Best Sellers in ${item.title || "this category"} on Amazon`}
+                  >
+                    View Rank ↗
+                  </a>
+                )}
+              </div>
+            ))}
           </div>
         );
       },
@@ -1253,6 +1307,49 @@ function ProductList() {
                           {rightSideData?.productType || "-"}
                         </span>
                       </div>
+                      {(() => {
+                        const classList =
+                          Array.isArray(rightSideData?.classificationRanks) && rightSideData.classificationRanks.length
+                            ? rightSideData.classificationRanks.filter((item) => item?.rank)
+                            : rightSideData?.classificationRank
+                              ? [{ rank: rightSideData.classificationRank, title: rightSideData.classificationTitle, link: rightSideData.classificationLink }]
+                              : [];
+                        const groupList =
+                          Array.isArray(rightSideData?.displayGroupRanksList) && rightSideData.displayGroupRanksList.length
+                            ? rightSideData.displayGroupRanksList.filter((item) => item?.rank)
+                            : (rightSideData?.displayGroupRank || rightSideData?.displayGroupRanks)
+                              ? [{ rank: rightSideData.displayGroupRank || rightSideData.displayGroupRanks, title: rightSideData.displayGroupTitle, link: rightSideData.displayGroupLink }]
+                              : [];
+                        const allRanks = [...classList, ...groupList];
+                        if (!allRanks.length) return null;
+                        return (
+                          <div className="col-span-2 bg-white dark:bg-slate-900/30 p-3 rounded-xl border border-slate-200 dark:border-white/5">
+                            <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block mb-1">{t("Best Seller Rank")}</span>
+                            <div className="flex flex-col gap-1">
+                              {allRanks.map((item, idx) => (
+                                <div key={`${item.rank}-${item.title || idx}`} className="flex flex-wrap items-center gap-1 text-xs">
+                                  <span className="font-bold text-slate-800 dark:text-slate-200">
+                                    #{CurrencyFormat(item.rank)}
+                                  </span>
+                                  {item.title && (
+                                    <span className="text-slate-500">in {item.title}</span>
+                                  )}
+                                  {item.link && (
+                                    <a
+                                      href={item.link}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-blue-600 dark:text-blue-400 underline font-medium ml-1"
+                                    >
+                                      View Rank ↗
+                                    </a>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Settings Control Block */}

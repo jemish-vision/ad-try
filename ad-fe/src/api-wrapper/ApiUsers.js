@@ -174,6 +174,12 @@ const ApiDisable2FA = () => {
     .catch((res) => res?.response?.data || res.data);
 };
 
+const ApiToggleMockMode = (data) => {
+  return axios.post(`${apiUser}toggleMockMode`, data, { headers: getHeaders() })
+    .then((res) => res.data)
+    .catch((res) => res?.response?.data || res.data);
+};
+
 export {
   ApiUserList,
   ApiUserPermission,
@@ -202,4 +208,5 @@ export {
   ApiGenerate2FA,
   ApiVerifyAndEnable2FA,
   ApiDisable2FA,
+  ApiToggleMockMode,
 };

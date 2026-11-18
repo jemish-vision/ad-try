@@ -27,6 +27,18 @@ const recommandationStatusSchema = new mongoose.Schema(
       type: Number,
       trim: true,
     },
+    adId: {
+      type: Number,
+      trim: true,
+    },
+    asins: {
+      type: String,
+      trim: true,
+    },
+    sku: {
+      type: String,
+      trim: true,
+    },
     placement: {
       type: String,
       trim: true,

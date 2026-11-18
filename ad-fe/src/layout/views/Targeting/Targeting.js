@@ -112,7 +112,8 @@ function Targeting() {
   }, []);
 
   const { t } = useTranslation();
-  let { profileId, selectedAdType, currencyCode, countryCode, selectedDate, setSelectedDate } = useContext(ProfileContext);
+  let { profileId, selectedAdType, currencyCode, countryCode, selectedDate, setSelectedDate, loginUser } = useContext(ProfileContext);
+  const isMockUser = Boolean(loginUser?.isMockUser || localStorage.getItem("isMockUser") === "true");
   // Combined SP+SB+SD view active on the /targeting screen?
   const showAllTypes = isShowingAllAdTypes(
     typeof window !== "undefined" ? window.location.pathname : "",
@@ -2124,9 +2125,11 @@ function Targeting() {
           },
           {
             label: statusChange?.isActive ? t("enable") : t("disable"),
+            disabled: isMockUser,
             variant: statusChange?.isActive ? "success" : "warning",
             icon: statusChange?.isActive ? "check_circle_outline" : "pause_circle_outline",
             onClick: async () => {
+              if (isMockUser) { Toast.error(t("Status changes are disabled in Demo Mode")); return; }
               await handleAction(statusChange?.isActive ? "ENABLED" : "PAUSED", [statusChange?.id]);
               setStatusChange(null);
             },
@@ -2165,7 +2168,8 @@ function Targeting() {
             label: bulkConfirm?.action === "ENABLED" ? `${t("enable")} (${bulkConfirm?.ids?.length})` : bulkConfirm?.action === "PAUSED" ? `${t("paused")} (${bulkConfirm?.ids?.length})` : bulkConfirm?.action === "ARCHIVED" ? `${t("archived")} (${bulkConfirm?.ids?.length})` : t("confirm"),
             variant: bulkConfirm?.action === "ENABLED" ? "success" : bulkConfirm?.action === "PAUSED" ? "warning" : bulkConfirm?.action === "ARCHIVED" ? "danger" : "primary",
             icon: bulkConfirm?.action === "ENABLED" ? "check_circle_outline" : bulkConfirm?.action === "PAUSED" ? "pause_circle_outline" : bulkConfirm?.action === "ARCHIVED" ? "archive" : "check",
-            onClick: executeAction,
+            disabled: isMockUser,
+            onClick: () => { if (isMockUser) { Toast.error(t("Bulk actions are disabled in Demo Mode")); return; } executeAction(); },
           },
         ]}
       />

@@ -126,7 +126,15 @@ export const RecommendationRuleTemplates = [
           oobDays: "",
         },
       ],
-      actions: [],
+      actions: [
+        {
+          actionName: "None",
+          actionValue: "",
+          actionValueType: "",
+          placementType: "",
+          matchType: "",
+        },
+      ],
     },
   },
 ];

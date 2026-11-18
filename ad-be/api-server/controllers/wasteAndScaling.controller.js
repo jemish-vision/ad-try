@@ -15,6 +15,7 @@ const round1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
  * - Task 9: Budget Pacing & Early Out-of-Budget Alerts: High-performing campaigns exhausting budget before 4:00 PM with lost sales calculation.
  */
 exports.getWasteAndScalingAlerts = async (req, res) => {
+    if (req.user?.isMockUser || req.isMockTestingUser) return require("../services/mockTestingData.service").getWasteAndScalingAlerts(req, res);
     try {
         const configId = req?.config?.configId;
         const { adTypeCampaignSchema, adTypeSearchTermSchema } = req?.models || {};

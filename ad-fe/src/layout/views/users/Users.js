@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import { SYSTEM_PAGES, PAGE_ACTIONS } from "src/common/constants";
 import { t } from "i18next";
 import Toast from "../../../common/helper/toast/Toast";
-import { ApiCreateUser, ApiDeleteUser, ApiUpdateUser, ApiUserList, ApiGetInvitationList, ApiCancelInvitation, ApiResendInvitation } from "../../../api-wrapper/ApiUsers";
+import { ApiCreateUser, ApiDeleteUser, ApiUpdateUser, ApiUserList, ApiGetInvitationList, ApiCancelInvitation, ApiResendInvitation, ApiToggleMockMode } from "../../../api-wrapper/ApiUsers";
 import { ApiConfigList } from "../../../api-wrapper/ApiAdsConfig"
 import Filter from "../../../helper/filter/Filter";
 import { useEffect, useState, useRef, useContext } from "react";
@@ -244,6 +244,17 @@ const Users = () => {
       setRefreshSideBar(prev => prev + 1);
     } else {
       Toast.error(res?.message || "Failed to cancel invitation");
+    }
+  };
+
+  const handleToggleUserMockMode = async (row) => {
+    const nextState = !row.isMockUser;
+    const res = await ApiToggleMockMode({ userId: row._id, isMockUser: nextState });
+    if (res?.isSuccess) {
+      Toast.success(res.message || (nextState ? "Mock Testing Mode enabled" : "Mock Testing Mode disabled"));
+      ApiListing();
+    } else {
+      Toast.error(res?.message || "Failed to update Mock Testing Mode");
     }
   };
 
@@ -612,6 +623,35 @@ const Users = () => {
       wrapText: true,
       autoHeight: true,
       cellRenderer: (params) => params.data?.phoneNumber || params.data?.companyPhoneNumber || "-",
+    },
+    {
+      headerName: "Mock Data Mode",
+      field: "isMockUser",
+      title: "Mock Data Mode",
+      minWidth: 150,
+      sortable: true,
+      resizable: true,
+      cellRenderer: (params) => {
+        const row = params.data;
+        if (!row) return null;
+        const active = Boolean(row.isMockUser);
+        return (
+          <div className="flex items-center py-1.5">
+            <button
+              type="button"
+              onClick={() => handleToggleUserMockMode(row)}
+              className={`px-3 py-1 rounded-full text-[11px] font-bold flex items-center gap-1.5 border transition-all ${
+                active
+                  ? "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-700"
+                  : "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700"
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${active ? "bg-amber-500" : "bg-slate-400"}`} />
+              <span>{active ? "Mock ON" : "Mock OFF"}</span>
+            </button>
+          </div>
+        );
+      },
     },
     {
       headerName: "List of Organization",

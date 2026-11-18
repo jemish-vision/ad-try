@@ -20,6 +20,13 @@ import { PermissionCheck } from "../../../helper/permission/PermissionCheck";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Sparkles, Sliders, RefreshCw } from "lucide-react";
 import { FiInfo } from "react-icons/fi";
+import {
+  RECOMMENDATION_FILTER_OPTIONS,
+  RecommendationFilterDropdown,
+  RecommendationAppliedFilters,
+  RecommendationFilterModal,
+  buildRecommendationAppliedFilters,
+} from "./RecommendationFilterBar";
 
 // ─── Action label mapping for display ─────────────────────────────────────────
 const ACTION_LABEL_MAP = {
@@ -35,6 +42,8 @@ const ACTION_LABEL_MAP = {
   PauseTargeting: "Pause Targeting",
   AddAsTargeting: "Add as Targeting",
   AddAsNegativeTargeting: "Add as Negative Targeting",
+  EnableProduct: "Enabled Product",
+  DisableProduct: "Disabled Product",
 };
 
 const PLACEMENT_LABEL_MAP = {
@@ -61,9 +70,12 @@ function formatDate(iso) {
 }
 
 function getActionDetails(actions, gridName) {
-  if (!actions || actions.length === 0) return [];
+  const validActions = Array.isArray(actions)
+    ? actions.filter((a) => a && a.actionName && String(a.actionName).toLowerCase() !== "none")
+    : [];
+  if (validActions.length === 0) return [];
 
-  return actions.map((action, idx) => {
+  return validActions.map((action, idx) => {
     const label = ACTION_LABEL_MAP[action.actionName] || action.actionName;
     let actionText = label;
 
@@ -455,6 +467,53 @@ function Recommendation() {
   const [editId, setEditId] = useState();
   const [editData, setEditData] = useState();
 
+  // Filter states for Recommendations tab
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [selectedFilterOption, setSelectedFilterOption] = useState(null);
+  const [appliedGridNames, setAppliedGridNames] = useState([]);
+  const [appliedActions, setAppliedActions] = useState([]);
+  const [tempGridNames, setTempGridNames] = useState([]);
+  const [tempActions, setTempActions] = useState([]);
+
+  const appliedFilters = useMemo(
+    () => buildRecommendationAppliedFilters(appliedGridNames, appliedActions, t),
+    [appliedGridNames, appliedActions, t]
+  );
+
+  const handleFilterOptionClick = (option) => {
+    setTempGridNames([...appliedGridNames]);
+    setTempActions([...appliedActions]);
+    setSelectedFilterOption(option);
+    setShowFilterModal(true);
+  };
+
+  const handleApplyFilter = () => {
+    if (selectedFilterOption?.value === "AffectedParameter") {
+      setAppliedGridNames([...tempGridNames]);
+    } else if (selectedFilterOption?.value === "Action") {
+      setAppliedActions([...tempActions]);
+    }
+    setShowFilterModal(false);
+  };
+
+  const handleRemoveFilter = (filterId) => {
+    if (filterId === "AffectedParameter") {
+      setAppliedGridNames([]);
+    } else if (filterId === "Action") {
+      setAppliedActions([]);
+    }
+  };
+
+  const handleClearAllFilters = () => {
+    setAppliedGridNames([]);
+    setAppliedActions([]);
+  };
+
+  const handleEditFilter = (filter) => {
+    const opt = RECOMMENDATION_FILTER_OPTIONS.find((o) => o.value === filter.type);
+    if (opt) handleFilterOptionClick(opt);
+  };
+
   // Fetch all recommendations
   const fetchRecommendations = useCallback(async () => {
     if (!selectedCampaign?.profileSendID) return;
@@ -562,10 +621,25 @@ function Recommendation() {
 
   const isFirstLoad = loading && recommendations.length === 0;
 
-  // Sort recommendations by createdAt (newest first)
-  const sortedRecommendations = [...recommendations].sort((a, b) =>
-    new Date(b.createdAt) - new Date(a.createdAt)
-  );
+  // Sort and filter recommendations by createdAt (newest first), Affected Parameter, and Action
+  const sortedRecommendations = useMemo(() => {
+    const filtered = recommendations.filter((rec) => {
+      if (appliedGridNames.length > 0 && !appliedGridNames.includes(rec.gridName)) {
+        return false;
+      }
+      if (appliedActions.length > 0) {
+        const validActs = Array.isArray(rec.actions)
+          ? rec.actions.filter((a) => a && a.actionName && String(a.actionName).toLowerCase() !== "none")
+          : [];
+        const matchesNone = appliedActions.includes("None") && validActs.length === 0;
+        const matchesAction = validActs.some((a) => appliedActions.includes(a.actionName));
+        if (!matchesNone && !matchesAction) return false;
+      }
+      return true;
+    });
+
+    return [...filtered].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }, [recommendations, appliedGridNames, appliedActions]);
 
   return (
     <div className="placement-tracking-container" id="recommandation-page">
@@ -633,7 +707,12 @@ function Recommendation() {
                     {t("Actionable insights based on your campaign performance")}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <RecommendationFilterDropdown
+                    appliedFilters={appliedFilters}
+                    onSelectOption={handleFilterOptionClick}
+                    id="recommendation-filter-by-btn"
+                  />
                   <button
                     id="recommendation-page-refresh-btn"
                     className="customize-button m-0 gap-1.5 flex items-center"
@@ -658,6 +737,15 @@ function Recommendation() {
                   )}
                 </div>
               </div>
+
+              {/* Applied Filter Chips */}
+              <RecommendationAppliedFilters
+                appliedFilters={appliedFilters}
+                onRemove={handleRemoveFilter}
+                onClearAll={handleClearAllFilters}
+                onEdit={handleEditFilter}
+                id="recommendations-applied-filters"
+              />
 
               {/* Informational Note */}
               <div
@@ -711,18 +799,30 @@ function Recommendation() {
                     color: "var(--text-heading, var(--text-primary))",
                     margin: "0 0 8px 0",
                   }}>
-                    {t("No recommendations yet")}
+                    {appliedFilters.length > 0 ? t("No matching recommendations") : t("No recommendations yet")}
                   </h3>
                   <p style={{
                     fontSize: "13px",
                     color: "var(--text-secondary)",
                     maxWidth: "380px",
-                    margin: 0,
+                    margin: appliedFilters.length > 0 ? "0 0 16px 0" : 0,
                     lineHeight: "1.5",
                     opacity: 0.85
                   }}>
-                    {t("We are continuously analyzing your campaigns. Performance optimization suggestions will appear here as soon as they are identified.")}
+                    {appliedFilters.length > 0
+                      ? t("Try adjusting or clearing your filters to see more recommendations.")
+                      : t("We are continuously analyzing your campaigns. Performance optimization suggestions will appear here as soon as they are identified.")}
                   </p>
+                  {appliedFilters.length > 0 && (
+                    <button
+                      type="button"
+                      className="customize-button m-0"
+                      style={{ height: "34px", fontSize: "13px" }}
+                      onClick={handleClearAllFilters}
+                    >
+                      {t("Clear Filters")}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div>
@@ -828,6 +928,19 @@ function Recommendation() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Filter Modal */}
+      <RecommendationFilterModal
+        showFilterModal={showFilterModal}
+        handleModalClose={() => setShowFilterModal(false)}
+        selectedFilterOption={selectedFilterOption}
+        selectedGridNames={tempGridNames}
+        setSelectedGridNames={setTempGridNames}
+        selectedActions={tempActions}
+        setSelectedActions={setTempActions}
+        onApply={handleApplyFilter}
+        isDark={isDark}
+      />
     </div>
   );
 }

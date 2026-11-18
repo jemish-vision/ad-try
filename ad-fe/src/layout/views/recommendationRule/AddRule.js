@@ -38,6 +38,7 @@ const GRID_NAMES = [
   { value: 'Placement', label: 'Placement' },
   { value: 'Targeting', label: 'Targeting' },
   { value: 'Search Term', label: 'Search Term' },
+  { value: 'Products', label: 'Products' },
 ];
 
 const CONDITION_METRICS = [
@@ -96,6 +97,10 @@ const ACTION_OPTIONS = {
     { value: 'AddAsTargeting', label: 'Add as Targeting' },
     { value: 'AddAsNegativeTargeting', label: 'Add as Negative Targeting' },
   ],
+  Products: [
+    { value: 'EnableProduct', label: 'Enabled Product' },
+    { value: 'DisableProduct', label: 'Disabled Product' },
+  ],
 };
 
 const PLACEMENT_OPTIONS = [
@@ -115,13 +120,13 @@ const VALUE_TYPE_OPTIONS = [
 ];
 
 // Actions that do NOT need a numeric value (toggle-style)
-const NO_VALUE_ACTIONS = ['CampaignEnable', 'CampaignPause', 'EnableTargeting', 'PauseTargeting'];
+const NO_VALUE_ACTIONS = ['CampaignEnable', 'CampaignPause', 'EnableTargeting', 'PauseTargeting', 'EnableProduct', 'DisableProduct', 'None'];
 
 // Actions that need placement sub-field
 const PLACEMENT_ACTIONS = ['IncreaseBid', 'DecreaseBid', 'SetBid'];
 
 // Grids that allow only one action
-const SINGLE_ACTION_GRIDS = ['Campaign', 'Targeting'];
+const SINGLE_ACTION_GRIDS = ['Campaign', 'Targeting', 'Products'];
 
 // Out of Budget look-back period options
 const OOB_PERIOD_OPTIONS = [
@@ -205,6 +210,8 @@ function AddRecommendationRule({
 
     if (template.data.actions && template.data.actions.length > 0) {
       setActions(template.data.actions);
+    } else if ((template.data.conditions || []).some(c => c?.conditionType === 'Out of Budget' || c?.conditionType === 'OutOfBudget')) {
+      setActions([{ ...emptyAction(), actionName: 'None' }]);
     } else {
       setActions([emptyAction()]);
     }
@@ -238,11 +245,19 @@ function AddRecommendationRule({
         .then((res) => {
           if (res.isSuccess) {
             const d = res.data;
+            const loadedConditions = d.conditions?.length ? d.conditions : [emptyCondition()];
+            const isOob = loadedConditions.some(c => c?.conditionType === 'Out of Budget' || c?.conditionType === 'OutOfBudget');
             setRuleName(d.ruleName || '');
             setReportDate(d.reportDate || '');
             setGridName(d.gridName || '');
-            setConditions(d.conditions?.length ? d.conditions : [emptyCondition()]);
-            setActions(d.actions?.length ? d.actions : [emptyAction()]);
+            setConditions(loadedConditions);
+            setActions(
+              d.actions?.length
+                ? d.actions
+                : isOob
+                  ? [{ ...emptyAction(), actionName: 'None' }]
+                  : [emptyAction()]
+            );
             setCampaignSelectionType(d.campaignSelectionType || 'ALL');
             setCampaignIds(d.campaignIds || { SP: [], SB: [], SD: [] });
           } else {
@@ -291,20 +306,20 @@ function AddRecommendationRule({
       if (field === 'oobPeriod' && value !== 'CUSTOM') {
         updated[index].oobDays = '';
       }
+
+      if (field === 'conditionType') {
+        const nextHasOob = updated.some(c => c?.conditionType === 'Out of Budget' || c?.conditionType === 'OutOfBudget');
+        if (!nextHasOob) {
+          setActions((prevActions) => prevActions.map(a => a.actionName === 'None' ? emptyAction() : a));
+        }
+      }
+
       return updated;
     });
 
     if (field === 'conditionType' && (value === 'Out of Budget' || value === 'OutOfBudget')) {
       if (!gridName) {
         setGridName('Campaign');
-      }
-      // Clear action errors when Out of Budget is selected since actions are not required
-      if (error?.actions) {
-        setError((prev) => {
-          const nextErr = { ...prev };
-          delete nextErr.actions;
-          return nextErr;
-        });
       }
     }
 
@@ -314,7 +329,12 @@ function AddRecommendationRule({
   const addCondition = () => setConditions((prev) => [...prev, emptyCondition()]);
 
   const removeCondition = (index) => {
-    setConditions((prev) => prev.filter((_, i) => i !== index));
+    const nextConditions = conditions.filter((_, i) => i !== index);
+    setConditions(nextConditions);
+    const nextHasOob = nextConditions.some(c => c?.conditionType === 'Out of Budget' || c?.conditionType === 'OutOfBudget');
+    if (!nextHasOob) {
+      setActions((prev) => prev.map(a => a.actionName === 'None' ? emptyAction() : a));
+    }
     // Remove errors for removed condition
     if (error?.conditions) {
       const newConditions = [...error.conditions];
@@ -326,6 +346,9 @@ function AddRecommendationRule({
   // ── Action handlers ──────────────────────────────────────────────────────────
   const handleActionChange = (index, field, value) => {
     setActions((prev) => {
+      if (field === 'actionName' && value === 'None') {
+        return [{ ...emptyAction(), actionName: 'None' }];
+      }
       const updated = [...prev];
       updated[index] = { ...updated[index], [field]: value };
       if (field === 'actionName') {
@@ -392,13 +415,11 @@ function AddRecommendationRule({
       err.gridName = 'Affected parameter is required.';
     }
 
-    // Validate at least one action exists ONLY if Out of Budget condition is not present
-    if (!hasOutOfBudget) {
-      const validActions = sendData.actions.filter(action => action.actionName);
-      if (validActions.length === 0) {
-        flag = true;
-        err.actions = { general: 'At least one action is required.' };
-      }
+    // Validate at least one action is selected
+    const hasSelectedAction = actions.some(action => action.actionName);
+    if (!hasSelectedAction) {
+      flag = true;
+      err.actions = { general: 'At least one action is required.' };
     }
 
     // Validate conditions
@@ -422,41 +443,39 @@ function AddRecommendationRule({
     });
     if (conditionErrs.length) err.conditions = conditionErrs;
 
-    // Validate actions ONLY if Out of Budget condition is not present
-    if (!hasOutOfBudget) {
-      const actionErrs = [];
-      sendData.actions.forEach((a, i) => {
-        const e = {};
-        if (!a.actionName) {
-          e.actionName = 'Action is required.';
-          flag = true;
-        } else {
-          const needsValue = !NO_VALUE_ACTIONS.includes(a.actionName);
-          const needsPlacement = sendData.gridName === 'Placement';
-          const isSearchTerm = sendData.gridName === 'Search Term';
+    // Validate actions
+    const actionErrs = [];
+    actions.forEach((a, i) => {
+      const e = {};
+      if (!a.actionName) {
+        e.actionName = 'Action is required.';
+        flag = true;
+      } else if (a.actionName !== 'None') {
+        const needsValue = !NO_VALUE_ACTIONS.includes(a.actionName);
+        const needsPlacement = sendData.gridName === 'Placement';
+        const isSearchTerm = sendData.gridName === 'Search Term';
 
-          if (needsValue && !isSearchTerm) {
-            if (!a.actionValueType) { e.actionValueType = 'Value type is required.'; flag = true; }
-            if (a.actionValue === '' || a.actionValue === null || a.actionValue === undefined) {
-              e.actionValue = 'Value is required.'; flag = true;
-            }
-          }
-
-          if (needsPlacement && PLACEMENT_ACTIONS.includes(a.actionName) && !a.placementType) {
-            e.placementType = 'Placement type is required.'; flag = true;
-          }
-
-          if (isSearchTerm) {
-            if (!a.matchType) {
-              e.matchType = 'Match type is required.';
-              flag = true;
-            }
+        if (needsValue && !isSearchTerm) {
+          if (!a.actionValueType) { e.actionValueType = 'Value type is required.'; flag = true; }
+          if (a.actionValue === '' || a.actionValue === null || a.actionValue === undefined) {
+            e.actionValue = 'Value is required.'; flag = true;
           }
         }
-        if (Object.keys(e).length) actionErrs[i] = e;
-      });
-      if (actionErrs.length) err.actions = { ...err.actions, details: actionErrs };
-    }
+
+        if (needsPlacement && PLACEMENT_ACTIONS.includes(a.actionName) && !a.placementType) {
+          e.placementType = 'Placement type is required.'; flag = true;
+        }
+
+        if (isSearchTerm) {
+          if (!a.matchType) {
+            e.matchType = 'Match type is required.';
+            flag = true;
+          }
+        }
+      }
+      if (Object.keys(e).length) actionErrs[i] = e;
+    });
+    if (actionErrs.length) err.actions = { ...err.actions, details: actionErrs };
 
     return { flag, err };
   };
@@ -486,6 +505,7 @@ function AddRecommendationRule({
     e.preventDefault();
 
     const query = buildRecommendationQuery(conditions);
+    const effectiveActions = actions.filter(action => action.actionName && action.actionName !== 'None');
 
     const sendData = {
       ruleName,
@@ -493,7 +513,7 @@ function AddRecommendationRule({
       gridName,
       profileId: profileId?.value,
       conditions,
-      actions: hasOutOfBudget ? [] : actions.filter(action => action.actionName),
+      actions: effectiveActions,
       query,
       campaignSelectionType,
       campaignIds,
@@ -510,6 +530,7 @@ function AddRecommendationRule({
   // ── Final Save with Campaign Selection ───────────────────────────────────────
   const handleSaveRuleWithCampaigns = ({ campaignSelectionType: selectedType, campaignIds: selectedCampaignIds }) => {
     const query = buildRecommendationQuery(conditions);
+    const effectiveActions = actions.filter(action => action.actionName && action.actionName !== 'None');
 
     const sendData = {
       ruleName,
@@ -517,7 +538,7 @@ function AddRecommendationRule({
       gridName,
       profileId: profileId?.value,
       conditions,
-      actions: hasOutOfBudget ? [] : actions.filter(action => action.actionName),
+      actions: effectiveActions,
       query,
       campaignSelectionType: selectedType,
       campaignIds: selectedCampaignIds,
@@ -557,10 +578,21 @@ function AddRecommendationRule({
     return e ? <p className="error">{e}</p> : null;
   };
 
-  const currentActions = ACTION_OPTIONS[gridName] || [];
+  const currentActions = useMemo(() => {
+    const baseActions = ACTION_OPTIONS[gridName] || [];
+    if (hasOutOfBudget && baseActions.length > 0) {
+      return [{ value: 'None', label: 'None' }, ...baseActions];
+    }
+    return baseActions;
+  }, [gridName, hasOutOfBudget]);
+
+  const isNoneActionSelected = useMemo(() => {
+    return actions.some(a => a.actionName === 'None');
+  }, [actions]);
 
   const showAddAction = () => {
     if (!gridName) return false;
+    if (isNoneActionSelected) return false;
     if (SINGLE_ACTION_GRIDS.includes(gridName)) return false;
     if (gridName === 'Placement') {
       return actions.length < PLACEMENT_OPTIONS.length;
@@ -568,7 +600,7 @@ function AddRecommendationRule({
     if (gridName === 'Search Term') {
       return actions.length < 4;
     }
-    return actions.length < currentActions.length;
+    return actions.length < (ACTION_OPTIONS[gridName]?.length || 0);
   };
 
   const isCombinationDisabled = (index, actionValue, matchValue) => {
@@ -810,206 +842,207 @@ function AddRecommendationRule({
 
           <div className="add_border" />
 
-          {/* Actions Section or Out of Budget Note */}
-          {hasOutOfBudget ? (
-            <div className="mb-4 p-4 rounded-xl bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800/60 flex items-center gap-3">
-              <FiInfo className="w-5 h-5 text-sky-500 shrink-0" />
-              <div>
-                <p className="text-xs font-bold text-sky-800 dark:text-sky-200">
-                  {gridName === 'Targeting'
-                    ? t("Note: This condition was only for displaying targets whose campaign was out of budget. It will not trigger any actions.")
-                    : gridName === 'Placement'
-                      ? t("Note: This condition was only for displaying placements whose campaign was out of budget. It will not trigger any actions.")
-                      : t("Note: This condition was only for displaying campaigns that were out of budget. It will not trigger any actions.")}
-                </p>
-                <p className="text-[11px] text-sky-600 dark:text-sky-400 mt-0.5">
-                  {gridName === 'Targeting'
-                    ? t("Actions are hidden and not required when Out of Budget condition is added. The recommendation will display only targets whose campaign status is out of budget.")
-                    : gridName === 'Placement'
-                      ? t("Actions are hidden and not required when Out of Budget condition is added. The recommendation will display only placements whose campaign status is out of budget.")
-                      : t("Actions are hidden and not required when Out of Budget condition is added. The recommendation will display only campaigns whose status is out of budget.")}
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="mb-4">
-              <div className="flex justify-between items-center mb-3">
-                <div className="section-title">
-                  {t("Actions")} <span className="text-danger ml-1">*</span>
-                  {SINGLE_ACTION_GRIDS.includes(gridName) && (
-                    <span className="text-gray-500 ml-2" style={{ fontSize: '12px' }}>
-                      ({t("Only one action allowed for")} {t(gridName)})
-                    </span>
-                  )}
-                  {gridName === 'Search Term' && (
-                    <span className="text-gray-500 ml-2" style={{ fontSize: '12px' }}>
-                      ({t("Max 4 actions")})
-                    </span>
-                  )}
-                </div>
-                {gridName && showAddAction() && (
-                  <Button type="button" variant="outline" className="h-8 gap-1" onClick={addAction}>
-                    <AiOutlinePlus size={14} /> {t("Add Action")}
-                  </Button>
+          {/* Actions Section */}
+          <div className="mb-4">
+            <div className="flex justify-between items-center mb-3">
+              <div className="section-title">
+                {t("Actions")} <span className="text-danger ml-1">*</span>
+                {SINGLE_ACTION_GRIDS.includes(gridName) && (
+                  <span className="text-gray-500 ml-2" style={{ fontSize: '12px' }}>
+                    ({t("Only one action allowed for")} {t(gridName)})
+                  </span>
+                )}
+                {gridName === 'Search Term' && (
+                  <span className="text-gray-500 ml-2" style={{ fontSize: '12px' }}>
+                    ({t("Max 4 actions")})
+                  </span>
                 )}
               </div>
-
-              {!gridName && (
-                <p className="text-gray-500" style={{ fontSize: '13px', marginBottom: '8px' }}>
-                  {t("Please select an Affected Parameter to configure actions.")}
-                </p>
+              {gridName && showAddAction() && (
+                <Button type="button" variant="outline" className="h-8 gap-1" onClick={addAction}>
+                  <AiOutlinePlus size={14} /> {t("Add Action")}
+                </Button>
               )}
+            </div>
 
-              {gridName && actions.map((action, index) => {
-                const needsValue = action.actionName && !NO_VALUE_ACTIONS.includes(action.actionName);
-                const isPlacementGrid = gridName === 'Placement';
-                const isSearchTermGrid = gridName === 'Search Term';
-                const isPlacementBidAction = isPlacementGrid && PLACEMENT_ACTIONS.includes(action.actionName);
-                const isSingleActionGrid = SINGLE_ACTION_GRIDS.includes(gridName);
+            {!gridName && (
+              <p className="text-gray-500" style={{ fontSize: '13px', marginBottom: '8px' }}>
+                {t("Please select an Affected Parameter to configure actions.")}
+              </p>
+            )}
 
-                return (
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4 mb-2 items-start w-full" key={index}>
-                    <div className="col-span-1 md:col-span-3">
-                      <Select
-                        value={action.actionName || undefined}
-                        onValueChange={(val) => handleActionChange(index, 'actionName', val || '')}
-                      >
-                        <SelectTrigger className={`w-full ${error?.actions?.details?.[index]?.actionName ? 'border-red-500' : ''}`}>
-                          <SelectValue placeholder={t("Select")} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {currentActions.map((a) => (
-                            <SelectItem
-                              key={a.value}
-                              value={a.value}
-                              disabled={
-                                isSearchTermGrid && action.matchType &&
+            {gridName && actions.map((action, index) => {
+              const needsValue = action.actionName && !NO_VALUE_ACTIONS.includes(action.actionName);
+              const isPlacementGrid = gridName === 'Placement';
+              const isSearchTermGrid = gridName === 'Search Term';
+              const isPlacementBidAction = isPlacementGrid && PLACEMENT_ACTIONS.includes(action.actionName);
+              const isSingleActionGrid = SINGLE_ACTION_GRIDS.includes(gridName);
+
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 mb-2 items-start w-full" key={index}>
+                  <div className="col-span-1 md:col-span-3">
+                    <Select
+                      value={action.actionName || undefined}
+                      onValueChange={(val) => handleActionChange(index, 'actionName', val || '')}
+                    >
+                      <SelectTrigger className={`w-full ${error?.actions?.details?.[index]?.actionName ? 'border-red-500' : ''}`}>
+                        <SelectValue placeholder={t("Select")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {currentActions.map((a) => (
+                          <SelectItem
+                            key={a.value}
+                            value={a.value}
+                            disabled={
+                              (a.value === 'None' && actions.length > 1) ||
+                              (isSearchTermGrid && action.matchType &&
                                 actions.some((ac, i) =>
                                   i !== index &&
                                   ac.actionName === a.value &&
                                   ac.matchType === action.matchType
-                                )
-                              }
+                                ))
+                            }
+                          >
+                            {t(a.label)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {actionErr(index, 'actionName')}
+                  </div>
+
+                  {/* Placement sub-select */}
+                  {isPlacementBidAction && (
+                    <div className="col-span-1 md:col-span-3">
+                      <Select
+                        value={action.placementType || undefined}
+                        onValueChange={(val) => handleActionChange(index, 'placementType', val || '')}
+                      >
+                        <SelectTrigger className={`w-full ${error?.actions?.details?.[index]?.placementType ? 'border-red-500' : ''}`}>
+                          <SelectValue placeholder={t("Select Placement")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PLACEMENT_OPTIONS.map((p) => (
+                            <SelectItem
+                              key={p.value}
+                              value={p.value}
+                              disabled={actions.some((ac, i) => i !== index && ac.placementType === p.value)}
                             >
-                              {t(a.label)}
+                              {t(p.label)}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                      {actionErr(index, 'actionName')}
+                      {actionErr(index, 'placementType')}
                     </div>
+                  )}
 
-                    {/* Placement sub-select */}
-                    {isPlacementBidAction && (
-                      <div className="col-span-1 md:col-span-3">
-                        <Select
-                          value={action.placementType || undefined}
-                          onValueChange={(val) => handleActionChange(index, 'placementType', val || '')}
-                        >
-                          <SelectTrigger className={`w-full ${error?.actions?.details?.[index]?.placementType ? 'border-red-500' : ''}`}>
-                            <SelectValue placeholder={t("Select Placement")} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {PLACEMENT_OPTIONS.map((p) => (
-                              <SelectItem
-                                key={p.value}
-                                value={p.value}
-                                disabled={actions.some((ac, i) => i !== index && ac.placementType === p.value)}
-                              >
-                                {t(p.label)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {actionErr(index, 'placementType')}
-                      </div>
-                    )}
-
-                    {/* Match Type */}
-                    {isSearchTermGrid && action.actionName && (
-                      <div className="col-span-1 md:col-span-3">
-                        <Select
-                          value={action.matchType || undefined}
-                          onValueChange={(val) => handleActionChange(index, 'matchType', val || '')}
-                        >
-                          <SelectTrigger className={`w-full ${error?.actions?.details?.[index]?.matchType ? 'border-red-500' : ''}`}>
-                            <SelectValue placeholder={t("Select Match Type")} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {MATCH_TYPE_OPTIONS.map((m) => (
-                              <SelectItem
-                                key={m.value}
-                                value={m.value}
-                                disabled={isCombinationDisabled(index, action.actionName, m.value)}
-                              >
-                                {t(m.label)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {actionErr(index, 'matchType')}
-                      </div>
-                    )}
-
-                    {/* Value Type */}
-                    {needsValue && !isSearchTermGrid && (
-                      <div className="col-span-1 md:col-span-2">
-                        <Select
-                          value={action.actionValueType || undefined}
-                          onValueChange={(val) => handleActionChange(index, 'actionValueType', val || '')}
-                        >
-                          <SelectTrigger className={`w-full ${error?.actions?.details?.[index]?.actionValueType ? 'border-red-500' : ''}`}>
-                            <SelectValue placeholder={t("Select Type")} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {VALUE_TYPE_OPTIONS.map((opt) => (
-                              <SelectItem key={opt.value} value={opt.value}>{t(opt.label)}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {actionErr(index, 'actionValueType')}
-                      </div>
-                    )}
-
-                    {/* Numeric Value */}
-                    {needsValue && !isSearchTermGrid && (
-                      <div className="col-span-1 md:col-span-3">
-                        <div className="flex rounded-md shadow-sm">
-                          <Input
-                            type="number"
-                            name={`actions.${index}.actionValue`}
-                            className={`w-full ${error?.actions?.details?.[index]?.actionValue ? 'border-red-500 focus-visible:ring-red-500' : ''} ${action.actionValueType === "Percentage" ? 'rounded-r-none' : ''}`}
-                            placeholder={t("Value")}
-                            value={action.actionValue}
-                            onChange={(e) => {
-                              const val = handlePercentageInput(e.target.value, action.actionValueType);
-                              handleActionChange(index, 'actionValue', val);
-                            }}
-                          />
-                          {action.actionValueType === "Percentage" && (
-                            <span className={`flex items-center justify-center px-3 border border-l-0 rounded-r-md text-[14px] ${error?.actions?.details?.[index]?.actionValue ? (isDark ? 'bg-red-500/10 border-red-500 text-red-500' : 'bg-red-50 border-red-400 text-red-500') : (isDark ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-100 border-gray-200 text-slate-500')}`}>%</span>
-                          )}
-                        </div>
-                        {actionErr(index, 'actionValue')}
-                      </div>
-                    )}
-
-                    <div className="col-span-1 md:col-span-1 flex items-center gap-2 mt-1">
-                      {!isSingleActionGrid && actions.length > 1 && (
-                        <div className="delete_icon" onClick={() => removeAction(index)}>
-                          <AiFillDelete size={20} />
-                        </div>
-                      )}
+                  {/* Match Type */}
+                  {isSearchTermGrid && action.actionName && action.actionName !== 'None' && (
+                    <div className="col-span-1 md:col-span-3">
+                      <Select
+                        value={action.matchType || undefined}
+                        onValueChange={(val) => handleActionChange(index, 'matchType', val || '')}
+                      >
+                        <SelectTrigger className={`w-full ${error?.actions?.details?.[index]?.matchType ? 'border-red-500' : ''}`}>
+                          <SelectValue placeholder={t("Select Match Type")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {MATCH_TYPE_OPTIONS.map((m) => (
+                            <SelectItem
+                              key={m.value}
+                              value={m.value}
+                              disabled={isCombinationDisabled(index, action.actionName, m.value)}
+                            >
+                              {t(m.label)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {actionErr(index, 'matchType')}
                     </div>
+                  )}
+
+                  {/* Value Type */}
+                  {needsValue && !isSearchTermGrid && (
+                    <div className="col-span-1 md:col-span-2">
+                      <Select
+                        value={action.actionValueType || undefined}
+                        onValueChange={(val) => handleActionChange(index, 'actionValueType', val || '')}
+                      >
+                        <SelectTrigger className={`w-full ${error?.actions?.details?.[index]?.actionValueType ? 'border-red-500' : ''}`}>
+                          <SelectValue placeholder={t("Select Type")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {VALUE_TYPE_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>{t(opt.label)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {actionErr(index, 'actionValueType')}
+                    </div>
+                  )}
+
+                  {/* Numeric Value */}
+                  {needsValue && !isSearchTermGrid && (
+                    <div className="col-span-1 md:col-span-3">
+                      <div className="flex rounded-md shadow-sm">
+                        <Input
+                          type="number"
+                          name={`actions.${index}.actionValue`}
+                          className={`w-full ${error?.actions?.details?.[index]?.actionValue ? 'border-red-500 focus-visible:ring-red-500' : ''} ${action.actionValueType === "Percentage" ? 'rounded-r-none' : ''}`}
+                          placeholder={t("Value")}
+                          value={action.actionValue}
+                          onChange={(e) => {
+                            const val = handlePercentageInput(e.target.value, action.actionValueType);
+                            handleActionChange(index, 'actionValue', val);
+                          }}
+                        />
+                        {action.actionValueType === "Percentage" && (
+                          <span className={`flex items-center justify-center px-3 border border-l-0 rounded-r-md text-[14px] ${error?.actions?.details?.[index]?.actionValue ? (isDark ? 'bg-red-500/10 border-red-500 text-red-500' : 'bg-red-50 border-red-400 text-red-500') : (isDark ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-100 border-gray-200 text-slate-500')}`}>%</span>
+                        )}
+                      </div>
+                      {actionErr(index, 'actionValue')}
+                    </div>
+                  )}
+
+                  <div className="col-span-1 md:col-span-1 flex items-center gap-2 mt-1">
+                    {!isSingleActionGrid && actions.length > 1 && (
+                      <div className="delete_icon" onClick={() => removeAction(index)}>
+                        <AiFillDelete size={20} />
+                      </div>
+                    )}
                   </div>
-                );
-              })}
+                </div>
+              );
+            })}
 
-              {error?.actions?.general && (
-                <p className="error" style={{ marginBottom: '10px' }}>{error.actions.general}</p>
-              )}
-            </div>
-          )}
+            {error?.actions?.general && (
+              <p className="error" style={{ marginBottom: '10px' }}>{error.actions.general}</p>
+            )}
+
+            {hasOutOfBudget && isNoneActionSelected && (
+              <div className="mt-3 p-4 rounded-xl bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800/60 flex items-center gap-3">
+                <FiInfo className="w-5 h-5 text-sky-500 shrink-0" />
+                <div>
+                  <p className="text-xs font-bold text-sky-800 dark:text-sky-200">
+                    {gridName === 'Targeting'
+                      ? t("Note: This condition was only for displaying targets whose campaign was out of budget. It will not trigger any actions.")
+                      : gridName === 'Placement'
+                        ? t("Note: This condition was only for displaying placements whose campaign was out of budget. It will not trigger any actions.")
+                        : t("Note: This condition was only for displaying campaigns that were out of budget. It will not trigger any actions.")}
+                  </p>
+                  <p className="text-[11px] text-sky-600 dark:text-sky-400 mt-0.5">
+                    {gridName === 'Targeting'
+                      ? t("No action will happen when None is selected. The recommendation will display only targets whose campaign status is out of budget.")
+                      : gridName === 'Placement'
+                        ? t("No action will happen when None is selected. The recommendation will display only placements whose campaign status is out of budget.")
+                        : t("No action will happen when None is selected. The recommendation will display only campaigns whose status is out of budget.")}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Footer Buttons */}
@@ -1062,7 +1095,7 @@ function AddRecommendationRule({
         initialCampaignIds={campaignIds}
         profileId={profileId?.value}
         gridName={gridName}
-        actions={actions.filter(a => a.actionName)}
+        actions={actions.filter(a => a.actionName && a.actionName !== 'None')}
         ruleName={ruleName}
       />
     </div>

@@ -104,7 +104,8 @@ exports.login = async (req, res) => {
         role: findEmail.roleId.roleName,
         isGoogleConnected: googleConnected ? true : false,
         email: findEmail.email,
-        fullName: findEmail.fullName
+        fullName: findEmail.fullName,
+        isMockUser: Boolean(findEmail.isMockUser),
       });
     } else {
       await auditLogSchema.create({
@@ -181,7 +182,8 @@ exports.verify2faLogin = async (req, res) => {
       role: findEmail.roleId.roleName,
       isGoogleConnected: !!googleConnected,
       email: findEmail.email,
-      fullName: findEmail.fullName
+      fullName: findEmail.fullName,
+      isMockUser: Boolean(findEmail.isMockUser),
     });
 
   } catch (error) {

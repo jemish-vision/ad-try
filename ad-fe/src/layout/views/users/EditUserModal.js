@@ -95,6 +95,7 @@ export default function UserModal({
         phoneNumber: user?.phoneNumber || "",
         companyName: user?.companyName || "",
         roleId: user?.roleId ?? null,
+        isMockUser: Boolean(user?.isMockUser),
     };
 
     const profileInitialValues = {
@@ -241,6 +242,7 @@ export default function UserModal({
                         <Formik
                             initialValues={{
                                 roleId: user?.roleId ?? null,
+        isMockUser: Boolean(user?.isMockUser),
                                 profileAccess: user?.profileAccess?.map((profile) => `${profile?.configId} || ${profile?.profileId}`) || [],
                             }}
                             validationSchema={Yup.object().shape({
@@ -339,7 +341,7 @@ export default function UserModal({
                             enableReinitialize
                             onSubmit={handleUserSubmit}
                         >
-                            {({ values, errors, touched, handleChange, handleSubmit }) => (
+                            {({ values, errors, touched, handleChange, handleSubmit, setFieldValue }) => (
                                 <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="flex flex-col h-full overflow-hidden">
                                     <div className="modal-body overflow-y-auto p-6 flex-1">
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -378,6 +380,25 @@ export default function UserModal({
                                                     value={values.email}
                                                     disabled={true}
                                                     className="shadcn-input opacity-70 cursor-not-allowed bg-slate-100 dark:bg-slate-800"
+                                                />
+                                            </div>
+
+                                            <div id="user-mock-mode-field" className="md:col-span-2 flex items-center justify-between p-3.5 rounded-xl border border-amber-200 dark:border-amber-800/50 bg-amber-50/40 dark:bg-amber-900/10">
+                                                <div>
+                                                    <label className="text-[12px] font-bold text-[#0f172a] dark:text-[#f8fafc] block">{t("Mock Testing Data Mode (isMockUser)")}</label>
+                                                    <p className="text-[11px] text-[#64748b] dark:text-[#94a3b8] mt-0.5">{t("Enable sample testing data across Campaigns, Targeting, Search Terms, Placement, Keyword Analysis, Orders, Products, Coupons, Deals, and Inventory.")}</p>
+                                                </div>
+                                                <input
+                                                    type="checkbox"
+                                                    name="isMockUser"
+                                                    checked={Boolean(values.isMockUser)}
+                                                    onChange={(e) => setFieldValue("isMockUser", e.target.checked)}
+                                                    className="w-4 h-4 accent-amber-500 cursor-pointer"
+                                                />
+                                            </div>
+
+                                            <div className="hidden">
+                                                <input
                                                 />
                                             </div>
 
@@ -509,6 +530,20 @@ export default function UserModal({
                                                         {touched.phoneNumber && !!errors.phoneNumber && (
                                                             <div className="text-red-500 text-xs mt-1 font-medium">{errors.phoneNumber}</div>
                                                         )}
+                                                    </div>
+
+                                                    <div id="user-mock-mode-field-general" className="md:col-span-2 flex items-center justify-between p-3.5 rounded-xl border border-amber-200 dark:border-amber-800/50 bg-amber-50/40 dark:bg-amber-900/10">
+                                                        <div>
+                                                            <label className="text-[12px] font-bold text-[#0f172a] dark:text-[#f8fafc] block">{t("Mock Testing Data Mode (isMockUser)")}</label>
+                                                            <p className="text-[11px] text-[#64748b] dark:text-[#94a3b8] mt-0.5">{t("Enable sample testing data across Campaigns, Targeting, Search Terms, Placement, Keyword Analysis, Orders, Products, Coupons, Deals, and Inventory.")}</p>
+                                                        </div>
+                                                        <input
+                                                            type="checkbox"
+                                                            name="isMockUser"
+                                                            checked={Boolean(values.isMockUser)}
+                                                            onChange={(e) => setFieldValue("isMockUser", e.target.checked)}
+                                                            className="w-4 h-4 accent-amber-500 cursor-pointer"
+                                                        />
                                                     </div>
 
                                                     <div id="user-role-field">

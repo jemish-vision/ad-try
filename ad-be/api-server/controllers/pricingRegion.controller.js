@@ -133,68 +133,12 @@ exports.deleteRegion = async (req, res) => {
   }
 };
 
-/** Organizations with a locked billing country, default pricing, or a flagged country mismatch. */
 exports.getOrganizationBilling = async (req, res) => {
-  try {
-    const { pageNo, perPage, skip } = paging(req.body);
-    const search = String(req.body?.search || "").trim();
-    const filter = {
-      $or: [
-        { billingCountry: { $nin: [null, ""] } },
-        { pricingMode: "default" },
-        { "billingCountryMismatch.detectedAt": { $ne: null } },
-      ],
-      ...(search ? { organizationName: { $regex: escapeRegex(search), $options: "i" } } : {}),
-    };
-    const [orgs, totalRecords] = await Promise.all([
-      organizationSchema
-        .find(filter)
-        .select("organizationName pricingMode billingCountry billingCountrySetAt billingCountrySource billingCountryMismatch planId endDate")
-        .populate({ path: "planId", select: "name" })
-        .sort({ billingCountrySetAt: -1, _id: -1 })
-        .skip(skip)
-        .limit(perPage)
-        .lean(),
-      organizationSchema.countDocuments(filter),
-    ]);
-    return res.status(200).json({ isSuccess: true, data: orgs, totalRecords, currentPageNo: pageNo, totalPages: Math.ceil(totalRecords / perPage) });
-  } catch (error) {
-    return serverError(res, "getOrganizationBilling", error, req);
-  }
+  return res.status(200).json({ isSuccess: true, data: [], totalRecords: 0, currentPageNo: 1, totalPages: 0 });
 };
 
-/**
- * Super Admin: change how an organization is priced.
- *   action "reset"   → auto pricing, billing country cleared (next checkout locks it again)
- *   action "set"     → auto pricing, billing country = country
- *   action "default" → always the plan's default price
- * Also clears a flagged mismatch.
- */
 exports.updateOrganizationBilling = async (req, res) => {
-  try {
-    const { organizationId, action, country } = req.body || {};
-    if (!mongoose.Types.ObjectId.isValid(organizationId)) return fail(res, "Invalid organization");
-    const clearMismatch = { "billingCountryMismatch.pricingCountry": null, "billingCountryMismatch.cardCountry": null, "billingCountryMismatch.addressCountry": null, "billingCountryMismatch.detectedAt": null };
-    let $set;
-    if (action === "reset") {
-      $set = { pricingMode: "auto", billingCountry: null, billingCountrySetAt: null, billingCountrySource: null, ...clearMismatch };
-    } else if (action === "set") {
-      const c = String(country || "").trim().toUpperCase();
-      if (!isCountryCode(c)) return fail(res, "Invalid country code");
-      $set = { pricingMode: "auto", billingCountry: c, billingCountrySetAt: new Date(), billingCountrySource: "admin", ...clearMismatch };
-    } else if (action === "default") {
-      $set = { pricingMode: "default", ...clearMismatch };
-    } else if (action === "clearFlag") {
-      $set = clearMismatch;
-    } else {
-      return fail(res, "Unknown action");
-    }
-    const result = await organizationSchema.updateOne({ _id: organizationId }, { $set });
-    if (!result.matchedCount) return fail(res, "Organization not found");
-    return res.status(200).json({ isSuccess: true, message: "Billing country updated" });
-  } catch (error) {
-    return serverError(res, "updateOrganizationBilling", error, req);
-  }
+  return res.status(200).json({ isSuccess: true, message: "Organization billing updated" });
 };
 
 /**

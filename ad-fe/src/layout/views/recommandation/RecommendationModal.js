@@ -351,12 +351,34 @@ const SEARCH_TERM_COLUMNS = [
     { field: "_history", headerName: "History", minWidth: 110, width: 130, maxWidth: 160, pinned: "right", suppressMovable: true, sortable: false, resizable: true, filter: false, cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" }, cellRenderer: "historyActionCell" },
 ];
 
+const PRODUCTS_COLUMNS = [
+    { field: "campaignName", headerName: "Campaign Name", minWidth: 180, flex: 1, cellRenderer: "campaignNameCell" },
+    TAG_COLUMN,
+    { field: "campaignStatus", headerName: "Campaign Status", minWidth: 110, maxWidth: 130, cellRenderer: "statusCell" },
+    { field: "adGroupName", headerName: "Ad Group Name", minWidth: 160, flex: 1 },
+    { field: "adGroupStatus", headerName: "Ad Group Status", minWidth: 110, maxWidth: 130, cellRenderer: "statusCell" },
+    { field: "asins", headerName: "ASIN", minWidth: 120 },
+    { field: "sku", headerName: "SKU", minWidth: 130 },
+    { field: "productName", headerName: "Product Name", minWidth: 180, flex: 1 },
+    { field: "productStatus", headerName: "Status", minWidth: 110, maxWidth: 140, cellRenderer: "statusCell" },
+    { field: "impressions", headerName: "Impressions", minWidth: 110, cellRenderer: "numberCell" },
+    { field: "clicks", headerName: "Clicks", minWidth: 90, cellRenderer: "numberCell" },
+    { field: "spend", headerName: "Spend", minWidth: 100, cellRenderer: "currencyCell" },
+    { field: "orders", headerName: "Purchases", minWidth: 90, cellRenderer: "numberCell" },
+    { field: "sales", headerName: "Sales", minWidth: 100, cellRenderer: "currencyCell" },
+    { field: "acos", headerName: "ACoS", minWidth: 90, maxWidth: 100, cellRenderer: "acosCell" },
+    { field: "roas", headerName: "ROAS", minWidth: 90, maxWidth: 100, cellRenderer: "roasCell" },
+    { field: "cvr", headerName: "CVR", minWidth: 90, maxWidth: 100, cellRenderer: "cvrCell" },
+    { field: "_history", headerName: "History", minWidth: 110, width: 130, maxWidth: 160, pinned: "right", suppressMovable: true, sortable: false, resizable: true, filter: false, cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" }, cellRenderer: "historyActionCell" },
+];
+
 // ─── Column Configurations by Grid Type ───────────────────────────────────────
 const GRID_COLUMN_CONFIG = {
     Campaign: CAMPAIGN_COLUMNS,
     Placement: PLACEMENT_COLUMNS,
     Targeting: TARGETING_COLUMNS,
     "Search Term": SEARCH_TERM_COLUMNS,
+    Products: PRODUCTS_COLUMNS,
 };
 
 // Default columns if grid type not found
@@ -497,6 +519,8 @@ const ACTION_LABEL_MAP = {
     PauseTargeting: "Pause Targeting",
     AddAsTargeting: "Add as Targeting",
     AddAsNegativeTargeting: "Add as Negative Targeting",
+    EnableProduct: "Enabled Product",
+    DisableProduct: "Disabled Product",
 };
 
 const PLACEMENT_LABEL_MAP = {
@@ -669,7 +693,13 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
 
     const [internalRule, setInternalRule] = useState(snapshot?.rule || {});
     const rule = internalRule || snapshot?.rule || {};
-    const actions = useMemo(() => (Array.isArray(rule?.actions) ? rule.actions : []), [rule?.actions]);
+    const actions = useMemo(
+        () =>
+            Array.isArray(rule?.actions)
+                ? rule.actions.filter((a) => a && a.actionName && String(a.actionName).toLowerCase() !== "none")
+                : [],
+        [rule?.actions]
+    );
     const gridName = rule?.gridName || "";
     const ruleConditions = useMemo(() => parseRuleConditions(rule), [rule]);
     const lookbackLabel = rule?.reportDate
@@ -1064,6 +1094,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         if (gridName === "Placement") return `${row.campaignId}-${row.placement || row.placementType}`;
         if (gridName === "Targeting") return `${row.campaignId}-${row.adGroupId}-${row.targetId || row.keywordId || row.targeting || ""}`;
         if (gridName === "Search Term") return `${row.campaignId}-${row.adGroupId}-${row.searchTerm}`;
+        if (gridName === "Products") return `${row.campaignId}-${row.adGroupId}-${row.adId || row.asins || row.sku || ""}`;
         return String(row._id || `${row.campaignId}-${row.targetId || row.placement || ""}`);
     }, [gridName]);
 
@@ -1737,6 +1768,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
             case "Placement": return "Placement Performance Data";
             case "Targeting": return "Targeting Performance Data";
             case "Search Term": return "Search Term Performance Data";
+            case "Products": return "Products Performance Data";
             default: return "Performance Data";
         }
     };

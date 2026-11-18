@@ -2988,6 +2988,10 @@ exports.manualGenerateReport = async (req, res) => {
 };
 
 exports.getAdGroupsByCampaign = async (req, res) => {
+  if (req.user?.isMockUser) {
+    const mockTestingDataService = require("../services/mockTestingData.service");
+    return mockTestingDataService.getAdGroupsByCampaign(req, res);
+  }
   try {
     const campaignId = Number(req.params.id);
     const configId = req.body.configId || req.query.configId || req?.config?.configId || req?.headers?.["x-config-id"];
@@ -3272,6 +3276,10 @@ exports.getAdGroupsByCampaign = async (req, res) => {
 };
 
 exports.getProductAdsByAdGroup = async (req, res) => {
+  if (req.user?.isMockUser) {
+    const mockTestingDataService = require("../services/mockTestingData.service");
+    return mockTestingDataService.getProductAdsByAdGroup(req, res);
+  }
   try {
     const adGroupId = Number(req.params.id);
     const configId = req.body.configId || req.query.configId || req?.config?.configId || req?.headers?.["x-config-id"];
@@ -3316,27 +3324,67 @@ exports.getProductAdsByAdGroup = async (req, res) => {
 
     const aggregatePipeline = [
       { $match: matchFilter },
-      { $sort: { reportDate: -1 } },
+      { $sort: { reportDate: -1, createdAt: -1 } },
       {
         $group: {
           _id: {
             adId: "$adId",
-            asin: "$asins",
-            sku: "$sku",
+            asinKey: { $cond: [{ $ne: ["$adId", null] }, null, "$asins"] },
+            skuKey: { $cond: [{ $ne: ["$adId", null] }, null, "$sku"] },
           },
           adId: { $first: "$adId" },
-          asin: { $first: "$asins" },
-          sku: { $first: "$sku" },
-          status: { $first: "$status" },
+          asinList: {
+            $push: {
+              $cond: [
+                { $and: [{ $ne: ["$asins", null] }, { $ne: ["$asins", ""] }] },
+                "$asins",
+                "$$REMOVE",
+              ],
+            },
+          },
+          skuList: {
+            $push: {
+              $cond: [
+                { $and: [{ $ne: ["$sku", null] }, { $ne: ["$sku", ""] }] },
+                "$sku",
+                "$$REMOVE",
+              ],
+            },
+          },
+          statusList: {
+            $push: {
+              $cond: [
+                { $and: [{ $ne: ["$status", null] }, { $ne: ["$status", ""] }] },
+                "$status",
+                "$$REMOVE",
+              ],
+            },
+          },
+          nameList: {
+            $push: {
+              $cond: [
+                { $and: [{ $ne: ["$name", null] }, { $ne: ["$name", ""] }] },
+                "$name",
+                "$$REMOVE",
+              ],
+            },
+          },
           campaignId: { $first: "$campaignId" },
           adGroupId: { $first: "$adGroupId" },
-          name: { $first: "$name" },
           totalSpend: { $sum: "$spend" },
           totalSales: { $sum: "$sales" },
           totalImpressions: { $sum: "$impressions" },
           totalClicks: { $sum: "$clicks" },
           totalOrders: { $sum: "$orders" },
           totalCpc: { $sum: "$cpc" },
+        },
+      },
+      {
+        $addFields: {
+          asin: { $ifNull: [{ $arrayElemAt: ["$asinList", 0] }, null] },
+          sku: { $ifNull: [{ $arrayElemAt: ["$skuList", 0] }, null] },
+          status: { $ifNull: [{ $arrayElemAt: ["$statusList", 0] }, null] },
+          name: { $ifNull: [{ $arrayElemAt: ["$nameList", 0] }, null] },
         },
       },
       {
@@ -3532,6 +3580,92 @@ exports.getProductAdsByAdGroup = async (req, res) => {
     }
 
     const groupedProducts = await productAdsModel.aggregate(aggregatePipeline);
+
+    // Fallback metadata lookup for adIds whose report rows in the selected date range lacked asin/sku/status
+    const missingMetaIds = groupedProducts
+      .filter((item) => item?.adId != null && (!item.asin || !item.sku || !item.status))
+      .map((item) => item.adId);
+
+    if (missingMetaIds.length > 0) {
+      const fallbackRows = await productAdsModel
+        .find(
+          {
+            profileId: Number(profileId),
+            ...(parsedConfigId && { configId: parsedConfigId }),
+            adId: { $in: missingMetaIds },
+            $or: [
+              { asins: { $nin: [null, ""] } },
+              { sku: { $nin: [null, ""] } },
+              { status: { $nin: [null, ""] } },
+            ],
+          },
+          { adId: 1, asins: 1, sku: 1, status: 1, name: 1, reportDate: 1 }
+        )
+        .sort({ reportDate: -1, createdAt: -1 })
+        .lean();
+
+      const fallbackMap = new Map();
+      for (const row of fallbackRows) {
+        const key = String(row.adId);
+        const existing = fallbackMap.get(key) || {};
+        fallbackMap.set(key, {
+          asin: existing.asin || row.asins || null,
+          sku: existing.sku || row.sku || null,
+          status: existing.status || row.status || null,
+          name: existing.name || row.name || null,
+        });
+      }
+
+      const recoveredAsins = [];
+      const recoveredSkus = [];
+      for (const item of groupedProducts) {
+        if (item?.adId == null) continue;
+        const fb = fallbackMap.get(String(item.adId));
+        if (!fb) continue;
+        if (!item.asin && fb.asin) { item.asin = fb.asin; recoveredAsins.push(fb.asin); }
+        if (!item.sku && fb.sku) { item.sku = fb.sku; recoveredSkus.push(fb.sku); }
+        if (!item.status && fb.status) item.status = fb.status;
+        if (!item.productName && fb.name) item.productName = fb.name;
+      }
+
+      if (recoveredAsins.length > 0 || recoveredSkus.length > 0) {
+        const productModel = require("../models/product.model");
+        const prodOr = [];
+        if (recoveredAsins.length > 0) prodOr.push({ asin: { $in: [...new Set(recoveredAsins)] } });
+        if (recoveredSkus.length > 0) prodOr.push({ sku: { $in: [...new Set(recoveredSkus)] } });
+
+        const prodDocs = await productModel
+          .find(
+            {
+              profileId: Number(profileId),
+              ...(parsedConfigId && { configId: parsedConfigId }),
+              $or: prodOr,
+            },
+            { asin: 1, sku: 1, title: 1, imageUrl: 1, amount: 1, mainImage: 1, reportDate: 1 }
+          )
+          .sort({ reportDate: -1 })
+          .lean();
+
+        const byAsin = new Map();
+        const bySku = new Map();
+        for (const p of prodDocs) {
+          if (p.asin && !byAsin.has(p.asin)) byAsin.set(p.asin, p);
+          if (p.sku && !bySku.has(p.sku)) bySku.set(p.sku, p);
+        }
+
+        for (const item of groupedProducts) {
+          const p = (item.asin && byAsin.get(item.asin)) || (item.sku && bySku.get(item.sku));
+          if (p) {
+            if (!item.productName || item.productName === item.asin) item.productName = p.title || item.productName;
+            if (!item.imageUrl) item.imageUrl = p.imageUrl || p.mainImage?.link || null;
+            if (!item.price) item.price = p.amount || 0;
+          } else if (!item.productName && item.asin) {
+            item.productName = item.asin;
+          }
+        }
+      }
+    }
+
     const totalRecords = groupedProducts.length;
 
     const totalRow = groupedProducts.reduce(

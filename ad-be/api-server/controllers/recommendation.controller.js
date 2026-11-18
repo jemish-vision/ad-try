@@ -24,6 +24,9 @@ const sdTargetingSchema = require("../models/sdTargeting.model");
 const placementSchema = require("../models/placement.model");
 const sbPlacementSchema = require("../models/sbPlacement.model");
 const sdPlacementSchema = require("../models/sdPlacement.model");
+const productAdsSchema = require("../models/productAds.model");
+const sbProductAdsSchema = require("../models/sbProductAds.model");
+const sdProductAdsSchema = require("../models/sdProductAds.model");
 const deletePatternWithLog = async (...args) => {
     const redis = require("../services/redis.service");
     return redis.deletePatternWithLog(...args);
@@ -1282,7 +1285,7 @@ exports.addRules = async (req, res) => {
             gridName,
             reportDate,
             conditions: sanitizedConditions,
-            actions: actions || [],
+            actions: Array.isArray(actions) ? actions.filter((a) => a && a.actionName && String(a.actionName).toLowerCase() !== "none") : [],
             query: queryToSave,
             campaignSelectionType: campaignSelectionType || "ALL",
             campaignIds: campaignIds || { SP: [], SB: [], SD: [] },
@@ -1357,6 +1360,12 @@ exports.updateRules = async (req, res) => {
             });
             updateData.conditions = sanitized;
             updateData.query = JSON.stringify(buildRecommendationQueryFromConditions(sanitized));
+        }
+
+        if (req?.body?.actions && Array.isArray(req.body.actions)) {
+            updateData.actions = req.body.actions.filter(
+                (a) => a && a.actionName && String(a.actionName).toLowerCase() !== "none"
+            );
         }
 
         const updateRule = await recommendationRuleSchema.findOneAndUpdate({ _id: ruleId, ...(configId && { configId }) }, updateData, { new: true });
@@ -1459,6 +1468,215 @@ exports.bulkUpdateRuleDateFilter = async (req, res) => {
     }
 };
 
+const isSameRecommendationRuleConfig = (existingRule, candidateRule) => {
+    if (!existingRule || !candidateRule) return false;
+    if (String(existingRule.gridName || "") !== String(candidateRule.gridName || "")) return false;
+    if (String(existingRule.reportDate || "") !== String(candidateRule.reportDate || "")) return false;
+
+    const normalizeConds = (conds = []) =>
+        (Array.isArray(conds) ? conds : [])
+            .map((c) => {
+                const rawType = String(c?.conditionType || "").trim();
+                const isOob = rawType.toLowerCase().replace(/[\s_]+/g, "") === "outofbudget";
+                return {
+                    conditionType: isOob ? "outofbudget" : rawType.toLowerCase(),
+                    conditionOperator: isOob ? "" : String(c?.conditionOperator || "").trim().toUpperCase(),
+                    conditionValue: isOob
+                        ? ""
+                        : c?.conditionValue !== undefined && c?.conditionValue !== null && c?.conditionValue !== ""
+                        ? String(Number(c.conditionValue))
+                        : "",
+                    oobPeriod: isOob ? String(c?.oobPeriod || "").trim().toUpperCase() : "",
+                    oobDays: isOob && String(c?.oobPeriod || "").trim().toUpperCase() === "CUSTOM"
+                        ? String(Number(c?.oobDays || 0))
+                        : "",
+                };
+            })
+            .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+
+    const normalizeActs = (acts = []) =>
+        (Array.isArray(acts) ? acts : [])
+            .filter((a) => a && a.actionName && String(a.actionName).trim().toLowerCase() !== "none")
+            .map((a) => ({
+                actionName: String(a?.actionName || "").trim(),
+                actionValue:
+                    a?.actionValue !== undefined && a?.actionValue !== null && a?.actionValue !== ""
+                        ? String(Number(a.actionValue))
+                        : "",
+                actionValueType: String(a?.actionValueType || "").trim(),
+                placementType: String(a?.placementType || "").trim().toLowerCase(),
+                matchType: String(a?.matchType || "").trim().toLowerCase(),
+            }))
+            .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+
+    const c1 = normalizeConds(existingRule.conditions);
+    const c2 = normalizeConds(candidateRule.conditions);
+    if (JSON.stringify(c1) !== JSON.stringify(c2)) return false;
+
+    const a1 = normalizeActs(existingRule.actions);
+    const a2 = normalizeActs(candidateRule.actions);
+    if (JSON.stringify(a1) !== JSON.stringify(a2)) return false;
+
+    return true;
+};
+
+exports.copyRulesToProfiles = async (req, res) => {
+    const sourceConfigId = req?.config?.configId;
+    const userId = req?.user?._id || req?.user?.id;
+    const { ruleIds, targetProfiles } = req?.body || {};
+
+    if (!Array.isArray(ruleIds) || ruleIds.length === 0) {
+        return res.status(200).send({
+            isSuccess: false,
+            message: "Please select at least one recommendation rule to copy.",
+        });
+    }
+
+    if (!Array.isArray(targetProfiles) || targetProfiles.length === 0) {
+        return res.status(200).send({
+            isSuccess: false,
+            message: "Please select at least one target profile.",
+        });
+    }
+
+    try {
+        const sourceRules = await recommendationRuleSchema.find({
+            _id: { $in: ruleIds },
+            isDeleted: { $ne: true },
+            ...(sourceConfigId && { configId: sourceConfigId }),
+        }).lean();
+
+        if (!sourceRules.length) {
+            return res.status(200).send({
+                isSuccess: false,
+                message: "Selected recommendation rule(s) not found.",
+            });
+        }
+
+        const insertedList = [];
+        const duplicateList = [];
+        const affectedProfileIds = new Set();
+
+        for (const target of targetProfiles) {
+            const targetProfileId = Number(target?.profileId);
+            const targetConfigId = target?.configId || sourceConfigId;
+            if (!targetProfileId || !targetConfigId) continue;
+
+            const profileDoc = await profileSchema.findOne({
+                configId: mongoose.Types.ObjectId.isValid(targetConfigId)
+                    ? new mongoose.Types.ObjectId(targetConfigId)
+                    : targetConfigId,
+                profileId: targetProfileId,
+            }).lean();
+
+            const profileLabel =
+                target?.profileName ||
+                (profileDoc ? `${profileDoc.countryCode ? `${profileDoc.countryCode} - ` : ""}${profileDoc.name || targetProfileId}` : String(targetProfileId));
+
+            const existingRules = await recommendationRuleSchema.find({
+                configId: mongoose.Types.ObjectId.isValid(targetConfigId)
+                    ? new mongoose.Types.ObjectId(targetConfigId)
+                    : targetConfigId,
+                profileId: targetProfileId,
+                isDeleted: { $ne: true },
+            }).lean();
+
+            for (const srcRule of sourceRules) {
+                const isDup = existingRules.some((ex) => isSameRecommendationRuleConfig(ex, srcRule));
+                if (isDup) {
+                    duplicateList.push({
+                        ruleId: srcRule._id,
+                        ruleName: srcRule.ruleName,
+                        profileId: targetProfileId,
+                        profileName: profileLabel,
+                    });
+                    continue;
+                }
+
+                const newRuleDoc = new recommendationRuleSchema({
+                    configId: mongoose.Types.ObjectId.isValid(targetConfigId)
+                        ? new mongoose.Types.ObjectId(targetConfigId)
+                        : targetConfigId,
+                    userId: userId || srcRule.userId,
+                    profileId: targetProfileId,
+                    ruleName: srcRule.ruleName,
+                    gridName: srcRule.gridName,
+                    reportDate: srcRule.reportDate,
+                    conditions: srcRule.conditions || [],
+                    actions: (srcRule.actions || []).filter(
+                        (a) => a && a.actionName && String(a.actionName).toLowerCase() !== "none"
+                    ),
+                    query: srcRule.query || JSON.stringify(buildRecommendationQueryFromConditions(srcRule.conditions || [])),
+                    campaignSelectionType: "ALL",
+                    campaignIds: { SP: [], SB: [], SD: [] },
+                    isActive: srcRule.isActive !== undefined ? srcRule.isActive : true,
+                    countryCode: profileDoc?.countryCode || srcRule.countryCode || "",
+                    timezone: profileDoc?.timezone || srcRule.timezone || "UTC",
+                });
+
+                await newRuleDoc.save();
+                existingRules.push(newRuleDoc.toObject());
+                affectedProfileIds.add(targetProfileId);
+                insertedList.push({
+                    ruleId: newRuleDoc._id,
+                    ruleName: srcRule.ruleName,
+                    profileId: targetProfileId,
+                    profileName: profileLabel,
+                });
+            }
+        }
+
+        for (const pId of affectedProfileIds) {
+            try {
+                await deletePatternWithLog(`rec_counts:*_${pId}_*`);
+                await deletePatternWithLog(`rec_data:*_${pId}_*`);
+            } catch (_) { }
+        }
+
+        if (insertedList.length > 0) {
+            await logAudit(
+                "RECOMMENDATION_RULE_COPY_TO_PROFILES",
+                `Copied ${insertedList.length} recommendation rule configuration(s) to other profile(s)`,
+                {
+                    inserted: insertedList,
+                    skippedDuplicates: duplicateList,
+                },
+                req?.user?.id
+            );
+        }
+
+        const dupProfiles = [...new Set(duplicateList.map((d) => d.profileName))];
+        const insProfiles = [...new Set(insertedList.map((i) => i.profileName))];
+
+        let message = "";
+        if (insertedList.length > 0 && duplicateList.length === 0) {
+            message = `Configuration copied successfully to ${insProfiles.join(", ")}.`;
+        } else if (insertedList.length === 0 && duplicateList.length > 0) {
+            message = `You already have this configuration in ${dupProfiles.join(", ")}, so we didn't add it.`;
+        } else if (insertedList.length > 0 && duplicateList.length > 0) {
+            message = `Configuration copied to ${insProfiles.join(", ")}. You already have this configuration in ${dupProfiles.join(", ")}, so we didn't add it there.`;
+        } else {
+            message = "No configurations were copied.";
+        }
+
+        return res.status(200).send({
+            isSuccess: insertedList.length > 0,
+            hasDuplicates: duplicateList.length > 0,
+            insertedCount: insertedList.length,
+            duplicateCount: duplicateList.length,
+            inserted: insertedList,
+            duplicates: duplicateList,
+            message,
+        });
+    } catch (err) {
+        recommendation_logs({ message: `[copyRulesToProfiles Error] ${err?.message || err} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+        return res.status(500).send({
+            isSuccess: false,
+            message: err?.message || "Failed to copy configuration to selected profile(s).",
+        });
+    }
+};
+
 exports.statusChange = async (req, res) => {
     try {
         const configId = req?.config?.configId;
@@ -1551,17 +1769,65 @@ exports.getRules = async (req, res) => {
 
     const pageNo = req.body.pageNo || 1;
     const perPage = req.body.perPage || 10;
+    const { gridName, actionName, fieldName, sortType } = req.body || {};
 
     try {
+        const matchQuery = {
+            configId,
+            profileId,
+        };
+
+        if (Array.isArray(gridName) && gridName.length > 0) {
+            matchQuery.gridName = { $in: gridName };
+        } else if (typeof gridName === "string" && gridName.trim()) {
+            matchQuery.gridName = gridName.trim();
+        }
+
+        if (Array.isArray(actionName) && actionName.length > 0) {
+            const hasNone = actionName.includes("None");
+            const normalActions = actionName.filter((a) => a && a !== "None");
+            const actionOr = [];
+            if (normalActions.length > 0) {
+                actionOr.push({ "actions.actionName": { $in: normalActions } });
+            }
+            if (hasNone) {
+                actionOr.push(
+                    { actions: { $exists: false } },
+                    { actions: null },
+                    { actions: [] },
+                    { "actions.actionName": "None" }
+                );
+            }
+            if (actionOr.length > 0) {
+                matchQuery.$or = actionOr;
+            }
+        } else if (typeof actionName === "string" && actionName.trim()) {
+            const act = actionName.trim();
+            if (act === "None") {
+                matchQuery.$or = [
+                    { actions: { $exists: false } },
+                    { actions: null },
+                    { actions: [] },
+                    { "actions.actionName": "None" },
+                ];
+            } else {
+                matchQuery["actions.actionName"] = act;
+            }
+        }
+
+        const sortObj = {};
+        if (fieldName && sortType) {
+            sortObj[fieldName] = String(sortType).toUpperCase() === "ASC" ? 1 : -1;
+        } else {
+            sortObj.createdAt = -1;
+        }
+
         const pipeline = [
             {
-                $match: {
-                    configId,
-                    profileId,
-                },
+                $match: matchQuery,
             },
             {
-                $sort: { createdAt: -1 },
+                $sort: sortObj,
             },
             {
                 $facet: {
@@ -1995,6 +2261,15 @@ exports.recommendationPipeline = (query, lastDate, rule, adType = "SP", options 
         };
     }
 
+    if (rule.gridName === "Products") {
+        groupId = {
+            campaignId: "$campaignId",
+            adGroupId: "$adGroupId",
+            adId: "$adId",
+            profileId: "$profileId",
+        };
+    }
+
     // =========================
     // UNIQUE MATCH
     // =========================
@@ -2031,6 +2306,14 @@ exports.recommendationPipeline = (query, lastDate, rule, adType = "SP", options 
         );
     }
 
+    if (rule.gridName === "Products") {
+        uniqueMatch.push(
+            { $eq: ["$campaignId", "$$campaignId"] },
+            { $eq: ["$adGroupId", "$$adGroupId"] },
+            { $eq: ["$adId", "$$adId"] }
+        );
+    }
+
     // =========================
     // EFFECTIVE RULE QUERY
     // =========================
@@ -2057,6 +2340,10 @@ exports.recommendationPipeline = (query, lastDate, rule, adType = "SP", options 
                     adGroupId: 1,
                     targetId: 1,
                     keywordId: 1,
+                    adId: 1,
+                    asins: 1,
+                    sku: 1,
+                    name: 1,
                     placement: 1,
                     targeting: 1,
                     keywordType: 1,
@@ -2087,6 +2374,10 @@ exports.recommendationPipeline = (query, lastDate, rule, adType = "SP", options 
                 adGroupId: { $first: "$adGroupId" },
                 targetId: { $first: "$targetId" },
                 keywordId: { $first: "$keywordId" },
+                adId: { $first: "$adId" },
+                asins: { $first: "$asins" },
+                sku: { $first: "$sku" },
+                productName: { $first: "$name" },
                 placement: { $first: "$placement" },
                 targeting: { $first: "$targeting" },
                 keywordType: { $first: "$keywordType" },
@@ -2227,7 +2518,7 @@ exports.recommendationPipeline = (query, lastDate, rule, adType = "SP", options 
                 ? [{ $match: { "campaign.targetingType": "MANUAL" } }]
                 : []
         ),
-        ...(["Targeting", "Search Term"].includes(rule.gridName) ?
+        ...(["Targeting", "Search Term", "Products"].includes(rule.gridName) ?
             [
                 {
                     $lookup: {
@@ -2244,6 +2535,143 @@ exports.recommendationPipeline = (query, lastDate, rule, adType = "SP", options 
                 },
                 { $unwind: { path: "$adGroup", preserveNullAndEmptyArrays: true } },
                 { $match: { "adGroup.status": "ENABLED" } }
+            ]
+            : []
+        ),
+
+        // =========================
+        // 6B. PRODUCT AD STATUS CHECK
+        // Products only
+        // =========================
+        ...(rule.gridName === "Products"
+            ? [
+                {
+                    $lookup: {
+                        from: AD_TYPE_COLLECTIONS?.[adType]?.["productAds"],
+                        let: {
+                            cId: { $ifNull: ["$campaignId", "$_id.campaignId"] },
+                            agId: { $ifNull: ["$adGroupId", "$_id.adGroupId"] },
+                            pId: { $ifNull: ["$profileId", "$_id.profileId"] },
+                            aId: { $ifNull: ["$adId", "$_id.adId"] },
+                            currDate: currentDate,
+                        },
+                        pipeline: [
+                            {
+                                $match: {
+                                    $expr: {
+                                        $and: [
+                                            { $eq: ["$configId", ruleConfigId] },
+                                            { $eq: ["$profileId", "$$pId"] },
+                                            { $eq: ["$campaignId", "$$cId"] },
+                                            { $eq: ["$adGroupId", "$$agId"] },
+                                            { $eq: ["$adId", "$$aId"] },
+                                            { $lte: ["$reportDate", "$$currDate"] },
+                                        ],
+                                    },
+                                },
+                            },
+                            { $sort: { reportDate: -1 } },
+                            { $limit: 1 },
+                            { $project: { _id: 0, adId: 1, status: 1, asins: 1, sku: 1, name: 1 } },
+                        ],
+                        as: "productAdData",
+                    },
+                },
+                {
+                    $set: {
+                        productStatus: {
+                            $toUpper: {
+                                $ifNull: [{ $arrayElemAt: ["$productAdData.status", 0] }, { $ifNull: ["$status", "ENABLED"] }],
+                            },
+                        },
+                        status: {
+                            $toUpper: {
+                                $ifNull: [{ $arrayElemAt: ["$productAdData.status", 0] }, { $ifNull: ["$status", "ENABLED"] }],
+                            },
+                        },
+                        asins: { $ifNull: [{ $arrayElemAt: ["$productAdData.asins", 0] }, "$asins"] },
+                        sku: { $ifNull: [{ $arrayElemAt: ["$productAdData.sku", 0] }, "$sku"] },
+                        productName: { $ifNull: [{ $arrayElemAt: ["$productAdData.name", 0] }, "$productName"] },
+                    },
+                },
+                {
+                    $match: { productStatus: { $ne: "ARCHIVED" } },
+                },
+                ...(!options?.isCountOnly
+                    ? [
+                        {
+                            $lookup: {
+                                from: "products",
+                                let: { asinVal: "$asins", skuVal: "$sku", pId: { $ifNull: ["$profileId", "$_id.profileId"] } },
+                                pipeline: [
+                                    {
+                                        $match: {
+                                            $expr: {
+                                                $and: [
+                                                    { $eq: ["$configId", ruleConfigId] },
+                                                    { $eq: ["$profileId", "$$pId"] },
+                                                    {
+                                                        $or: [
+                                                            { $and: [{ $ne: ["$$asinVal", null] }, { $ne: ["$$asinVal", ""] }, { $eq: ["$asin", "$$asinVal"] }] },
+                                                            { $and: [{ $ne: ["$$skuVal", null] }, { $ne: ["$$skuVal", ""] }, { $eq: ["$sku", "$$skuVal"] }] },
+                                                        ],
+                                                    },
+                                                ],
+                                            },
+                                        },
+                                    },
+                                    { $sort: { reportDate: -1 } },
+                                    { $limit: 1 },
+                                    { $project: { _id: 0, title: 1 } },
+                                ],
+                                as: "productCatalog",
+                            },
+                        },
+                        {
+                            $lookup: {
+                                from: "productlistings",
+                                let: { asinVal: "$asins", skuVal: "$sku", pId: { $ifNull: ["$profileId", "$_id.profileId"] } },
+                                pipeline: [
+                                    {
+                                        $match: {
+                                            $expr: {
+                                                $and: [
+                                                    { $eq: ["$configId", ruleConfigId] },
+                                                    { $eq: ["$profileId", "$$pId"] },
+                                                    {
+                                                        $or: [
+                                                            { $and: [{ $ne: ["$$asinVal", null] }, { $ne: ["$$asinVal", ""] }, { $eq: ["$asin", "$$asinVal"] }] },
+                                                            { $and: [{ $ne: ["$$skuVal", null] }, { $ne: ["$$skuVal", ""] }, { $eq: ["$sku", "$$skuVal"] }] },
+                                                        ],
+                                                    },
+                                                ],
+                                            },
+                                        },
+                                    },
+                                    { $sort: { reportDate: -1 } },
+                                    { $limit: 1 },
+                                    { $project: { _id: 0, itemName: 1 } },
+                                ],
+                                as: "productListing",
+                            },
+                        },
+                        {
+                            $set: {
+                                productName: {
+                                    $ifNull: [
+                                        { $arrayElemAt: ["$productCatalog.title", 0] },
+                                        {
+                                            $ifNull: [
+                                                { $arrayElemAt: ["$productListing.itemName", 0] },
+                                                { $ifNull: ["$productName", "$asins"] },
+                                            ],
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    ]
+                    : []),
             ]
             : []
         ),
@@ -2482,6 +2910,7 @@ exports.recommendationPipeline = (query, lastDate, rule, adType = "SP", options 
                             adGroupId: { $ifNull: ["$adGroupId", "$_id.adGroupId"] },
                             targetId: { $ifNull: ["$targetId", "$_id.targetId"] },
                             keywordId: { $ifNull: ["$keywordId", "$_id.keywordId"] },
+                            adId: { $ifNull: ["$adId", "$_id.adId"] },
                             placement: { $ifNull: ["$placement", "$_id.placement"] },
                             searchTerm: { $ifNull: ["$searchTerm", "$_id.searchTerm"] },
                             profileId: { $ifNull: ["$profileId", "$_id.profileId"] },
@@ -2508,6 +2937,9 @@ exports.recommendationPipeline = (query, lastDate, rule, adType = "SP", options 
                                             ] : []),
                                             ...(rule.gridName === "Placement" ? [
                                                 { $eq: ["$placement", "$$placement"] }
+                                            ] : []),
+                                            ...(rule.gridName === "Products" ? [
+                                                { $eq: ["$adId", "$$adId"] }
                                             ] : []),
                                             { $gte: ["$reportDate", fromDate] },
                                             { $lte: ["$reportDate", lastDate] },
@@ -2541,6 +2973,11 @@ exports.recommendationPipeline = (query, lastDate, rule, adType = "SP", options 
                         adGroupId: 1,
                         targetId: 1,
                         keywordId: 1,
+                        adId: 1,
+                        asins: 1,
+                        sku: 1,
+                        productName: 1,
+                        productStatus: 1,
                         placement: 1,
                         targeting: 1,
                         keywordType: 1,
@@ -2603,7 +3040,7 @@ exports.recommendationPipeline = (query, lastDate, rule, adType = "SP", options 
 const computeRecommendationCounts = async ({ configId, profileId, adType, models }) => {
     const configObjectId = configId && mongoose.Types.ObjectId.isValid(configId) ? new mongoose.Types.ObjectId(configId) : configId;
     const numProfileId = Number(profileId) || profileId;
-    const { adTypeCampaignSchema, adTypeAdGroupSchema, adTypePlacementSchema, adTypeTargetingSchema, adTypeSearchTermSchema } = models;
+    const { adTypeCampaignSchema, adTypeAdGroupSchema, adTypePlacementSchema, adTypeTargetingSchema, adTypeSearchTermSchema, adTypeProductAdsSchema } = models;
     const rules = await recommendationRuleSchema.find({ configId: configObjectId, profileId: numProfileId, isActive: true, isDeleted: { $ne: true } }).lean();
 
     if (!rules.length) {
@@ -2868,6 +3305,7 @@ const computeRecommendationCounts = async ({ configId, profileId, adType, models
                 if (rule.gridName === "Placement") model = adTypePlacementSchema;
                 if (rule.gridName === "Targeting") model = adTypeTargetingSchema;
                 if (rule.gridName === "Search Term") model = adType === "SD" ? null : adTypeSearchTermSchema;
+                if (rule.gridName === "Products") model = adTypeProductAdsSchema;
 
                 if (!model) return null;
 
@@ -3279,6 +3717,7 @@ const computeRecommendationCountsForRequest = async (req) => {
 };
 
 exports.getRecommendation = async (req, res) => {
+    if (req.user?.isMockUser || req.isMockTestingUser) return require("../services/mockTestingData.service").getRecommendations(req, res);
     const configId = req?.config?.configId || req?.headers?.["x-config-id"] || req?.body?.configId;
     const profileId = req?.body?.profileId;
     const adType = req?.adType;
@@ -3692,7 +4131,7 @@ exports.getRecommendationData = async (req, res) => {
     const customFromDate = req?.body?.fromDate;
     const customToDate = req?.body?.toDate;
 
-    const { adTypeCampaignSchema, adTypeAdGroupSchema, adTypePlacementSchema, adTypeTargetingSchema, adTypeSearchTermSchema } = req.models;
+    const { adTypeCampaignSchema, adTypeAdGroupSchema, adTypePlacementSchema, adTypeTargetingSchema, adTypeSearchTermSchema, adTypeProductAdsSchema } = req.models;
 
     const adType = req?.adType;
 
@@ -3717,6 +4156,7 @@ exports.getRecommendationData = async (req, res) => {
         if (rule.gridName === "Placement") model = adTypePlacementSchema;
         if (rule.gridName === "Targeting") model = adTypeTargetingSchema;
         if (rule.gridName === "Search Term") model = adTypeSearchTermSchema;
+        if (rule.gridName === "Products") model = adTypeProductAdsSchema;
 
         if (!model) {
             return res.status(203).send({ isSuccess: false, message: "Invalid grid type." });
@@ -4165,8 +4605,8 @@ exports.fetchRecommendationData = async ({ configId, profileId, ruleId, models, 
 
     if (onBatch && (!Number.isInteger(batchSize) || batchSize < 1)) throw new Error("Invalid recommendation batch size.");
 
-    const { campaignSchema, placementSchema, targetingSchema, searchTermSchema } = models;
-    const { adTypeCampaignSchema, adTypePlacementSchema, adTypeTargetingSchema, adTypeSearchTermSchema } = models;
+    const { campaignSchema, placementSchema, targetingSchema, searchTermSchema, productAdsSchema: modelProductAdsSchema } = models;
+    const { adTypeCampaignSchema, adTypePlacementSchema, adTypeTargetingSchema, adTypeSearchTermSchema, adTypeProductAdsSchema } = models;
 
     const rule = await recommendationRuleSchema.findOne({ _id: ruleId, configId, profileId, isActive: true }).lean();
 
@@ -4178,6 +4618,7 @@ exports.fetchRecommendationData = async ({ configId, profileId, ruleId, models, 
     if (rule.gridName === "Placement") model = placementSchema ?? adTypePlacementSchema;
     if (rule.gridName === "Targeting") model = targetingSchema ?? adTypeTargetingSchema;
     if (rule.gridName === "Search Term") model = searchTermSchema ?? adTypeSearchTermSchema;
+    if (rule.gridName === "Products") model = modelProductAdsSchema ?? adTypeProductAdsSchema;
 
     if (!model) throw new Error("Invalid grid type.");
 
@@ -4394,6 +4835,9 @@ exports.deleteRecommendation = async (req, res) => {
                         campaignId: item?.campaignId || null,
                         adGroupId: item?.adGroupId || null,
                         keywordId: item?.keywordId || null,
+                        adId: item?.adId || null,
+                        asins: item?.asins || null,
+                        sku: item?.sku || null,
                         targetId: item?.targetId || null,
                         placement: item?.placement || null,
                         searchTerm: item?.searchTerm || null
@@ -4479,7 +4923,7 @@ exports.applyRuleRecommendation = async (req, res) => {
         const rule = await recommendationRuleSchema.findOne({ _id: ruleId, configId, profileId, isActive: true, isDeleted: false, }).lean();
         if (!rule) return res.status(203).send({ isSuccess: false, message: "Rule not found." });
 
-        if (!rule?.actions || !rule.actions.length) {
+        if (!rule?.actions || !rule.actions.filter((a) => a && a.actionName && String(a.actionName).toLowerCase() !== "none").length) {
             return res.status(200).send({
                 isSuccess: true,
                 message: "No actions configured for this recommendation.",
@@ -4512,6 +4956,10 @@ exports.applyRuleRecommendation = async (req, res) => {
 
         if (rule.gridName === "Search Term") {
             result = await applySearchTermRecommendation(rule, items, profile, checkConfigAds, adType, operationId);
+        }
+
+        if (rule.gridName === "Products") {
+            result = await applyProductRecommendation(rule, items, profile, checkConfigAds, adType, operationId);
         }
 
         const appliedKeys = new Set((result?.appliedItems || []).map(item => JSON.stringify(item)));
@@ -4547,6 +4995,9 @@ exports.applyRuleRecommendation = async (req, res) => {
                 acos: item?.acos || null,
                 roas: item?.roas || null,
                 targetId: item?.targetId || null,
+                adId: item?.adId || null,
+                asins: item?.asins || null,
+                sku: item?.sku || null,
             }
         }));
 
@@ -4580,6 +5031,7 @@ const getRecommendationApplyIdentity = (item, adType) => ({
     adType,
     campaignId: item?.campaignId,
     adGroupId: item?.adGroupId,
+    adId: item?.adId,
     targetId: item?.targetId,
     targeting: item?.targeting,
     placement: item?.placement,
@@ -4753,6 +5205,11 @@ const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds,
                                     $set: {
                                         budget: Number(actionValue),
                                         dailyBudget: Number(actionValue),
+                                        isOutOfBudget: false,
+                                        status: "ENABLED",
+                                        campaignStatus: "ENABLED",
+                                        "budgetTracking.lastUsagePercentage": 0,
+                                        "budgetTracking.lastUpdated": new Date(),
                                     }
                                 }
                             }
@@ -4865,6 +5322,7 @@ const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds,
                                         state: newStatus,
                                         status: newStatus,
                                         campaignStatus: newStatus,
+                                        isOutOfBudget: false,
                                     }
                                 }
                             }
@@ -6009,6 +6467,198 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
     return summarizeRecommendationApply(items, appliedItems, results, adType, "search terms");
 };
 
+const applyProductRecommendation = async (rule, items, profile, checkConfigAds, adType, operationId) => {
+    const action = (rule?.actions || []).find((a) => a && ["EnableProduct", "DisableProduct"].includes(a.actionName)) ?? null;
+    if (!action) return { isSuccess: false, message: "No valid product action found" };
+
+    const newStatus = action.actionName === "EnableProduct" ? "ENABLED" : "PAUSED";
+    const now = moment().tz(profile.timezone || "UTC");
+    const currentDate = now.format("YYYY-MM-DD");
+    const currentTime = now.format("HH:mm");
+
+    const effectiveAdType = adType || "SP";
+    const targetModel =
+        effectiveAdType === "SB" ? sbProductAdsSchema
+        : effectiveAdType === "SD" ? sdProductAdsSchema
+        : productAdsSchema;
+
+    const validItems = (items || []).filter((it) => it?.adId != null);
+    if (!validItems.length) {
+        return { isSuccess: false, message: "No valid product ad items found (adId missing)" };
+    }
+
+    const results = [];
+    const confirmedItems = [];
+    const chunks = chunkArray(validItems, 1000);
+
+    for (const chunk of chunks) {
+        try {
+            let apiOptions;
+            if (effectiveAdType === "SB") {
+                apiOptions = {
+                    method: "PUT",
+                    url: `${profile.amazonUrl}/sb/v4/ads`,
+                    headers: {
+                        "Amazon-Advertising-API-ClientId": checkConfigAds.adsClientId,
+                        "Amazon-Advertising-API-Scope": profile.profileId,
+                        "Authorization": `Bearer ${checkConfigAds.adsAccessToken}`,
+                        "Prefer": "return=representation",
+                        "Content-Type": "application/vnd.sbadresource.v4+json",
+                        "Accept": "application/vnd.sbadresource.v4+json",
+                    },
+                    data: {
+                        ads: chunk.map((item) => ({
+                            adId: String(item.adId),
+                            state: newStatus,
+                        })),
+                    },
+                    meta: { configId: rule.configId, tokenKey: "adsAccessToken" },
+                };
+            } else if (effectiveAdType === "SD") {
+                apiOptions = {
+                    method: "PUT",
+                    url: `${profile.amazonUrl}/sd/productAds`,
+                    headers: {
+                        "Amazon-Advertising-API-ClientId": checkConfigAds.adsClientId,
+                        "Amazon-Advertising-API-Scope": profile.profileId,
+                        "Authorization": `Bearer ${checkConfigAds.adsAccessToken}`,
+                        "Content-Type": "application/json",
+                    },
+                    data: chunk.map((item) => ({
+                        adId: Number(item.adId) || String(item.adId),
+                        state: newStatus.toLowerCase(),
+                    })),
+                    meta: { configId: rule.configId, tokenKey: "adsAccessToken" },
+                };
+            } else {
+                apiOptions = {
+                    method: "PUT",
+                    url: `${profile.amazonUrl}/sp/productAds`,
+                    headers: {
+                        "Amazon-Advertising-API-ClientId": checkConfigAds.adsClientId,
+                        "Amazon-Advertising-API-Scope": profile.profileId,
+                        "Authorization": `Bearer ${checkConfigAds.adsAccessToken}`,
+                        "Prefer": "return=representation",
+                        "Content-Type": "application/vnd.spProductAd.v3+json",
+                        "Accept": "application/vnd.spProductAd.v3+json",
+                    },
+                    data: {
+                        productAds: chunk.map((item) => ({
+                            adId: String(item.adId),
+                            state: newStatus,
+                        })),
+                    },
+                    meta: { configId: rule.configId, tokenKey: "adsAccessToken" },
+                };
+            }
+
+            const response = await retryWithBackoff(() => amazonAxios(apiOptions));
+
+            if (response?.status === 207 || response?.status === 200) {
+                const confirmed = confirmRecommendationChunk(response, apiOptions.data, chunk, results);
+                if (!confirmed.length) continue;
+
+                const bulkOps = confirmed.map((item) => ({
+                    updateOne: {
+                        filter: {
+                            configId: rule?.configId,
+                            profileId: rule?.profileId,
+                            userId: rule?.userId,
+                            ruleSchema: "Products",
+                            ruleId: rule?._id,
+                            ruleDate: currentDate,
+                            ruleTime: currentTime,
+                            type: effectiveAdType,
+                            campaignId: item?.campaignId,
+                            adGroupId: item?.adGroupId,
+                            adId: Number(item?.adId) || item?.adId,
+                        },
+                        update: {
+                            $set: {
+                                name: item?.campaignName || "",
+                                adGroupName: item?.adGroupName || "",
+                                asins: item?.asins || "",
+                                sku: item?.sku || "",
+                                targetName: item?.asins || item?.sku || item?.productName || String(item?.adId || ""),
+                                oldValue: item?.productStatus || item?.status || "",
+                                newValue: newStatus,
+                                changed: "ProductStatus",
+                            },
+                        },
+                        upsert: true,
+                    },
+                }));
+                await recommandationCampaignByRuleSchema.bulkWrite(bulkOps);
+
+                const historyDocs = confirmed.map((item) => ({
+                    configId: profile?.configId,
+                    profileId: profile?.profileId,
+                    changeLevel: item?.campaignId,
+                    changeType: "Update Product Status",
+                    targeting: item?.asins || item?.sku || item?.productName || String(item?.adId || ""),
+                    targetId: item?.adId != null ? String(item.adId) : null,
+                    historyEntityId: item?.adId != null ? String(item.adId) : null,
+                    adGroupId: item?.adGroupId,
+                    oldValue: item?.productStatus || item?.status || "",
+                    newValue: newStatus,
+                    updatedFrom: "Products",
+                    userId: rule?.userId,
+                    type: effectiveAdType,
+                    source: "RECOMMENDATION",
+                    createdAt: new Date(),
+                }));
+                await safeInsertRecommendationHistory(historyDocs, operationId);
+
+                const productBulkOps = confirmed.map((item) => ({
+                    updateMany: {
+                        filter: {
+                            configId: profile?.configId,
+                            profileId: profile?.profileId,
+                            adId: Number(item.adId) || item.adId,
+                        },
+                        update: {
+                            $set: {
+                                status: newStatus,
+                            },
+                        },
+                    },
+                }));
+                await targetModel.bulkWrite(productBulkOps).catch(() => { });
+
+                const statusBulkOps = confirmed.map((item) => ({
+                    updateOne: {
+                        filter: {
+                            configId: rule?.configId,
+                            profileId: rule?.profileId,
+                            ruleId: rule?._id,
+                            campaignId: item?.campaignId,
+                            adGroupId: item?.adGroupId,
+                            adId: Number(item?.adId) || item?.adId,
+                        },
+                        update: {
+                            $set: { isNew: false },
+                        },
+                    },
+                }));
+                await recommandationStatusSchema.bulkWrite(statusBulkOps).catch(() => { });
+
+                confirmedItems.push(...confirmed);
+            } else {
+                results.push({ isSuccess: false, count: chunk.length, message: `Status: ${response?.status}` });
+            }
+        } catch (err) {
+            if (err?.historyPersistenceFailure) throw err;
+            recommendation_logs({
+                log_type: "error",
+                message: `[applyProductRecommendation ${effectiveAdType} Batch Error] ${err?.message || err}`
+            });
+            results.push({ isSuccess: false, message: err?.message || "Amazon API error" });
+        }
+    }
+
+    return summarizeRecommendationApply(items, confirmedItems, results, adType, "products");
+};
+
 exports.cronRecommendationSnapshot = async (req, res) => {
     cron_logs({
         message: `India Time = ${moment().tz("Asia/Kolkata").format("HH:mm")} cronRecommendationSnapshot`,
@@ -6063,6 +6713,7 @@ exports.cronRecommendationSnapshot = async (req, res) => {
                                                 placement: item?.placement || "",
                                                 targeting: item?.targeting || "",
                                                 keywordId: item?.keywordId || null,
+                                                adId: item?.adId || null,
                                                 reportDate: currentDate,
                                             },
                                             update: {
@@ -6070,6 +6721,8 @@ exports.cronRecommendationSnapshot = async (req, res) => {
                                                     keywordType: item?.keywordType || "",
                                                     matchType: item?.matchType || "",
                                                     searchTerm: item?.searchTerm || "",
+                                                    asins: item?.asins || "",
+                                                    sku: item?.sku || "",
                                                     status: item?.status || "",
                                                     budget: item?.budget || 0,
                                                     placementBid: item?.placementBid || 0,

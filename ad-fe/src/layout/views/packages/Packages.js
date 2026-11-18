@@ -134,7 +134,8 @@ const Packages = () => {
         headerName: t("Action"),
         field: "action",
         title: t("Action"),
-        width: 150,
+        width: 180,
+        minWidth: 175,
         sortable: false,
         resizable: false,
         cellRenderer: (params) => {
@@ -361,7 +362,7 @@ const Packages = () => {
           </div>
         </div>
 
-        {/* Regional pricing: regions + organization billing country */}
+        {/* Regional pricing: regions */}
         <RegionalPricing refreshKey={regionsRefreshKey} isDark={isDark} addRegionSignal={addRegionSignal} />
 
         <PlanRegionPricesModal

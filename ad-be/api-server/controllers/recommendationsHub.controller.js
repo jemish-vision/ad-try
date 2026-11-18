@@ -385,6 +385,7 @@ async function getCompetitorInsights({ profileId, priceMap }) {
 // ─── Controller ───────────────────────────────────────────────────────────────
 
 exports.getRecommendationsHub = async (req, res) => {
+    if (req.user?.isMockUser || req.isMockTestingUser) return require("../services/mockTestingData.service").getRecommendationsHub(req, res);
     const configId = req?.config?.configId;
     const { adTypeCampaignSchema, adTypeSearchTermSchema, adTypeProductAdsSchema } = req?.models || {};
 

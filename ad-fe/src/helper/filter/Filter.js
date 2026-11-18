@@ -21,6 +21,7 @@ import { resolveProfileSelection } from './profileSelection';
 import LanguageSelector from '../../components/LanguageSelector';
 
 import { ApiGetGlobalSettings, ApiUpdateMaintenanceMode } from "../../api-wrapper/globalSettings/ApiGlobalSettings";
+import { ApiToggleMockMode } from "../../api-wrapper/ApiUsers";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../../components/ui/dialog";
 import { Button } from "../../components/ui/button";
 import { Moon, Sun, ArrowLeft as ArrowBackIosIcon } from "@phosphor-icons/react";
@@ -175,7 +176,73 @@ function LayoutHeader({ nameShow = false, name, dateShow = false, profileShow, i
     const headerProps = headerCtx?.headerProps || {};
     const setHeaderProps = headerCtx?.setHeaderProps;
 
-    let { setToday, setSelectedDate, setProfileId, pagePermission, setPagePermission, setTypeValue, profileList, setProfileList, setSelectedConfig } = useContext(ProfileContext)
+    let { setToday, setSelectedDate, setProfileId, pagePermission, setPagePermission, setTypeValue, profileList, setProfileList, setSelectedConfig, loginUser, setLoginUser, refreshSideBar, setRefreshSideBar } = useContext(ProfileContext)
+    const [isMockMode, setIsMockMode] = useState(() => Boolean(loginUser?.isMockUser || localStorage.getItem("isMockUser") === "true"));
+    const [isTogglingMock, setIsTogglingMock] = useState(false);
+
+    useEffect(() => {
+        if (loginUser && typeof loginUser.isMockUser === "boolean") {
+            setIsMockMode(loginUser.isMockUser);
+            localStorage.setItem("isMockUser", String(loginUser.isMockUser));
+        }
+    }, [loginUser]);
+
+    const handleToggleMockMode = async () => {
+        if (isTogglingMock) return;
+        const nextState = !isMockMode;
+        setIsTogglingMock(true);
+        try {
+            const res = await ApiToggleMockMode({ isMockUser: nextState });
+            if (res?.isSuccess) {
+                setIsMockMode(nextState);
+                localStorage.setItem("isMockUser", String(nextState));
+                if (nextState) {
+                    const currentRaw = localStorage.getItem("profile");
+                    if (currentRaw) {
+                        try {
+                            const parsed = JSON.parse(currentRaw);
+                            const isMockProf = Number(parsed?.profile?.profileId) === 99999901 || String(parsed?.config?.configId) === "000000000000000000000001";
+                            if (!isMockProf) {
+                                localStorage.setItem("previousNormalProfile", currentRaw);
+                            }
+                        } catch (e) { }
+                    }
+                    localStorage.removeItem("profile");
+                    localStorage.setItem("connection", "true");
+                    setConnected("true");
+                } else {
+                    const prevNormal = localStorage.getItem("previousNormalProfile");
+                    if (prevNormal) {
+                        localStorage.setItem("profile", prevNormal);
+                        localStorage.removeItem("previousNormalProfile");
+                    } else {
+                        localStorage.removeItem("profile");
+                    }
+                }
+                if (setLoginUser && loginUser) {
+                    const updatedUser = { ...loginUser, isMockUser: nextState };
+                    setLoginUser(updatedUser);
+                    try {
+                        localStorage.setItem("userAccount", JSON.stringify(updatedUser));
+                    } catch (e) { }
+                }
+                if (setRefreshSideBar) {
+                    setRefreshSideBar(!refreshSideBar);
+                }
+                window.dispatchEvent(new CustomEvent("profileChanged"));
+                Toast.success(res.message || (nextState ? "Mock Testing Mode enabled" : "Mock Testing Mode disabled"));
+                setTimeout(() => {
+                    window.location.reload();
+                }, 300);
+            } else {
+                Toast.error(res?.message || "Failed to toggle Mock Mode");
+            }
+        } catch (err) {
+            Toast.error("Failed to toggle Mock Mode");
+        } finally {
+            setIsTogglingMock(false);
+        }
+    };
     const location = useLocation();
     const navigate = useNavigate();
     const currentOrgName = localStorage.getItem("organizationName");
@@ -384,14 +451,30 @@ function LayoutHeader({ nameShow = false, name, dateShow = false, profileShow, i
     };
 
     const checkAndSetDefaultProfile = useCallback((list) => {
+        const isMockActive = Boolean(loginUser?.isMockUser || localStorage.getItem("isMockUser") === "true");
         const storedProfileObj = (() => {
             try {
-                return JSON.parse(localStorage.getItem('profile'));
+                const parsed = JSON.parse(localStorage.getItem('profile'));
+                if (!isMockActive && (Number(parsed?.profile?.profileId) === 99999901 || String(parsed?.config?.configId) === "000000000000000000000001")) {
+                    const prevNormal = localStorage.getItem("previousNormalProfile");
+                    if (prevNormal) {
+                        localStorage.setItem("profile", prevNormal);
+                        localStorage.removeItem("previousNormalProfile");
+                        return JSON.parse(prevNormal);
+                    }
+                    localStorage.removeItem('profile');
+                    return null;
+                }
+                return parsed;
             } catch (e) {
                 return null;
             }
         })();
-        const selection = resolveProfileSelection(list, storedProfileObj);
+        const nonDemoList = Array.isArray(list)
+            ? list.filter(cfg => !cfg?.isDemoAccount && String(cfg?.configId) !== "000000000000000000000001")
+            : [];
+        const effectiveList = (!isMockActive && nonDemoList.length > 0) ? nonDemoList : (isMockActive ? list : nonDemoList);
+        const selection = resolveProfileSelection(effectiveList, storedProfileObj);
         if (!selection) {
             localStorage.removeItem('profile');
             setSelectedConfig(null);
@@ -400,13 +483,19 @@ function LayoutHeader({ nameShow = false, name, dateShow = false, profileShow, i
             return;
         }
         const dates = storedProfileObj?.date ?? [moment().startOf('month').format('YYYY-MM-DD'), moment().format('YYYY-MM-DD')];
+        if (isMockActive) {
+            localStorage.setItem("isMockUser", "true");
+            localStorage.setItem("connection", "true");
+        } else {
+            localStorage.setItem("isMockUser", "false");
+        }
         const sendData = { ...storedProfileObj, ...selection, currencyCode: selection.profile.currencyCode, date: dates };
         localStorage.setItem('profile', JSON.stringify(sendData));
         setSelectedDate(dates);
         setSelectedConfig(selection);
         setProfileId({ value: selection.profile.profileId });
         window.dispatchEvent(new CustomEvent('profileChanged', { detail: selection }));
-    }, [setSelectedDate, setSelectedConfig, setProfileId]);
+    }, [loginUser, setSelectedDate, setSelectedConfig, setProfileId]);
 
     const profileHandler = useCallback(() => {
         ApiSelectAccount()
@@ -458,10 +547,7 @@ function LayoutHeader({ nameShow = false, name, dateShow = false, profileShow, i
     }, [refreshProfileList]);
 
     useEffect(() => {
-        const isConn = localStorage.getItem('connection');
-        if (isConn === "true" || connected === "true") {
-            profileHandler();
-        }
+        profileHandler();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [location.pathname, connected]);
 
@@ -665,6 +751,23 @@ function LayoutHeader({ nameShow = false, name, dateShow = false, profileShow, i
                 </div>
                 <div className="flex gap-1 md:gap-3 xl:gap-3 justify-end items-center">
                     <div className="flex items-center gap-1 md:gap-3">
+                        {role && role !== ROLES.SUPER_ADMIN && (
+                            <AppTooltip text={isMockMode ? t("Demo Account Active — ❌ No real changes applied to Amazon | ❌ No real bulk actions | ❌ No Amazon API calls") : t("Enable Demo / Mock Testing Data Mode")} side="bottom">
+                                <button
+                                    type="button"
+                                    onClick={handleToggleMockMode}
+                                    disabled={isTogglingMock}
+                                    className={`px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
+                                        isMockMode
+                                            ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/40 shadow-sm"
+                                            : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-slate-300"
+                                    }`}
+                                >
+                                    <span className={`w-2 h-2 rounded-full ${isMockMode ? "bg-amber-500 animate-pulse" : "bg-slate-400"}`} />
+                                    <span className="hidden sm:inline">{isMockMode ? t("Mock Data: ON") : t("Mock Data: OFF")}</span>
+                                </button>
+                            </AppTooltip>
+                        )}
                         {hasTour && role && (
                             <AppTooltip text={t("Guided Tour")} side="bottom">
                                 <div id="help-center">

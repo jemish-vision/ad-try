@@ -2456,6 +2456,7 @@ exports.toggleProductFavorite = async (req, res) => {
 }
 
 exports.getSPProduct = async (req, res) => {
+    if (req.user?.isMockUser) return require("../services/mockTestingData.service").getSPProduct(req, res);
     const configId = req.body.configId || req.query.configId || req?.config?.configId || req?.headers?.["x-config-id"];
     try {
         let {
@@ -2666,7 +2667,14 @@ exports.getSPProduct = async (req, res) => {
                     reviewRequestEnable: { $ifNull: ["$reviewRequestEnable", false] },
                     productType: 1,
                     classificationRank: 1,
+                    classificationTitle: 1,
+                    classificationLink: 1,
                     displayGroupRanks: 1,
+                    displayGroupRank: { $ifNull: ["$displayGroupRank", "$displayGroupRanks"] },
+                    displayGroupTitle: 1,
+                    displayGroupLink: 1,
+                    classificationRanks: 1,
+                    displayGroupRanksList: 1,
                     notifyMeOnOrder: 1,
                     performanceMail: 1,
                     isFavorite: { $ifNull: ["$isFavorite", false] },
@@ -2825,6 +2833,84 @@ exports.getSPProduct = async (req, res) => {
                 ];
 
                 productResult = await productListingSchema.aggregate(fastPipeline).allowDiskUse(true);
+            }
+        }
+
+        // Live-enrich missing best seller ranks + links for current page items and persist to DB
+        if (productResult.length > 0 && pageSize <= 100) {
+            const missingAsins = [
+                ...new Set(
+                    productResult
+                        .filter(
+                            (row) =>
+                                row?.asin &&
+                                ((!row.classificationLink && !row.displayGroupLink) ||
+                                    !Array.isArray(row.classificationRanks) ||
+                                    row.classificationRanks.length === 0)
+                        )
+                        .map((row) => row.asin)
+                ),
+            ];
+
+            if (missingAsins.length > 0) {
+                const { fetchSalesRanksForAsins } = require("./productAds.controller");
+                const fetchedRanks = await fetchSalesRanksForAsins({
+                    configId,
+                    profileId: Number(profileId),
+                    asins: missingAsins,
+                });
+
+                if (fetchedRanks.size > 0) {
+                    const listingBulkOps = [];
+                    const adBulkOps = [];
+
+                    for (const row of productResult) {
+                        const rankData = row?.asin ? fetchedRanks.get(row.asin) : null;
+                        if (!rankData) continue;
+
+                        row.classificationRank = rankData.classificationRank ?? row.classificationRank ?? 0;
+                        row.classificationTitle = rankData.classificationTitle ?? row.classificationTitle ?? null;
+                        row.classificationLink = rankData.classificationLink ?? row.classificationLink ?? null;
+                        row.displayGroupRanks = rankData.displayGroupRank ?? row.displayGroupRanks ?? 0;
+                        row.displayGroupRank = rankData.displayGroupRank ?? row.displayGroupRank ?? 0;
+                        row.displayGroupTitle = rankData.displayGroupTitle ?? row.displayGroupTitle ?? null;
+                        row.displayGroupLink = rankData.displayGroupLink ?? row.displayGroupLink ?? null;
+                        row.classificationRanks = rankData.classificationRanks ?? row.classificationRanks ?? [];
+                        row.displayGroupRanksList = rankData.displayGroupRanksList ?? row.displayGroupRanksList ?? [];
+                    }
+
+                    for (const [asin, rankData] of fetchedRanks.entries()) {
+                        listingBulkOps.push({
+                            updateMany: {
+                                filter: { configId, profileId: Number(profileId), asin },
+                                update: {
+                                    $set: {
+                                        ...rankData,
+                                        classificationRank: rankData.classificationRank || 0,
+                                        displayGroupRanks: rankData.displayGroupRank || 0,
+                                        displayGroupRank: rankData.displayGroupRank || 0,
+                                    },
+                                },
+                            },
+                        });
+                        adBulkOps.push({
+                            updateMany: {
+                                filter: { configId, profileId: Number(profileId), asins: asin },
+                                update: { $set: rankData },
+                            },
+                        });
+                    }
+
+                    Promise.all([
+                        listingBulkOps.length ? productListingSchema.bulkWrite(listingBulkOps, { ordered: false }) : null,
+                        adBulkOps.length ? productAdsSchema.bulkWrite(adBulkOps, { ordered: false }) : null,
+                    ]).catch((err) => {
+                        write_logs({
+                            message: `[getSPProduct Rank Persist Error] ${err?.message || err}`,
+                            log_type: "warn",
+                        });
+                    });
+                }
             }
         }
 
@@ -3198,6 +3284,7 @@ exports.getProductDefinition = async (req, res) => {
 }
 
 exports.checkASIN = async (req, res) => {
+  if (req.user?.isMockUser || req.isMockTestingUser) return require("../services/mockTestingData.service").checkASIN(req, res);
     try {
 
         let { profileId, asin } = req.body;
@@ -3258,6 +3345,7 @@ exports.checkASIN = async (req, res) => {
 }
 
 exports.checkASINFromDB = async (req, res) => {
+  if (req.user?.isMockUser || req.isMockTestingUser) return require("../services/mockTestingData.service").checkASINFromDB(req, res);
     try {
         const { asins, profileId, search } = req.body;
 
@@ -3363,6 +3451,7 @@ exports.checkASINFromDB = async (req, res) => {
 };
 
 exports.productSearchOnAmazon = async (req, res) => {
+  if (req.user?.isMockUser || req.isMockTestingUser) return require("../services/mockTestingData.service").productSearchOnAmazon(req, res);
     try {
 
         let { profileId, keyword, brand } = req.body;
@@ -3527,26 +3616,70 @@ exports.cronBestSellerRank = async () => {
                         continue;
                     }
                     const ops = [];
+                    const adOps = [];
                     for (const item of response?.data?.items || []) {
                         const rankSet = (item.salesRanks || []).find((s) => s.marketplaceId === marketPlaceSettings.marketPlaceId) || item.salesRanks?.[0];
                         if (!rankSet) continue;
+                        const classificationList = Array.isArray(rankSet.classificationRanks)
+                            ? rankSet.classificationRanks.map((c) => ({
+                                classificationId: c.classificationId ?? null,
+                                title: c.title ?? null,
+                                link: c.link ?? null,
+                                rank: c.rank ?? null,
+                            }))
+                            : [];
+                        const displayGroupList = Array.isArray(rankSet.displayGroupRanks)
+                            ? rankSet.displayGroupRanks.map((d) => ({
+                                websiteDisplayGroup: d.websiteDisplayGroup ?? null,
+                                title: d.title ?? null,
+                                link: d.link ?? null,
+                                rank: d.rank ?? null,
+                            }))
+                            : [];
+                        const classification = classificationList[0] || null;
+                        const displayGroup = displayGroupList[0] || null;
+                        const rankPayload = {
+                            classificationRank: classification?.rank ?? null,
+                            classificationTitle: classification?.title ?? null,
+                            classificationLink: classification?.link ?? null,
+                            displayGroupRank: displayGroup?.rank ?? null,
+                            displayGroupTitle: displayGroup?.title ?? null,
+                            displayGroupLink: displayGroup?.link ?? null,
+                            classificationRanks: classificationList,
+                            displayGroupRanksList: displayGroupList,
+                        };
                         for (const _id of idsByAsin.get(item.asin) || []) {
                             ops.push({
                                 updateOne: {
                                     filter: { _id },
                                     update: {
                                         $set: {
-                                            classificationRank: rankSet.classificationRanks?.[0]?.rank || 0,
-                                            displayGroupRanks: rankSet.displayGroupRanks?.[0]?.rank || 0,
+                                            ...rankPayload,
+                                            classificationRank: classification?.rank || 0,
+                                            displayGroupRanks: displayGroup?.rank || 0,
+                                            displayGroupRank: displayGroup?.rank || 0,
                                         },
                                     },
                                 },
                             });
                         }
+                        adOps.push({
+                            updateMany: {
+                                filter: { configId: profile.configId, profileId: profile.profileId, asins: item.asin },
+                                update: { $set: rankPayload },
+                            },
+                        });
                     }
                     if (ops.length) {
                         await productListingSchema.bulkWrite(ops, { ordered: false });
                         updated += ops.length;
+                    }
+                    if (adOps.length) {
+                        await Promise.all([
+                            productAdsSchema.bulkWrite(adOps, { ordered: false }),
+                            sdProductAdsSchema.bulkWrite(adOps, { ordered: false }),
+                            sbProductAdsSchema.bulkWrite(adOps, { ordered: false }),
+                        ]);
                     }
                 }
 
@@ -4696,6 +4829,7 @@ const expandFulfillmentFilter = (fulfilledByInput) => {
 };
 
 exports.getAllOrders = async (req, res) => {
+    if (req.user?.isMockUser) return require("../services/mockTestingData.service").getAllOrders(req, res);
     const configId = req?.config?.configId;
 
     try {
@@ -4892,6 +5026,8 @@ exports.getAllOrders = async (req, res) => {
 };
 
 exports.getOrderReport = async (req, res) => {
+    const isMock = Boolean(req.user?.isMockUser || req.isMockTestingUser || String(req.body?.profileId) === "99999901");
+    if (isMock) return require("../services/mockTestingData.service").getOrderReport(req, res);
     const configId = req?.config?.configId;
 
     try {
@@ -5224,6 +5360,8 @@ exports.getOrderReport = async (req, res) => {
 };
 
 exports.getStateWiseOrderCount = async (req, res) => {
+    const isMock = Boolean(req.user?.isMockUser || req.isMockTestingUser || String(req.body?.profileId) === "99999901");
+    if (isMock) return require("../services/mockTestingData.service").getStateWiseOrderCount(req, res);
     const configId = req?.config?.configId;
 
     try {

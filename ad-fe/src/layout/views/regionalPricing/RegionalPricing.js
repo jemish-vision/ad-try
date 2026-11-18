@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import moment from "moment";
 import AgTable from "../../../common/grid/AgTable";
 import Toast from "../../../common/helper/toast/Toast";
 import { MdOutlineClose } from "react-icons/md";
@@ -9,10 +8,7 @@ import { Switch } from "../../../components/ui/switch";
 import { Button } from "../../../components/ui/button";
 import { CardTitle } from "src/components/ui/card";
 import { AppTooltip } from "../../../components/ui/AppTooltip";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
-
-const PAGE_SIZES = [10, 25, 50, 100];
-import { countryName, countryOptions, currencySymbol, regionalYearlyPrice } from "../../../common/constants/countries";
+import { countryName, currencySymbol, regionalYearlyPrice } from "../../../common/constants/countries";
 import RegionModal from "./RegionModal";
 import {
   ApiPricingRegionList,
@@ -20,11 +16,10 @@ import {
   ApiUpdatePricingRegion,
   ApiChangePricingRegionStatus,
   ApiDeletePricingRegion,
-  ApiOrganizationBillingList,
-  ApiUpdateOrganizationBilling,
   ApiDetectPricingCountry,
 } from "../../../api-wrapper/ApiPricingRegions";
 
+const PAGE_SIZES = [10, 25, 50, 100];
 const fixedGrid = { resizable: true, sortable: false };
 const GRID_AUTO_SIZE = { type: "fitGridWidth" };
 const fitColumns = (p) => p?.api?.sizeColumnsToFit?.();
@@ -40,25 +35,8 @@ const compactGrid = {
   suppressHorizontalScroll: true,
 };
 
-function CountryPicker({ value, onChange, placeholder, className = "w-[230px]" }) {
-  const { i18n } = useTranslation();
-  const options = useMemo(() => countryOptions(i18n.language), [i18n.language]);
-  return (
-    <Select value={value || undefined} onValueChange={onChange}>
-      <SelectTrigger className={`h-9 text-xs ${className}`}>
-        <SelectValue placeholder={placeholder}>{value ? `${countryName(value, i18n.language)} (${value})` : placeholder}</SelectValue>
-      </SelectTrigger>
-      <SelectContent className="max-h-[300px]">
-        {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
 /**
- * Pricing regions + organization billing country. Rendered under the Plans grid (Super Admin).
+ * Pricing regions. Rendered under the Plans grid (Super Admin).
  * refreshKey: bump to reload the regions (e.g. after a plan's regional prices were saved).
  */
 const RegionalPricing = ({ refreshKey = 0, isDark = false, addRegionSignal = 0 }) => {
@@ -66,23 +44,16 @@ const RegionalPricing = ({ refreshKey = 0, isDark = false, addRegionSignal = 0 }
   const lang = i18n.language;
   const [regions, setRegions] = useState([]);
   const [plans, setPlans] = useState([]);
-  const [orgs, setOrgs] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [orgLoading, setOrgLoading] = useState(false);
   const [modal, setModal] = useState({ open: false, region: null });
   const [saving, setSaving] = useState(false);
   const [deleteRow, setDeleteRow] = useState(null);
   const [detected, setDetected] = useState(null);
-  const [setCountryFor, setSetCountryFor] = useState(null);
-  const [newCountry, setNewCountry] = useState("");
   const regionGrid = useRef(null);
-  const orgGrid = useRef(null);
   const [regionArg, setRegionArg] = useState({ pageNo: 1, perPage: PAGE_SIZES[0] });
   const [regionTotal, setRegionTotal] = useState(0);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [orgArg, setOrgArg] = useState({ pageNo: 1, perPage: PAGE_SIZES[0] });
-  const [orgTotal, setOrgTotal] = useState(0);
 
   useEffect(() => {
     const h = setTimeout(() => {
@@ -104,26 +75,14 @@ const RegionalPricing = ({ refreshKey = 0, isDark = false, addRegionSignal = 0 }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [regionArg, debouncedSearch, refreshKey]);
 
-  const fetchOrgs = useCallback(async (skip = true) => {
-    setOrgLoading(true);
-    const res = await ApiOrganizationBillingList(orgArg, skip);
-    if (res?.isSuccess) {
-      setOrgs(res.data || []);
-      setOrgTotal(res.totalRecords || 0);
-    }
-    setOrgLoading(false);
-  }, [orgArg]);
-
   useEffect(() => { fetchRegions(); }, [fetchRegions]);
   // "Add Region" requested from elsewhere (e.g. the plan's regional prices modal when no region exists).
   useEffect(() => {
     if (addRegionSignal) setModal({ open: true, region: null });
   }, [addRegionSignal]);
-  useEffect(() => { fetchOrgs(); }, [fetchOrgs]);
   useEffect(() => {
     ApiDetectPricingCountry().then((res) => res?.isSuccess && setDetected(res.data));
   }, []);
-
 
   const saveRegion = async (data) => {
     setSaving(true);
@@ -148,14 +107,6 @@ const RegionalPricing = ({ refreshKey = 0, isDark = false, addRegionSignal = 0 }
     if (res?.isSuccess) {
       Toast.success(t(res.message));
       fetchRegions(true);
-    } else Toast.error(res?.message || t("Something went wrong"));
-  };
-
-  const updateOrg = async (organizationId, action, country) => {
-    const res = await ApiUpdateOrganizationBilling({ organizationId, action, country });
-    if (res?.isSuccess) {
-      Toast.success(t(res.message));
-      fetchOrgs(true);
     } else Toast.error(res?.message || t("Something went wrong"));
   };
 
@@ -207,50 +158,6 @@ const RegionalPricing = ({ refreshKey = 0, isDark = false, addRegionSignal = 0 }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [t, lang, plans]);
-
-  const orgColumns = useMemo(() => [
-    { headerName: t("Organization"), field: "organizationName", width: 220, ...fixedGrid, sortable: true, cellRenderer: ({ value }) => <span className="fw-bold">{value || "-"}</span> },
-    { headerName: t("Plan"), field: "planId", width: 140, ...fixedGrid, cellRenderer: ({ value }) => value?.name || "-" },
-    {
-      headerName: t("Pricing"), field: "pricingMode", width: 260, ...fixedGrid,
-      cellRenderer: ({ data }) => {
-        if (!data) return null;
-        if (data.pricingMode === "default") return <span className="text-slate-500">{t("Default price (existing customer)")}</span>;
-        return (
-          <span>
-            {data.billingCountry ? `${countryName(data.billingCountry, lang)} (${data.billingCountry})` : t("By visitor country")}
-            {data.billingCountrySource === "admin" && <span className="ml-1 text-[11px] text-slate-400">· {t("set by admin")}</span>}
-          </span>
-        );
-      },
-    },
-    { headerName: t("Locked On"), field: "billingCountrySetAt", width: 130, ...fixedGrid, cellRenderer: ({ value }) => (value ? moment(value).format("DD MMM YYYY") : "-") },
-    {
-      headerName: t("Country Check"), field: "billingCountryMismatch", width: 260, ...fixedGrid, wrapText: true, autoHeight: true,
-      cellRenderer: ({ value }) => value?.detectedAt ? (
-        <span className="text-amber-600 dark:text-amber-400 text-xs font-semibold py-1 inline-block">
-          <i className="fa fa-triangle-exclamation mr-1" />
-          {t("Priced for {{country}}, card {{card}}, address {{address}}", { country: value.pricingCountry || "-", card: value.cardCountry || "-", address: value.addressCountry || "-" })}
-        </span>
-      ) : <span className="text-emerald-600 text-xs"><i className="fa fa-check mr-1" />{t("OK")}</span>,
-    },
-    {
-      headerName: t("Action"), field: "action", width: 150, ...fixedGrid,
-      cellRenderer: ({ data }) => data && (
-        <div className="action_container gap-3 flex items-center h-full">
-          <AppTooltip text={t("Set billing country")}><i className="fa fa-earth-americas cursor-pointer" onClick={() => { setSetCountryFor(data); setNewCountry(data.billingCountry || ""); }} /></AppTooltip>
-          <AppTooltip text={t("Reset: lock again at next payment")}><i className="fa fa-rotate-left cursor-pointer" onClick={() => updateOrg(data._id, "reset")} /></AppTooltip>
-          {data.pricingMode !== "default" && (
-            <AppTooltip text={t("Always use default price")}><i className="fa fa-dollar-sign cursor-pointer" onClick={() => updateOrg(data._id, "default")} /></AppTooltip>
-          )}
-          {data.billingCountryMismatch?.detectedAt && (
-            <AppTooltip text={t("Clear warning")}><i className="fa fa-check-double cursor-pointer" onClick={() => updateOrg(data._id, "clearFlag")} /></AppTooltip>
-          )}
-        </div>
-      ),
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [t, lang]);
 
   return (
     <>
@@ -324,37 +231,6 @@ const RegionalPricing = ({ refreshKey = 0, isDark = false, addRegionSignal = 0 }
           </div>
         </div>
 
-        {/* Organization billing */}
-        <div className="data_content data_content_btn glass-grid-container h-maxContent" style={{ marginTop: "12px" }}>
-          <div className="flex flex-col gap-1 pt-4 pb-2 px-6">
-            <CardTitle className="m-0 cron-title-bar" style={{ fontSize: 14 }}>{t("Organization Billing Country")}</CardTitle>
-            <span className="text-xs text-slate-500 dark:text-slate-400">
-              {t("The billing country is locked at the first payment, so renewals and plan changes keep the same price even on a VPN.")}
-            </span>
-          </div>
-          <div className="data_table">
-            <AgTable
-              ref={orgGrid}
-              tableId="pricing-org-billing-table"
-              loading={orgLoading}
-              onRefresh={() => fetchOrgs(true)}
-              rowData={orgs}
-              columnDefs={orgColumns}
-              totalRecords={orgTotal}
-              perPage={orgArg.perPage}
-              currentPage={orgArg.pageNo}
-              onPageChange={(page) => setOrgArg((prev) => ({ ...prev, pageNo: page }))}
-              onPerPageChange={(perPage) => setOrgArg({ pageNo: 1, perPage })}
-              onSortChanged={() => {}}
-              paginationOptions={PAGE_SIZES}
-              isCustomSaveColumns={true}
-              customSaveColumnName={"Organization Billing Country"}
-              {...compactGrid}
-              height={gridHeight(orgs.map((o) => (o.billingCountryMismatch?.detectedAt ? 52 : 46)))}
-            />
-          </div>
-        </div>
-
         <RegionModal
           open={modal.open}
           region={modal.region}
@@ -377,26 +253,6 @@ const RegionalPricing = ({ refreshKey = 0, isDark = false, addRegionSignal = 0 }
             { label: t("Delete"), variant: "danger", icon: "delete", onClick: confirmDelete },
           ]}
         />
-
-        <CustomModal
-          show={!!setCountryFor}
-          onHide={() => setSetCountryFor(null)}
-          title={t("Set billing country")}
-          subtitle={setCountryFor?.organizationName}
-          icon="edit"
-          message={t("This organization will see and pay the price of the selected country from its next payment.")}
-          actions={[
-            { label: t("Cancel"), cancel: true, icon: "close", onClick: () => setSetCountryFor(null) },
-            {
-              label: t("Save"), icon: "save", disabled: !newCountry,
-              onClick: async () => { await updateOrg(setCountryFor._id, "set", newCountry); setSetCountryFor(null); },
-            },
-          ]}
-        >
-          <div className="mt-3 w-full flex justify-center">
-            <CountryPicker value={newCountry} onChange={setNewCountry} placeholder={t("Select country")} className="w-full" />
-          </div>
-        </CustomModal>
       </div>
     </>
   );

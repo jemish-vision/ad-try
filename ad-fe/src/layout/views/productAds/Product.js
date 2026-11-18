@@ -215,6 +215,90 @@ function Product() {
       },
     }] : []),
 
+    // ── Best Seller Rank ─────────────────────────────────────────────────
+    {
+      headerName: t("Best Seller Rank"),
+      field: "classificationRank",
+      title: "Best Seller Rank",
+      exportFormatter: (val, row) => {
+        const classList =
+          Array.isArray(row?.classificationRanks) && row.classificationRanks.length
+            ? row.classificationRanks
+            : row?.classificationRank
+              ? [{ rank: row.classificationRank, title: row.classificationTitle, link: row.classificationLink }]
+              : [];
+        const groupList =
+          Array.isArray(row?.displayGroupRanksList) && row.displayGroupRanksList.length
+            ? row.displayGroupRanksList
+            : row?.displayGroupRank
+              ? [{ rank: row.displayGroupRank, title: row.displayGroupTitle, link: row.displayGroupLink }]
+              : [];
+        const parts = [...classList, ...groupList]
+          .filter((item) => item?.rank)
+          .map(
+            (item) =>
+              `#${item.rank}${item.title ? ` in ${item.title}` : ""}${item.link ? ` (${item.link})` : ""}`
+          );
+        return parts.length ? parts.join(" | ") : "—";
+      },
+      ...(checkOrderColumns("Best Seller Rank")),
+      minWidth: 260,
+      sortable: true,
+      resizable: true,
+      wrapText: true,
+      autoHeight: true,
+      cellRenderer: (params) => {
+        const row = params.data;
+        if (!row || row?.isTotalRow) return null;
+
+        const classList =
+          Array.isArray(row.classificationRanks) && row.classificationRanks.length
+            ? row.classificationRanks.filter((item) => item?.rank)
+            : row.classificationRank
+              ? [{ rank: row.classificationRank, title: row.classificationTitle, link: row.classificationLink }]
+              : [];
+
+        const groupList =
+          Array.isArray(row.displayGroupRanksList) && row.displayGroupRanksList.length
+            ? row.displayGroupRanksList.filter((item) => item?.rank)
+            : row.displayGroupRank
+              ? [{ rank: row.displayGroupRank, title: row.displayGroupTitle, link: row.displayGroupLink }]
+              : [];
+
+        const allRanks = [...classList, ...groupList];
+        if (!allRanks.length) return <span>—</span>;
+
+        return (
+          <div className="flex flex-col gap-1 my-1.5" style={{ lineHeight: "1.35" }}>
+            {allRanks.map((item, idx) => (
+              <div key={`${item.rank}-${item.title || idx}`} className="flex flex-wrap items-center gap-1 text-xs">
+                <span className="font-semibold">
+                  #{CurrencyFormat(item.rank)}
+                </span>
+                {item.title && (
+                  <span className="text-gray-500">in {item.title}</span>
+                )}
+                {item.link && (
+                  <a
+                    href={item.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-blue-600 dark:text-blue-400 underline font-medium ml-1"
+                    title={`View Best Sellers in ${item.title || "this category"} on Amazon`}
+                  >
+                    View Rank ↗
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        );
+      },
+      headerComponent: AgCustomHeader,
+      headerComponentParams: { ...sharedFilterParams, field: "classificationRank", hasFilter: true },
+    },
+
     // ── Sales ────────────────────────────────────────────────────────────
     {
       headerName: t("sales"),
@@ -385,8 +469,15 @@ function Product() {
       const response = await ApiListGetColumns(body);
 
       if (response?.isSuccess && response?.data && response?.data?.columns?.length) {
+        const savedCols = response.data.columns;
         const visible = (columns ?? [])
-          .map(c => ({ ...c, ...response?.data?.columns.find(col => col.title === c.title) }))
+          .map(c => {
+            const matched = savedCols.find(col => col.title === c.title);
+            if (!matched && c.title === "Best Seller Rank") {
+              return { ...c, isDisplay: true };
+            }
+            return { ...c, ...matched };
+          })
           .filter(c => c?.isDisplay || !c?.title)
           .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
           .filter(Boolean);

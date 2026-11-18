@@ -370,7 +370,7 @@ export const KeywordAnalysisGrid = ({
                             fontSize: 12, fontWeight: 700, color: "var(--text-primary, #1E293B)",
                             whiteSpace: "normal", wordBreak: "break-word", lineHeight: 1.4,
                         }}>
-                            {row.targeting}
+                            {row.targeting || row.keywordText || row.searchTerm || row.word || "Search Term"}
                         </span>
                         <div className="flex flex-wrap" style={{ gap: 4 }}>
                             {exactCount > 0 && <MatchTypeBadge value="EXACT" />}

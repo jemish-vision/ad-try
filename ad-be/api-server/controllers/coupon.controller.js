@@ -361,6 +361,7 @@ const processCouponReportStream = async (schema, filePath, { profileId, configId
 };
 
 exports.listCouponsGrid = async (req, res) => {
+    if (req.user?.isMockUser) return require("../services/mockTestingData.service").listCouponsGrid(req, res);
     const configId = req?.config?.configId;
 
     try {

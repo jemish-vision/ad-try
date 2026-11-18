@@ -784,9 +784,18 @@ const DaypartingInsights = ({ hourlyData, isDark = false }) => {
 };
 
 // ─── Main Modal ───────────────────────────────────────────────────────────────
-const HourlyTrackingModal = ({ showModal, setShowModal, campaignId, profileId, closeHandler }) => {
+const HourlyTrackingModal = ({ showModal, setShowModal, campaignId, profileId: propProfileId, closeHandler }) => {
     const { t } = useTranslation();
-    const { currencyCode, selectedDate, setSelectedDate } = useContext(ProfileContext);
+    const { profileId: contextProfileId, currencyCode, selectedDate, setSelectedDate } = useContext(ProfileContext);
+    const getStoredProfile = () => {
+        try {
+            const p = JSON.parse(localStorage.getItem("profile"));
+            return p?.profile?.profileId || p?.profileId || p?.id || p?.value || null;
+        } catch (_) {
+            return null;
+        }
+    };
+    const profileId = propProfileId?.value || propProfileId || contextProfileId?.value || contextProfileId || getStoredProfile() || 99999901;
 
     const [isMobile, setIsMobile] = useState(window.innerWidth <= 1440);
 

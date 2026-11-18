@@ -27,12 +27,16 @@ const productSchema = require("../models/product.model");
 const adNotificationSchema = require("../models/adNotification.model");
 
 const sbProductSchema = require("../models/sbProduct.model");
+const sbProductAdsSchema = require("../models/sbProductAds.model");
 
 const sdProductAdsSchema = require("../models/sdProductAds.model");
 const sdProductSchema = require("../models/sdProduct.model");
+const marketPlaceConfigSchema = require("../models/marketPlaceConfig.model");
+const productListingSchema = require("../models/productListing.model");
 
 const {
   getAccessToken,
+  getSPAccessToken,
   getProfile,
   buildFieldFilter,
   unzipReport,
@@ -54,6 +58,215 @@ const { cron_logs } = require("../../winston/cronAutomation/logger");
 
 const amazonAxios = require("../helper/amazonAxios");
 const AD_TYPE_COLLECTIONS = require("../helper/adTypeCollections");
+const sellerConfigSchema = require("../models/sellerConfig.model");
+const catalogRankLimit = pLimit(2);
+const notFoundSalesRankAsins = new Set();
+
+function extractSalesRankFields(salesRanks, marketplaceId) {
+  if (!Array.isArray(salesRanks) || !salesRanks.length) return null;
+  const rankSet =
+    (marketplaceId && salesRanks.find((s) => s.marketplaceId === marketplaceId)) ||
+    salesRanks[0];
+  if (!rankSet) return null;
+  const classificationList = Array.isArray(rankSet.classificationRanks)
+    ? rankSet.classificationRanks.map((c) => ({
+        classificationId: c.classificationId ?? null,
+        title: c.title ?? null,
+        link: c.link ?? null,
+        rank: c.rank ?? null,
+      }))
+    : [];
+  const displayGroupList = Array.isArray(rankSet.displayGroupRanks)
+    ? rankSet.displayGroupRanks.map((d) => ({
+        websiteDisplayGroup: d.websiteDisplayGroup ?? null,
+        title: d.title ?? null,
+        link: d.link ?? null,
+        rank: d.rank ?? null,
+      }))
+    : [];
+  const classification = classificationList[0] || null;
+  const displayGroup = displayGroupList[0] || null;
+  return {
+    classificationRank: classification?.rank ?? null,
+    classificationTitle: classification?.title ?? null,
+    classificationLink: classification?.link ?? null,
+    displayGroupRank: displayGroup?.rank ?? null,
+    displayGroupTitle: displayGroup?.title ?? null,
+    displayGroupLink: displayGroup?.link ?? null,
+    classificationRanks: classificationList,
+    displayGroupRanksList: displayGroupList,
+  };
+}
+
+async function resolveSPAccessTokenForCatalog(configId, profileId) {
+  const directExists = await sellerConfigSchema
+    .findOne({
+      configId,
+      profileId,
+      isActive: true,
+      spRefreshToken: { $exists: true, $nin: [null, ""] },
+    })
+    .select("configId profileId")
+    .lean();
+
+  if (directExists) {
+    try {
+      const checkConfigSP = await getSPAccessToken(configId, profileId);
+      if (checkConfigSP?.spAccessToken) return checkConfigSP;
+    } catch (_) {}
+  }
+
+  // Fallback for Vendor profiles or profiles without their own sellerConfig row:
+  // Catalog Items API salesRanks is public per ASIN + marketplaceId, so use any active sellerConfig with a refresh token.
+  const fallbackConfigs = await sellerConfigSchema
+    .find({
+      isActive: true,
+      spRefreshToken: { $exists: true, $nin: [null, ""] },
+      configId: { $ne: null },
+      profileId: { $ne: null },
+    })
+    .select("configId profileId")
+    .limit(5)
+    .lean();
+
+  for (const fb of fallbackConfigs) {
+    try {
+      const checkConfigSP = await getSPAccessToken(fb.configId, fb.profileId);
+      if (checkConfigSP?.spAccessToken) return checkConfigSP;
+    } catch (_) {}
+  }
+  return null;
+}
+
+async function fetchSalesRanksForAsins({ configId, profileId, asins }) {
+  const rankMap = new Map();
+  try {
+    const profile = await getProfile(configId, profileId);
+    if (!profile) return rankMap;
+
+    const marketPlaceSettings = await marketPlaceConfigSchema
+      .findOne(
+        profile.marketplaceStringId
+          ? { marketPlaceId: profile.marketplaceStringId }
+          : { countryCode: profile.countryCode }
+      )
+      .lean();
+    if (!marketPlaceSettings?.endPoint || !marketPlaceSettings?.marketPlaceId) {
+      return rankMap;
+    }
+
+    const uniqueAsins = [
+      ...new Set(
+        (asins || [])
+          .map((a) => (a ? String(a).trim() : ""))
+          .filter((a) => a && !notFoundSalesRankAsins.has(`${marketPlaceSettings.marketPlaceId}:${a}`))
+      ),
+    ];
+    if (!uniqueAsins.length) return rankMap;
+
+    const checkConfigSP = await resolveSPAccessTokenForCatalog(configId, profileId);
+    if (!checkConfigSP?.spAccessToken) return rankMap;
+
+    const chunks = [];
+    for (let i = 0; i < uniqueAsins.length; i += 20) {
+      chunks.push(uniqueAsins.slice(i, i + 20));
+    }
+
+    await Promise.all(
+      chunks.map((chunk) =>
+        catalogRankLimit(async () => {
+          try {
+            if (chunk.length === 1) {
+              const asin = chunk[0];
+              const url = `${marketPlaceSettings.endPoint}/catalog/2022-04-01/items/${encodeURIComponent(
+                asin
+              )}?marketplaceIds=${marketPlaceSettings.marketPlaceId}&includedData=salesRanks`;
+              const response = await amazonAxios({
+                method: "GET",
+                url,
+                timeout: 15000,
+                headers: {
+                  "x-amz-access-token": checkConfigSP.spAccessToken,
+                  "Content-Type": "application/json",
+                },
+                meta: {
+                  configId: checkConfigSP.configId || configId,
+                  tokenKey: "spAccessToken",
+                  sp: true,
+                  profileId: checkConfigSP.profileId || profileId,
+                },
+              });
+              if (response?.status === 200 && response?.data?.salesRanks) {
+                const extracted = extractSalesRankFields(
+                  response.data.salesRanks,
+                  marketPlaceSettings.marketPlaceId
+                );
+                if (extracted) {
+                  rankMap.set(asin, extracted);
+                }
+              }
+              return;
+            }
+
+            const identifiers = chunk.map((a) => encodeURIComponent(a)).join(",");
+            const url = `${marketPlaceSettings.endPoint}/catalog/2022-04-01/items?identifiers=${identifiers}&identifiersType=ASIN&marketplaceIds=${marketPlaceSettings.marketPlaceId}&includedData=salesRanks&pageSize=20`;
+            const response = await amazonAxios({
+              method: "GET",
+              url,
+              timeout: 15000,
+              headers: {
+                "x-amz-access-token": checkConfigSP.spAccessToken,
+                "Content-Type": "application/json",
+              },
+              meta: {
+                configId: checkConfigSP.configId || configId,
+                tokenKey: "spAccessToken",
+                sp: true,
+                profileId: checkConfigSP.profileId || profileId,
+              },
+            });
+
+            const returnedAsins = new Set();
+            for (const item of response?.data?.items || []) {
+              if (!item?.asin) continue;
+              returnedAsins.add(item.asin);
+              if (item.salesRanks) {
+                const extracted = extractSalesRankFields(
+                  item.salesRanks,
+                  marketPlaceSettings.marketPlaceId
+                );
+                if (extracted) {
+                  rankMap.set(item.asin, extracted);
+                }
+              }
+            }
+            for (const asin of chunk) {
+              if (!returnedAsins.has(asin)) {
+                notFoundSalesRankAsins.add(`${marketPlaceSettings.marketPlaceId}:${asin}`);
+              }
+            }
+          } catch (err) {
+            if (err?.response?.status === 404 && chunk.length === 1) {
+              notFoundSalesRankAsins.add(`${marketPlaceSettings.marketPlaceId}:${chunk[0]}`);
+            } else {
+              write_logs({
+                message: `[fetchSalesRanksForAsins] profile ${profileId}: ${err?.message || err}`,
+                log_type: "warn",
+              });
+            }
+          }
+        })
+      )
+    );
+  } catch (err) {
+    write_logs({
+      message: `[fetchSalesRanksForAsins Error] profile ${profileId}: ${err?.message || err}`,
+      log_type: "warn",
+    });
+  }
+  return rankMap;
+}
+exports.fetchSalesRanksForAsins = fetchSalesRanksForAsins;
 
 exports.listProductAdsFromAmazon = async (req, res) => {
   try {
@@ -264,6 +477,7 @@ async function processSPProductAds({
 
   let nextToken = null;
   let page = 1;
+  const asinRankCache = new Map();
 
   do {
     let productAds = [];
@@ -285,9 +499,28 @@ async function processSPProductAds({
 
     if (!productAds.length) continue;
 
+    const uncachedAsins = [
+      ...new Set(
+        productAds
+          .map((item) => item.asins)
+          .filter((a) => a && !asinRankCache.has(a))
+      ),
+    ];
+    if (uncachedAsins.length) {
+      const fetchedRanks = await fetchSalesRanksForAsins({
+        configId: profile.configId,
+        profileId: profile.profileId,
+        asins: uncachedAsins,
+      });
+      for (const asin of uncachedAsins) {
+        asinRankCache.set(asin, fetchedRanks.get(asin) || null);
+      }
+    }
+
     const bulkOps = [];
 
     productAds.map((item) => {
+      const rankInfo = (item.asins && asinRankCache.get(item.asins)) || {};
       dates.map((reportDate) => {
         bulkOps.push({
           updateOne: {
@@ -300,6 +533,7 @@ async function processSPProductAds({
             update: {
               $set: {
                 ...item,
+                ...rankInfo,
                 reportDate,
                 campaignName: campaignMap[item.campaignId] || null,
               },
@@ -354,6 +588,7 @@ async function processSDProductAds({
   }
 
   let page = 0;
+  const asinRankCache = new Map();
 
   do {
     let productAds = [];
@@ -371,9 +606,28 @@ async function processSDProductAds({
 
     if (!productAds.length) break;
 
+    const uncachedAsins = [
+      ...new Set(
+        productAds
+          .map((item) => item.asins)
+          .filter((a) => a && !asinRankCache.has(a))
+      ),
+    ];
+    if (uncachedAsins.length) {
+      const fetchedRanks = await fetchSalesRanksForAsins({
+        configId: profile.configId,
+        profileId: profile.profileId,
+        asins: uncachedAsins,
+      });
+      for (const asin of uncachedAsins) {
+        asinRankCache.set(asin, fetchedRanks.get(asin) || null);
+      }
+    }
+
     const bulkOps = [];
 
     productAds.map((item) => {
+      const rankInfo = (item.asins && asinRankCache.get(item.asins)) || {};
       dates.map((reportDate) => {
         bulkOps.push({
           updateOne: {
@@ -386,6 +640,7 @@ async function processSDProductAds({
             update: {
               $set: {
                 ...item,
+                ...rankInfo,
                 reportDate,
                 campaignName: campaignMap[item.campaignId] || null,
               },
@@ -2585,6 +2840,7 @@ async function updateSdProductAds(req, res) {
 }
 
 exports.listProductAds = async (req, res) => {
+  if (req.user?.isMockUser) return require("../services/mockTestingData.service").listProductAds(req, res);
   const configId = req?.config?.configId;
   const adType = req.adType;
   const { adTypeProductAdsSchema } = req.models;
@@ -2661,7 +2917,15 @@ exports.listProductAds = async (req, res) => {
           cpc: { $avg: "$cpc" },
           latestCreatedAt: { $max: "$createdAt" },
           campaignName: { $first: "$campaignName" },
-          campaignStatus: { $first: "$status" }
+          campaignStatus: { $first: "$status" },
+          classificationRank: { $max: "$classificationRank" },
+          classificationTitle: { $first: "$classificationTitle" },
+          classificationLink: { $first: "$classificationLink" },
+          displayGroupRank: { $max: "$displayGroupRank" },
+          displayGroupTitle: { $first: "$displayGroupTitle" },
+          displayGroupLink: { $first: "$displayGroupLink" },
+          classificationRanks: { $first: "$classificationRanks" },
+          displayGroupRanksList: { $first: "$displayGroupRanksList" },
         }
       },
       ...(extraMatchStage ? [{ $match: extraMatchStage }] : []),
@@ -2698,6 +2962,14 @@ exports.listProductAds = async (req, res) => {
           clicks: { $sum: "$clicks" },
           orders: { $sum: "$orders" },
           cpc: { $avg: "$cpc" },
+          classificationRank: { $max: "$classificationRank" },
+          classificationTitle: { $first: "$classificationTitle" },
+          classificationLink: { $first: "$classificationLink" },
+          displayGroupRank: { $max: "$displayGroupRank" },
+          displayGroupTitle: { $first: "$displayGroupTitle" },
+          displayGroupLink: { $first: "$displayGroupLink" },
+          classificationRanks: { $first: "$classificationRanks" },
+          displayGroupRanksList: { $first: "$displayGroupRanksList" },
           campaigns: {
             $push: {
               campaignId: "$_id.campaignId",
@@ -2732,10 +3004,44 @@ exports.listProductAds = async (req, res) => {
           from: "productlistings",
           let: { asin: "$_id.asin", sku: "$_id.sku" },
           pipeline: [
-            { $match: { $expr: { $or: [{ $eq: ["$asin", "$$asin"] }, { $eq: ["$sku", "$$sku"] }] } } },
+            {
+              $match: {
+                $expr: {
+                  $or: [
+                    {
+                      $and: [
+                        { $ne: ["$$asin", null] },
+                        { $ne: ["$$asin", ""] },
+                        { $eq: ["$asin", "$$asin"] },
+                      ],
+                    },
+                    {
+                      $and: [
+                        { $ne: ["$$sku", null] },
+                        { $ne: ["$$sku", ""] },
+                        { $eq: ["$sku", "$$sku"] },
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
             { $sort: { reportDate: -1 } },
             { $limit: 1 },
-            { $project: { title: "$itemName", imageUrl: "$imageURL" } }
+            {
+              $project: {
+                title: "$itemName",
+                imageUrl: "$imageURL",
+                classificationRank: 1,
+                classificationTitle: 1,
+                classificationLink: 1,
+                displayGroupRank: { $ifNull: ["$displayGroupRank", "$displayGroupRanks"] },
+                displayGroupTitle: 1,
+                displayGroupLink: 1,
+                classificationRanks: 1,
+                displayGroupRanksList: 1,
+              }
+            }
           ],
           as: "productData"
         }
@@ -2763,6 +3069,50 @@ exports.listProductAds = async (req, res) => {
           spend: { $round: ["$spend", 2] },
           campaigns: 1,
           productData: 1,
+          classificationRank: {
+            $cond: [
+              { $and: [{ $ne: ["$classificationRank", null] }, { $gt: ["$classificationRank", 0] }] },
+              "$classificationRank",
+              {
+                $cond: [
+                  { $and: [{ $ne: ["$productData.classificationRank", null] }, { $gt: ["$productData.classificationRank", 0] }] },
+                  "$productData.classificationRank",
+                  null
+                ]
+              }
+            ]
+          },
+          classificationTitle: { $ifNull: ["$classificationTitle", "$productData.classificationTitle"] },
+          classificationLink: { $ifNull: ["$classificationLink", "$productData.classificationLink"] },
+          displayGroupRank: {
+            $cond: [
+              { $and: [{ $ne: ["$displayGroupRank", null] }, { $gt: ["$displayGroupRank", 0] }] },
+              "$displayGroupRank",
+              {
+                $cond: [
+                  { $and: [{ $ne: ["$productData.displayGroupRank", null] }, { $gt: ["$productData.displayGroupRank", 0] }] },
+                  "$productData.displayGroupRank",
+                  null
+                ]
+              }
+            ]
+          },
+          displayGroupTitle: { $ifNull: ["$displayGroupTitle", "$productData.displayGroupTitle"] },
+          displayGroupLink: { $ifNull: ["$displayGroupLink", "$productData.displayGroupLink"] },
+          classificationRanks: {
+            $cond: [
+              { $gt: [{ $size: { $ifNull: ["$classificationRanks", []] } }, 0] },
+              "$classificationRanks",
+              { $ifNull: ["$productData.classificationRanks", []] }
+            ]
+          },
+          displayGroupRanksList: {
+            $cond: [
+              { $gt: [{ $size: { $ifNull: ["$displayGroupRanksList", []] } }, 0] },
+              "$displayGroupRanksList",
+              { $ifNull: ["$productData.displayGroupRanksList", []] }
+            ]
+          },
           cpc: "$totalCpc",
           ctr: "$totalCtr",
           conversionRate: "$totalConversionRate",
@@ -2789,6 +3139,82 @@ exports.listProductAds = async (req, res) => {
 
     const totalRecords = productAdsResult[0].metadata[0]?.total || 0;
     const getProductAds = productAdsResult[0].data;
+
+    // Live-enrich missing best seller ranks + links for current page items and persist to DB
+    if (getProductAds.length > 0 && Number(perPage) <= 100) {
+      const missingAsins = [
+        ...new Set(
+          getProductAds
+            .filter(
+              (row) =>
+                row?.asins &&
+                ((!row.classificationLink && !row.displayGroupLink) ||
+                  !Array.isArray(row.classificationRanks) ||
+                  row.classificationRanks.length === 0)
+            )
+            .map((row) => row.asins)
+        ),
+      ];
+
+      if (missingAsins.length > 0) {
+        const fetchedRanks = await fetchSalesRanksForAsins({
+          configId,
+          profileId: Number(profileId),
+          asins: missingAsins,
+        });
+
+        if (fetchedRanks.size > 0) {
+          const adBulkOps = [];
+          const listingBulkOps = [];
+
+          for (const row of getProductAds) {
+            const rankData = row?.asins ? fetchedRanks.get(row.asins) : null;
+            if (!rankData) continue;
+
+            row.classificationRank = rankData.classificationRank ?? row.classificationRank ?? null;
+            row.classificationTitle = rankData.classificationTitle ?? row.classificationTitle ?? null;
+            row.classificationLink = rankData.classificationLink ?? row.classificationLink ?? null;
+            row.displayGroupRank = rankData.displayGroupRank ?? row.displayGroupRank ?? null;
+            row.displayGroupTitle = rankData.displayGroupTitle ?? row.displayGroupTitle ?? null;
+            row.displayGroupLink = rankData.displayGroupLink ?? row.displayGroupLink ?? null;
+            row.classificationRanks = rankData.classificationRanks ?? row.classificationRanks ?? [];
+            row.displayGroupRanksList = rankData.displayGroupRanksList ?? row.displayGroupRanksList ?? [];
+          }
+
+          for (const [asin, rankData] of fetchedRanks.entries()) {
+            adBulkOps.push({
+              updateMany: {
+                filter: { configId, profileId: Number(profileId), asins: asin },
+                update: { $set: rankData },
+              },
+            });
+            listingBulkOps.push({
+              updateMany: {
+                filter: { configId, profileId: Number(profileId), asin },
+                update: {
+                  $set: {
+                    ...rankData,
+                    classificationRank: rankData.classificationRank || 0,
+                    displayGroupRanks: rankData.displayGroupRank || 0,
+                    displayGroupRank: rankData.displayGroupRank || 0,
+                  },
+                },
+              },
+            });
+          }
+
+          Promise.all([
+            adBulkOps.length ? adTypeProductAdsSchema.bulkWrite(adBulkOps, { ordered: false }) : null,
+            listingBulkOps.length ? productListingSchema.bulkWrite(listingBulkOps, { ordered: false }) : null,
+          ]).catch((err) => {
+            write_logs({
+              message: `[listProductAds Rank Persist Error] ${err?.message || err}`,
+              log_type: "warn",
+            });
+          });
+        }
+      }
+    }
 
     return res.status(200).send({
       isSuccess: true,

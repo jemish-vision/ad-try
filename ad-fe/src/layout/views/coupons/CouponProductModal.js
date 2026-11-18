@@ -224,7 +224,7 @@ const CouponProductModal = ({ coupon, onClose }) => {
                             label: t("Start Date"),
                             content: (
                                 <span className="text-sm font-semibold text-slate-900 dark:text-white">
-                                    {fmtDate(coupon.startDateTime)}
+                                    {fmtDate(coupon.startDateTime || coupon.startDate)}
                                 </span>
                             ),
                         },
@@ -232,7 +232,7 @@ const CouponProductModal = ({ coupon, onClose }) => {
                             label: t("End Date"),
                             content: (
                                 <span className="text-sm font-semibold text-slate-900 dark:text-white">
-                                    {fmtDate(coupon.endDateTime)}
+                                    {fmtDate(coupon.endDateTime || coupon.endDate)}
                                 </span>
                             ),
                         },

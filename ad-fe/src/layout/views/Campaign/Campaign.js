@@ -420,7 +420,8 @@ function Campaign() {
   }, []);
 
   const { t } = useTranslation();
-  let { profileId, selectedAdType, selectedDate, setSelectedDate } = useContext(ProfileContext);
+  let { profileId, selectedAdType, selectedDate, setSelectedDate, loginUser } = useContext(ProfileContext);
+  const isMockUser = Boolean(loginUser?.isMockUser || localStorage.getItem("isMockUser") === "true");
   // Combined SP+SB+SD view active on the /campaigns screen?
   const showAllTypes = isShowingAllAdTypes(
     typeof window !== "undefined" ? window.location.pathname : "",
@@ -2380,25 +2381,54 @@ function Campaign() {
 
                   {/* Add Campaign */}
                   {PermissionCheck(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.CREATE) && (
-                    <Button
-                      id="campaign-add"
-                      className="customize-button clicked m-0 gap-0 btn-campaign-primary"
-                      style={{ flexGrow: isMobile ? 1 : 0, whiteSpace: "nowrap" }}
-                      title={showAllTypes ? t("Select a single ad type (SP, SB or SD) to create a campaign") : undefined}
-                      onClick={() => {
-                        // Campaign creation is ad-type-specific. Under the combined
-                        // "All" view there is no single target type, so require the
-                        // user to pick one first instead of defaulting silently.
-                        if (showAllTypes) {
-                          Toast.error(t("Select a single ad type (SP, SB or SD) to create a campaign"));
-                          return;
+                    <span
+                      className="d-inline-block"
+                      style={{ flexGrow: isMobile ? 1 : 0, cursor: isMockUser ? "not-allowed" : "default" }}
+                      title={
+                        isMockUser
+                          ? t("Campaign creation is disabled in Demo Mode")
+                          : (showAllTypes ? t("Select a single ad type (SP, SB or SD) to create a campaign") : undefined)
+                      }
+                      onClickCapture={(e) => {
+                        if (isMockUser) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          Toast.error(t("Campaign creation is disabled in Demo Mode"));
                         }
-                        navigate("/add-campagin");
                       }}
                     >
-                      <AddIcon style={{ fontSize: 16, marginRight: 4 }} />
-                      {t("addCampaign")}
-                    </Button>
+                      <Button
+                        id="campaign-add"
+                        disabled={isMockUser}
+                        className={`customize-button clicked m-0 gap-0 btn-campaign-primary ${isMockUser ? "opacity-50 cursor-not-allowed" : ""}`}
+                        style={{
+                          width: "100%",
+                          flexGrow: isMobile ? 1 : 0,
+                          whiteSpace: "nowrap",
+                          cursor: isMockUser ? "not-allowed" : "pointer",
+                          pointerEvents: isMockUser ? "none" : "auto",
+                        }}
+                        title={
+                          isMockUser
+                            ? t("Campaign creation is disabled in Demo Mode")
+                            : (showAllTypes ? t("Select a single ad type (SP, SB or SD) to create a campaign") : undefined)
+                        }
+                        onClick={() => {
+                          if (isMockUser) {
+                            Toast.error(t("Campaign creation is disabled in Demo Mode"));
+                            return;
+                          }
+                          if (showAllTypes) {
+                            Toast.error(t("Select a single ad type (SP, SB or SD) to create a campaign"));
+                            return;
+                          }
+                          navigate("/add-campagin");
+                        }}
+                      >
+                        <AddIcon style={{ fontSize: 16, marginRight: 4 }} />
+                        {t("addCampaign")}
+                      </Button>
+                    </span>
                   )}
                 </div>
               </div>
@@ -2475,7 +2505,7 @@ function Campaign() {
         showModal={showHourlyTrackingModal}
         setShowModal={setShowHourlyTrackingModal}
         campaignId={hourlyTrackingCampaigns}
-        profileId={profileId?.value}
+        profileId={profileId?.value || profileId}
         closeHandler={handleCloseHourlyTrackingModel}
       />
 
@@ -2483,7 +2513,7 @@ function Campaign() {
         showModal={showCreativeModal}
         setShowModal={setShowCreativeModal}
         campaignId={campaignDetails?.campaignId}
-        profileId={profileId?.value}
+        profileId={profileId?.value || profileId}
       />
 
       {/* Filter Modal */}
@@ -2608,6 +2638,7 @@ function Campaign() {
               <div
                 className="campaign-type-card h-full p-4 border rounded-3 text-center cursor-pointer transition-all shadow-sm hover-shadow"
                 onClick={() => {
+                  if (isMockUser) { Toast.error(t("Campaign creation is disabled in Demo Mode")); return; }
                   setShowCampaignTypeModal(false);
                   navigate("/add-campagin", { state: { type: "SPONSORED_PRODUCTS" } });
                 }}
@@ -2624,6 +2655,7 @@ function Campaign() {
               <div
                 className="campaign-type-card h-full p-4 border rounded-3 text-center cursor-pointer transition-all shadow-sm hover-shadow"
                 onClick={() => {
+                  if (isMockUser) { Toast.error(t("Campaign creation is disabled in Demo Mode")); return; }
                   setShowCampaignTypeModal(false);
                   navigate("/add-campagin", { state: { type: "SPONSORED_BRANDS" } });
                 }}

@@ -40,6 +40,8 @@ const { generateOtp, encryptData } = require("../helper/common");
 const { buildOtpVerificationEmail } = require("../../emailTemplate/buildOtpVerificationEmail");
 const { ROLES } = require("../constants/roles");
 const { getPricingContext, priceForPlan, toMinorUnits, fromMinorUnits } = require("../helper/regionalPricing");
+const { clearAuthCache } = require("../middleware/user.auth");
+const { ensureMockDataSeeded } = require("../services/mockTestingData.service");
 
 exports.registortUser = async (req, res) => {
   const {
@@ -338,6 +340,7 @@ exports.createUser = async (req, res) => {
       phoneNumber,
       roleId,
       companyName,
+      isMockUser: Boolean(req.body.isMockUser),
     });
     await newUser.save();
 
@@ -401,9 +404,11 @@ exports.updateUser = async (req, res) => {
         ...(fullName && { fullName }),
         ...(phoneNumber && { phoneNumber }),
         ...(allowRoleIdUpdate && { roleId }),
-        ...(companyName && { companyName })
+        ...(companyName && { companyName }),
+        ...(typeof req.body.isMockUser === "boolean" && { isMockUser: req.body.isMockUser }),
       }
     });
+    clearAuthCache(userId);
 
     if (companyName) {
       await organizationSchema.updateOne({ userId: userId }, { $set: { organizationName: companyName } });
@@ -429,6 +434,49 @@ exports.updateUser = async (req, res) => {
       message: "Something went wrong, please try again!",
       isSuccess: false,
       error: "An internal server error occurred",
+    });
+  }
+};
+
+exports.toggleMockMode = async (req, res) => {
+  try {
+    const targetUserId = req.body.userId || req.user?._id;
+    if (!targetUserId) {
+      return res.status(400).send({ isSuccess: false, message: "User ID is required." });
+    }
+
+    const isOwnerOrAdmin = req?.role?.roleName === ROLES.SUPER_ADMIN || req?.role?.roleName === ROLES.ADMIN;
+    if (!isOwnerOrAdmin && String(targetUserId) !== String(req.user?._id)) {
+      return res.status(403).send({ isSuccess: false, message: "Forbidden: You cannot modify another user's mock mode." });
+    }
+
+    const user = await userSchema.findById(targetUserId).lean();
+    if (!user) {
+      return res.status(404).send({ isSuccess: false, message: "User not found." });
+    }
+
+    const nextMockFlag =
+      typeof req.body.isMockUser === "boolean" ? req.body.isMockUser : !Boolean(user.isMockUser);
+
+    await userSchema.updateOne({ _id: targetUserId }, { $set: { isMockUser: nextMockFlag } });
+    clearAuthCache(targetUserId);
+
+    if (nextMockFlag) {
+      await ensureMockDataSeeded();
+    }
+
+    return res.status(200).send({
+      isSuccess: true,
+      isMockUser: nextMockFlag,
+      message: nextMockFlag
+        ? "Mock Testing Mode enabled! Dummy records are now active across all modules."
+        : "Mock Testing Mode disabled! Live account data restored.",
+    });
+  } catch (error) {
+    write_logs({ message: `[toggleMockMode Error] ${error?.message || error}`, log_type: "error" });
+    return res.status(500).send({
+      isSuccess: false,
+      message: "Failed to toggle Mock Testing Mode.",
     });
   }
 };
@@ -745,35 +793,7 @@ async function getActiveSubscriptionCurrency(customerId) {
  * regional-price checkout whose card or billing address country is outside the priced region.
  */
 async function applyBillingCountry(orgQuery, existingOrg, session, subscription) {
-  const meta = session.metadata || {};
-  const pricingCountry = meta.pricingCountry || null;
-  const $set = {};
-
-  if (existingOrg && existingOrg.pricingMode !== "default" && !existingOrg.billingCountry && pricingCountry) {
-    Object.assign($set, { billingCountry: pricingCountry, billingCountrySetAt: new Date(), billingCountrySource: "checkout" });
-  }
-
-  if (meta.pricingRegionId) {
-    const allowed = new Set(String(meta.pricingRegionCountries || pricingCountry || "").split(",").filter(Boolean));
-    const addressCountry = session.customer_details?.address?.country || null;
-    let cardCountry = null;
-    try {
-      const pmId = subscription.default_payment_method;
-      if (pmId) {
-        const pm = typeof pmId === "string" ? await stripe.paymentMethods.retrieve(pmId) : pmId;
-        cardCountry = pm?.card?.country || null;
-      }
-    } catch (error) {
-      write_logs({ message: `[applyBillingCountry] payment method lookup failed: ${error?.message || error}`, log_type: "error" });
-    }
-    const outside = [cardCountry, addressCountry].filter((c) => c && !allowed.has(c));
-    if (outside.length) {
-      $set.billingCountryMismatch = { pricingCountry, cardCountry, addressCountry, detectedAt: new Date() };
-      write_logs({ message: `[applyBillingCountry] country mismatch org=${existingOrg?._id} pricing=${pricingCountry} card=${cardCountry} address=${addressCountry}`, log_type: "error" });
-    }
-  }
-
-  if (Object.keys($set).length) await organizationSchema.updateMany(orgQuery, { $set });
+  // Organization billing country feature removed
 }
 
 async function findCustomerByEmail(email) {
@@ -945,9 +965,9 @@ exports.createSubscription = async (req, res) => {
       : { $or: [{ userId: new mongoose.Types.ObjectId(userId) }, { userId: String(userId) }] };
     const existingOrg = await organizationSchema.findOne(orgQuery).lean();
 
-    // Price is always worked out here (never taken from the browser): locked billing country, else the
-    // Cloudflare country of this request; no region → the plan's default price.
-    const pricingCtx = await getPricingContext(existingOrg, req);
+    // Price is always worked out here (never taken from the browser): visitor's request country;
+    // no region → the plan's default price.
+    const pricingCtx = await getPricingContext(null, req);
     const planPrice = priceForPlan(package, pricingCtx);
     const baseAmount = isYearly ? planPrice.yearlyPrice : planPrice.monthlyPrice;
     const currency = planPrice.currency;

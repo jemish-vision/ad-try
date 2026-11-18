@@ -73,7 +73,14 @@ const productListingSchema = new mongoose.Schema(
       default: false
     },
     classificationRank: { type: Number, default: 0 },
+    classificationTitle: { type: String, trim: true, default: null },
+    classificationLink: { type: String, trim: true, default: null },
     displayGroupRanks: { type: Number, default: 0 },
+    displayGroupRank: { type: Number, default: 0 },
+    displayGroupTitle: { type: String, trim: true, default: null },
+    displayGroupLink: { type: String, trim: true, default: null },
+    classificationRanks: { type: Array, default: [] },
+    displayGroupRanksList: { type: Array, default: [] },
     productCreatedDate: {
       type: Date,
     },
@@ -91,15 +98,15 @@ const productListingSchema = new mongoose.Schema(
     },
 
     // ── AI Listing Optimization ───────────────────────────────
-    aiOptimizationScore:  { type: Number,  default: null },
-    aiLastAnalyzedAt:     { type: Date,    default: null },
-    aiOptimizationStatus: { type: String,  enum: ['pending', 'analyzed', 'applied', null], default: null },
-    aiCachedResult:       { type: Object,  default: null },   // full AI parsedContent
-    aiAnalyzedChecksum:   { type: String,  default: null },   // MD5(title|price|mrp)
+    aiOptimizationScore: { type: Number, default: null },
+    aiLastAnalyzedAt: { type: Date, default: null },
+    aiOptimizationStatus: { type: String, enum: ['pending', 'analyzed', 'applied', null], default: null },
+    aiCachedResult: { type: Object, default: null },   // full AI parsedContent
+    aiAnalyzedChecksum: { type: String, default: null },   // MD5(title|price|mrp)
 
     // Live attributes fetched from Amazon SP-API (title, bullets, description, keywords)
-    liveAttributes:          { type: Object, default: null },  // raw attributes object from SP-API
-    liveAttributesFetchedAt: { type: Date,   default: null },  // when we last fetched from Amazon
+    liveAttributes: { type: Object, default: null },  // raw attributes object from SP-API
+    liveAttributesFetchedAt: { type: Date, default: null },  // when we last fetched from Amazon
   },
   { timestamps: true }
 );

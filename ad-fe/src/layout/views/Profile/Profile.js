@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { Toast, useDispatch, handleLoader } from "../../../helper/links/Link";
 import { ApiUpdateProfile, ApiChangePassword } from "../../../api-wrapper/auth/ApiAuth";
 import { ApiGetOrganizationList, ApiUpdateOrganization } from "../../../api-wrapper/ApiOrganization";
-import { ApiGenerate2FA, ApiVerifyAndEnable2FA, ApiDisable2FA } from "../../../api-wrapper/ApiUsers";
+import { ApiGenerate2FA, ApiVerifyAndEnable2FA, ApiDisable2FA, ApiToggleMockMode } from "../../../api-wrapper/ApiUsers";
 import { ProfileContext } from "../../../helper/usecontext/useContext";
 import Cropper from 'react-easy-crop';
 import getCroppedImg from '../../../utils/cropImage';
@@ -96,6 +96,32 @@ export default function Profile() {
   const [twoFactorSecret, setTwoFactorSecret] = useState("");
   const [twoFactorCode, setTwoFactorCode] = useState(["", "", "", "", "", ""]);
   const [is2FAEnabled, setIs2FAEnabled] = useState(false);
+  const [isMockUser, setIsMockUser] = useState(() => Boolean(loginUser?.isMockUser || localStorage.getItem("isMockUser") === "true"));
+  const [isTogglingMock, setIsTogglingMock] = useState(false);
+
+  const handleToggleMockUser = async () => {
+    if (isTogglingMock) return;
+    const nextState = !isMockUser;
+    setIsTogglingMock(true);
+    dispatch(handleLoader(true));
+    try {
+      const res = await ApiToggleMockMode({ isMockUser: nextState });
+      if (res?.isSuccess) {
+        setIsMockUser(nextState);
+        localStorage.setItem("isMockUser", String(nextState));
+        if (nextState) localStorage.setItem("connection", "true");
+        Toast.success(res.message || (nextState ? t("Mock Testing Mode enabled") : t("Mock Testing Mode disabled")));
+        if (setRefreshSideBar) setRefreshSideBar(!refreshSideBar);
+      } else {
+        Toast.error(res?.message || t("Failed to update Mock Testing Mode"));
+      }
+    } catch {
+      Toast.error(t("Something went wrong"));
+    } finally {
+      setIsTogglingMock(false);
+      dispatch(handleLoader(false));
+    }
+  };
   const otpInputsRef = useRef([]);
 
   const handleOtpChange = (value, index) => {
@@ -172,6 +198,10 @@ export default function Profile() {
       setProfileValue("phoneNumber", loginUser.phoneNumber || "");
       setPreviewUrl(loginUser.profilePhoto ? `${process.env.REACT_APP_API_BASE || ""}/public/profilePhotos/${loginUser.profilePhoto}` : null);
       setIs2FAEnabled(loginUser.twoFactorEnabled || false);
+      if (typeof loginUser.isMockUser === "boolean") {
+        setIsMockUser(loginUser.isMockUser);
+        localStorage.setItem("isMockUser", String(loginUser.isMockUser));
+      }
     }
     fetchOrganizations();
   }, [loginUser, setProfileValue]);
@@ -1043,6 +1073,56 @@ export default function Profile() {
             )}
           </div>
         </div>
+
+        {/* Mock User Testing Mode Section */}
+        {!isSuperAdmin && (
+          <div id="profile-mock-mode-section" className="bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden relative transition-all duration-300 hover:shadow-md hover:border-amber-200/80 dark:hover:border-amber-900/30">
+            <div className="p-5 md:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0 mt-0.5">
+                  <i className="fa-solid fa-flask text-base"></i>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-extrabold text-gray-900 dark:text-white leading-tight">{t("Mock User Testing Mode")}</h2>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${isMockUser ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border-amber-300 dark:border-amber-700" : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 border-gray-200 dark:border-gray-700"}`}>
+                      {isMockUser ? t("Active") : t("Inactive")}
+                    </span>
+                  </div>
+                  <p className="text-[13px] text-gray-500 font-medium mt-1">
+                    {t("Preview sample data and test campaign creation across Campaigns, Targeting, Search Terms, Placement, Keyword Analysis, Keyword Tracker, Orders, Products, Coupons, Deals, and Inventory without affecting live Amazon Ads data.")}
+                  </p>
+                  <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+                    <span className="px-2.5 py-1 rounded-md bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800/50">
+                      ❌ {t("No real changes applied to Amazon")}
+                    </span>
+                    <span className="px-2.5 py-1 rounded-md bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800/50">
+                      ❌ {t("No real bulk actions")}
+                    </span>
+                    <span className="px-2.5 py-1 rounded-md bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800/50">
+                      ❌ {t("No Amazon API calls")}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center shrink-0">
+                <button
+                  type="button"
+                  disabled={isTogglingMock}
+                  onClick={handleToggleMockUser}
+                  className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 shadow-sm ${
+                    isMockUser
+                      ? "bg-amber-500 hover:bg-amber-600 text-white"
+                      : "bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700"
+                  }`}
+                >
+                  <i className={`fa-solid ${isMockUser ? "fa-toggle-on" : "fa-toggle-off"} text-sm`}></i>
+                  {isMockUser ? t("Disable Mock Data") : t("Enable Mock Data")}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Organizations Section */}
         {!isSuperAdmin && (

@@ -333,6 +333,7 @@ const processDealsReport = async (filePath, { profileId, configId }) => {
  * API Endpoint: Get Dashboard Stats
  */
 exports.getDealsDashboardStats = async (req, res) => {
+    if (req.user?.isMockUser) return require("../services/mockTestingData.service").getDealsDashboardStats(req, res);
     try {
         const configId = req?.config?.configId;
         const { profileId, startDate, endDate } = req.query;
@@ -377,6 +378,7 @@ exports.getDealsDashboardStats = async (req, res) => {
  * API Endpoint: Get Deals List
  */
 exports.getDealsList = async (req, res) => {
+    if (req.user?.isMockUser) return require("../services/mockTestingData.service").getDealsList(req, res);
     try {
         const configId = req?.config?.configId;
         const { profileId, pageNo = 1, perPage = 10, search, status, type, startDate, endDate, sortColumn, sortOrder } = req.query;

@@ -806,6 +806,7 @@ const buildInventoryBasePipeline = (req) => {
 };
 
 exports.getInventoryList = async (req, res) => {
+    if (req.user?.isMockUser) return require("../services/mockTestingData.service").getInventoryList(req, res);
     try {
 
         let {
@@ -871,6 +872,7 @@ exports.getInventoryList = async (req, res) => {
 };
 
 exports.getInventoryCards = async (req, res) => {
+    if (req.user?.isMockUser) return require("../services/mockTestingData.service").getInventoryCards(req, res);
 
     try {
 
@@ -949,6 +951,7 @@ exports.getInventoryCards = async (req, res) => {
 };
 
 exports.getInventoryGraph = async (req, res) => {
+    if (req.user?.isMockUser) return require("../services/mockTestingData.service").getInventoryGraph(req, res);
 
     try {
 
@@ -997,6 +1000,7 @@ exports.getInventoryGraph = async (req, res) => {
 };
 
 exports.listInventory = async (req, res) => {
+    if (req.user?.isMockUser) return require("../services/mockTestingData.service").listInventory(req, res);
     const configId = req?.config?.configId;
     const configObjectId = configId && mongoose.Types.ObjectId.isValid(configId)
         ? new mongoose.Types.ObjectId(configId)
@@ -1233,6 +1237,7 @@ exports.listInventory = async (req, res) => {
 };
 
 exports.getSalesDashboard = async (req, res) => {
+    if (req.user?.isMockUser || req.isMockTestingUser) return require("../services/mockTestingData.service").getSalesDashboard(req, res);
 
     const configId = req?.config?.configId;
 
@@ -1650,6 +1655,7 @@ exports.getSalesDashboard = async (req, res) => {
 };
 
 exports.getSalesTrendGraph = async (req, res) => {
+    if (req.user?.isMockUser || req.isMockTestingUser) return require("../services/mockTestingData.service").getSalesTrendGraph(req, res);
 
     const rawConfigId = req?.config?.configId || req?.headers?.["x-config-id"] || req?.body?.configId;
     const configIdFilter = rawConfigId
@@ -1862,6 +1868,7 @@ exports.getSalesTrendGraph = async (req, res) => {
 };
 
 exports.getTopProductsGrid = async (req, res) => {
+    if (req.user?.isMockUser || req.isMockTestingUser) return require("../services/mockTestingData.service").getTopProductsGrid(req, res);
 
     const configId = req?.config?.configId;
 
@@ -2173,6 +2180,7 @@ exports.getTopProductsGrid = async (req, res) => {
 };
 
 exports.getProductDecisionMatrix = async (req, res) => {
+    if (req.user?.isMockUser || req.isMockTestingUser) return require("../services/mockTestingData.service").getProductDecisionMatrix(req, res);
 
     const configId = req?.config?.configId;
 
@@ -2369,6 +2377,7 @@ exports.getProductDecisionMatrix = async (req, res) => {
 };
 
 exports.getDashboardInsights = async (req, res) => {
+    if (req.user?.isMockUser || req.isMockTestingUser) return require("../services/mockTestingData.service").getDashboardInsights(req, res);
 
     const configId = req?.config?.configId;
     const configObjectId = configId && mongoose.Types.ObjectId.isValid(configId) ? new mongoose.Types.ObjectId(configId) : configId;
@@ -3563,6 +3572,7 @@ exports.getInventoryForecastGraphs = async (req, res) => {
 
 // ── Get per-ASIN/SKU aging threshold config ───────────────────────────────────
 exports.getAgingConfig = async (req, res) => {
+    if (req.user?.isMockUser) return require("../services/mockTestingData.service").getAgingConfig(req, res);
     const configId = req?.config?.configId;
     try {
         const { profileId, asin, sku } = req.body;
@@ -3616,6 +3626,7 @@ exports.saveAgingConfig = async (req, res) => {
 
 // ── Aging summary card counts (bucket breakdown) ─────────────────────────────
 exports.getAgingCards = async (req, res) => {
+    if (req.user?.isMockUser) return require("../services/mockTestingData.service").getAgingCards(req, res);
     const configId = req?.config?.configId;
     try {
         const basePipeline = buildInventoryBasePipeline(req);
@@ -3653,6 +3664,7 @@ exports.getAgingCards = async (req, res) => {
 
 // ── Aging-filtered inventory grid ─────────────────────────────────────────────
 exports.getAgingInventoryList = async (req, res) => {
+    if (req.user?.isMockUser) return require("../services/mockTestingData.service").getAgingInventoryList(req, res);
     try {
         let {
             pageNo = 1,

@@ -139,6 +139,42 @@ const productAdsSchema = new mongoose.Schema(
     importSourceVersion: {
       type: Number,
     },
+    classificationRank: {
+      type: Number,
+      default: null,
+    },
+    classificationTitle: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    classificationLink: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    displayGroupRank: {
+      type: Number,
+      default: null,
+    },
+    displayGroupTitle: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    displayGroupLink: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    classificationRanks: {
+      type: Array,
+      default: [],
+    },
+    displayGroupRanksList: {
+      type: Array,
+      default: [],
+    },
   },
   { timestamps: true }
 );

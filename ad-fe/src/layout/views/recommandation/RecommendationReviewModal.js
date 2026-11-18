@@ -60,6 +60,8 @@ const ACTION_LABEL_MAP = {
     PauseTargeting: "Pause Targeting",
     AddAsTargeting: "Add as Targeting",
     AddAsNegativeTargeting: "Add as Negative Targeting",
+    EnableProduct: "Enabled Product",
+    DisableProduct: "Disabled Product",
 };
 
 const formatActionDisplay = (action, gridName) => {
@@ -84,6 +86,20 @@ const formatActionDisplay = (action, gridName) => {
 
 const calculateProposedValue = (item, actions, gridName) => {
     if (gridName === "Campaign") {
+        const statusAction = actions.find((a) => ['CampaignEnable', 'CampaignPause'].includes(a.actionName));
+        if (statusAction) {
+            const currStatus = item?.isOutOfBudget || item?.campaignStatus === "OUT_OF_BUDGET" || item?.status === "OUT_OF_BUDGET"
+                ? "Out Of Budget"
+                : (String(item?.campaignStatus || item?.status || "ENABLED").toUpperCase() === "ENABLED" ? "Enabled" : "Paused");
+            const nextStatus = statusAction.actionName === "CampaignEnable" ? "Enabled" : "Paused";
+            return {
+                currentText: currStatus,
+                newText: nextStatus,
+                isDiff: currStatus !== nextStatus,
+                isIncrease: statusAction.actionName === "CampaignEnable",
+            };
+        }
+
         const curr = parseFloat(item?.budget || 0);
         const action = actions.find((a) => ['SetBudget', 'IncreaseBudget', 'DecreaseBudget'].includes(a.actionName));
         if (!action) return { currentText: CurrencyCode(curr), newText: CurrencyCode(curr), isDiff: false };
@@ -140,6 +156,19 @@ const calculateProposedValue = (item, actions, gridName) => {
     }
 
     if (gridName === "Targeting") {
+        const statusAction = actions.find((a) => ['EnableTargeting', 'PauseTargeting'].includes(a.actionName));
+        if (statusAction) {
+            const rawSt = item?.keywordStatus || item?.status || "ENABLED";
+            const currStatus = String(rawSt).toUpperCase() === "ENABLED" ? "Enabled" : "Paused";
+            const nextStatus = statusAction.actionName === "EnableTargeting" ? "Enabled" : "Paused";
+            return {
+                currentText: currStatus,
+                newText: nextStatus,
+                isDiff: currStatus !== nextStatus,
+                isIncrease: statusAction.actionName === "EnableTargeting",
+            };
+        }
+
         const curr = parseFloat(item?.targetingBid || item?.keywordBid || item?.bid || 0);
         const action = actions.find((a) => ['IncreaseBid', 'DecreaseBid', 'SetBid'].includes(a.actionName));
         if (!action) return { currentText: CurrencyCode(curr), newText: CurrencyCode(curr), isDiff: false };
@@ -173,6 +202,21 @@ const calculateProposedValue = (item, actions, gridName) => {
             isDiff: true,
             isIncrease: !isNeg,
         };
+    }
+
+    if (gridName === "Products") {
+        const statusAction = actions.find((a) => ['EnableProduct', 'DisableProduct'].includes(a.actionName));
+        if (statusAction) {
+            const rawSt = item?.productStatus || item?.status || "ENABLED";
+            const currStatus = String(rawSt).toUpperCase() === "ENABLED" ? "Enabled" : "Paused";
+            const nextStatus = statusAction.actionName === "EnableProduct" ? "Enabled" : "Paused";
+            return {
+                currentText: currStatus,
+                newText: nextStatus,
+                isDiff: currStatus !== nextStatus,
+                isIncrease: statusAction.actionName === "EnableProduct",
+            };
+        }
     }
 
     return { currentText: "—", newText: "—", isDiff: false };
@@ -225,7 +269,7 @@ const RecommendationReviewModal = ({
         return selectedItems.filter((item) => {
             const name = item.campaignName || item.name || "";
             const cid = item.campaignId || item.campaignID || "";
-            const sub = item.adGroupName || item.targeting || item.searchTerm || "";
+            const sub = item.adGroupName || item.targeting || item.searchTerm || item.asins || item.sku || item.productName || "";
             return (
                 name.toLowerCase().includes(query) ||
                 String(cid).toLowerCase().includes(query) ||
@@ -392,6 +436,7 @@ const RecommendationReviewModal = ({
                                         const cname = item?.campaignName || item?.name || `Campaign #${cid}`;
                                         const isNew = Boolean(item?.isNew);
                                         const status = item?.campaignStatus || item?.status || "ENABLED";
+                                        const isOutOfBudget = Boolean(item?.isOutOfBudget) || String(status).toUpperCase() === "OUT_OF_BUDGET";
                                         const isEnabled = String(status).toUpperCase() === "ENABLED";
                                         const targeting = item?.targeting || item?.keywordText || item?.keyword || item?.targetName || item?.searchTerm;
                                         const matchType = item?.matchType || item?.targetType;
@@ -465,9 +510,23 @@ const RecommendationReviewModal = ({
                                                 <td className="py-3 px-3">
                                                     <span
                                                         style={{
-                                                            background: isEnabled ? "rgba(34, 197, 94, 0.12)" : "rgba(239, 68, 68, 0.12)",
-                                                            color: isEnabled ? "#22c55e" : "#ef4444",
-                                                            border: `1px solid ${isEnabled ? "rgba(34, 197, 94, 0.25)" : "rgba(239, 68, 68, 0.25)"}`,
+                                                            background: isOutOfBudget
+                                                                ? "rgba(245, 158, 11, 0.15)"
+                                                                : isEnabled
+                                                                    ? "rgba(34, 197, 94, 0.12)"
+                                                                    : "rgba(239, 68, 68, 0.12)",
+                                                            color: isOutOfBudget
+                                                                ? "#f59e0b"
+                                                                : isEnabled
+                                                                    ? "#22c55e"
+                                                                    : "#ef4444",
+                                                            border: `1px solid ${
+                                                                isOutOfBudget
+                                                                    ? "rgba(245, 158, 11, 0.35)"
+                                                                    : isEnabled
+                                                                        ? "rgba(34, 197, 94, 0.25)"
+                                                                        : "rgba(239, 68, 68, 0.25)"
+                                                            }`,
                                                             padding: "1px 7px",
                                                             borderRadius: 14,
                                                             fontSize: 10,
@@ -476,7 +535,7 @@ const RecommendationReviewModal = ({
                                                             whiteSpace: "nowrap",
                                                         }}
                                                     >
-                                                        {isEnabled ? "Enabled" : "Paused"}
+                                                        {isOutOfBudget ? "Out Of Budget" : isEnabled ? "Enabled" : "Paused"}
                                                     </span>
                                                 </td>
 

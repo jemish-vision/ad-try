@@ -52,10 +52,8 @@ function getRequestCountry(req) {
   return null;
 }
 
-/** The country that decides an organization's price, and why. */
+/** The country that decides a visitor's price. */
 function resolvePricingCountry(org, req) {
-  if (org?.pricingMode === "default") return { country: org?.billingCountry || null, source: "default" };
-  if (org?.billingCountry) return { country: org.billingCountry, source: "locked" };
   return { country: getRequestCountry(req), source: "ip" };
 }
 

@@ -151,7 +151,8 @@ function SearchTerm() {
   }, [productSearchTerms, stPage, stPerPage, viewMode]);
 
   // Context for profile and global date range
-  let { profileId, selectedAdType, selectedDate, setSelectedDate } = useContext(ProfileContext);
+  let { profileId, selectedAdType, selectedDate, setSelectedDate, loginUser } = useContext(ProfileContext);
+  const isMockUser = Boolean(loginUser?.isMockUser || localStorage.getItem("isMockUser") === "true");
   // Combined SP+SB (+SD) view active on this screen? (Campaign View is
   // All-ready; Product View is single-type only for now — see guard below.)
   const showAllTypes = isShowingAllAdTypes(
@@ -2290,7 +2291,15 @@ function SearchTerm() {
               {t("Cancel")}
             </ShadcnButton>
             <ShadcnButton
-              onClick={addNegative}
+              onClick={() => {
+                if (isMockUser) {
+                  Toast.error(t("Adding negative keywords is disabled in Demo Mode"));
+                  return;
+                }
+                addNegative();
+              }}
+              disabled={isMockUser}
+              title={isMockUser ? t("Adding negative keywords is disabled in Demo Mode") : undefined}
               className="h-[36px] px-4 rounded-lg font-bold text-xs uppercase tracking-wider transition-all duration-200 bg-gradient-to-r from-[#1A9FD4] to-[#2374F2] text-white border-transparent hover:opacity-90 active:scale-[0.98]"
             >
               {t("Add Negative")}
@@ -2359,7 +2368,15 @@ function SearchTerm() {
               {t("Cancel")}
             </ShadcnButton>
             <ShadcnButton
-              onClick={addNegativeProduct}
+              onClick={() => {
+                if (isMockUser) {
+                  Toast.error(t("Adding negative products is disabled in Demo Mode"));
+                  return;
+                }
+                addNegativeProduct();
+              }}
+              disabled={isMockUser}
+              title={isMockUser ? t("Adding negative products is disabled in Demo Mode") : undefined}
               className="h-[36px] px-4 rounded-lg font-bold text-xs uppercase tracking-wider transition-all duration-200 bg-gradient-to-r from-[#1A9FD4] to-[#2374F2] text-white border-transparent hover:opacity-90 active:scale-[0.98]"
             >
               {t("Add Negative")}
@@ -2452,9 +2469,16 @@ function SearchTerm() {
           },
           {
             label: bulkConfirm?.action === "add-negative" ? `${t("Add Negative")} (${negativeKeyword?.length})` : bulkConfirm?.action === "add-negative-product" ? `${t("Add Negative")} (${negativeProduct?.length})` : bulkConfirm?.action === "add-negative-campaign" ? t("Add Campaign Negative") : bulkConfirm?.action === "add-negative-adgroup" ? t("Add Ad Group Negative") : t("Confirm"),
+            disabled: isMockUser,
             variant: "danger",
             icon: bulkConfirm?.action === "add-negative" ? "block" : bulkConfirm?.action === "add-negative-product" ? "remove_shopping_cart" : bulkConfirm?.action === "add-negative-campaign" ? "block" : bulkConfirm?.action === "add-negative-adgroup" ? "block" : "check",
-            onClick: executeAction,
+            onClick: () => {
+              if (isMockUser) {
+                Toast.error(t("Adding negative keywords is disabled in Demo Mode"));
+                return;
+              }
+              executeAction();
+            },
           },
         ]}
       />

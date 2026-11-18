@@ -40,6 +40,23 @@ amazonAxios.interceptors.request.use(
             const configId = config?.meta?.configId;
             const sellerAPI = Boolean(config?.meta?.sp);
             const profileId = config?.meta?.profileId;
+            const { isDemoModeActive } = require("../middleware/user.auth");
+
+            // DEMO MODE HARD GUARD: ❌ No Amazon API calls allowed in Demo Account
+            if (
+                isDemoModeActive() ||
+                String(configId) === "000000000000000000000001" ||
+                Number(profileId) === 99999901 ||
+                Number(config?.headers?.["Amazon-Advertising-API-Scope"]) === 99999901
+            ) {
+                write_logs({
+                    message: `[Demo Mode Guard] Blocked live Amazon API call: ${config.method?.toUpperCase()} ${config.url}`,
+                    log_type: "warn",
+                });
+                return Promise.reject(
+                    new Error("Demo Mode Restriction: Live Amazon API calls are disabled in Demo Account.")
+                );
+            }
 
             if (configId) {
                 const kind = sellerAPI ? "sp" : "ads";

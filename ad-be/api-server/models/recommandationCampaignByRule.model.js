@@ -35,6 +35,18 @@ const recommandationCampaignByRuleSchema = new mongoose.Schema(
       type: Number,
       trim: true,
     },
+    adId: {
+      type: Number,
+      trim: true,
+    },
+    asins: {
+      type: String,
+      trim: true,
+    },
+    sku: {
+      type: String,
+      trim: true,
+    },
     targetId: {
       type: String,
       trim: true,
@@ -94,9 +106,9 @@ const recommandationCampaignByRuleSchema = new mongoose.Schema(
 );
 
 // --- Performance Indexing ---
-recommandationCampaignByRuleSchema.index({configId:1,profileId:1,userId:1,ruleSchema:1,ruleId:1,ruleDate:1,ruleTime:1,type:1,campaignId:1});
-recommandationCampaignByRuleSchema.index({configId:1,profileId:1,userId:1,ruleSchema:1,ruleId:1,ruleDate:1,ruleTime:1,type:1,campaignId:1,placement:1});
-recommandationCampaignByRuleSchema.index({configId:1,profileId:1,userId:1,ruleSchema:1,ruleId:1,ruleDate:1,ruleTime:1,type:1,campaignId:1,adGroupId:1,targetId:1});
-recommandationCampaignByRuleSchema.index({configId:1,profileId:1,userId:1,ruleSchema:1,ruleId:1,ruleDate:1,ruleTime:1,type:1,campaignId:1,adGroupId:1,keywordId:1,searchTerm:1});
+recommandationCampaignByRuleSchema.index({ configId: 1, profileId: 1, userId: 1, ruleSchema: 1, ruleId: 1, ruleDate: 1, ruleTime: 1, type: 1, campaignId: 1 });
+recommandationCampaignByRuleSchema.index({ configId: 1, profileId: 1, userId: 1, ruleSchema: 1, ruleId: 1, ruleDate: 1, ruleTime: 1, type: 1, campaignId: 1, placement: 1 });
+recommandationCampaignByRuleSchema.index({ configId: 1, profileId: 1, userId: 1, ruleSchema: 1, ruleId: 1, ruleDate: 1, ruleTime: 1, type: 1, campaignId: 1, adGroupId: 1, targetId: 1 });
+recommandationCampaignByRuleSchema.index({ configId: 1, profileId: 1, userId: 1, ruleSchema: 1, ruleId: 1, ruleDate: 1, ruleTime: 1, type: 1, campaignId: 1, adGroupId: 1, keywordId: 1, searchTerm: 1 });
 
 module.exports = new mongoose.model("recommandationCampaignByRule", recommandationCampaignByRuleSchema);
