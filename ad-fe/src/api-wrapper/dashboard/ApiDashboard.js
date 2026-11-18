@@ -56,3 +56,14 @@ export const ApiGetWasteAndScalingAlerts = (data) => {
     .then((res) => res.data)
     .catch((err) => err?.response?.data || { isSuccess: false });
 };
+
+// Out-of-stock products still advertised in running campaigns (list rebuilt daily by the queue job).
+export const ApiGetOutOfStockAds = (data) => {
+  return axios
+    .post(`${api}getOutOfStockAds`, data, {
+      headers: { ...headers, "x-skip-loader": true },
+      skipLoader: true,
+    })
+    .then((res) => res.data)
+    .catch((err) => err?.response?.data || { isSuccess: false });
+};

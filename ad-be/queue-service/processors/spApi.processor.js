@@ -179,6 +179,11 @@ function createSpApiProcessor() {
           result = await cronAsinSnapshot();
           break;
         }
+        case SP_API_TASKS.OUT_OF_STOCK_ADS: {
+          const { cronOutOfStockAds } = require("../../api-server/services/automation/outOfStockAds.service");
+          result = await cronOutOfStockAds();
+          break;
+        }
         case SP_API_TASKS.SYNC_PAST_DATA: {
           const { SyncPastData } = require("../../api-server/controllers/config.controller");
           result = await SyncPastData();

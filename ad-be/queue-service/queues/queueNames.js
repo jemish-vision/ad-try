@@ -54,6 +54,7 @@ const SP_API_TASKS = Object.freeze({
   PRODUCTS_META_LISTING: "products-meta-listing",
   SYNC_PAST_DATA: "sync-past-data",
   ASIN_SNAPSHOT: "asin-snapshot",
+  OUT_OF_STOCK_ADS: "out-of-stock-ads",
 });
 
 module.exports = {

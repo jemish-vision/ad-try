@@ -7997,5 +7997,21 @@
   "Search region name": "Rechercher une région",
   "No pricing regions yet. Add a region first.": "Aucune région tarifaire pour l'instant. Ajoutez d'abord une région.",
   "Leave a region empty to charge the default price there. Empty yearly price = 12 months with 20% off.": "Laissez une région vide pour y facturer le prix par défaut. Prix annuel vide = 12 mois avec 20 % de remise.",
-  "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.": "Laissez un forfait vide pour facturer son prix par défaut dans cette région. Prix annuel vide = 12 mois avec 20 % de remise."
+  "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.": "Laissez un forfait vide pour facturer son prix par défaut dans cette région. Prix annuel vide = 12 mois avec 20 % de remise.",
+  "Ad spend on these products (last 7 days)": "Dépenses publicitaires sur ces produits (7 derniers jours)",
+  "Checked daily · last check {{date}}": "Vérifié chaque jour · dernière vérification {{date}}",
+  "Checked once a day": "Vérifié une fois par jour",
+  "No data yet. The list is built once a day.": "Pas encore de données. La liste est créée une fois par jour.",
+  "No matching products.": "Aucun produit correspondant.",
+  "No out-of-stock products in running ads.": "Aucun produit en rupture de stock dans les annonces actives.",
+  "Open campaign in a new tab": "Ouvrir la campagne dans un nouvel onglet",
+  "Out of stock": "En rupture de stock",
+  "Out-of-Stock Products in Running Ads": "Produits en rupture de stock dans les annonces actives",
+  "Out-of-stock products": "Produits en rupture de stock",
+  "Products Amazon reports as out of stock that are still advertised in enabled campaigns.": "Produits signalés en rupture de stock par Amazon et toujours annoncés dans des campagnes actives.",
+  "Running campaigns affected": "Campagnes actives concernées",
+  "Running in campaigns": "Diffusé dans les campagnes",
+  "Search ASIN, SKU, product or campaign": "Rechercher ASIN, SKU, produit ou campagne",
+  "Showing {{from}}–{{to}} of {{total}}": "{{from}}–{{to}} sur {{total}}",
+  "Spend (7d)": "Dépenses (7 j)"
 }

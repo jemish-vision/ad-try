@@ -7997,5 +7997,21 @@
   "Search region name": "क्षेत्र का नाम खोजें",
   "No pricing regions yet. Add a region first.": "अभी कोई मूल्य क्षेत्र नहीं है। पहले एक क्षेत्र जोड़ें।",
   "Leave a region empty to charge the default price there. Empty yearly price = 12 months with 20% off.": "वहाँ डिफ़ॉल्ट कीमत लेने के लिए क्षेत्र खाली छोड़ें। खाली वार्षिक कीमत = 12 महीने पर 20% छूट।",
-  "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.": "इस क्षेत्र में डिफ़ॉल्ट कीमत लेने के लिए प्लान खाली छोड़ें। खाली वार्षिक कीमत = 12 महीने पर 20% छूट।"
+  "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.": "इस क्षेत्र में डिफ़ॉल्ट कीमत लेने के लिए प्लान खाली छोड़ें। खाली वार्षिक कीमत = 12 महीने पर 20% छूट।",
+  "Ad spend on these products (last 7 days)": "इन उत्पादों पर विज्ञापन खर्च (पिछले 7 दिन)",
+  "Checked daily · last check {{date}}": "रोज़ जांचा जाता है · आखिरी जांच {{date}}",
+  "Checked once a day": "दिन में एक बार जांचा जाता है",
+  "No data yet. The list is built once a day.": "अभी कोई डेटा नहीं। सूची दिन में एक बार बनती है।",
+  "No matching products.": "कोई मिलता-जुलता उत्पाद नहीं।",
+  "No out-of-stock products in running ads.": "चल रहे विज्ञापनों में कोई आउट-ऑफ़-स्टॉक उत्पाद नहीं।",
+  "Open campaign in a new tab": "कैंपेन नए टैब में खोलें",
+  "Out of stock": "स्टॉक में नहीं",
+  "Out-of-Stock Products in Running Ads": "चल रहे विज्ञापनों में आउट-ऑफ़-स्टॉक उत्पाद",
+  "Out-of-stock products": "आउट-ऑफ़-स्टॉक उत्पाद",
+  "Products Amazon reports as out of stock that are still advertised in enabled campaigns.": "वे उत्पाद जिन्हें Amazon स्टॉक में नहीं बताता लेकिन जो अभी भी चालू कैंपेन में विज्ञापित हैं।",
+  "Running campaigns affected": "प्रभावित चालू कैंपेन",
+  "Running in campaigns": "इन कैंपेन में चल रहा है",
+  "Search ASIN, SKU, product or campaign": "ASIN, SKU, उत्पाद या कैंपेन खोजें",
+  "Showing {{from}}–{{to}} of {{total}}": "{{total}} में से {{from}}–{{to}}",
+  "Spend (7d)": "खर्च (7 दिन)"
 }

@@ -7997,5 +7997,21 @@
   "Search region name": "地域名で検索",
   "No pricing regions yet. Add a region first.": "価格地域がまだありません。先に地域を追加してください。",
   "Leave a region empty to charge the default price there. Empty yearly price = 12 months with 20% off.": "地域を空欄にすると、その地域では標準価格が適用されます。年額が空欄の場合 = 12か月分から20%割引。",
-  "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.": "プランを空欄にすると、この地域では標準価格が適用されます。年額が空欄の場合 = 12か月分から20%割引。"
+  "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.": "プランを空欄にすると、この地域では標準価格が適用されます。年額が空欄の場合 = 12か月分から20%割引。",
+  "Ad spend on these products (last 7 days)": "これらの商品の広告費（過去7日間）",
+  "Checked daily · last check {{date}}": "毎日チェック · 最終チェック {{date}}",
+  "Checked once a day": "1日1回チェック",
+  "No data yet. The list is built once a day.": "まだデータがありません。リストは1日1回作成されます。",
+  "No matching products.": "一致する商品はありません。",
+  "No out-of-stock products in running ads.": "配信中の広告に在庫切れの商品はありません。",
+  "Open campaign in a new tab": "キャンペーンを新しいタブで開く",
+  "Out of stock": "在庫切れ",
+  "Out-of-Stock Products in Running Ads": "配信中の広告にある在庫切れ商品",
+  "Out-of-stock products": "在庫切れ商品",
+  "Products Amazon reports as out of stock that are still advertised in enabled campaigns.": "Amazon が在庫切れと報告しているのに、有効なキャンペーンで広告され続けている商品。",
+  "Running campaigns affected": "影響を受ける配信中キャンペーン",
+  "Running in campaigns": "配信中のキャンペーン",
+  "Search ASIN, SKU, product or campaign": "ASIN、SKU、商品、キャンペーンを検索",
+  "Showing {{from}}–{{to}} of {{total}}": "{{total}} 件中 {{from}}–{{to}}",
+  "Spend (7d)": "広告費（7日）"
 }

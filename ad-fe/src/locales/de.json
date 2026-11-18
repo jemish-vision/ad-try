@@ -7997,5 +7997,21 @@
   "Search region name": "Regionsname suchen",
   "No pricing regions yet. Add a region first.": "Noch keine Preisregionen. Fügen Sie zuerst eine Region hinzu.",
   "Leave a region empty to charge the default price there. Empty yearly price = 12 months with 20% off.": "Lassen Sie eine Region leer, um dort den Standardpreis zu berechnen. Leerer Jahrespreis = 12 Monate mit 20 % Rabatt.",
-  "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.": "Lassen Sie einen Plan leer, um in dieser Region den Standardpreis zu berechnen. Leerer Jahrespreis = 12 Monate mit 20 % Rabatt."
+  "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.": "Lassen Sie einen Plan leer, um in dieser Region den Standardpreis zu berechnen. Leerer Jahrespreis = 12 Monate mit 20 % Rabatt.",
+  "Ad spend on these products (last 7 days)": "Werbeausgaben für diese Produkte (letzte 7 Tage)",
+  "Checked daily · last check {{date}}": "Täglich geprüft · letzte Prüfung {{date}}",
+  "Checked once a day": "Einmal täglich geprüft",
+  "No data yet. The list is built once a day.": "Noch keine Daten. Die Liste wird einmal täglich erstellt.",
+  "No matching products.": "Keine passenden Produkte.",
+  "No out-of-stock products in running ads.": "Keine nicht vorrätigen Produkte in laufenden Anzeigen.",
+  "Open campaign in a new tab": "Kampagne in neuem Tab öffnen",
+  "Out of stock": "Nicht vorrätig",
+  "Out-of-Stock Products in Running Ads": "Nicht vorrätige Produkte in laufenden Anzeigen",
+  "Out-of-stock products": "Nicht vorrätige Produkte",
+  "Products Amazon reports as out of stock that are still advertised in enabled campaigns.": "Produkte, die Amazon als nicht vorrätig meldet und die noch in aktiven Kampagnen beworben werden.",
+  "Running campaigns affected": "Betroffene laufende Kampagnen",
+  "Running in campaigns": "Läuft in Kampagnen",
+  "Search ASIN, SKU, product or campaign": "ASIN, SKU, Produkt oder Kampagne suchen",
+  "Showing {{from}}–{{to}} of {{total}}": "{{from}}–{{to}} von {{total}}",
+  "Spend (7d)": "Ausgaben (7 T)"
 }

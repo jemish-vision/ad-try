@@ -40,6 +40,7 @@ import TimeBasedAnalyticsWidget, { OrdersByDayWidget, PeakHoursWidget } from "./
 import WasteAndScalingAlertsWidget, { WasteSpendWidget } from "./Dashboard/WasteAndScalingAlertsWidget";
 import ProductPerformanceMatrixWidget from "./Dashboard/ProductPerformanceMatrixWidget";
 import SmartInsightsWidget from "./Dashboard/SmartInsightsWidget";
+import OutOfStockAdsWidget from "./Dashboard/OutOfStockAdsWidget";
 import { PermissionCheck } from "../../../helper/permission/PermissionCheck";
 import { Card } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
@@ -256,6 +257,19 @@ export default function AdminDashboard() {
 
     return typeStr.includes("vendor");
   }, [activeProfile]);
+
+  // Out-of-stock ads section: seller and vendor profiles only (not agency). When the type isn't known
+  // here the API decides (it answers available:false for other profile types and the widget hides).
+  const isSellerOrVendor = useMemo(() => {
+    let storedProfile = null;
+    try {
+      const rawProf = localStorage.getItem("profile");
+      if (rawProf) storedProfile = JSON.parse(rawProf)?.profile || null;
+    } catch (e) {}
+    const prof = activeProfileObj || activeProfile || storedProfile;
+    const typeStr = String(prof?.type || prof?.accountInfo?.type || "").toLowerCase();
+    return !typeStr || typeStr === "seller" || typeStr === "vendor";
+  }, [activeProfile, activeProfileObj]);
 
   const [dashboardMode, setDashboardMode] = useState(() => (isVendor ? "ads" : "seller")); // "seller" | "ads"
 
@@ -1151,6 +1165,17 @@ export default function AdminDashboard() {
             marketplace={activeCountryCode}
           />
         </div>
+
+        {/* ── Out-of-stock products still advertised in running campaigns (seller / vendor) ── */}
+        {isSellerOrVendor && (
+          <div className="w-full">
+            <OutOfStockAdsWidget
+              profileId={currentProfileId}
+              currencyCode={activeCurrencyCode}
+              marketplace={activeCountryCode}
+            />
+          </div>
+        )}
 
         {/* ── Row 4: Assigned vs. Without Assign Campaigns ── */}
         <div id="dashboard-campaign-breakdowns" className="w-full mb-5">

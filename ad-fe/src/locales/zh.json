@@ -7997,5 +7997,21 @@
   "Search region name": "搜索区域名称",
   "No pricing regions yet. Add a region first.": "尚无定价区域。请先添加区域。",
   "Leave a region empty to charge the default price there. Empty yearly price = 12 months with 20% off.": "区域留空则在该区域按默认价格收费。年付价格留空 = 12 个月价格打八折。",
-  "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.": "套餐留空则在该区域按默认价格收费。年付价格留空 = 12 个月价格打八折。"
+  "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.": "套餐留空则在该区域按默认价格收费。年付价格留空 = 12 个月价格打八折。",
+  "Ad spend on these products (last 7 days)": "这些商品的广告花费（近 7 天）",
+  "Checked daily · last check {{date}}": "每日检查 · 上次检查 {{date}}",
+  "Checked once a day": "每天检查一次",
+  "No data yet. The list is built once a day.": "暂无数据。列表每天生成一次。",
+  "No matching products.": "没有匹配的商品。",
+  "No out-of-stock products in running ads.": "投放中的广告里没有缺货商品。",
+  "Open campaign in a new tab": "在新标签页中打开广告活动",
+  "Out of stock": "缺货",
+  "Out-of-Stock Products in Running Ads": "投放中广告里的缺货商品",
+  "Out-of-stock products": "缺货商品",
+  "Products Amazon reports as out of stock that are still advertised in enabled campaigns.": "Amazon 报告为缺货、但仍在启用的广告活动中投放的商品。",
+  "Running campaigns affected": "受影响的投放中广告活动",
+  "Running in campaigns": "投放于广告活动",
+  "Search ASIN, SKU, product or campaign": "搜索 ASIN、SKU、商品或广告活动",
+  "Showing {{from}}–{{to}} of {{total}}": "共 {{total}} 条，第 {{from}}–{{to}} 条",
+  "Spend (7d)": "花费（7 天）"
 }

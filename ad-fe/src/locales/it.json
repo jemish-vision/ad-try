@@ -7997,5 +7997,21 @@
   "Search region name": "Cerca nome regione",
   "No pricing regions yet. Add a region first.": "Nessuna regione di prezzo. Aggiungi prima una regione.",
   "Leave a region empty to charge the default price there. Empty yearly price = 12 months with 20% off.": "Lascia vuota una regione per applicare lì il prezzo predefinito. Prezzo annuale vuoto = 12 mesi con il 20% di sconto.",
-  "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.": "Lascia vuoto un piano per applicare il suo prezzo predefinito in questa regione. Prezzo annuale vuoto = 12 mesi con il 20% di sconto."
+  "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.": "Lascia vuoto un piano per applicare il suo prezzo predefinito in questa regione. Prezzo annuale vuoto = 12 mesi con il 20% di sconto.",
+  "Ad spend on these products (last 7 days)": "Spesa pubblicitaria su questi prodotti (ultimi 7 giorni)",
+  "Checked daily · last check {{date}}": "Controllato ogni giorno · ultimo controllo {{date}}",
+  "Checked once a day": "Controllato una volta al giorno",
+  "No data yet. The list is built once a day.": "Ancora nessun dato. L'elenco viene creato una volta al giorno.",
+  "No matching products.": "Nessun prodotto corrispondente.",
+  "No out-of-stock products in running ads.": "Nessun prodotto esaurito negli annunci attivi.",
+  "Open campaign in a new tab": "Apri la campagna in una nuova scheda",
+  "Out of stock": "Esaurito",
+  "Out-of-Stock Products in Running Ads": "Prodotti esauriti negli annunci attivi",
+  "Out-of-stock products": "Prodotti esauriti",
+  "Products Amazon reports as out of stock that are still advertised in enabled campaigns.": "Prodotti che Amazon segnala come esauriti e ancora pubblicizzati in campagne attive.",
+  "Running campaigns affected": "Campagne attive interessate",
+  "Running in campaigns": "Attivo nelle campagne",
+  "Search ASIN, SKU, product or campaign": "Cerca ASIN, SKU, prodotto o campagna",
+  "Showing {{from}}–{{to}} of {{total}}": "{{from}}–{{to}} di {{total}}",
+  "Spend (7d)": "Spesa (7 g)"
 }

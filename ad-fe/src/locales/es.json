@@ -7998,5 +7998,21 @@
   "Search region name": "Buscar nombre de región",
   "No pricing regions yet. Add a region first.": "Aún no hay regiones de precios. Agregue una región primero.",
   "Leave a region empty to charge the default price there. Empty yearly price = 12 months with 20% off.": "Deje una región vacía para cobrar allí el precio predeterminado. Precio anual vacío = 12 meses con 20 % de descuento.",
-  "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.": "Deje un plan vacío para cobrar su precio predeterminado en esta región. Precio anual vacío = 12 meses con 20 % de descuento."
+  "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.": "Deje un plan vacío para cobrar su precio predeterminado en esta región. Precio anual vacío = 12 meses con 20 % de descuento.",
+  "Ad spend on these products (last 7 days)": "Gasto publicitario en estos productos (últimos 7 días)",
+  "Checked daily · last check {{date}}": "Revisado a diario · última revisión {{date}}",
+  "Checked once a day": "Revisado una vez al día",
+  "No data yet. The list is built once a day.": "Aún no hay datos. La lista se genera una vez al día.",
+  "No matching products.": "No hay productos coincidentes.",
+  "No out-of-stock products in running ads.": "No hay productos agotados en anuncios activos.",
+  "Open campaign in a new tab": "Abrir campaña en una pestaña nueva",
+  "Out of stock": "Agotado",
+  "Out-of-Stock Products in Running Ads": "Productos agotados en anuncios activos",
+  "Out-of-stock products": "Productos agotados",
+  "Products Amazon reports as out of stock that are still advertised in enabled campaigns.": "Productos que Amazon indica como agotados y que siguen anunciándose en campañas activas.",
+  "Running campaigns affected": "Campañas activas afectadas",
+  "Running in campaigns": "Activo en campañas",
+  "Search ASIN, SKU, product or campaign": "Buscar ASIN, SKU, producto o campaña",
+  "Showing {{from}}–{{to}} of {{total}}": "{{from}}–{{to}} de {{total}}",
+  "Spend (7d)": "Gasto (7 d)"
 }

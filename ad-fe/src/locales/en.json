@@ -7997,5 +7997,21 @@
   "Search region name": "Search region name",
   "No pricing regions yet. Add a region first.": "No pricing regions yet. Add a region first.",
   "Leave a region empty to charge the default price there. Empty yearly price = 12 months with 20% off.": "Leave a region empty to charge the default price there. Empty yearly price = 12 months with 20% off.",
-  "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.": "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off."
+  "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.": "Leave a plan empty to charge its default price in this region. Empty yearly price = 12 months with 20% off.",
+  "Ad spend on these products (last 7 days)": "Ad spend on these products (last 7 days)",
+  "Checked daily · last check {{date}}": "Checked daily · last check {{date}}",
+  "Checked once a day": "Checked once a day",
+  "No data yet. The list is built once a day.": "No data yet. The list is built once a day.",
+  "No matching products.": "No matching products.",
+  "No out-of-stock products in running ads.": "No out-of-stock products in running ads.",
+  "Open campaign in a new tab": "Open campaign in a new tab",
+  "Out of stock": "Out of stock",
+  "Out-of-Stock Products in Running Ads": "Out-of-Stock Products in Running Ads",
+  "Out-of-stock products": "Out-of-stock products",
+  "Products Amazon reports as out of stock that are still advertised in enabled campaigns.": "Products Amazon reports as out of stock that are still advertised in enabled campaigns.",
+  "Running campaigns affected": "Running campaigns affected",
+  "Running in campaigns": "Running in campaigns",
+  "Search ASIN, SKU, product or campaign": "Search ASIN, SKU, product or campaign",
+  "Showing {{from}}–{{to}} of {{total}}": "Showing {{from}}–{{to}} of {{total}}",
+  "Spend (7d)": "Spend (7d)"
 }

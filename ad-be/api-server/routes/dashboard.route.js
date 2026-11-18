@@ -13,6 +13,7 @@ router.post("/getChangesByCampaign", verifyToken, validateRoutePermission(SYSTEM
 router.post("/getChangesByKeyword", verifyToken, validateRoutePermission(SYSTEM_PAGES.DASHBOARD, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, getChangesByKeyword);
 router.post("/getChangesByProduct", verifyToken, validateRoutePermission(SYSTEM_PAGES.DASHBOARD, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, getChangesByProduct);
 router.post("/recommendations-hub", verifyToken, validateRoutePermission(SYSTEM_PAGES.DASHBOARD, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, getRecommendationsHub);
+router.post("/getOutOfStockAds", verifyToken, validateRoutePermission(SYSTEM_PAGES.DASHBOARD, PAGE_ACTIONS.VIEW_ONLY), require("../controllers/outOfStockAds.controller").getOutOfStockAds);
 router.post("/getAssignedCampaignComparison", verifyToken, validateRoutePermission(SYSTEM_PAGES.DASHBOARD, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, getAssignedCampaignComparison);
 router.post("/getAdTypeBreakdown", verifyToken, validateRoutePermission(SYSTEM_PAGES.DASHBOARD, PAGE_ACTIONS.VIEW_ONLY), getAdTypeBreakdown);
 router.post("/getTimeBasedAnalytics", verifyToken, validateRoutePermission(SYSTEM_PAGES.DASHBOARD, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, getTimeBasedAnalytics);
