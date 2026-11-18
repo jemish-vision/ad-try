@@ -54,6 +54,9 @@ const MIGRATED_TASKS = new Set([
   "ProductsListing",
   "ProductsMetaListing",
   "SyncPastData",
+  // Daily jobs with their own queues (asin-snapshot-queue, out-of-stock-ads-queue)
+  "ASINSnapshot",
+  "OutOfStockAds",
 ]);
 
 function getAutomationExecutionMode() {
