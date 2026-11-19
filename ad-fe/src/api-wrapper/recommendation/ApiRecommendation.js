@@ -91,7 +91,20 @@ const ApiGetRecommendationsHub = (data) => {
         .then(res => res.data).catch(res => res.data);
 };
 
+// Tags for recommendation configurations
+const ApiGetRecommendationTags = (data) => {
+    return axios.post(`${api}tags`, data, { headers: { ...headers, 'x-skip-loader': true }, skipLoader: true })
+        .then(res => res.data).catch(res => res?.response?.data || res?.data)
+}
+
+const ApiCreateRecommendationTag = (data) => {
+    return axios.post(`${api}tags/create`, data, { headers: { ...headers, 'x-skip-loader': true }, skipLoader: true })
+        .then(res => res.data).catch(res => res?.response?.data || res?.data)
+}
+
 export {
+    ApiGetRecommendationTags,
+    ApiCreateRecommendationTag,
     ApiGetRules,
     ApiGetRuleById,
     ApiUpdateRules,

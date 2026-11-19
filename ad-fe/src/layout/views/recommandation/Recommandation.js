@@ -15,6 +15,8 @@ import RecommendationModal from "./RecommendationModal";
 import { CustomModal } from "../../../helper/modal/CustomModal";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../components/ui/dialog";
 import AddRule from "../recommendationRule/AddRule";
+import { TagList } from "../../../components/recommendation-tags/RecommendationTags";
+import { ApiGetRecommendationTags } from "../../../api-wrapper/recommendation/ApiRecommendation";
 import RecommendationRules from "../recommendationRule/RecommendationRules";
 import { PermissionCheck } from "../../../helper/permission/PermissionCheck";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -186,6 +188,7 @@ function RecommendationItem({ id, recommendation, onClick, onEdit, onDelete, isD
           }}>
             {recommendation.ruleName}
           </span>
+          <TagList tags={recommendation.tags} max={4} size="xs" />
         </div>
         {actions.length === 0 && (hasOob || !recommendation.actions?.length) && (
           <div style={{
@@ -474,15 +477,20 @@ function Recommendation() {
   const [appliedActions, setAppliedActions] = useState([]);
   const [tempGridNames, setTempGridNames] = useState([]);
   const [tempActions, setTempActions] = useState([]);
+  // Tag filter (tags are assigned in the Recommendation Configuration tab; read-only here)
+  const [tagOptions, setTagOptions] = useState([]);
+  const [appliedTagIds, setAppliedTagIds] = useState([]);
+  const [tempTagIds, setTempTagIds] = useState([]);
 
   const appliedFilters = useMemo(
-    () => buildRecommendationAppliedFilters(appliedGridNames, appliedActions, t),
-    [appliedGridNames, appliedActions, t]
+    () => buildRecommendationAppliedFilters(appliedGridNames, appliedActions, t, appliedTagIds, tagOptions),
+    [appliedGridNames, appliedActions, appliedTagIds, tagOptions, t]
   );
 
   const handleFilterOptionClick = (option) => {
     setTempGridNames([...appliedGridNames]);
     setTempActions([...appliedActions]);
+    setTempTagIds([...appliedTagIds]);
     setSelectedFilterOption(option);
     setShowFilterModal(true);
   };
@@ -492,6 +500,8 @@ function Recommendation() {
       setAppliedGridNames([...tempGridNames]);
     } else if (selectedFilterOption?.value === "Action") {
       setAppliedActions([...tempActions]);
+    } else if (selectedFilterOption?.value === "Tags") {
+      setAppliedTagIds([...tempTagIds]);
     }
     setShowFilterModal(false);
   };
@@ -501,12 +511,15 @@ function Recommendation() {
       setAppliedGridNames([]);
     } else if (filterId === "Action") {
       setAppliedActions([]);
+    } else if (filterId === "Tags") {
+      setAppliedTagIds([]);
     }
   };
 
   const handleClearAllFilters = () => {
     setAppliedGridNames([]);
     setAppliedActions([]);
+    setAppliedTagIds([]);
   };
 
   const handleEditFilter = (filter) => {
@@ -525,6 +538,14 @@ function Recommendation() {
       });
       if (res?.isSuccess) {
         setRecommendations(res.data || []);
+        ApiGetRecommendationTags({ profileId: selectedCampaign.profileSendID }).then((tagRes) => {
+          if (tagRes?.isSuccess) {
+            const tags = tagRes.data || [];
+            setTagOptions(tags);
+            // Drop selected tags that no longer exist
+            setAppliedTagIds((prev) => prev.filter((id) => tags.some((tg) => String(tg._id) === id)));
+          }
+        });
       } else {
         Toast.error(res?.message || "Failed to load recommendations");
       }
@@ -635,11 +656,27 @@ function Recommendation() {
         const matchesAction = validActs.some((a) => appliedActions.includes(a.actionName));
         if (!matchesNone && !matchesAction) return false;
       }
+      if (appliedTagIds.length > 0) {
+        const recTagIds = (rec.tags || []).map((tg) => String(tg._id));
+        if (!recTagIds.some((id) => appliedTagIds.includes(id))) return false;
+      }
       return true;
     });
 
     return [...filtered].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }, [recommendations, appliedGridNames, appliedActions]);
+  }, [recommendations, appliedGridNames, appliedActions, appliedTagIds]);
+
+  // With a tag filter, show the list grouped by tag (a recommendation with two selected tags is
+  // listed under both).
+  const tagGroups = useMemo(() => {
+    if (!appliedTagIds.length) return null;
+    return appliedTagIds
+      .map((id) => ({
+        tag: tagOptions.find((tg) => String(tg._id) === id) || { _id: id, name: id },
+        items: sortedRecommendations.filter((rec) => (rec.tags || []).some((tg) => String(tg._id) === id)),
+      }))
+      .filter((g) => g.items.length > 0);
+  }, [appliedTagIds, tagOptions, sortedRecommendations]);
 
   return (
     <div className="placement-tracking-container" id="recommandation-page">
@@ -826,19 +863,32 @@ function Recommendation() {
                 </div>
               ) : (
                 <div>
-                  {sortedRecommendations.map((recommendation, index) => (
-                    <RecommendationItem
-                      id={`recommendation-item-${index}`}
-                      key={recommendation._id}
-                      recommendation={recommendation}
-                      onClick={handleItemClick}
-                      onEdit={handleItemClick}
-                      onDelete={handleDeleteClick}
-                      isDark={isDark}
-                      isMobile={isMobile}
-                      isLoading={itemLoadingId === recommendation._id}
-                      isAnyLoading={!!itemLoadingId}
-                    />
+                  {(tagGroups || [{ tag: null, items: sortedRecommendations }]).map((group) => (
+                    <div key={group.tag?._id || "all"} className={group.tag ? "mb-5" : ""}>
+                      {group.tag && (
+                        <div className="flex items-center gap-2 mb-2.5" id={`recommendation-tag-group-${group.tag._id}`}>
+                          <span style={{ width: 10, height: 10, borderRadius: 9999, background: group.tag.color || "#2563EB", display: "inline-block" }} />
+                          <span className="text-[14px] font-bold" style={{ color: "var(--text-heading, var(--text-primary))" }}>{group.tag.name}</span>
+                          <span className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
+                            {t("{{count}} recommendations", { count: group.items.length })}
+                          </span>
+                        </div>
+                      )}
+                      {group.items.map((recommendation, index) => (
+                        <RecommendationItem
+                          id={`recommendation-item-${group.tag ? `${group.tag._id}-` : ""}${index}`}
+                          key={`${group.tag?._id || "all"}-${recommendation._id}`}
+                          recommendation={recommendation}
+                          onClick={handleItemClick}
+                          onEdit={handleItemClick}
+                          onDelete={handleDeleteClick}
+                          isDark={isDark}
+                          isMobile={isMobile}
+                          isLoading={itemLoadingId === recommendation._id}
+                          isAnyLoading={!!itemLoadingId}
+                        />
+                      ))}
+                    </div>
                   ))}
                 </div>
               )}
@@ -924,6 +974,7 @@ function Recommendation() {
               editData={editData}
               setEditData={setEditData}
               allRulesSchedule={[]}
+              showTags={false}
             />
           </div>
         </DialogContent>
@@ -938,6 +989,9 @@ function Recommendation() {
         setSelectedGridNames={setTempGridNames}
         selectedActions={tempActions}
         setSelectedActions={setTempActions}
+        tagOptions={tagOptions}
+        selectedTagIds={tempTagIds}
+        setSelectedTagIds={setTempTagIds}
         onApply={handleApplyFilter}
         isDark={isDark}
       />

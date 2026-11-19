@@ -42,6 +42,7 @@ const { retryWithBackoff } = require("../helper/retryHelper");
 
 const { cron_logs } = require("../../winston/cronAutomation/logger");
 const { recommendation_logs } = require("../../winston/recommendation/logger");
+const { sanitizeTagIds, attachTags, mapTagIdsToConfig } = require("../helpers/recommendationTags.helper");
 
 const { getProfile, getAccessToken, getActivePlanProfiles, getRuleDate, getRuleSettings, getMarketplaceMinBid, removeCampaignIdFromQuery, safeJsonParse, isValidASIN } = require("../helper/common");
 const {
@@ -1242,6 +1243,7 @@ exports.addRules = async (req, res) => {
         query,
         campaignSelectionType,
         campaignIds,
+        tagIds,
     } = req.body;
 
     try {
@@ -1291,6 +1293,7 @@ exports.addRules = async (req, res) => {
             campaignIds: campaignIds || { SP: [], SB: [], SD: [] },
             countryCode: getAccount.countryCode,
             timezone: getAccount.timezone,
+            tagIds: await sanitizeTagIds(configId, tagIds),
         });
 
         await createRule.save();
@@ -1340,6 +1343,12 @@ exports.updateRules = async (req, res) => {
         delete updateData.profileId;
         delete updateData._id;
         delete updateData.isActive;
+        delete updateData.tags; // display-only field from the list response
+        if (Array.isArray(req?.body?.tagIds)) {
+            updateData.tagIds = await sanitizeTagIds(configId, req.body.tagIds);
+        } else {
+            delete updateData.tagIds;
+        }
 
         if (req?.body?.conditions && Array.isArray(req.body.conditions)) {
             const sanitized = req.body.conditions.map((c) => {
@@ -1612,6 +1621,7 @@ exports.copyRulesToProfiles = async (req, res) => {
                     isActive: srcRule.isActive !== undefined ? srcRule.isActive : true,
                     countryCode: profileDoc?.countryCode || srcRule.countryCode || "",
                     timezone: profileDoc?.timezone || srcRule.timezone || "UTC",
+                    tagIds: await mapTagIdsToConfig(srcRule.configId || sourceConfigId, targetConfigId, srcRule.tagIds, userId),
                 });
 
                 await newRuleDoc.save();
@@ -1769,13 +1779,19 @@ exports.getRules = async (req, res) => {
 
     const pageNo = req.body.pageNo || 1;
     const perPage = req.body.perPage || 10;
-    const { gridName, actionName, fieldName, sortType } = req.body || {};
+    const { gridName, actionName, fieldName, sortType, tagIds } = req.body || {};
 
     try {
         const matchQuery = {
             configId,
             profileId,
         };
+
+        // Filter by tags: rules having any of the selected tags
+        if (Array.isArray(tagIds) && tagIds.length > 0) {
+            const validTagIds = tagIds.filter((id) => mongoose.Types.ObjectId.isValid(id)).map((id) => new mongoose.Types.ObjectId(String(id)));
+            if (validTagIds.length) matchQuery.tagIds = { $in: validTagIds };
+        }
 
         if (Array.isArray(gridName) && gridName.length > 0) {
             matchQuery.gridName = { $in: gridName };
@@ -1842,7 +1858,7 @@ exports.getRules = async (req, res) => {
 
         const result = await recommendationRuleSchema.aggregate(pipeline);
 
-        const data = result[0].data;
+        const data = await attachTags(result[0].data);
         const totalRecords = result[0].totalCount[0]?.count || 0;
 
         return res.status(200).send({
@@ -1880,10 +1896,12 @@ exports.getRuleById = async (req, res) => {
             });
         }
 
+        const [withTags] = await attachTags([getRule]);
+
         return res.status(200).send({
             isSuccess: true,
             message: "Rule fetched successfully.",
-            data: getRule,
+            data: withTags,
         });
     } catch (error) {
         recommendation_logs({ message: `[getRuleById Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
@@ -3738,7 +3756,7 @@ exports.getRecommendation = async (req, res) => {
         const total = filtered.length;
         const paged = limit ? filtered.slice((page - 1) * limit, page * limit) : filtered;
 
-        const finalResponse = paged.map((item) => ({
+        const finalResponse = await attachTags(paged.map((item) => ({
             _id: item.rule._id,
             ...item.rule,
             ruleName: item.rule.ruleName,
@@ -3748,7 +3766,7 @@ exports.getRecommendation = async (req, res) => {
             toDate: item.toDate,
             count: item.count,
             newCount: item.newCount,
-        }));
+        })));
 
         return res.status(200).send({
             isSuccess: true,
@@ -4571,7 +4589,7 @@ exports.getRecommendationData = async (req, res) => {
         return res.status(200).send({
             isSuccess: true,
             message: "Recommendation rule data fetched successfully.",
-            rule: {
+            rule: (await attachTags([{
                 _id: rule._id,
                 ...rule,
                 ruleName: rule.ruleName,
@@ -4579,7 +4597,7 @@ exports.getRecommendationData = async (req, res) => {
                 actions: rule.actions,
                 fromDate,
                 toDate,
-            },
+            }]))[0],
             count: totalRecords,
             totalRecords,
             newCount: (allItems || []).filter(item => Boolean(item.isNew)).length,

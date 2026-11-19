@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../compo
 import { Button } from "../../../components/ui/button";
 import { Switch } from "../../../components/ui/switch";
 import AddRule from "./AddRule";
+import { TagList } from "../../../components/recommendation-tags/RecommendationTags";
 import RecommendationCampaignModal from "./RecommendationCampaignModal";
 import { ApiDeleteRule, ApiGetRules, ApiStatusChange, ApiExportRecommandationRule, ApiImportRecommandationRule, ApiUpdateRules, ApiBulkUpdateRuleDateFilter, ApiCopyRulesToProfiles } from "../../../api-wrapper/recommendation/ApiRecommendation";
 import { ApiSelectAccount } from "../../../api-wrapper/campaign/ApiCampaign";
@@ -560,6 +561,25 @@ function RecomandationRules({ hideFilter = false } = {}) {
                         <p>{e.ruleName}</p>
                     </div>
                 );
+            },
+        },
+
+        // ── Tags ──────────────────────────────────────────────────────────────────
+        {
+            headerName: t("Tags"),
+            field: "tags",
+            title: "Tags",
+            width: 200,
+            sortable: false,
+            resizable: true,
+            wrapText: true,
+            autoHeight: true,
+            cellRenderer: (params) => {
+                const e = params.data;
+                if (!e) return null;
+                return e.tags?.length
+                    ? <TagList tags={e.tags} max={3} className="py-1.5" />
+                    : <span className="text-slate-400">—</span>;
             },
         },
 

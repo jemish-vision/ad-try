@@ -8046,5 +8046,17 @@
   "Close current modal, dropdown or dismiss shortcuts": "वर्तमान मोडल बंद करें या शॉर्टकट खारिज करें",
   "Switch between Dark and Light themes": "डार्क और लाइट थीम के बीच स्विच करें",
   "Go to Placement Bids & Placement Rules": "प्लेसमेंट बोलियां और प्लेसमेंट नियम पर जाएं",
-  "Go to Recommendations": "सिफारिशें पर जाएं"
+  "Go to Recommendations": "सिफारिशें पर जाएं",
+  "Tags": "टैग",
+  "optional": "वैकल्पिक",
+  "Add tags…": "टैग जोड़ें…",
+  "Type to search or create a tag, then press Enter": "टैग खोजने या बनाने के लिए टाइप करें, फिर Enter दबाएं",
+  "Create tag \"{{name}}\"": "टैग \"{{name}}\" बनाएं",
+  "Creating…": "बनाया जा रहा है…",
+  "Could not create tag": "टैग नहीं बन सका",
+  "No tags yet. Type a name and press Enter to create one.": "अभी कोई टैग नहीं। नाम लिखें और नया बनाने के लिए Enter दबाएं।",
+  "Tag saved": "टैग सहेजा गया",
+  "Select Tags": "टैग चुनें",
+  "No tags yet. Add tags to a recommendation in the Recommendation Configuration tab.": "अभी कोई टैग नहीं। Recommendation Configuration टैब में किसी recommendation में टैग जोड़ें।",
+  "{{count}} recommendations": "{{count}} recommendations"
 }

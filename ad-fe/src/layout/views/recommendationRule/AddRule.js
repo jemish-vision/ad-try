@@ -1,6 +1,7 @@
 import React, { useState, useContext, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ApiAddRules, ApiUpdateRules, ApiGetRuleById } from '../../../api-wrapper/recommendation/ApiRecommendation';
+import { ApiAddRules, ApiUpdateRules, ApiGetRuleById, ApiGetRecommendationTags } from '../../../api-wrapper/recommendation/ApiRecommendation';
+import { TagSelector } from '../../../components/recommendation-tags/RecommendationTags';
 import { ProfileContext } from '../../../helper/usecontext/useContext';
 import { handleLoader, Toast, useDispatch } from '../../../helper/links/Link';
 import { AiOutlinePlus } from 'react-icons/ai';
@@ -166,6 +167,8 @@ function AddRecommendationRule({
   editData,
   setEditData,
   allRulesSchedule = [],
+  // Tags are added/removed only from the Recommendation Configuration section.
+  showTags = true,
 }) {
   const { t } = useTranslation();
   const dispatch = useDispatch();
@@ -194,6 +197,15 @@ function AddRecommendationRule({
   const [campaignIds, setCampaignIds] = useState({ SP: [], SB: [], SD: [] });
   const [showCampaignModal, setShowCampaignModal] = useState(false);
   const [error, setError] = useState({});
+  const [tags, setTags] = useState([]); // selected [{ _id, name, color }]
+  const [tagOptions, setTagOptions] = useState([]); // all tags of the account
+
+  useEffect(() => {
+    if (!showTags) return;
+    ApiGetRecommendationTags({}).then((res) => {
+      if (res?.isSuccess) setTagOptions(res.data || []);
+    });
+  }, [showTags]);
 
   const [step, setStep] = useState(editId ? 'form' : 'choose-path');
 
@@ -260,6 +272,7 @@ function AddRecommendationRule({
             );
             setCampaignSelectionType(d.campaignSelectionType || 'ALL');
             setCampaignIds(d.campaignIds || { SP: [], SB: [], SD: [] });
+            setTags(Array.isArray(d.tags) ? d.tags : []);
           } else {
             Toast.error(res.message);
           }
@@ -491,6 +504,7 @@ function AddRecommendationRule({
     setCampaignIds({ SP: [], SB: [], SD: [] });
     setShowCampaignModal(false);
     setError({});
+    setTags([]);
   };
 
   const handleCancel = () => {
@@ -542,6 +556,8 @@ function AddRecommendationRule({
       query,
       campaignSelectionType: selectedType,
       campaignIds: selectedCampaignIds,
+      // Only sent from the configuration form, so saving elsewhere never clears tags.
+      ...(showTags && { tagIds: tags.map((tg) => tg._id) }),
     };
 
     setSubmitting(true);
@@ -716,6 +732,21 @@ function AddRecommendationRule({
               {error?.gridName && <p className="error">{error.gridName}</p>}
             </div>
           </div>
+
+          {showTags && (
+            <div className="mb-3 w-full" id="recommendation-rule-tags">
+              <label className="block mb-2 text-[13px] font-semibold text-slate-700 dark:text-slate-300">
+                {t("Tags")} <span className="font-normal text-slate-400">({t("optional")})</span>
+              </label>
+              <TagSelector
+                value={tags}
+                options={tagOptions}
+                onChange={setTags}
+                onTagCreated={(tag) => setTagOptions((prev) => (prev.some((p) => String(p._id) === String(tag._id)) ? prev : [...prev, tag].sort((a, b) => a.name.localeCompare(b.name))))}
+                placeholder={t("Type to search or create a tag, then press Enter")}
+              />
+            </div>
+          )}
 
 
           <div className="add_border" />

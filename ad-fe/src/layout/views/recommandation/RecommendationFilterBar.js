@@ -16,6 +16,7 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 export const RECOMMENDATION_FILTER_OPTIONS = [
   { label: "Affected Parameter", value: "AffectedParameter", labelKey: "Affected Parameter" },
   { label: "Action", value: "Action", labelKey: "Action" },
+  { label: "Tags", value: "Tags", labelKey: "Tags" },
 ];
 
 export const AFFECTED_PARAMETER_OPTIONS = [
@@ -57,7 +58,7 @@ const getColors = (isDark) => ({
   neutral800: isDark ? "rgba(255, 255, 255, 0.92)" : "#1E293B",
 });
 
-export function buildRecommendationAppliedFilters(appliedGridNames = [], appliedActions = [], t = (k) => k) {
+export function buildRecommendationAppliedFilters(appliedGridNames = [], appliedActions = [], t = (k) => k, appliedTagIds = [], tagOptions = []) {
   const filters = [];
 
   if (appliedGridNames.length > 0) {
@@ -83,6 +84,16 @@ export function buildRecommendationAppliedFilters(appliedGridNames = [], applied
       type: "Action",
       value: appliedActions,
       displayText: `${t("Action")}: ${labels.join(", ")}`,
+    });
+  }
+
+  if (appliedTagIds.length > 0) {
+    const labels = appliedTagIds.map((id) => tagOptions.find((tg) => String(tg._id) === String(id))?.name || id);
+    filters.push({
+      id: "Tags",
+      type: "Tags",
+      value: appliedTagIds,
+      displayText: `${t("Tags")}: ${labels.join(", ")}`,
     });
   }
 
@@ -308,6 +319,9 @@ export function RecommendationFilterModal({
   setSelectedGridNames,
   selectedActions = [],
   setSelectedActions,
+  tagOptions = [],
+  selectedTagIds = [],
+  setSelectedTagIds,
   onApply,
   isDark,
 }) {
@@ -398,6 +412,50 @@ export function RecommendationFilterModal({
               P={P}
             />
           ))}
+        </>
+      );
+    }
+
+    if (filterType === "Tags") {
+      return (
+        <>
+          <SectionLabel
+            P={P}
+            rightAction={
+              selectedTagIds.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setSelectedTagIds([])}
+                  style={{ fontSize: 12, fontWeight: 600, color: P.primary, background: "transparent", border: "none", cursor: "pointer" }}
+                >
+                  {t("Clear selection")}
+                </button>
+              ) : null
+            }
+          >
+            {t("Select Tags")}
+          </SectionLabel>
+          {tagOptions.length === 0 ? (
+            <p style={{ fontSize: 13, color: P.neutral600, margin: "8px 0" }}>
+              {t("No tags yet. Add tags to a recommendation in the Recommendation Configuration tab.")}
+            </p>
+          ) : (
+            tagOptions.map((tag) => (
+              <CheckItem
+                key={tag._id}
+                checked={selectedTagIds.includes(String(tag._id))}
+                onChange={() => toggleMulti(String(tag._id), selectedTagIds, setSelectedTagIds)}
+                label={
+                  <span className="inline-flex items-center gap-2">
+                    <span style={{ width: 8, height: 8, borderRadius: 9999, background: tag.color || "#2563EB", display: "inline-block" }} />
+                    {tag.name}
+                  </span>
+                }
+                badge={tag.ruleCount ? t("{{count}} recommendations", { count: tag.ruleCount }) : null}
+                P={P}
+              />
+            ))
+          )}
         </>
       );
     }

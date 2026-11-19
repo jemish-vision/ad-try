@@ -82,6 +82,7 @@ function fixture({ campaigns = [], helper = {}, rule = baseRule, reportRows = []
     };
     if (name === "../models/recomandationRules.model") return { findOne: () => ({ lean: async () => rule }) };
     if (name === "../models/recommandationStatus.model") return { exists: async () => false, bulkWrite: async () => ({}) };
+    if (name === "../helpers/recommendationTags.helper") return { sanitizeTagIds: async () => [], attachTags: async (rules) => (rules || []).map((r) => ({ ...r, tags: [] })), mapTagIdsToConfig: async () => [] };
     if (name.includes("logger")) return { recommendation_logs: () => {} };
     if (name === "../helper/targetingMetricsPipeline") return require("../api-server/helper/targetingMetricsPipeline");
     if (name === "../helper/sanitizeQuery") return require("../api-server/helper/sanitizeQuery");

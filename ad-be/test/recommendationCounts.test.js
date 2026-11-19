@@ -117,6 +117,7 @@ function fixture({ campaigns = [{ campaignId: 1, status: 'ENABLED' }], adGroups 
                 getCampaignBudgetHistoryDays: async () => new Map(),
                 getLatestCampaignBudgetEvents: async () => new Map(),
             };
+        if (name === '../helpers/recommendationTags.helper') return { sanitizeTagIds: async () => [], attachTags: async (rules) => (rules || []).map((r) => ({ ...r, tags: [] })), mapTagIdsToConfig: async () => [] };
         if (name.includes('logger'))
             return { recommendation_logs: () => { } };
         if (name.includes('redis'))

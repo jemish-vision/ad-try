@@ -19,6 +19,7 @@ import { FiClock, FiFilter, FiX, FiCalendar, FiInfo, FiSearch, FiChevronDown, Fi
 import { Popover, PopoverTrigger, PopoverContent } from "../../../components/ui/popover";
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "../../../components/ui/tooltip";
 import CampaignHistoryModal from "./CampaignHistoryModal";
+import { TagList } from "../../../components/recommendation-tags/RecommendationTags";
 import RecommendationReviewModal from "./RecommendationReviewModal";
 import { ApiGetLatestCampaignHistory } from "../../../api-wrapper/campaign/ApiCampaign";
 
@@ -1912,8 +1913,12 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                     {/* ── Header ── */}
                     <div className="flex flex-col w-full pb-4 border-b border-slate-100 dark:border-white/10 pr-8">
                         {/* Row 1: Rule name */}
-                        <div style={{ fontSize: 18, fontWeight: 700, color: isDark ? "#ffffff" : "#1e293b", marginBottom: 10, lineHeight: 1.3 }}>
-                            {rule?.ruleName || "Recommendation"}
+                        <div className="flex items-center gap-2.5 flex-wrap" style={{ marginBottom: 10 }}>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: isDark ? "#ffffff" : "#1e293b", lineHeight: 1.3 }}>
+                                {rule?.ruleName || "Recommendation"}
+                            </div>
+                            {/* Tags are read-only here; they are edited in Recommendation Configuration */}
+                            <TagList tags={rule?.tags} max={6} />
                         </div>
 
                         {/* Row 2: Badges LEFT | Date picker RIGHT */}

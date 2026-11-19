@@ -163,6 +163,7 @@ function createTestContext({
         if (name === '../helper/targetingMetricsPipeline') return require('../api-server/helper/targetingMetricsPipeline');
         if (name === '../helper/sanitizeQuery') return require('../api-server/helper/sanitizeQuery');
         if (name === '../helper/adTypeCollections') return { SP: { campaign: 'campaigns', adGroup: 'ad_groups', targeting: 'targetings', placement: 'placements' } };
+        if (name === '../helpers/recommendationTags.helper') return { sanitizeTagIds: async () => [], attachTags: async (rules) => (rules || []).map((r) => ({ ...r, tags: [] })), mapTagIdsToConfig: async () => [] };
         if (name.includes('logger')) return { recommendation_logs: () => {} };
         return {};
     };

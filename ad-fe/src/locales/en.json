@@ -8046,5 +8046,17 @@
   "Close current modal, dropdown or dismiss shortcuts": "Close current modal, dropdown or dismiss shortcuts",
   "Switch between Dark and Light themes": "Switch between Dark and Light themes",
   "Go to Placement Bids & Placement Rules": "Go to Placement Bids & Placement Rules",
-  "Go to Recommendations": "Go to Recommendations"
+  "Go to Recommendations": "Go to Recommendations",
+  "Tags": "Tags",
+  "optional": "optional",
+  "Add tags…": "Add tags…",
+  "Type to search or create a tag, then press Enter": "Type to search or create a tag, then press Enter",
+  "Create tag \"{{name}}\"": "Create tag \"{{name}}\"",
+  "Creating…": "Creating…",
+  "Could not create tag": "Could not create tag",
+  "No tags yet. Type a name and press Enter to create one.": "No tags yet. Type a name and press Enter to create one.",
+  "Tag saved": "Tag saved",
+  "Select Tags": "Select Tags",
+  "No tags yet. Add tags to a recommendation in the Recommendation Configuration tab.": "No tags yet. Add tags to a recommendation in the Recommendation Configuration tab.",
+  "{{count}} recommendations": "{{count}} recommendations"
 }

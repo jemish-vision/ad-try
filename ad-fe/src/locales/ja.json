@@ -8046,5 +8046,17 @@
   "Close current modal, dropdown or dismiss shortcuts": "現在のモーダルを閉じるかショートカットを解除",
   "Switch between Dark and Light themes": "ライトテーマとダークテーマを切り替える",
   "Go to Placement Bids & Placement Rules": "プレースメント入札とプレースメントルールへ移動",
-  "Go to Recommendations": "推奨事項へ移動"
+  "Go to Recommendations": "推奨事項へ移動",
+  "Tags": "タグ",
+  "optional": "任意",
+  "Add tags…": "タグを追加…",
+  "Type to search or create a tag, then press Enter": "タグを検索または作成するには入力して Enter を押してください",
+  "Create tag \"{{name}}\"": "タグ「{{name}}」を作成",
+  "Creating…": "作成中…",
+  "Could not create tag": "タグを作成できませんでした",
+  "No tags yet. Type a name and press Enter to create one.": "タグはまだありません。名前を入力して Enter を押すと作成できます。",
+  "Tag saved": "タグを保存しました",
+  "Select Tags": "タグを選択",
+  "No tags yet. Add tags to a recommendation in the Recommendation Configuration tab.": "タグはまだありません。「レコメンデーション設定」タブでレコメンデーションにタグを追加してください。",
+  "{{count}} recommendations": "{{count}} 件のレコメンデーション"
 }

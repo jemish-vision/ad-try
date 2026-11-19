@@ -25,6 +25,11 @@ const allRecommendationData = withAllAdTypesItemList(getRecommendationData, {
 router.post("/runRecommendationSnapshot", verifyToken, verifyCronAuth, runRecommendationSnapshot);
 router.post("/cronRecommendationSnapshot", verifyToken, verifyCronAuth, cronRecommendationSnapshot);
 
+// Tags for recommendation configurations. Listing: View Only. Creating: from the add (Create) or edit (Update) form.
+const { getTags, createTag } = require("../controllers/recommendationTag.controller");
+router.post("/tags", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.VIEW_ONLY), getTags);
+router.post("/tags/create", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.CREATE, [{ pageName: SYSTEM_PAGES.RECOMMENDATION, actionType: PAGE_ACTIONS.UPDATE }]), createTag);
+
 router.post("/getRules", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.VIEW_ONLY), getRules);
 router.post("/getRuleById/:id", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.VIEW_ONLY), getRuleById);
 router.post("/updateRules/:id", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.UPDATE), updateRules);

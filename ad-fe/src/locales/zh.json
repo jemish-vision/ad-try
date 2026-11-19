@@ -8046,5 +8046,17 @@
   "Close current modal, dropdown or dismiss shortcuts": "关闭当前弹窗或取消快捷键",
   "Switch between Dark and Light themes": "在浅色和深色主题之间切换",
   "Go to Placement Bids & Placement Rules": "前往广告位出价与广告位规则",
-  "Go to Recommendations": "前往推荐"
+  "Go to Recommendations": "前往推荐",
+  "Tags": "标签",
+  "optional": "可选",
+  "Add tags…": "添加标签…",
+  "Type to search or create a tag, then press Enter": "输入以搜索或创建标签，然后按回车",
+  "Create tag \"{{name}}\"": "创建标签“{{name}}”",
+  "Creating…": "正在创建…",
+  "Could not create tag": "无法创建标签",
+  "No tags yet. Type a name and press Enter to create one.": "暂无标签。输入名称并按回车即可创建。",
+  "Tag saved": "标签已保存",
+  "Select Tags": "选择标签",
+  "No tags yet. Add tags to a recommendation in the Recommendation Configuration tab.": "暂无标签。请在“推荐配置”选项卡中为推荐添加标签。",
+  "{{count}} recommendations": "{{count}} 条推荐"
 }

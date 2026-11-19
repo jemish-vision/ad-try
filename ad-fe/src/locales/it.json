@@ -8046,5 +8046,17 @@
   "Close current modal, dropdown or dismiss shortcuts": "Chiudi il modal corrente o annulla le scorciatoie",
   "Switch between Dark and Light themes": "Passa dal tema chiaro a quello scuro",
   "Go to Placement Bids & Placement Rules": "Vai alle offerte e regole di posizionamento",
-  "Go to Recommendations": "Vai ai consigli"
+  "Go to Recommendations": "Vai ai consigli",
+  "Tags": "Tag",
+  "optional": "facoltativo",
+  "Add tags…": "Aggiungi tag…",
+  "Type to search or create a tag, then press Enter": "Digita per cercare o creare un tag, poi premi Invio",
+  "Create tag \"{{name}}\"": "Crea tag \"{{name}}\"",
+  "Creating…": "Creazione…",
+  "Could not create tag": "Impossibile creare il tag",
+  "No tags yet. Type a name and press Enter to create one.": "Ancora nessun tag. Digita un nome e premi Invio per crearne uno.",
+  "Tag saved": "Tag salvato",
+  "Select Tags": "Seleziona tag",
+  "No tags yet. Add tags to a recommendation in the Recommendation Configuration tab.": "Ancora nessun tag. Aggiungi tag a una raccomandazione nella scheda Configurazione raccomandazioni.",
+  "{{count}} recommendations": "{{count}} raccomandazioni"
 }
