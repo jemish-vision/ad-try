@@ -543,6 +543,7 @@ function BidPlacementRuleHistory() {
           />
 
           <AffectedHistoryModel
+            loading={loadingGrid}
             show={showHistoryModal?.show}
             onClose={() => setShowHistoryModal(null)}
             data={Array.isArray(showHistoryModal?.data) ? showHistoryModal?.data : []}

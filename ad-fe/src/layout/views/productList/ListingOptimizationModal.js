@@ -824,7 +824,7 @@ export default function ListingOptimizationModal({ show, onClose, product, profi
                                             <div className="flex-1 text-left">
                                                 <div className="flex items-center gap-2">
                                                     <span className="text-sm font-bold text-slate-800 dark:text-white">{t("Copywriting & SEO")}</span>
-                                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-100 dark:border-amber-900/20">Gemini 2.5</span>
+                                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-100 dark:border-amber-900/20">Gemini 3.8</span>
                                                 </div>
                                                 <p className="text-xs text-slate-500 dark:text-slate-400 m-0 mt-1 leading-normal">
                                                     {t("Audit Title, Bullet Points, Product Description, and backend Keywords for indexing.")}

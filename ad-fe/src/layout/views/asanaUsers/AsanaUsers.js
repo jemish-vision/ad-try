@@ -39,6 +39,8 @@ const AsanaUsers = () => {
   const [assignUserModal, setAssignUserModal] = useState(null);
 
   const gridRef = useRef(null);
+  const pendingLists = useRef(0);
+  const [loadingGrid, setLoadingGrid] = useState(false);
 
   const ApiListing = async (extraArgs = {}) => {
     const payload = {
@@ -50,6 +52,8 @@ const AsanaUsers = () => {
       ...extraArgs
     };
 
+    pendingLists.current += 1;
+    setLoadingGrid(true);
     await ApiAsanaUserList(payload)
       .then((res) => {
         if (res.isSuccess) {
@@ -61,6 +65,10 @@ const AsanaUsers = () => {
       })
       .catch(() => {
         Toast.error(t("Something went wrong"));
+      })
+      .finally(() => {
+        pendingLists.current -= 1;
+        setLoadingGrid(pendingLists.current > 0);
       });
   };
 
@@ -291,6 +299,7 @@ const AsanaUsers = () => {
             <AgTable
               onRefresh={ApiListing} ref={gridRef}
               tableId="asanaUsers-main-table"
+              loading={loadingGrid}
               rowData={userList}
               columnDefs={columns}
               totalRecords={groupsData?.totalRecords ?? 0}

@@ -74,6 +74,7 @@ const CampaignStatusBadge = ({ value }) => {
     const { t } = useTranslation();
     const isEnabled = String(value).toUpperCase() === "ENABLED";
     const isPaused = String(value).toUpperCase() === "PAUSED";
+    const isArchived = String(value).toUpperCase() === "ARCHIVED";
 
     if (isEnabled) {
         return (
@@ -89,8 +90,15 @@ const CampaignStatusBadge = ({ value }) => {
             </span>
         );
     }
+    if (isArchived) {
+        return (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold tracking-wider uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                {t(value)}
+            </span>
+        );
+    }
     return (
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold tracking-wider uppercase bg-slate-100 dark:bg-slate-850 text-slate-500 dark:text-slate-500 border border-slate-200 dark:border-slate-800">
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold tracking-wider uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
             {value ? t(value) : t("UNKNOWN")}
         </span>
     );
@@ -133,7 +141,7 @@ const CampaignSelector = ({ campaigns = [], selected, onChange }) => {
             <select
                 value={selected}
                 onChange={(e) => onChange?.(e.target.value)}
-                className="w-full h-8 pl-2.5 pr-8 rounded-lg text-[11px] font-bold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-850 text-slate-800 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-950 hover:border-slate-300 dark:hover:border-slate-750 focus:outline-none focus:ring-2 focus:ring-[#2374F2]/30 shadow-sm transition-all duration-200 cursor-pointer appearance-none"
+                className="w-full h-8 pl-2.5 pr-8 rounded-lg text-[11px] font-bold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-950 hover:border-slate-300 dark:hover:border-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2374F2]/30 shadow-sm transition-all duration-200 cursor-pointer appearance-none"
             >
                 <option value="ALL">{t("All Campaigns")} ({campaigns.length})</option>
                 {campaigns.map((c) => (

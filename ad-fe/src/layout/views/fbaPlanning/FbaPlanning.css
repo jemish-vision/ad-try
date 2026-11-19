@@ -447,3 +447,32 @@
     flex: 1 1 100%;
   }
 }
+
+/* ── Detail Row & Warehouse Planning Accordion Dark Theme Seamless Background ── */
+.fba-detail-row-wrapper {
+  background-color: #f8fafc;
+  transition: background-color 0.2s ease;
+}
+
+[data-theme="dark"] .fba-detail-row-wrapper {
+  background-color: #0B1120 !important;
+}
+
+[data-theme="dark"] .warehouse-planning-accordion {
+  background: rgba(15, 23, 42, 0.95) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+[data-theme="dark"] .dash-filter-bar {
+  background: #0B1120 !important;
+}
+
+/* The full-width container sits above the product rows. Color only the detail rows. */
+[data-theme="dark"] #fba-planning-grid .ag-full-width-container > .ag-row,
+[data-theme="dark"] #fba-planning-grid .ag-details-row,
+[data-theme="dark"] #fba-planning-grid .ag-details-grid,
+[data-theme="dark"] #fba-planning-grid .ag-detail-cell {
+  background-color: #0B1120 !important;
+  background: #0B1120 !important;
+  border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+}

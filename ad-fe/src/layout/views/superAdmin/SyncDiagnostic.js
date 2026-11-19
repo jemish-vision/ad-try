@@ -461,6 +461,13 @@ const SyncDiagnostic = () => {
         </div>
       </div>
 
+      {loading && (
+        <div role="status" className="mb-4 flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+          <ArrowsClockwise size={16} className="animate-spin" aria-hidden="true" />
+          {t("Loading data...")}
+        </div>
+      )}
+
       {/* CRITICAL ALERTS BANNER */}
       {criticalAlerts.length > 0 && (
         <div className="bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-lg p-3.5 sm:p-4 mb-5 shadow-sm">
@@ -1468,7 +1475,7 @@ const SyncDiagnostic = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {(recon15DaysData?.dayWiseReconciliation || []).length === 0 ? (
+                        {reconLoading || (recon15DaysData?.dayWiseReconciliation || []).length === 0 ? (
                           <tr>
                             <td colSpan={8} className="p-7 text-center text-slate-500 dark:text-slate-400">
                               {reconLoading ? (
@@ -1742,7 +1749,16 @@ const SyncDiagnostic = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {((recon15DaysData?.reportsHistory?.docs || selectedReconcileProfile.latestReports || [])).length === 0 ? (
+                        {reconLoading ? (
+                          <tr>
+                            <td colSpan={7} className="p-6 text-center text-slate-500 dark:text-slate-400">
+                              <span role="status" className="inline-flex items-center justify-center gap-2">
+                                <ArrowsClockwise size={18} className="animate-spin text-blue-600" aria-hidden="true" />
+                                {t("Loading data...")}
+                              </span>
+                            </td>
+                          </tr>
+                        ) : ((recon15DaysData?.reportsHistory?.docs || selectedReconcileProfile.latestReports || [])).length === 0 ? (
                           <tr>
                             <td colSpan={7} className="p-6 text-center text-slate-500 dark:text-slate-400">
                               {t("No report documents recorded in reports collection for this profile.")}

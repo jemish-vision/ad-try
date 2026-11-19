@@ -71,6 +71,8 @@ function CronJobHistory() {
   const [type, setType] = useState("");
 
   const gridRef = useRef(null);
+  const pendingLists = useRef(0);
+  const [loadingGrid, setLoadingGrid] = useState(false);
   const dispatch = useDispatch();
 
   const [isDark, setIsDark] = useState(document.documentElement.getAttribute("data-theme") === "dark");
@@ -88,6 +90,8 @@ function CronJobHistory() {
 
   const getCronJobHistoryList = async (argOverride) => {
     dispatch(handleLoader(true));
+    pendingLists.current += 1;
+    setLoadingGrid(true);
     const data = {
       fromDate: moment(date?.[0]).format("YYYY-MM-DD"),
       toDate: moment(date?.[1]).format("YYYY-MM-DD"),
@@ -113,6 +117,10 @@ function CronJobHistory() {
       .catch(() => {
         dispatch(handleLoader(false));
         Toast.error(t("Something went wrong"));
+      })
+      .finally(() => {
+        pendingLists.current -= 1;
+        setLoadingGrid(pendingLists.current > 0);
       });
   };
 
@@ -442,7 +450,7 @@ function CronJobHistory() {
           {PermissionCheck(SYSTEM_PAGES.CRON_JOB_HISTORY, PAGE_ACTIONS.VIEW_ONLY) && (
             <CardContent className="p-0">
               <div className="data_table" style={{ padding: "14px" }}>
-                <AgTable ref={gridRef}
+                <AgTable ref={gridRef} loading={loadingGrid}
                   tableId="cronJobHistory-main-table"
                   height={"70vh"}
                   rowData={tableData}

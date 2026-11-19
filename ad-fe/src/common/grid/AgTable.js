@@ -56,6 +56,9 @@ export const CustomNoRowsOverlay = () => {
 };
 
 const GRID_ICONS = {
+  menu: '<i class="fa-solid fa-ellipsis-vertical custom-header-menu-icon"></i>',
+  menuAlt: '<i class="fa-solid fa-ellipsis-vertical custom-header-menu-icon"></i>',
+  columnMenu: '<i class="fa-solid fa-ellipsis-vertical custom-header-menu-icon"></i>',
   sortAscending: '<i class="fa-solid fa-arrow-up custom-sort-icon"></i>',
   sortDescending: '<i class="fa-solid fa-arrow-down custom-sort-icon"></i>',
   sortUnSort: '<i class="fa-solid fa-sort custom-sort-icon"></i>',
@@ -232,9 +235,14 @@ const AgTable = forwardRef(function AgTable(
         return { ...col, _isInternal: true, order: index - 100, hide: false };
       }
       const fallbackOrder = (col.order !== undefined && col.order !== 9999) ? col.order : (index + 1);
-      const matched = savedCols.find(
-        (sc) => (sc.title && sc.title === col.title) || (col.field && sc.field && sc.field === col.field)
-      );
+      // Match by colId first: grouped/dynamic columns can share the same title
+      // (e.g. "Stock" for every FC in the SKU matrix), so title matching alone
+      // collapses their saved width/order onto one another.
+      const matched =
+        savedCols.find((sc) => sc.colId && sc.colId === (col.colId || col.field)) ||
+        savedCols.find(
+          (sc) => (sc.title && sc.title === col.title) || (col.field && sc.field && sc.field === col.field)
+        );
       if (matched) {
         return {
           ...col,
@@ -419,9 +427,28 @@ const AgTable = forwardRef(function AgTable(
 
   useEffect(() => {
     const api = gridApiInstanceRef.current || (typeof ref === "object" && ref?.current?.api);
+    if (!api || !Array.isArray(rowData)) return;
+    if (typeof api.setGridOption === "function") {
+      api.setGridOption("rowData", rowData);
+    }
+    if (rowData.length > 0) {
+      if (typeof api.hideOverlay === "function") api.hideOverlay();
+      requestAnimationFrame(() => {
+        if (typeof api.resetRowHeights === "function") {
+          api.resetRowHeights();
+        }
+      });
+    }
+  }, [rowData, ref]);
+
+  useEffect(() => {
+    const api = gridApiInstanceRef.current || (typeof ref === "object" && ref?.current?.api);
     if (!api) return;
+    if (typeof api.setGridOption === "function") {
+      api.setGridOption("loading", false);
+    }
     if (isGridLoading) {
-      if (typeof api.showLoadingOverlay === "function") api.showLoadingOverlay();
+      if (typeof api.hideOverlay === "function") api.hideOverlay();
     } else {
       if (rowData && rowData.length > 0) {
         if (typeof api.hideOverlay === "function") api.hideOverlay();
@@ -442,6 +469,27 @@ const AgTable = forwardRef(function AgTable(
     },
     ...externalDefaultColDef,
   }), [externalDefaultColDef, t]);
+
+  // ── Stable row identifier for AG Grid ────────────────────────────────────
+  const getRowId = useCallback(
+    (params) => {
+      if (typeof rest.getRowId === "function") {
+        return rest.getRowId(params);
+      }
+      const data = params?.data;
+      if (!data) return String(params?.node?.rowIndex ?? Math.random());
+      if (data.id) return String(data.id);
+      if (data._id) return String(data._id);
+      if (data.guid) return String(data.guid);
+      if (data.campaignId) return String(data.campaignId);
+      if (data.sku && data.state) return `${data.sku}_${data.state}`;
+      if (data.sku && data.fcCode) return `${data.sku}_${data.fcCode}`;
+      if (data.sku) return `${data.sku}_${params?.node?.rowIndex ?? 0}`;
+      if (data.asin) return `${data.asin}_${params?.node?.rowIndex ?? 0}`;
+      return String(params?.node?.rowIndex ?? Math.random());
+    },
+    [rest]
+  );
 
   const getRowClass = useCallback(({ rowIndex, data }) => {
     if (data?.isTotalRow) return "";
@@ -489,6 +537,7 @@ const AgTable = forwardRef(function AgTable(
         const matched = normalizedColumnDefs.find((c) => (c.colId || c.field) === col.colId);
         if (matched?._isInternal) return null;
         return {
+          colId: col.colId,
           title: matched?.title || col.colId,
           field: matched?.field || col.colId,
           isDisplay: !col.hide,
@@ -515,15 +564,18 @@ const AgTable = forwardRef(function AgTable(
     }
   }, [normalizedColumnDefs, savePageName, ref]);
 
-  const handleColumnResizeStart = useCallback(() => {
-    isResizingRef.current = true;
-  }, []);
-
   const handleColumnResized = useCallback((params) => {
-    if (params.finished && isResizingRef.current) {
-      isResizingRef.current = false;
-      handleColumnSaved();
+    // Ignore programmatic column-state applications (our own applyColumnState).
+    if (!params || params.source === "api") return;
+    // AG Grid has no "columnResizeStarted" event, so track the start from the
+    // first in-progress resize event instead of relying on a start handler.
+    if (!params.finished) {
+      isResizingRef.current = true;
+      return;
     }
+    if (!isResizingRef.current) return;
+    isResizingRef.current = false;
+    handleColumnSaved();
   }, [handleColumnSaved]);
 
   const handleDragStopped = useCallback(() => {
@@ -538,17 +590,23 @@ const AgTable = forwardRef(function AgTable(
     const el = gridWrapperRef.current;
     if (!el) return;
 
-    let target = null;
     const handleWheel = (e) => {
       if (!e.shiftKey || e.deltaY === 0) return;
-      if (!target || !el.contains(target)) {
-        target =
-          el.querySelector(".ag-center-cols-viewport") ||
-          el.querySelector(".ag-body-viewport") ||
-          el.querySelector(".ag-body-horizontal-scroll-viewport");
-      }
-      if (target) {
-        target.scrollLeft += e.deltaY;
+      const scrollMaster =
+        el.querySelector(".ag-body-horizontal-scroll-viewport") ||
+        el.querySelector(".ag-center-cols-viewport") ||
+        el.querySelector(".ag-body-viewport");
+
+      if (scrollMaster) {
+        scrollMaster.scrollLeft += e.deltaY;
+        const headerViewport = el.querySelector(".ag-header-viewport");
+        const centerCols = el.querySelector(".ag-center-cols-viewport");
+        if (headerViewport && scrollMaster !== headerViewport) {
+          headerViewport.scrollLeft = scrollMaster.scrollLeft;
+        }
+        if (centerCols && scrollMaster !== centerCols) {
+          centerCols.scrollLeft = scrollMaster.scrollLeft;
+        }
         e.preventDefault();
       }
     };
@@ -558,6 +616,36 @@ const AgTable = forwardRef(function AgTable(
       el.removeEventListener("wheel", handleWheel);
     };
   }, []);
+
+  // ── Auto-recalculate layout on container resize / navigation mount ───────
+  useEffect(() => {
+    const el = gridWrapperRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+
+    let rafId = null;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height: h } = entry.contentRect;
+        if (width > 0 && h > 0) {
+          const api = gridApiInstanceRef.current || (typeof ref === "object" && ref?.current?.api);
+          if (api) {
+            cancelAnimationFrame(rafId);
+            rafId = requestAnimationFrame(() => {
+              if (typeof api.resetRowHeights === "function") {
+                api.resetRowHeights();
+              }
+            });
+          }
+        }
+      }
+    });
+
+    observer.observe(el);
+    return () => {
+      cancelAnimationFrame(rafId);
+      observer.disconnect();
+    };
+  }, [ref]);
 
   const activeColumnDefsToPass = useMemo(() => {
     const activeCols = customColumnDefs.length ? customColumnDefs : normalizedColumnDefs;
@@ -613,8 +701,15 @@ const AgTable = forwardRef(function AgTable(
       >
         <AgGridReact
           ref={internalGridRef}
+          theme={rest.theme || "legacy"}
+          getRowId={getRowId}
           onGridReady={(params) => {
             gridApiInstanceRef.current = params.api;
+            if (Array.isArray(rowData) && rowData.length > 0) {
+              if (typeof params.api.setGridOption === "function") {
+                params.api.setGridOption("rowData", rowData);
+              }
+            }
             const activeDefs = customColumnDefs.length ? customColumnDefs : normalizedColumnDefs;
             if (activeDefs?.length) {
               applyGridColumnOrdering(activeDefs);
@@ -653,7 +748,6 @@ const AgTable = forwardRef(function AgTable(
 
           // ── Column state ────────────────────────────────────────────────
           onColumnMoved={onColumnMoved}
-          onColumnResizeStarted={handleColumnResizeStart}
           onColumnResized={handleColumnResized}
           onDragStopped={handleDragStopped}
           onColumnVisible={onColumnVisible}
@@ -666,6 +760,7 @@ const AgTable = forwardRef(function AgTable(
           tooltipHideDelay={3000}
 
           // ── Custom Overlays ─────────────────────────────────────────────
+          loading={false}
           loadingOverlayComponent={CustomLoadingOverlay}
           noRowsOverlayComponent={CustomNoRowsOverlay}
           suppressNoRowsOverlay={isGridLoading}

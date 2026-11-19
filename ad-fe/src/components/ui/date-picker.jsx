@@ -33,13 +33,19 @@ export function ShadcnDatePicker({ value, onChange, placeholder, className, disa
           {date ? format(date, "yyyy-MM-dd") : <span>{resolvedPlaceholder}</span>}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0 z-[9999]" align="start">
+      <PopoverContent
+        className="w-[288px] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-slate-200 bg-white p-0 text-slate-900 shadow-xl z-[9999] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+        align="end"
+        sideOffset={6}
+        collisionPadding={16}
+      >
         <Calendar
           mode="single"
           selected={date}
           onSelect={(d) => onChange(d ? format(d, "yyyy-MM-dd") : null)}
           initialFocus
           disabled={disabledDate}
+          className="w-full text-slate-900 dark:text-slate-100"
         />
       </PopoverContent>
     </Popover>

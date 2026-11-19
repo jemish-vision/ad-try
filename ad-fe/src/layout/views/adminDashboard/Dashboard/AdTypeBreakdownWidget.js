@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import moment from "moment";
 import {
@@ -131,6 +131,7 @@ export default function AdTypeBreakdownWidget({
 }) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
+  const requestIdRef = useRef(0);
   const [data, setData] = useState(null);
   const [viewMode, setViewMode] = useState("table"); // "table" | "cards"
 
@@ -175,8 +176,12 @@ export default function AdTypeBreakdownWidget({
   const effectiveProfileId = currentPid || getProfileIdString(profileId) || getStoredProfileId();
 
   const fetchData = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     const pid = effectiveProfileId;
-    if (!pid) return;
+    if (!pid) {
+      setLoading(false);
+      return;
+    }
 
     let fromDate = moment().subtract(30, "days").format("YYYY-MM-DD");
     let toDate = moment().subtract(1, "days").format("YYYY-MM-DD");
@@ -193,16 +198,18 @@ export default function AdTypeBreakdownWidget({
         toDate,
       });
 
+      if (requestId !== requestIdRef.current) return;
       if (res?.isSuccess && res?.data) {
         setData(res.data);
       } else {
         setData(null);
       }
     } catch (err) {
+      if (requestId !== requestIdRef.current) return;
       console.error("AdTypeBreakdownWidget error:", err);
       setData(null);
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
   }, [effectiveProfileId, date]);
 
@@ -210,6 +217,7 @@ export default function AdTypeBreakdownWidget({
     setData(null);
     setLoading(true);
     fetchData();
+    return () => { requestIdRef.current += 1; };
   }, [effectiveProfileId, date, fetchData]);
 
   const breakdown = data?.breakdown || {};
@@ -287,7 +295,7 @@ export default function AdTypeBreakdownWidget({
 
       {/* ── Table View ────────── */}
       {true ? (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" aria-busy={loading}>
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/80 dark:bg-white/[0.03] border-b border-slate-200/80 dark:border-white/10 text-[11.5px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
@@ -303,6 +311,14 @@ export default function AdTypeBreakdownWidget({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+              {loading ? (
+                <tr><td colSpan={9} className="py-12 text-center">
+                  <span role="status" className="inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                    <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    {t("Loading data...")}
+                  </span>
+                </td></tr>
+              ) : (<>
               {AD_TYPES.map((type) => {
                 const item = breakdown[type.key] || {
                   impressions: 0,
@@ -512,6 +528,7 @@ export default function AdTypeBreakdownWidget({
                   />
                 </td>
               </tr>
+              </>)}
             </tbody>
           </table>
         </div>

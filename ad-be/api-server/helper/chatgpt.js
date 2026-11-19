@@ -222,7 +222,7 @@ export async function CampaignAnalysis(data) {
 
     try {
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.5-flash",
+            model: "gemini-3.8-flash",
             systemInstruction: system,
         });
 
@@ -312,7 +312,7 @@ export async function AIPlacementAndTargetingAnalysis(data) {
         if (data?.aiModel === "gemini") {
             const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_STUDIO_KEY);
             const model = genAI.getGenerativeModel({
-                model: "gemini-2.5-flash",
+                model: "gemini-3.8-flash",
                 systemInstruction: system,
             });
 
@@ -437,7 +437,7 @@ export async function AISearchTermsAnalysis(data) {
         if (data?.aiModel === "gemini") {
             const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_STUDIO_KEY);
             const model = genAI.getGenerativeModel({
-                model: "gemini-2.5-flash",
+                model: "gemini-3.8-flash",
                 systemInstruction: system,
             });
 
@@ -1224,7 +1224,7 @@ Return EXACTLY this JSON structure:
 }`;
 
     const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
+        model: "gemini-3.8-flash",
         systemInstruction: system,
     });
 
@@ -1475,7 +1475,7 @@ export async function generateAPlusModulesAI({ asin, prompt, productData, type =
     if (!apiKey) throw new Error("GOOGLE_AI_STUDIO_KEY not set");
 
     const ai = new GoogleGenAI({ apiKey });
-    const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-2.5-flash";
+    const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-3.8-flash";
     const PREMIUM_SIZES = ["970x600", "970x300"];
 
     // -----------------------------------------------------------------------
@@ -1660,4 +1660,4 @@ with EXACTLY ${count} items.`;
 
     return { _imageModules: mods, _type: type };
 }
-
+

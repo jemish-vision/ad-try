@@ -177,7 +177,7 @@ const WarehousePlanningAccordion = ({ data, profileId, isDark, onUpdated, onOpen
 
   return (
     <div
-      className="warehouse-planning-accordion p-4 rounded-xl border shadow-sm my-2 animate-in fade-in duration-200"
+      className="warehouse-planning-accordion p-4 rounded-xl border shadow-sm m-0 animate-in fade-in duration-200"
       style={{
         background: isDark ? "rgba(15, 23, 42, 0.85)" : "#ffffff",
         borderColor: isDark ? "rgba(255, 255, 255, 0.1)" : "#e2e8f0",

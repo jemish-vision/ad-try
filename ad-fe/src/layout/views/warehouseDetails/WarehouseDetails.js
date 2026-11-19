@@ -866,7 +866,10 @@ const WarehouseDetails = () => {
   }, [activeTab, fetchGrid, fetchStorageFees, fetchWarehouseMaster, fetchMatrix]);
 
   // ── Column Definitions ──────────────────────────────────────────────────────
-  const ledgerColumns = [
+  // Memoized so AG Grid receives a stable columnDefs reference. A new array on
+  // every render makes AG Grid re-apply the default widths/order, which is why
+  // resized/ moved columns snapped back to their original size and position.
+  const ledgerColumns = React.useMemo(() => [
     {
       headerName: "Fulfillment Center",
       field: "fcCode",
@@ -981,9 +984,9 @@ const WarehouseDetails = () => {
         </span>
       ),
     },
-  ];
+  ], []);
 
-  const storageColumns = [
+  const storageColumns = React.useMemo(() => [
     {
       headerName: "Fulfillment Center",
       field: "fcCode",
@@ -1033,9 +1036,9 @@ const WarehouseDetails = () => {
         </span>
       ),
     },
-  ];
+  ], []);
 
-  const masterColumns = [
+  const masterColumns = React.useMemo(() => [
     {
       headerName: "FC Code",
       field: "fcCode",
@@ -1091,7 +1094,7 @@ const WarehouseDetails = () => {
         );
       },
     },
-  ];
+  ], []);
 
   // SKU x FC matrix: product info + totals, then Stock / Orders / Send for every FC
   const numCell = (val, cls = "text-slate-700 dark:text-slate-300") => (
@@ -1116,12 +1119,13 @@ const WarehouseDetails = () => {
     return Number(matrixDays) || 30;
   }, [matrixDays, matrixCustomRange]);
 
-  const matrixColumns = [
+  const matrixColumns = React.useMemo(() => [
+    // Apply default widths only when a column is created so refetches keep user widths.
     {
       headerName: "PRODUCT (SKU / ASIN)",
       field: "sku",
       minWidth: 320,
-      width: 380,
+      initialWidth: 380,
       pinned: "left",
       wrapText: true,
       autoHeight: true,
@@ -1143,21 +1147,21 @@ const WarehouseDetails = () => {
           {
             headerName: "Stock",
             colId: `${fc}_stock`,
-            width: 80,
+            initialWidth: 80,
             valueGetter: (p) => p.data?.fcs?.[fc]?.stock || 0,
             cellRenderer: (p) => numCell(p.value),
           },
           {
             headerName: "Purchases",
             colId: `${fc}_orders`,
-            width: 85,
+            initialWidth: 85,
             valueGetter: (p) => p.data?.fcs?.[fc]?.orders || 0,
             cellRenderer: (p) => numCell(p.value, "text-blue-600 dark:text-blue-400"),
           },
           {
             headerName: "Send",
             colId: `${fc}_send`,
-            width: 80,
+            initialWidth: 80,
             valueGetter: (p) => p.data?.fcs?.[fc]?.send || 0,
             cellRenderer: (p) => numCell(p.value, p.value > 0 ? "text-amber-600 font-semibold" : "text-slate-400"),
           },
@@ -1169,7 +1173,7 @@ const WarehouseDetails = () => {
       headerName: "Total Stock",
       field: "totalStock",
       colId: "totalStock",
-      width: 105,
+      initialWidth: 105,
       pinned: "right",
       wrapHeaderText: true,
       autoHeaderHeight: true,
@@ -1181,7 +1185,7 @@ const WarehouseDetails = () => {
       headerName: `Total Purchases (${effectiveMatrixDays}d)`,
       field: "totalOrders",
       colId: "totalOrders",
-      width: 110,
+      initialWidth: 110,
       pinned: "right",
       wrapHeaderText: true,
       autoHeaderHeight: true,
@@ -1196,7 +1200,7 @@ const WarehouseDetails = () => {
       headerName: "Avg Purchases / Day",
       field: "avgDailyOrders",
       colId: "avgDailyOrders",
-      width: 110,
+      initialWidth: 110,
       pinned: "right",
       wrapHeaderText: true,
       autoHeaderHeight: true,
@@ -1208,7 +1212,7 @@ const WarehouseDetails = () => {
       headerName: "Total Send",
       field: "totalSend",
       colId: "totalSend",
-      width: 105,
+      initialWidth: 105,
       pinned: "right",
       wrapHeaderText: true,
       autoHeaderHeight: true,
@@ -1216,7 +1220,7 @@ const WarehouseDetails = () => {
       headerComponentParams: { title: "TOTAL SEND" },
       cellRenderer: (p) => numCell(p.value, p.value > 0 ? "font-bold text-amber-600 dark:text-amber-400" : "text-slate-400"),
     },
-  ];
+  ], [matrixFcCodes, matrixFcStates, effectiveMatrixDays]);
 
   if (isSpLoaded && !isSpConnected) {
     return (
@@ -1371,8 +1375,8 @@ const WarehouseDetails = () => {
               <button
                 onClick={() => setActiveTab("LEDGER")}
                 className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${activeTab === "LEDGER"
-                  ? "bg-white dark:bg-slate-900 text-blue-600 shadow-sm"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                  ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm"
+                  : "text-slate-600 dark:text-slate-400 hover:bg-slate-200/70 hover:text-slate-900 dark:hover:bg-slate-700/60 dark:hover:text-slate-100"
                   }`}
               >
                 <i className="fa-solid fa-list-check mr-1.5" />
@@ -1381,8 +1385,8 @@ const WarehouseDetails = () => {
               <button
                 onClick={() => setActiveTab("STORAGE_FEES")}
                 className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${activeTab === "STORAGE_FEES"
-                  ? "bg-white dark:bg-slate-900 text-blue-600 shadow-sm"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                  ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm"
+                  : "text-slate-600 dark:text-slate-400 hover:bg-slate-200/70 hover:text-slate-900 dark:hover:bg-slate-700/60 dark:hover:text-slate-100"
                   }`}
               >
                 <i className="fa-solid fa-coins mr-1.5" />
@@ -1391,8 +1395,8 @@ const WarehouseDetails = () => {
               <button
                 onClick={() => setActiveTab("WAREHOUSE_MASTER")}
                 className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${activeTab === "WAREHOUSE_MASTER"
-                  ? "bg-white dark:bg-slate-900 text-blue-600 shadow-sm"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                  ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm"
+                  : "text-slate-600 dark:text-slate-400 hover:bg-slate-200/70 hover:text-slate-900 dark:hover:bg-slate-700/60 dark:hover:text-slate-100"
                   }`}
               >
                 <i className="fa-solid fa-building-circle-check mr-1.5" />
@@ -1401,8 +1405,8 @@ const WarehouseDetails = () => {
               <button
                 onClick={() => { setActiveTab("SKU_MATRIX"); setPage(1); }}
                 className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${activeTab === "SKU_MATRIX"
-                  ? "bg-white dark:bg-slate-900 text-blue-600 shadow-sm"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                  ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm"
+                  : "text-slate-600 dark:text-slate-400 hover:bg-slate-200/70 hover:text-slate-900 dark:hover:bg-slate-700/60 dark:hover:text-slate-100"
                   }`}
               >
                 <i className="fa-solid fa-table-cells mr-1.5" />

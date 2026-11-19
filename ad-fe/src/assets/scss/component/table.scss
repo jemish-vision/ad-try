@@ -818,15 +818,24 @@
 .iq-ag-table .ag-header-cell-menu-button {
   opacity: 1 !important;
   transition: opacity 0.15s;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
-.iq-ag-table .ag-header-cell-menu-button .ag-icon {
+.iq-ag-table .ag-header-cell-menu-button .ag-icon,
+.iq-ag-table .ag-header-cell-menu-button i,
+.iq-ag-table .ag-header-cell-menu-button .custom-header-menu-icon {
   color: var(--ag-header-foreground-color) !important;
   opacity: 0.85 !important;
-  font-size: 14px;
+  font-size: 13px !important;
+  line-height: 1 !important;
+  display: inline-block !important;
 }
 
-.iq-ag-table .ag-header-cell-menu-button:hover .ag-icon {
+.iq-ag-table .ag-header-cell-menu-button:hover .ag-icon,
+.iq-ag-table .ag-header-cell-menu-button:hover i,
+.iq-ag-table .ag-header-cell-menu-button:hover .custom-header-menu-icon {
   color: var(--ag-header-foreground-color) !important;
   opacity: 1 !important;
 }
@@ -925,16 +934,30 @@
 /* ── Pinned right column ── */
 .iq-ag-table .ag-pinned-right-cols-container,
 .iq-ag-table .ag-pinned-right-cols-viewport {
-  background-color: transparent !important;
+  background-color: var(--ag-pinned-cell-bg, #ffffff) !important;
 }
 
 .iq-ag-table .ag-pinned-right-cols-container .ag-cell {
-  background-color: transparent !important;
+  background-color: var(--ag-pinned-cell-bg, #ffffff) !important;
   border-left: 1px solid var(--ag-pinned-border-color) !important;
 }
 
 .iq-ag-table .ag-pinned-right-header {
   border-left: 1px solid var(--ag-pinned-border-color) !important;
+}
+
+[data-theme="dark"] .iq-ag-table .ag-pinned-right-cols-container,
+[data-theme="dark"] .iq-ag-table .ag-pinned-right-cols-viewport,
+[data-theme="dark"] .iq-ag-table .ag-pinned-right-cols-container .ag-cell {
+  background-color: #0F172A !important;
+}
+
+[data-theme="dark"] .iq-ag-table .ag-pinned-left-header,
+[data-theme="dark"] .iq-ag-table .ag-pinned-right-header,
+[data-theme="dark"] .iq-ag-table .ag-pinned-left-header .ag-header-cell,
+[data-theme="dark"] .iq-ag-table .ag-pinned-right-header .ag-header-cell {
+  background-color: #0F172A !important;
+  background: #0F172A !important;
 }
 
 /* ── Total / pinned-bottom row ── */

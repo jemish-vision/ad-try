@@ -84,6 +84,8 @@ function DaypartingStretegyHistory() {
 
   const dispatch = useDispatch();
   const gridRef = useRef(null);
+  const pendingLists = useRef(0);
+  const [loadingGrid, setLoadingGrid] = useState(false);
 
   const [isDark, setIsDark] = useState(document.documentElement.getAttribute("data-theme") === "dark");
   useEffect(() => {
@@ -558,6 +560,8 @@ function DaypartingStretegyHistory() {
   const DaypartingRuleHistoryList = async (arg) => {
     if (profileId.value && selectedAdType) {
       dispatch(handleLoader(true));
+      pendingLists.current += 1;
+      setLoadingGrid(true);
       const currentAffectedFilter = arg?.affectedFilter !== undefined ? arg.affectedFilter : affectedFilter;
       const data = {
         fromDate: moment(date?.[0]).format("YYYY-MM-DD"),
@@ -581,6 +585,10 @@ function DaypartingStretegyHistory() {
         .catch((e) => {
           dispatch(handleLoader(false));
           Toast.error(t("Something went wrong"));
+        })
+        .finally(() => {
+          pendingLists.current -= 1;
+          setLoadingGrid(pendingLists.current > 0);
         });
     }
   };
@@ -658,7 +666,7 @@ function DaypartingStretegyHistory() {
           </div>
           {PermissionCheck(SYSTEM_PAGES.HOURLY_PERFORMANCE_TRACKING_HISTORY, PAGE_ACTIONS.VIEW_ONLY) && (
             <div className="data_table" style={{ padding: "0 14px 14px 14px" }}>
-              <AgTable ref={gridRef}
+              <AgTable ref={gridRef} loading={loadingGrid}
                 tableId="dayparting-rule-history-table"
                 height={"70vh"}
                 rowData={displayTableData}

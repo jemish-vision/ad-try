@@ -4208,19 +4208,36 @@ html[data-theme="dark"] .rs-picker-input-group {
   color: #e0dfdf !important;
 }
 
-[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-pinned-left-cols-container .ag-cell {
+[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-pinned-left-cols-container .ag-cell,
+[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-pinned-right-cols-container .ag-cell {
   background-color: #0F172A !important;
   border-right: 2px solid rgba(255, 255, 255, 0.15) !important;
 }
 
+[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-pinned-right-cols-container .ag-cell {
+  border-left: 1px solid rgba(255, 255, 255, 0.15) !important;
+  border-right: none !important;
+}
+
+[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-pinned-left-header,
+[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-pinned-right-header,
+[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-pinned-left-header .ag-header-cell,
+[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-pinned-right-header .ag-header-cell {
+  background-color: #0F172A !important;
+  background: #0F172A !important;
+}
+
 [data-theme="dark"] .glass-grid-container .iq-ag-table .ag-row:hover .ag-pinned-left-cols-container .ag-cell,
-[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-row-hover .ag-pinned-left-cols-container .ag-cell {
+[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-row-hover .ag-pinned-left-cols-container .ag-cell,
+[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-row:hover .ag-pinned-right-cols-container .ag-cell,
+[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-row-hover .ag-pinned-right-cols-container .ag-cell {
   background-color: rgba(59, 130, 246, 0.15) !important;
   background: rgba(59, 130, 246, 0.15) !important;
   color: #FFFFFF !important;
 }
 
-[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-row-selected .ag-pinned-left-cols-container .ag-cell {
+[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-row-selected .ag-pinned-left-cols-container .ag-cell,
+[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-row-selected .ag-pinned-right-cols-container .ag-cell {
   background-color: rgba(59, 130, 246, 0.25) !important;
   background: rgba(59, 130, 246, 0.25) !important;
   color: #FFFFFF !important;
@@ -4424,6 +4441,69 @@ html[data-theme="dark"] .rs-picker-input-group {
 .ag-theme-alpine .ag-menu-option-icon,
 .ag-popup .ag-menu-option-icon {
   color: #64748b !important;
+}
+
+.ag-menu .ag-icon {
+  font-family: var(--ag-icon-font-family) !important;
+}
+
+.ag-menu .ag-icon,
+.ag-menu .custom-sort-icon {
+  color: inherit !important;
+}
+
+/*
+ * Fix: ag-theme-alpine (legacy) menu icons — Pin Column & Choose Columns
+ *
+ * Root cause: ag-grid-community v35 JS bundle injects shared_default CSS globally:
+ *   :where(.ag-icon):before { background-color: currentcolor; mask-size: contain; content: ""; ... }
+ * This SVG-mask approach conflicts with the legacy font-glyph system.
+ * Without a mask-image, the background-color masks nothing → icon invisible.
+ * Also font-family: inherit on ::before resolves to the grid text font, not agGridAlpine.
+ *
+ * Fix: In menu/popup context, reset ::before to pure font-glyph rendering.
+ */
+.ag-menu .ag-icon::before,
+.ag-popup .ag-icon::before {
+  font-family: agGridAlpine !important;
+  background-color: transparent !important;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+  -webkit-mask-size: unset !important;
+  mask-size: unset !important;
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  align-items: unset !important;
+  justify-content: unset !important;
+}
+
+/*
+ * Fix: ag-theme-alpine header column menu icon (three dots)
+ * Fallback when FontAwesome <i> is not rendered via GRID_ICONS:
+ * Forces FontAwesome ellipsis-vertical icon glyph (\f142) on ::before pseudo
+ */
+.ag-header-cell-menu-button .ag-icon-menu::before,
+.ag-header-cell-menu-button .ag-icon-menu-alt::before,
+.ag-header-cell-menu-button .ag-icon::before {
+  font-family: "Font Awesome 6 Free" !important;
+  font-weight: 900 !important;
+  content: "\f142" !important;
+  background-color: transparent !important;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+  -webkit-mask-size: unset !important;
+  mask-size: unset !important;
+  display: inline-block !important;
+  width: auto !important;
+  height: auto !important;
+  font-size: 13px !important;
+  line-height: 1 !important;
+}
+
+.ag-header-cell-menu-button .custom-header-menu-icon {
+  color: inherit !important;
+  font-size: 13px !important;
 }
 
 .ag-theme-alpine .ag-menu-option:hover .ag-menu-option-icon,
@@ -9547,4 +9627,34 @@ html.dark .ag-center-cols-viewport::-webkit-scrollbar,
   box-shadow: none !important;
   background: transparent !important;
   background-color: transparent !important;
+}
+
+/* Match warehouse group labels and pinned headers to the standard grid header. */
+#warehouse-main-grid .ag-header-group-text {
+  color: #1248A3 !important;
+}
+
+[data-theme="dark"] #warehouse-main-grid .ag-header-group-text {
+  color: #e0dfdf !important;
+}
+
+[data-theme="dark"] #warehouse-main-grid .ag-pinned-left-header,
+[data-theme="dark"] #warehouse-main-grid .ag-pinned-right-header,
+[data-theme="dark"] #warehouse-main-grid .ag-pinned-left-header .ag-header-cell,
+[data-theme="dark"] #warehouse-main-grid .ag-pinned-right-header .ag-header-cell {
+  background: var(--ag-header-background-color) !important;
+}
+
+#warehouse-main-grid .ag-header .ag-icon {
+  font-family: var(--ag-icon-font-family) !important;
+}
+
+/* Keep the drag target inside the header cell so its neighbor cannot cover it. */
+#warehouse-main-grid .ag-ltr .ag-header-cell-resize {
+  right: 0;
+}
+
+#warehouse-main-grid .ag-ltr .ag-pinned-right-header .ag-header-cell-resize {
+  left: 0;
+  right: auto;
 }

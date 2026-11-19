@@ -315,9 +315,11 @@ const WarehousePlanningModal = ({
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700/80 text-slate-500 hover:text-slate-800 dark:text-slate-300 dark:hover:text-white bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:outline-none"
+            title={t("Close")}
           >
             <i className="fa-solid fa-xmark text-base" />
+            <span className="sr-only">{t("Close")}</span>
           </button>
         </DialogHeader>
 

@@ -1,11 +1,13 @@
 'use strict';
 
+const { write_logs } = require('../../winston/utility/logger');
+
 const SUPPORTED_PROVIDERS = Object.freeze(['anthropic', 'openai', 'gemini']);
 
 const DEFAULT_MODELS = Object.freeze({
   anthropic: 'claude-haiku-5-5',
   openai: 'gpt-4o',
-  gemini: 'gemini-2.0-flash',
+  gemini: 'gemini-3.8-flash',
 });
 
 function providerError(code, message, originalError = null) {
@@ -13,6 +15,10 @@ function providerError(code, message, originalError = null) {
   error.code = code;
   error.statusCode = 502;
   if (originalError) {
+    const status = originalError.status ?? originalError.statusCode;
+    if (Number.isInteger(status) && status >= 400 && status <= 599) {
+      error.providerStatus = status;
+    }
     // Sanitize any API key that might be in error messages
     error.details = String(originalError.message || originalError)
       .replace(/sk-[a-zA-Z0-9_-]{20,}/g, '[REDACTED]')
@@ -495,17 +501,28 @@ async function requestGemini(config, turn, clientFactory) {
 // Unified Public Interface
 // ---------------------------------------------------------------------------
 async function requestTurn(input = {}, clientFactory = null) {
-  const config = resolveConfig(input.options || {});
-
-  switch (config.provider) {
-    case 'anthropic':
-      return requestAnthropic(config, input, clientFactory);
-    case 'openai':
-      return requestOpenAI(config, input, clientFactory);
-    case 'gemini':
-      return requestGemini(config, input, clientFactory);
-    default:
-      throw providerError('UNSUPPORTED_AI_PROVIDER', `Unknown provider: ${config.provider}`);
+  let config;
+  try {
+    config = resolveConfig(input.options || {});
+    switch (config.provider) {
+      case 'anthropic':
+        return await requestAnthropic(config, input, clientFactory);
+      case 'openai':
+        return await requestOpenAI(config, input, clientFactory);
+      case 'gemini':
+        return await requestGemini(config, input, clientFactory);
+      default:
+        throw providerError('UNSUPPORTED_AI_PROVIDER', `Unknown provider: ${config.provider}`);
+    }
+  } catch (error) {
+    const code = /^([A-Z]+_)*AI_[A-Z_]+$/.test(error?.code) ? error.code : 'AI_TURN_ERROR';
+    const provider = config?.provider || 'unresolved';
+    const status = error?.providerStatus ?? 'unavailable';
+    write_logs({
+      message: `[AI Assistant] Provider request failed | provider=${provider} code=${code} providerStatus=${status}`,
+      log_type: 'warning',
+    });
+    throw error;
   }
 }
 

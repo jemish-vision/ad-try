@@ -65,6 +65,8 @@ const Users = () => {
 
   const [showHistory, setShowHistory] = useState(false);
   const [inviteList, setInviteList] = useState([]);
+  const [invitationsLoading, setInvitationsLoading] = useState(false);
+  const pendingInvitations = useRef(0);
   const [openInviteModal, setOpenInviteModal] = useState(false);
   const [inviteSearch, setInviteSearch] = useState("");
 
@@ -212,11 +214,20 @@ const Users = () => {
 
   const fetchInvitations = async () => {
     const organizationId = localStorage.getItem("organizationId");
-    const res = await ApiGetInvitationList({ organizationId });
-    if (res?.isSuccess) {
-      setInviteList(res.data || []);
-    } else {
-      Toast.error(res?.message || "Failed to fetch invitations");
+    pendingInvitations.current += 1;
+    setInvitationsLoading(true);
+    try {
+      const res = await ApiGetInvitationList({ organizationId });
+      if (res?.isSuccess) {
+        setInviteList(res.data || []);
+      } else {
+        Toast.error(res?.message || "Failed to fetch invitations");
+      }
+    } catch (_) {
+      Toast.error(t("Something went wrong"));
+    } finally {
+      pendingInvitations.current -= 1;
+      setInvitationsLoading(pendingInvitations.current > 0);
     }
   };
 
@@ -891,6 +902,7 @@ const Users = () => {
                 ref={inviteGridRef}
                 rowHeight={60}
                 tableId="invites-main-table"
+                loading={invitationsLoading}
                 height={"55vh"}
                 rowData={inviteList.filter(
                   (item) =>

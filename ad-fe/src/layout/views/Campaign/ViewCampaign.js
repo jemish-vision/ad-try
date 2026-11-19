@@ -1495,6 +1495,7 @@ function ViewCampaign(props) {
                     <AgTable
                       ref={placementGridRef}
                       tableId="placement-table"
+                      loading={totalsLoading}
                       rowData={placementData ?? []}
                       columnDefs={placementColumns}
                       totalRecords={placementData?.length ?? 0}

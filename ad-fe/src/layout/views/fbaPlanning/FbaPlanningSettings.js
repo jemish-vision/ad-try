@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FiSave, FiRotateCcw } from "react-icons/fi";
+import { FiSave, FiRotateCcw, FiX } from "react-icons/fi";
 import { useTranslation } from "react-i18next";
 import { ApiGetFbaPlanningConfig, ApiSaveFbaPlanningConfig, ApiGetAsinInventorySettings, ApiSaveAsinInventorySettings, ApiDeleteAsinInventorySettings } from '../../../api-wrapper/inventoryManagement/ApiInventoryManagement';
 import Toast from '../../../common/helper/toast/Toast';
@@ -139,11 +139,13 @@ const FbaPlanningSettings = ({ open, onClose, profileId, asin, sku, productName,
                     </div>
                     <button
                         id="fba-settings-close"
+                        type="button"
                         onClick={onClose}
-                        className="btn-close rounded-full border border-gray-300 dark:border-gray-600 p-1.5 opacity-70 hover:opacity-100 transition-all text-slate-800 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-gray-800 mt-1"
+                        className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700/80 text-slate-500 hover:text-slate-800 dark:text-slate-300 dark:hover:text-white bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors focus:outline-none"
+                        title={t("Close")}
                     >
-                        <i className="fa-solid fa-xmark text-sm" />
-                        <span className="sr-only">Close</span>
+                        <FiX size={18} />
+                        <span className="sr-only">{t("Close")}</span>
                     </button>
                 </SheetHeader>
 

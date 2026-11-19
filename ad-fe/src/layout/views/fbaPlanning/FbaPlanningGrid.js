@@ -127,21 +127,26 @@ const FbaPlanningGrid = ({
 
     const columns = useMemo(() => [
         {
+            colId: "expand",
+            field: "expand",
+            headerName: "",
+            title: "",
             width: 45,
             maxWidth: 45,
             minWidth: 45,
-            pinned: !isMobile ? "left" : false,
-            lockPinned: !isMobile,
+            pinned: 'left',
+            lockPinned: true,
             suppressMovable: true,
             sortable: false,
             resizable: false,
-            cellRenderer: "agGroupCellRenderer",
+            cellRenderer: 'agGroupCellRenderer',
             cellRendererParams: {
                 suppressCount: true,
                 innerRenderer: () => null,
             },
         },
         {
+            colId: "productName",
             headerName: t("Product Details"),
             field: "productName",
             title: "Product Details",
@@ -182,6 +187,7 @@ const FbaPlanningGrid = ({
             }
         },
         {
+            colId: "availableInventory",
             headerName: t("Current Stock"),
             field: "availableInventory",
             title: "Current Stock",
@@ -201,6 +207,7 @@ const FbaPlanningGrid = ({
             }
         },
         {
+            colId: "salesPerDay",
             headerName: t("ADS"),
             field: "salesPerDay",
             title: "ADS",
@@ -221,6 +228,7 @@ const FbaPlanningGrid = ({
             }
         },
         {
+            colId: "doi",
             headerName: t("DOI"),
             field: "doi",
             title: "Days of Inventory",
@@ -246,6 +254,7 @@ const FbaPlanningGrid = ({
             }
         },
         {
+            colId: "inventoryForecastStatus",
             headerName: t("Forecast Status"),
             field: "inventoryForecastStatus",
             title: "Forecast Status",
@@ -282,6 +291,7 @@ const FbaPlanningGrid = ({
             }
         },
         {
+            colId: "reorderPoint",
             headerName: t("Reorder Point"),
             field: "reorderPoint",
             title: "Reorder Point",
@@ -297,6 +307,7 @@ const FbaPlanningGrid = ({
             )
         },
         {
+            colId: "recommendedShipmentQty",
             headerName: t("Recommended"),
             field: "recommendedShipmentQty",
             title: "Recommended Qty",
@@ -322,11 +333,17 @@ const FbaPlanningGrid = ({
         },
         ...(PermissionCheck(SYSTEM_PAGES.FBA_PLANNING, PAGE_ACTIONS.UPDATE) || PermissionCheck(SYSTEM_PAGES.FBA_PLANNING, PAGE_ACTIONS.REMOVE) ? [
             {
+                colId: "actions",
+                field: "actions",
                 headerName: t("Actions"),
+                title: "Actions",
                 width: 80,
                 pinned: 'right',
+                lockPinned: true,
+                suppressMovable: true,
                 headerComponent: CustomHeader,
                 cellRenderer: (params) => {
+                    if (!params?.data) return null;
                     const isCustom = params.data.isCustomSetting;
                     return (
                         <div className="flex items-center justify-center h-full">
@@ -358,34 +375,38 @@ const FbaPlanningGrid = ({
                 }
             }
         ] : [])
-    ], [t, isDark, isMobile]);
+    ], [t, isDark]);
 
     // ── Detail cell renderer (Warehouse-wise inline expansion) ─────────────
     const detailCellRenderer = useCallback(
-        (params) => (
-            <div
-                style={{
-                    padding: "12px 20px",
-                    background: isDark ? "rgba(15, 23, 42, 0.5)" : "#f8fafc",
-                }}
-            >
-                <WarehousePlanningAccordion
-                    data={params?.data}
-                    profileId={profileId?.value ?? profileId}
-                    isDark={isDark}
-                    onUpdated={refreshData}
-                    onOpenSettings={() => {
-                        setSelectedProduct({
-                            asin: params?.data?.asin,
-                            sku: params?.data?.sku,
-                            productName: params?.data?.productName,
-                            isCustomSetting: params?.data?.isCustomSetting
-                        });
-                        setWarehouseModalOpen(true);
+        (params) => {
+            const isDarkMode = isDark || (typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "dark");
+            return (
+                <div
+                    className="fba-detail-row-wrapper"
+                    style={{
+                        padding: "12px 20px",
+                        backgroundColor: isDarkMode ? "#0B1120" : "#f8fafc",
                     }}
-                />
-            </div>
-        ),
+                >
+                    <WarehousePlanningAccordion
+                        data={params?.data}
+                        profileId={profileId?.value ?? profileId}
+                        isDark={isDarkMode}
+                        onUpdated={refreshData}
+                        onOpenSettings={() => {
+                            setSelectedProduct({
+                                asin: params?.data?.asin,
+                                sku: params?.data?.sku,
+                                productName: params?.data?.productName,
+                                isCustomSetting: params?.data?.isCustomSetting
+                            });
+                            setWarehouseModalOpen(true);
+                        }}
+                    />
+                </div>
+            );
+        },
         [profileId, isDark, refreshData]
     );
 

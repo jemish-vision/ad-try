@@ -1436,6 +1436,7 @@ const AffectedHistoryModel = ({ show, onClose, data = [], onRevert, onRefresh, l
                             overflow: "hidden",
                         }}>
                             <AgTable tableId="affected-history-modal-grid"
+                                loading={loading}
                                 height="calc(92vh - 275px)"
                                 minHeight="350px"
                                 rowHeight={52}
