@@ -102,9 +102,21 @@ const ApiCreateRecommendationTag = (data) => {
         .then(res => res.data).catch(res => res?.response?.data || res?.data)
 }
 
+const ApiRenameRecommendationTag = (data) => {
+    return axios.post(`${api}tags/rename`, data, { headers })
+        .then(res => res.data).catch(res => res?.response?.data || res?.data)
+}
+
+const ApiDeleteRecommendationTag = (data) => {
+    return axios.post(`${api}tags/delete`, data, { headers })
+        .then(res => res.data).catch(res => res?.response?.data || res?.data)
+}
+
 export {
     ApiGetRecommendationTags,
     ApiCreateRecommendationTag,
+    ApiRenameRecommendationTag,
+    ApiDeleteRecommendationTag,
     ApiGetRules,
     ApiGetRuleById,
     ApiUpdateRules,

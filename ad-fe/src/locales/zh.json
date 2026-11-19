@@ -8058,5 +8058,18 @@
   "Tag saved": "标签已保存",
   "Select Tags": "选择标签",
   "No tags yet. Add tags to a recommendation in the Recommendation Configuration tab.": "暂无标签。请在“推荐配置”选项卡中为推荐添加标签。",
-  "{{count}} recommendations": "{{count}} 条推荐"
+  "{{count}} recommendations": "{{count}} 条推荐",
+  "Manage Tags": "管理标签",
+  "Tags are shared by all profiles of this account. Renaming updates every configuration; deleting removes the tag from them.": "标签在此账户的所有配置文件中共享。重命名会更新所有配置；删除会将标签从这些配置中移除。",
+  "Search tags": "搜索标签",
+  "No matching tags.": "没有匹配的标签。",
+  "No tags yet. Add tags while creating or editing a recommendation.": "暂无标签。请在创建或编辑推荐时添加标签。",
+  "Used in 1 configuration": "用于 1 个配置",
+  "Used in {{count}} configurations": "用于 {{count}} 个配置",
+  "Delete \"{{name}}\"? It will be removed from {{count}} configuration(s).": "删除“{{name}}”？它将从 {{count}} 个配置中移除。",
+  "Delete \"{{name}}\"?": "删除“{{name}}”？",
+  "Tag renamed": "标签已重命名",
+  "Tag deleted": "标签已删除",
+  "Tag name is required": "标签名称为必填项",
+  "A tag with this name already exists": "已存在同名标签"
 }

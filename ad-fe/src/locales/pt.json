@@ -8059,5 +8059,18 @@
   "Tag saved": "Tag salva",
   "Select Tags": "Selecionar tags",
   "No tags yet. Add tags to a recommendation in the Recommendation Configuration tab.": "Ainda não há tags. Adicione tags a uma recomendação na aba Configuração de recomendações.",
-  "{{count}} recommendations": "{{count}} recomendações"
+  "{{count}} recommendations": "{{count}} recomendações",
+  "Manage Tags": "Gerenciar tags",
+  "Tags are shared by all profiles of this account. Renaming updates every configuration; deleting removes the tag from them.": "As tags são compartilhadas por todos os perfis desta conta. Renomear atualiza todas as configurações; excluir remove a tag delas.",
+  "Search tags": "Pesquisar tags",
+  "No matching tags.": "Nenhuma tag correspondente.",
+  "No tags yet. Add tags while creating or editing a recommendation.": "Ainda não há tags. Adicione ao criar ou editar uma recomendação.",
+  "Used in 1 configuration": "Usada em 1 configuração",
+  "Used in {{count}} configurations": "Usada em {{count}} configurações",
+  "Delete \"{{name}}\"? It will be removed from {{count}} configuration(s).": "Excluir \"{{name}}\"? Ela será removida de {{count}} configuração(ões).",
+  "Delete \"{{name}}\"?": "Excluir \"{{name}}\"?",
+  "Tag renamed": "Tag renomeada",
+  "Tag deleted": "Tag excluída",
+  "Tag name is required": "O nome da tag é obrigatório",
+  "A tag with this name already exists": "Já existe uma tag com este nome"
 }

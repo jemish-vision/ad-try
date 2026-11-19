@@ -26,9 +26,12 @@ router.post("/runRecommendationSnapshot", verifyToken, verifyCronAuth, runRecomm
 router.post("/cronRecommendationSnapshot", verifyToken, verifyCronAuth, cronRecommendationSnapshot);
 
 // Tags for recommendation configurations. Listing: View Only. Creating: from the add (Create) or edit (Update) form.
-const { getTags, createTag } = require("../controllers/recommendationTag.controller");
+// Rename: Update. Delete (also removes the tag from every configuration): Remove.
+const { getTags, createTag, renameTag, deleteTag } = require("../controllers/recommendationTag.controller");
 router.post("/tags", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.VIEW_ONLY), getTags);
 router.post("/tags/create", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.CREATE, [{ pageName: SYSTEM_PAGES.RECOMMENDATION, actionType: PAGE_ACTIONS.UPDATE }]), createTag);
+router.post("/tags/rename", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.UPDATE), renameTag);
+router.post("/tags/delete", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.REMOVE), deleteTag);
 
 router.post("/getRules", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.VIEW_ONLY), getRules);
 router.post("/getRuleById/:id", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.VIEW_ONLY), getRuleById);

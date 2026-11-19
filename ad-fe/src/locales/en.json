@@ -8058,5 +8058,18 @@
   "Tag saved": "Tag saved",
   "Select Tags": "Select Tags",
   "No tags yet. Add tags to a recommendation in the Recommendation Configuration tab.": "No tags yet. Add tags to a recommendation in the Recommendation Configuration tab.",
-  "{{count}} recommendations": "{{count}} recommendations"
+  "{{count}} recommendations": "{{count}} recommendations",
+  "Manage Tags": "Manage Tags",
+  "Tags are shared by all profiles of this account. Renaming updates every configuration; deleting removes the tag from them.": "Tags are shared by all profiles of this account. Renaming updates every configuration; deleting removes the tag from them.",
+  "Search tags": "Search tags",
+  "No matching tags.": "No matching tags.",
+  "No tags yet. Add tags while creating or editing a recommendation.": "No tags yet. Add tags while creating or editing a recommendation.",
+  "Used in 1 configuration": "Used in 1 configuration",
+  "Used in {{count}} configurations": "Used in {{count}} configurations",
+  "Delete \"{{name}}\"? It will be removed from {{count}} configuration(s).": "Delete \"{{name}}\"? It will be removed from {{count}} configuration(s).",
+  "Delete \"{{name}}\"?": "Delete \"{{name}}\"?",
+  "Tag renamed": "Tag renamed",
+  "Tag deleted": "Tag deleted",
+  "Tag name is required": "Tag name is required",
+  "A tag with this name already exists": "A tag with this name already exists"
 }

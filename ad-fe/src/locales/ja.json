@@ -8058,5 +8058,18 @@
   "Tag saved": "タグを保存しました",
   "Select Tags": "タグを選択",
   "No tags yet. Add tags to a recommendation in the Recommendation Configuration tab.": "タグはまだありません。「レコメンデーション設定」タブでレコメンデーションにタグを追加してください。",
-  "{{count}} recommendations": "{{count}} 件のレコメンデーション"
+  "{{count}} recommendations": "{{count}} 件のレコメンデーション",
+  "Manage Tags": "タグを管理",
+  "Tags are shared by all profiles of this account. Renaming updates every configuration; deleting removes the tag from them.": "タグはこのアカウントのすべてのプロファイルで共有されます。名前を変更するとすべての設定に反映され、削除すると設定から外れます。",
+  "Search tags": "タグを検索",
+  "No matching tags.": "一致するタグはありません。",
+  "No tags yet. Add tags while creating or editing a recommendation.": "タグはまだありません。レコメンデーションの作成・編集時に追加してください。",
+  "Used in 1 configuration": "1 件の設定で使用中",
+  "Used in {{count}} configurations": "{{count}} 件の設定で使用中",
+  "Delete \"{{name}}\"? It will be removed from {{count}} configuration(s).": "「{{name}}」を削除しますか？ {{count}} 件の設定から外れます。",
+  "Delete \"{{name}}\"?": "「{{name}}」を削除しますか？",
+  "Tag renamed": "タグ名を変更しました",
+  "Tag deleted": "タグを削除しました",
+  "Tag name is required": "タグ名は必須です",
+  "A tag with this name already exists": "同じ名前のタグがすでにあります"
 }

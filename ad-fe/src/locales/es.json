@@ -8059,5 +8059,18 @@
   "Tag saved": "Etiqueta guardada",
   "Select Tags": "Seleccionar etiquetas",
   "No tags yet. Add tags to a recommendation in the Recommendation Configuration tab.": "Aún no hay etiquetas. Añade etiquetas a una recomendación en la pestaña Configuración de recomendaciones.",
-  "{{count}} recommendations": "{{count}} recomendaciones"
+  "{{count}} recommendations": "{{count}} recomendaciones",
+  "Manage Tags": "Gestionar etiquetas",
+  "Tags are shared by all profiles of this account. Renaming updates every configuration; deleting removes the tag from them.": "Las etiquetas se comparten entre todos los perfiles de esta cuenta. Renombrar actualiza todas las configuraciones; eliminar quita la etiqueta de ellas.",
+  "Search tags": "Buscar etiquetas",
+  "No matching tags.": "No hay etiquetas coincidentes.",
+  "No tags yet. Add tags while creating or editing a recommendation.": "Aún no hay etiquetas. Añádelas al crear o editar una recomendación.",
+  "Used in 1 configuration": "Usada en 1 configuración",
+  "Used in {{count}} configurations": "Usada en {{count}} configuraciones",
+  "Delete \"{{name}}\"? It will be removed from {{count}} configuration(s).": "¿Eliminar \"{{name}}\"? Se quitará de {{count}} configuración(es).",
+  "Delete \"{{name}}\"?": "¿Eliminar \"{{name}}\"?",
+  "Tag renamed": "Etiqueta renombrada",
+  "Tag deleted": "Etiqueta eliminada",
+  "Tag name is required": "El nombre de la etiqueta es obligatorio",
+  "A tag with this name already exists": "Ya existe una etiqueta con este nombre"
 }

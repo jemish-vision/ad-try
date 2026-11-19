@@ -8058,5 +8058,18 @@
   "Tag saved": "टैग सहेजा गया",
   "Select Tags": "टैग चुनें",
   "No tags yet. Add tags to a recommendation in the Recommendation Configuration tab.": "अभी कोई टैग नहीं। Recommendation Configuration टैब में किसी recommendation में टैग जोड़ें।",
-  "{{count}} recommendations": "{{count}} recommendations"
+  "{{count}} recommendations": "{{count}} recommendations",
+  "Manage Tags": "टैग प्रबंधित करें",
+  "Tags are shared by all profiles of this account. Renaming updates every configuration; deleting removes the tag from them.": "टैग इस खाते की सभी प्रोफ़ाइलों में साझा होते हैं। नाम बदलने से हर configuration अपडेट होता है; हटाने पर टैग उनसे हट जाता है।",
+  "Search tags": "टैग खोजें",
+  "No matching tags.": "कोई मिलता-जुलता टैग नहीं।",
+  "No tags yet. Add tags while creating or editing a recommendation.": "अभी कोई टैग नहीं। recommendation बनाते या बदलते समय टैग जोड़ें।",
+  "Used in 1 configuration": "1 configuration में उपयोग",
+  "Used in {{count}} configurations": "{{count}} configurations में उपयोग",
+  "Delete \"{{name}}\"? It will be removed from {{count}} configuration(s).": "\"{{name}}\" हटाएं? यह {{count}} configuration से हट जाएगा।",
+  "Delete \"{{name}}\"?": "\"{{name}}\" हटाएं?",
+  "Tag renamed": "टैग का नाम बदला गया",
+  "Tag deleted": "टैग हटाया गया",
+  "Tag name is required": "टैग का नाम आवश्यक है",
+  "A tag with this name already exists": "इस नाम का टैग पहले से मौजूद है"
 }
