@@ -1,8 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Tag as TagIcon, X, Plus, Check } from "lucide-react";
-import Toast from "../../common/helper/toast/Toast";
-import { ApiCreateRecommendationTag } from "../../api-wrapper/recommendation/ApiRecommendation";
+import { Tag as TagIcon, X, Check } from "lucide-react";
 
 export const MAX_TAG_LENGTH = 40;
 const FALLBACK_COLOR = "#2563EB";
@@ -59,19 +57,17 @@ export function TagList({ tags, max = 3, size = "sm", className = "" }) {
 }
 
 /**
- * Pick tags for a recommendation configuration. Type to search; Enter or "Create …" adds a new tag
- * (saved immediately for the account). Used only in the Recommendation Configuration form.
+ * Pick tags for a recommendation configuration: search and select EXISTING organization tags only.
+ * Tags are created, renamed and deleted in Recommendation → Tag Management.
  *
  * @param {Array<{_id,name,color}>} value selected tags
- * @param {Array<{_id,name,color}>} options all tags of the account
+ * @param {Array<{_id,name,color}>} options all tags of the organization
  * @param {(tags) => void} onChange
- * @param {(tag) => void} [onTagCreated] new tag created (add it to the options list)
  */
-export function TagSelector({ value = [], options = [], onChange, onTagCreated, placeholder, id }) {
+export function TagSelector({ value = [], options = [], onChange, placeholder, id }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [creating, setCreating] = useState(false);
   const rootRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -85,38 +81,14 @@ export function TagSelector({ value = [], options = [], onChange, onTagCreated, 
   }, [open]);
 
   const selectedIds = useMemo(() => new Set(value.map((v) => String(v._id))), [value]);
-  const clean = query.replace(/\s+/g, " ").trim().slice(0, MAX_TAG_LENGTH);
-  const filtered = useMemo(() => {
-    const q = clean.toLowerCase();
-    return options.filter((o) => !q || o.name.toLowerCase().includes(q));
-  }, [options, clean]);
-  const exactMatch = options.find((o) => o.name.toLowerCase() === clean.toLowerCase());
+  const q = query.trim().toLowerCase();
+  const filtered = useMemo(() => options.filter((o) => !q || o.name.toLowerCase().includes(q)), [options, q]);
 
   const toggle = (tag) => {
     if (selectedIds.has(String(tag._id))) onChange(value.filter((v) => String(v._id) !== String(tag._id)));
     else onChange([...value, tag]);
     setQuery("");
     inputRef.current?.focus();
-  };
-
-  const create = async () => {
-    if (!clean || creating) return;
-    if (exactMatch) {
-      if (!selectedIds.has(String(exactMatch._id))) toggle(exactMatch);
-      else setQuery("");
-      return;
-    }
-    setCreating(true);
-    const res = await ApiCreateRecommendationTag({ name: clean });
-    setCreating(false);
-    if (res?.isSuccess && res.data?._id) {
-      onTagCreated?.(res.data);
-      onChange([...value, res.data]);
-      setQuery("");
-      inputRef.current?.focus();
-    } else {
-      Toast.error(res?.message || t("Could not create tag"));
-    }
   };
 
   return (
@@ -143,15 +115,17 @@ export function TagSelector({ value = [], options = [], onChange, onTagCreated, 
           onFocus={() => setOpen(true)}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
+              // Enter picks the only / first match; it never creates a tag.
               e.preventDefault();
-              create();
+              const first = filtered.find((o) => !selectedIds.has(String(o._id)));
+              if (q && first) toggle(first);
             } else if (e.key === "Backspace" && !query && value.length) {
               onChange(value.slice(0, -1));
             } else if (e.key === "Escape") {
               setOpen(false);
             }
           }}
-          placeholder={value.length ? "" : placeholder || t("Add tags…")}
+          placeholder={value.length ? "" : placeholder || t("Select tags")}
           className="tag-selector-input flex-1 min-w-[120px] bg-transparent outline-none border-0 text-[13px] text-slate-800 dark:text-slate-100 placeholder:text-slate-400 py-0.5"
           style={{ border: "none", boxShadow: "none", background: "transparent", outline: "none", height: "auto", padding: "2px 0" }}
         />
@@ -159,17 +133,6 @@ export function TagSelector({ value = [], options = [], onChange, onTagCreated, 
 
       {open && (
         <div className="absolute z-[60] mt-1 w-full max-h-[220px] overflow-y-auto rounded-md border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 shadow-lg py-1">
-          {clean && !exactMatch && (
-            <button
-              type="button"
-              onClick={create}
-              disabled={creating}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[13px] text-blue-600 dark:text-blue-400 hover:bg-slate-50 dark:hover:bg-white/5"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              {creating ? t("Creating…") : t("Create tag \"{{name}}\"", { name: clean })}
-            </button>
-          )}
           {filtered.map((tag) => {
             const selected = selectedIds.has(String(tag._id));
             return (
@@ -184,8 +147,12 @@ export function TagSelector({ value = [], options = [], onChange, onTagCreated, 
               </button>
             );
           })}
-          {!filtered.length && !clean && (
-            <div className="px-3 py-2 text-[12px] text-slate-400">{t("No tags yet. Type a name and press Enter to create one.")}</div>
+          {!filtered.length && (
+            <div className="px-3 py-2 text-[12px] text-slate-400">
+              {options.length
+                ? t("No matching tags.")
+                : t("No tags yet. Create tags in the Tag Management tab.")}
+            </div>
           )}
         </div>
       )}

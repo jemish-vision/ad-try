@@ -8072,5 +8072,18 @@
   "Tag renamed": "Etiqueta renombrada",
   "Tag deleted": "Etiqueta eliminada",
   "Tag name is required": "El nombre de la etiqueta es obligatorio",
-  "A tag with this name already exists": "Ya existe una etiqueta con este nombre"
+  "A tag with this name already exists": "Ya existe una etiqueta con este nombre",
+  "Tag Management": "Gestión de etiquetas",
+  "Tag": "Etiqueta",
+  "Create Tag": "Crear etiqueta",
+  "New tag name": "Nombre de la nueva etiqueta",
+  "Tag created": "Etiqueta creada",
+  "1 configuration": "1 configuración",
+  "{{count}} configurations": "{{count}} configuraciones",
+  "Select tags": "Seleccionar etiquetas",
+  "Search and select tags": "Buscar y seleccionar etiquetas",
+  "No tags yet. Create tags in the Tag Management tab.": "Aún no hay etiquetas. Créalas en la pestaña Gestión de etiquetas.",
+  "No tags yet. Create your first tag above.": "Aún no hay etiquetas. Crea tu primera etiqueta arriba.",
+  "Tags are shared across your organization. Assign them to recommendations in the Recommendation Configuration tab.": "Las etiquetas se comparten en toda tu organización. Asígnalas a recomendaciones en la pestaña Configuración de recomendaciones.",
+  "Tags are shared across your organization. Create, rename or delete them in the Tag Management tab.": "Las etiquetas se comparten en toda tu organización. Créalas, renómbralas o elimínalas en la pestaña Gestión de etiquetas."
 }

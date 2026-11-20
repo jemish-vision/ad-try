@@ -8071,5 +8071,18 @@
   "Tag renamed": "标签已重命名",
   "Tag deleted": "标签已删除",
   "Tag name is required": "标签名称为必填项",
-  "A tag with this name already exists": "已存在同名标签"
+  "A tag with this name already exists": "已存在同名标签",
+  "Tag Management": "标签管理",
+  "Tag": "标签",
+  "Create Tag": "创建标签",
+  "New tag name": "新标签名称",
+  "Tag created": "标签已创建",
+  "1 configuration": "1 个配置",
+  "{{count}} configurations": "{{count}} 个配置",
+  "Select tags": "选择标签",
+  "Search and select tags": "搜索并选择标签",
+  "No tags yet. Create tags in the Tag Management tab.": "暂无标签。请在“标签管理”选项卡中创建标签。",
+  "No tags yet. Create your first tag above.": "暂无标签。请在上方创建第一个标签。",
+  "Tags are shared across your organization. Assign them to recommendations in the Recommendation Configuration tab.": "标签在整个组织内共享。请在“推荐配置”选项卡中将其分配给推荐。",
+  "Tags are shared across your organization. Create, rename or delete them in the Tag Management tab.": "标签在整个组织内共享。请在“标签管理”选项卡中创建、重命名或删除。"
 }

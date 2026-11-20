@@ -21,6 +21,7 @@ import RecommendationRules from "../recommendationRule/RecommendationRules";
 import { PermissionCheck } from "../../../helper/permission/PermissionCheck";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Sparkles, Sliders, RefreshCw, Tag as TagIcon, ChevronDown } from "lucide-react";
+import TagManagement from "./TagManagement";
 import { FiInfo } from "react-icons/fi";
 import {
   RECOMMENDATION_FILTER_OPTIONS,
@@ -523,6 +524,11 @@ function Recommendation() {
       key: "configuration",
       label: t("Recommendation Configuration") || "Recommendation Configuration",
       icon: <Sliders className="w-4 h-4" />,
+    },
+    {
+      key: "tag-management",
+      label: t("Tag Management"),
+      icon: <TagIcon className="w-4 h-4" />,
     },
   ], [t]);
 
@@ -1098,6 +1104,9 @@ function Recommendation() {
             <RecommendationRules hideFilter={true} />
           </div>
         )}
+
+        {/* ── Tab 2: Tag Management (organization-wide tags) ── */}
+        {activeTab === 2 && <TagManagement />}
       </div>
 
       {/* Recommendation Modal */}

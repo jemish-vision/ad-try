@@ -742,9 +742,11 @@ function AddRecommendationRule({
                 value={tags}
                 options={tagOptions}
                 onChange={setTags}
-                onTagCreated={(tag) => setTagOptions((prev) => (prev.some((p) => String(p._id) === String(tag._id)) ? prev : [...prev, tag].sort((a, b) => a.name.localeCompare(b.name))))}
-                placeholder={t("Type to search or create a tag, then press Enter")}
+                placeholder={t("Search and select tags")}
               />
+              <p className="text-[11.5px] text-slate-400 mt-1.5 mb-0">
+                {t("Tags are shared across your organization. Create, rename or delete them in the Tag Management tab.")}
+              </p>
             </div>
           )}
 

@@ -25,11 +25,11 @@ const allRecommendationData = withAllAdTypesItemList(getRecommendationData, {
 router.post("/runRecommendationSnapshot", verifyToken, verifyCronAuth, runRecommendationSnapshot);
 router.post("/cronRecommendationSnapshot", verifyToken, verifyCronAuth, cronRecommendationSnapshot);
 
-// Tags for recommendation configurations. Listing: View Only. Creating: from the add (Create) or edit (Update) form.
-// Rename: Update. Delete (also removes the tag from every configuration): Remove.
+// Organization-wide tags for recommendation configurations, managed in Recommendation → Tag Management.
+// List: View Only · Create: Create · Rename: Update · Delete (also removes it from every configuration): Remove.
 const { getTags, createTag, renameTag, deleteTag } = require("../controllers/recommendationTag.controller");
 router.post("/tags", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.VIEW_ONLY), getTags);
-router.post("/tags/create", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.CREATE, [{ pageName: SYSTEM_PAGES.RECOMMENDATION, actionType: PAGE_ACTIONS.UPDATE }]), createTag);
+router.post("/tags/create", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.CREATE), createTag);
 router.post("/tags/rename", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.UPDATE), renameTag);
 router.post("/tags/delete", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.REMOVE), deleteTag);
 

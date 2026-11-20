@@ -8071,5 +8071,18 @@
   "Tag renamed": "टैग का नाम बदला गया",
   "Tag deleted": "टैग हटाया गया",
   "Tag name is required": "टैग का नाम आवश्यक है",
-  "A tag with this name already exists": "इस नाम का टैग पहले से मौजूद है"
+  "A tag with this name already exists": "इस नाम का टैग पहले से मौजूद है",
+  "Tag Management": "टैग प्रबंधन",
+  "Tag": "टैग",
+  "Create Tag": "टैग बनाएं",
+  "New tag name": "नए टैग का नाम",
+  "Tag created": "टैग बनाया गया",
+  "1 configuration": "1 configuration",
+  "{{count}} configurations": "{{count}} configurations",
+  "Select tags": "टैग चुनें",
+  "Search and select tags": "टैग खोजें और चुनें",
+  "No tags yet. Create tags in the Tag Management tab.": "अभी कोई टैग नहीं। टैग प्रबंधन टैब में टैग बनाएं।",
+  "No tags yet. Create your first tag above.": "अभी कोई टैग नहीं। ऊपर अपना पहला टैग बनाएं।",
+  "Tags are shared across your organization. Assign them to recommendations in the Recommendation Configuration tab.": "टैग आपके पूरे संगठन में साझा होते हैं। Recommendation Configuration टैब में इन्हें recommendations को दें।",
+  "Tags are shared across your organization. Create, rename or delete them in the Tag Management tab.": "टैग आपके पूरे संगठन में साझा होते हैं। टैग प्रबंधन टैब में इन्हें बनाएं, नाम बदलें या हटाएं।"
 }

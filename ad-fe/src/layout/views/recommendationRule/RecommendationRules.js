@@ -7,8 +7,6 @@ import { Button } from "../../../components/ui/button";
 import { Switch } from "../../../components/ui/switch";
 import AddRule from "./AddRule";
 import { TagList } from "../../../components/recommendation-tags/RecommendationTags";
-import ManageTagsModal from "../../../components/recommendation-tags/ManageTagsModal";
-import { Tag as TagIcon } from "lucide-react";
 import RecommendationCampaignModal from "./RecommendationCampaignModal";
 import { ApiDeleteRule, ApiGetRules, ApiStatusChange, ApiExportRecommandationRule, ApiImportRecommandationRule, ApiUpdateRules, ApiBulkUpdateRuleDateFilter, ApiCopyRulesToProfiles } from "../../../api-wrapper/recommendation/ApiRecommendation";
 import { ApiSelectAccount } from "../../../api-wrapper/campaign/ApiCampaign";
@@ -882,8 +880,6 @@ function RecomandationRules({ hideFilter = false } = {}) {
         setEditId(rows._id);
     };
 
-    const [showManageTags, setShowManageTags] = useState(false);
-
     const getRule = (queryArg = arg, filterOverrides = {}) => {
         if (selectedCampagin?.profileSendID && selectedCampagin?.selectedAdType) {
             setLoading(true);
@@ -1088,25 +1084,6 @@ function RecomandationRules({ hideFilter = false } = {}) {
                                     </Button>
                                 )}
 
-                                {(PermissionCheck(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.UPDATE) || PermissionCheck(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.REMOVE)) && (
-                                    <Button
-                                        id="manage-recommendation-tags-btn"
-                                        type="button"
-                                        className="customize-button m-0 flex items-center gap-1.5"
-                                        style={{ height: "36px", whiteSpace: "nowrap" }}
-                                        onClick={() => setShowManageTags(true)}
-                                    >
-                                        <TagIcon size={14} />
-                                        <span>{t("Manage Tags")}</span>
-                                    </Button>
-                                )}
-                                <ManageTagsModal
-                                    open={showManageTags}
-                                    onClose={() => setShowManageTags(false)}
-                                    onChanged={() => getRule()}
-                                    canRename={PermissionCheck(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.UPDATE)}
-                                    canDelete={PermissionCheck(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.REMOVE)}
-                                />
 
                                 {PermissionCheck(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.UPDATE) && (
                                     <ImportExportMenu

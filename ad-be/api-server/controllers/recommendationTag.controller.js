@@ -1,39 +1,51 @@
 const mongoose = require("mongoose");
 const recommendationTagSchema = require("../models/recommendationTag.model");
 const recommendationRuleSchema = require("../models/recomandationRules.model");
-const { findOrCreateTag, normalizeTagName, colorForTag } = require("../helpers/recommendationTags.helper");
+const {
+  normalizeTagName,
+  colorForTag,
+  resolveOrganizationId,
+  prepareOrganization,
+  createTag,
+} = require("../helpers/recommendationTags.helper");
 const { recommendation_logs } = require("../../winston/recommendation/logger");
 
 const fail = (res, message) => res.status(203).send({ isSuccess: false, message });
+const orgOf = (req) => resolveOrganizationId({ configId: req?.config?.configId, organizationId: req?.organizationId });
 
 /**
- * All tags of the account, A–Z. With profileId, each tag also gets `ruleCount` (rules of that
- * profile using it), so the Recommendations filter can show only tags that are in use.
+ * All tags of the organization, A–Z, with usage:
+ *   ruleCount      — configurations of the given profile using the tag (Recommendations filter)
+ *   totalRuleCount — configurations across the whole organization (Tag Management tab)
  */
 exports.getTags = async (req, res) => {
   try {
-    const configId = req?.config?.configId;
-    if (!configId) return fail(res, "Account not found");
-    const tags = await recommendationTagSchema.find({ configId }).sort({ nameKey: 1 }).select("name color").lean();
+    const organizationId = await orgOf(req);
+    if (!organizationId) return fail(res, "Organization not found");
+    await prepareOrganization(organizationId);
 
-    const profileId = req?.body?.profileId;
-    let counts = new Map();
-    if (profileId) {
+    const tags = await recommendationTagSchema.find({ organizationId }).sort({ nameKey: 1 }).select("name color createdAt").lean();
+    const tagIds = tags.map((t) => t._id);
+
+    const usage = async (extraMatch) => {
+      if (!tagIds.length) return new Map();
       const rows = await recommendationRuleSchema.aggregate([
-        { $match: { configId: new mongoose.Types.ObjectId(String(configId)), profileId: Number(profileId) || profileId, tagIds: { $exists: true, $ne: [] } } },
+        { $match: { tagIds: { $in: tagIds }, ...extraMatch } },
         { $unwind: "$tagIds" },
+        { $match: { tagIds: { $in: tagIds } } },
         { $group: { _id: "$tagIds", count: { $sum: 1 } } },
       ]);
-      counts = new Map(rows.map((r) => [String(r._id), r.count]));
-    }
+      return new Map(rows.map((r) => [String(r._id), r.count]));
+    };
 
-    // Usage across all profiles of the account (shown before renaming / deleting a tag)
-    const totalRows = await recommendationRuleSchema.aggregate([
-      { $match: { configId: new mongoose.Types.ObjectId(String(configId)), tagIds: { $exists: true, $ne: [] } } },
-      { $unwind: "$tagIds" },
-      { $group: { _id: "$tagIds", count: { $sum: 1 } } },
+    const profileId = req?.body?.profileId;
+    const configId = req?.config?.configId;
+    const [profileCounts, totals] = await Promise.all([
+      profileId && configId
+        ? usage({ configId: new mongoose.Types.ObjectId(String(configId)), profileId: Number(profileId) || profileId })
+        : new Map(),
+      usage({}),
     ]);
-    const totals = new Map(totalRows.map((r) => [String(r._id), r.count]));
 
     return res.status(200).send({
       isSuccess: true,
@@ -41,7 +53,8 @@ exports.getTags = async (req, res) => {
         _id: t._id,
         name: t.name,
         color: t.color || colorForTag(t.name),
-        ruleCount: counts.get(String(t._id)) || 0,
+        createdAt: t.createdAt,
+        ruleCount: profileCounts.get(String(t._id)) || 0,
         totalRuleCount: totals.get(String(t._id)) || 0,
       })),
     });
@@ -51,42 +64,44 @@ exports.getTags = async (req, res) => {
   }
 };
 
-/** Creates a tag (or returns the existing one with the same name, case-insensitive). */
+/** Creates a tag in the organization (Tag Management tab). Names are unique per organization. */
 exports.createTag = async (req, res) => {
   try {
-    const configId = req?.config?.configId;
-    if (!configId) return fail(res, "Account not found");
+    const organizationId = await orgOf(req);
+    if (!organizationId) return fail(res, "Organization not found");
     const name = normalizeTagName(req?.body?.name);
     if (!name) return fail(res, "Tag name is required");
-    const tag = await findOrCreateTag(configId, name, req?.user?._id);
+    const tag = await createTag(organizationId, name, req?.user?._id);
     return res.status(200).send({
       isSuccess: true,
-      message: "Tag saved",
-      data: { _id: tag._id, name: tag.name, color: tag.color || colorForTag(tag.name) },
+      message: "Tag created",
+      data: { _id: tag._id, name: tag.name, color: tag.color || colorForTag(tag.name), ruleCount: 0, totalRuleCount: 0 },
     });
   } catch (error) {
+    if (error?.code === "DUPLICATE" || error?.code === "INVALID") return fail(res, error.message);
     recommendation_logs({ message: `[createTag Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     return fail(res, "Something went wrong, please try again!");
   }
 };
 
-/** Renames a tag. Rules keep their tag (they store its id). Fails if another tag already has the name. */
+/** Renames a tag. Configurations keep it (they store its id), so the new name shows everywhere. */
 exports.renameTag = async (req, res) => {
   try {
-    const configId = req?.config?.configId;
+    const organizationId = await orgOf(req);
     const { tagId } = req?.body || {};
-    if (!configId) return fail(res, "Account not found");
+    if (!organizationId) return fail(res, "Organization not found");
     if (!mongoose.Types.ObjectId.isValid(tagId)) return fail(res, "Invalid tag");
     const name = normalizeTagName(req?.body?.name);
     if (!name) return fail(res, "Tag name is required");
+    await prepareOrganization(organizationId);
 
     const nameKey = name.toLowerCase();
-    const clash = await recommendationTagSchema.findOne({ configId, nameKey, _id: { $ne: tagId } }).select("_id").lean();
+    const clash = await recommendationTagSchema.findOne({ organizationId, nameKey, _id: { $ne: tagId } }).select("_id").lean();
     if (clash) return fail(res, "A tag with this name already exists");
 
     // Color follows the name, so a renamed tag may get a new color.
     const tag = await recommendationTagSchema
-      .findOneAndUpdate({ _id: tagId, configId }, { $set: { name, nameKey, color: colorForTag(name) } }, { new: true })
+      .findOneAndUpdate({ _id: tagId, organizationId }, { $set: { name, nameKey, color: colorForTag(name) } }, { new: true })
       .lean();
     if (!tag) return fail(res, "Tag not found");
     return res.status(200).send({ isSuccess: true, message: "Tag renamed", data: { _id: tag._id, name: tag.name, color: tag.color } });
@@ -97,18 +112,19 @@ exports.renameTag = async (req, res) => {
   }
 };
 
-/** Deletes a tag and removes it from every recommendation configuration of the account. */
+/** Deletes a tag and removes it from every configuration in the organization. */
 exports.deleteTag = async (req, res) => {
   try {
-    const configId = req?.config?.configId;
+    const organizationId = await orgOf(req);
     const { tagId } = req?.body || {};
-    if (!configId) return fail(res, "Account not found");
+    if (!organizationId) return fail(res, "Organization not found");
     if (!mongoose.Types.ObjectId.isValid(tagId)) return fail(res, "Invalid tag");
     const tagObjectId = new mongoose.Types.ObjectId(String(tagId));
 
-    const deleted = await recommendationTagSchema.findOneAndDelete({ _id: tagObjectId, configId }).lean();
+    const deleted = await recommendationTagSchema.findOneAndDelete({ _id: tagObjectId, organizationId }).lean();
     if (!deleted) return fail(res, "Tag not found");
-    const result = await recommendationRuleSchema.updateMany({ configId, tagIds: tagObjectId }, { $pull: { tagIds: tagObjectId } });
+    // Tag ids are unique, so this only touches configurations of this organization.
+    const result = await recommendationRuleSchema.updateMany({ tagIds: tagObjectId }, { $pull: { tagIds: tagObjectId } });
     return res.status(200).send({ isSuccess: true, message: "Tag deleted", data: { removedFromRules: result?.modifiedCount || 0 } });
   } catch (error) {
     recommendation_logs({ message: `[deleteTag Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });

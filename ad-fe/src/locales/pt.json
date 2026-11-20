@@ -8072,5 +8072,18 @@
   "Tag renamed": "Tag renomeada",
   "Tag deleted": "Tag excluída",
   "Tag name is required": "O nome da tag é obrigatório",
-  "A tag with this name already exists": "Já existe uma tag com este nome"
+  "A tag with this name already exists": "Já existe uma tag com este nome",
+  "Tag Management": "Gerenciamento de tags",
+  "Tag": "Tag",
+  "Create Tag": "Criar tag",
+  "New tag name": "Nome da nova tag",
+  "Tag created": "Tag criada",
+  "1 configuration": "1 configuração",
+  "{{count}} configurations": "{{count}} configurações",
+  "Select tags": "Selecionar tags",
+  "Search and select tags": "Pesquisar e selecionar tags",
+  "No tags yet. Create tags in the Tag Management tab.": "Ainda não há tags. Crie tags na aba Gerenciamento de tags.",
+  "No tags yet. Create your first tag above.": "Ainda não há tags. Crie sua primeira tag acima.",
+  "Tags are shared across your organization. Assign them to recommendations in the Recommendation Configuration tab.": "As tags são compartilhadas em toda a organização. Atribua-as às recomendações na aba Configuração de recomendações.",
+  "Tags are shared across your organization. Create, rename or delete them in the Tag Management tab.": "As tags são compartilhadas em toda a organização. Crie, renomeie ou exclua-as na aba Gerenciamento de tags."
 }

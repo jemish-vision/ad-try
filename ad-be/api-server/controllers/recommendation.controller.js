@@ -42,7 +42,7 @@ const { retryWithBackoff } = require("../helper/retryHelper");
 
 const { cron_logs } = require("../../winston/cronAutomation/logger");
 const { recommendation_logs } = require("../../winston/recommendation/logger");
-const { sanitizeTagIds, attachTags, mapTagIdsToConfig } = require("../helpers/recommendationTags.helper");
+const { sanitizeTagIds, attachTags, mapTagIdsToConfig, resolveOrganizationId } = require("../helpers/recommendationTags.helper");
 
 const { getProfile, getAccessToken, getActivePlanProfiles, getRuleDate, getRuleSettings, getMarketplaceMinBid, removeCampaignIdFromQuery, safeJsonParse, isValidASIN } = require("../helper/common");
 const {
@@ -1294,7 +1294,8 @@ exports.addRules = async (req, res) => {
             campaignIds: campaignIds || { SP: [], SB: [], SD: [] },
             countryCode: getAccount.countryCode,
             timezone: getAccount.timezone,
-            tagIds: await sanitizeTagIds(configId, tagIds),
+            // Existing organization tags only (tags are created in Recommendation → Tag Management)
+            tagIds: await sanitizeTagIds(await resolveOrganizationId({ configId, organizationId: req?.organizationId }), tagIds),
         });
 
         await createRule.save();
@@ -1346,7 +1347,7 @@ exports.updateRules = async (req, res) => {
         delete updateData.isActive;
         delete updateData.tags; // display-only field from the list response
         if (Array.isArray(req?.body?.tagIds)) {
-            updateData.tagIds = await sanitizeTagIds(configId, req.body.tagIds);
+            updateData.tagIds = await sanitizeTagIds(await resolveOrganizationId({ configId, organizationId: req?.organizationId }), req.body.tagIds);
         } else {
             delete updateData.tagIds;
         }

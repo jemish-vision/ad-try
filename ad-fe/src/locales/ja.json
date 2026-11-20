@@ -8071,5 +8071,18 @@
   "Tag renamed": "タグ名を変更しました",
   "Tag deleted": "タグを削除しました",
   "Tag name is required": "タグ名は必須です",
-  "A tag with this name already exists": "同じ名前のタグがすでにあります"
+  "A tag with this name already exists": "同じ名前のタグがすでにあります",
+  "Tag Management": "タグ管理",
+  "Tag": "タグ",
+  "Create Tag": "タグを作成",
+  "New tag name": "新しいタグ名",
+  "Tag created": "タグを作成しました",
+  "1 configuration": "1 件の設定",
+  "{{count}} configurations": "{{count}} 件の設定",
+  "Select tags": "タグを選択",
+  "Search and select tags": "タグを検索して選択",
+  "No tags yet. Create tags in the Tag Management tab.": "タグはまだありません。「タグ管理」タブで作成してください。",
+  "No tags yet. Create your first tag above.": "タグはまだありません。上で最初のタグを作成してください。",
+  "Tags are shared across your organization. Assign them to recommendations in the Recommendation Configuration tab.": "タグは組織全体で共有されます。「レコメンデーション設定」タブでレコメンデーションに割り当ててください。",
+  "Tags are shared across your organization. Create, rename or delete them in the Tag Management tab.": "タグは組織全体で共有されます。「タグ管理」タブで作成・名前変更・削除できます。"
 }
