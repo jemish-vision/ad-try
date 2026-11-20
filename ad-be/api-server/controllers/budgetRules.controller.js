@@ -23,6 +23,7 @@ const campaignsSchema = require("../models/campaign.model");
 const cronJobHistorySchema = require("../models/cronJobHistory.model");
 const budgetRulesHistorySchema = require("../models/budgetRuleHistory.model");
 const { logAudit } = require("../helpers/auditHelper");
+const { auditValues, readAuditValues, ruleAuditFields } = require("../helpers/auditChanges");
 const profileSchema = require("../models/profiles.model");
 const affectedCampaignByRuleSchema = require("../models/affectedCampaignByRule.model");
 const campaignProductEligibleStatusByRuleSchema = require("../models/campaignProductEligibleStatusByRule.model");
@@ -277,8 +278,10 @@ exports.updateRule = async (req, res) => {
     delete updateData._id;
     delete updateData.isActive;
 
+    const ruleFilter = { _id: ruleId, ...(configId && { configId }) };
+    const previousValue = await readAuditValues(budgetRulesSchema, ruleFilter, ruleAuditFields);
     await budgetRulesSchema
-      .findOneAndUpdate({ _id: ruleId, ...(configId && { configId }) }, updateData, { new: true })
+      .findOneAndUpdate(ruleFilter, updateData, { new: true })
       .then(async (rule) => {
         if (!rule) {
           return res
@@ -311,6 +314,8 @@ exports.updateRule = async (req, res) => {
         };
 
         await logAudit("BUDGET_RULE_UPDATE", `Updated budget rule: ${rule.ruleName}`, {
+          configId: rule.configId, profileId: rule.profileId, resourceType: "rule", resourceId: String(rule._id),
+          previousValue, newValue: auditValues(rule, ruleAuditFields),
           ruleName: rule?.ruleName,
           conditions: rule?.conditions,
           actionType: rule?.actionType,

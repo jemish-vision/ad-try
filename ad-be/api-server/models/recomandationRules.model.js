@@ -73,7 +73,7 @@ const actionSchema = new mongoose.Schema(
     placementType: {
       type: String,
       trim: true,
-      enum: ["Top of Search", "Rest of Search", "Product Page", "Product pages", ""],
+      enum: ["Top of Search", "Rest of Search", "Product Page", "Product Pages", ""],
       default: "",
     },
     // Only used when gridName === "Search Term"
@@ -154,6 +154,11 @@ const recommendationRuleSchema = new mongoose.Schema(
 
     query: { type: String, trim: true, default: "" },
 
+    tagIds: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "recommendationTag",
+    }],
+
     // ── Campaign Selection (Include / Exclude) ──────────────────────────────────
     campaignSelectionType: {
       type: String,
@@ -207,6 +212,7 @@ recommendationRuleSchema.index({
 
 
 // --- Performance Indexing ---
+recommendationRuleSchema.index({ configId: 1, tagIds: 1 });
 recommendationRuleSchema.index({ isActive: 1, isDeleted: 1 });
 recommendationRuleSchema.index({ configId: 1, profileId: 1, isActive: 1, isDeleted: 1 });
 recommendationRuleSchema.index({ profileId: 1, isActive: 1, isDeleted: 1 });

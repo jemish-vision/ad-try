@@ -18,6 +18,34 @@ describe("1. SP-API Schedule Registry Mapping", () => {
       family: "sp-api",
     });
 
+    const txReport = resolveMigratedSchedule("Transaction Report");
+    assert.deepStrictEqual(txReport, {
+      queue: QUEUES.SP_API,
+      task: SP_API_TASKS.SYNC_ORDER,
+      family: "sp-api",
+    });
+
+    const refundReport = resolveMigratedSchedule("Refund Report");
+    assert.deepStrictEqual(refundReport, {
+      queue: QUEUES.SP_API,
+      task: SP_API_TASKS.SYNC_ORDER,
+      family: "sp-api",
+    });
+
+    const fcLedger = resolveMigratedSchedule("FC Inventory Ledger");
+    assert.deepStrictEqual(fcLedger, {
+      queue: QUEUES.SP_API,
+      task: SP_API_TASKS.FC_INVENTORY_LEDGER,
+      family: "sp-api",
+    });
+
+    const fcStorage = resolveMigratedSchedule("FC Storage Fee");
+    assert.deepStrictEqual(fcStorage, {
+      queue: QUEUES.SP_API,
+      task: SP_API_TASKS.FC_STORAGE_FEE,
+      family: "sp-api",
+    });
+
     const syncInventory = resolveMigratedSchedule("Sync Inventory");
     assert.deepStrictEqual(syncInventory, {
       queue: QUEUES.SP_API,

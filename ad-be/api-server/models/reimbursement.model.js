@@ -4,19 +4,16 @@ const reimbursementSchema = new mongoose.Schema(
   {
     configId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "config",
-      index: true
+      ref: "config"
     },
 
     profileId: {
       type: Number,
-      trim: true,
-      index: true
+      trim: true
     },
 
     reimbursementId: {
-      type: String,
-      index: true
+      type: String
     },
 
     caseId: {
@@ -26,33 +23,27 @@ const reimbursementSchema = new mongoose.Schema(
 
     amazonOrderId: {
       type: String,
-      default: null,
-      index: true
+      default: null
     },
 
     approvalDate: {
-      type: Date,
-      index: true
+      type: Date
     },
 
     reason: {
-      type: String,
-      index: true
+      type: String
     },
 
     sku: {
-      type: String,
-      index: true
+      type: String
     },
 
     fnsku: {
-      type: String,
-      index: true
+      type: String
     },
 
     asin: {
-      type: String,
-      index: true
+      type: String
     },
 
     productName: {
@@ -127,18 +118,38 @@ const reimbursementSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// 1. Unique identity and deduplication index (serves report stream upserts and tenant prefix lookups)
+reimbursementSchema.index(
+  {
+    configId: 1,
+    profileId: 1,
+    reimbursementId: 1
+  },
+  {
+    unique: true
+  }
+);
+
+// 2. Primary listing & date-range query index (serves getReimbursement pagination and pre-sorted approvalDate)
 reimbursementSchema.index({
   configId: 1,
   profileId: 1,
-  reimbursementId: 1
-}, {
-  unique: true
+  approvalDate: -1
 });
 
+// 3. Order & SKU lookup index (serves profitAnalysis lookups mapped by orderId and orderId+sku)
+reimbursementSchema.index({
+  configId: 1,
+  profileId: 1,
+  amazonOrderId: 1,
+  sku: 1
+});
 
-// --- Performance Indexing ---
-reimbursementSchema.index({configId:1,profileId:1,sku:1});
-
-reimbursementSchema.index({ amazonOrderId: 1, configId: 1, profileId: 1 });
+// 4. SKU discrepancy check index (serves cronReminderForReimbursement)
+reimbursementSchema.index({
+  configId: 1,
+  profileId: 1,
+  sku: 1
+});
 
 module.exports = new mongoose.model("reimbursement", reimbursementSchema);

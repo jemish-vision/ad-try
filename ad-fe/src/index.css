@@ -4260,7 +4260,7 @@ html[data-theme="dark"] .rs-picker-input-group {
    ═══════════════════════════════════════════════════════════════ */
 
 /* ── Global Form Elements & Controls ── */
-[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
+[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]):not(.tag-selector-input),
 [data-theme="dark"] select,
 [data-theme="dark"] textarea,
 [data-theme="dark"] .form-control,
@@ -4276,7 +4276,7 @@ html[data-theme="dark"] .rs-picker-input-group {
   color: #6B7280 !important;
 }
 
-[data-theme="dark"] input:focus,
+[data-theme="dark"] input:not(.tag-selector-input):focus,
 [data-theme="dark"] select:focus,
 [data-theme="dark"] textarea:focus,
 [data-theme="dark"] .form-control:focus,
@@ -4443,7 +4443,8 @@ html[data-theme="dark"] .rs-picker-input-group {
   color: #64748b !important;
 }
 
-.ag-menu .ag-icon {
+.ag-theme-alpine .ag-menu .ag-icon,
+.ag-theme-alpine .ag-menu .ag-icon::before {
   font-family: var(--ag-icon-font-family) !important;
 }
 
@@ -9306,6 +9307,43 @@ html.dark .ag-center-cols-viewport::-webkit-scrollbar,
   background-color: transparent !important;
   appearance: none !important;
   -webkit-appearance: none !important;
+}
+
+/* ── Recommendation Tag Selector Input & Wrapper Styling ── */
+.tag-selector-input,
+[data-theme="dark"] .tag-selector-input,
+[data-theme="light"] .tag-selector-input,
+[data-theme="dark"] input.tag-selector-input,
+[data-theme="light"] input.tag-selector-input,
+[data-theme="dark"] input.tag-selector-input:focus,
+[data-theme="light"] input.tag-selector-input:focus,
+.tag-selector-wrapper input,
+[data-theme="dark"] .tag-selector-wrapper input,
+[data-theme="light"] .tag-selector-wrapper input,
+[data-theme="dark"] .tag-selector-wrapper input:focus,
+[data-theme="light"] .tag-selector-wrapper input:focus {
+  border: none !important;
+  border-width: 0 !important;
+  border-style: none !important;
+  border-color: transparent !important;
+  outline: none !important;
+  outline-offset: 0 !important;
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+}
+
+[data-theme="dark"] .tag-selector-wrapper {
+  background-color: #111827 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="dark"] .tag-selector-wrapper:focus-within {
+  border-color: #3B82F6 !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2) !important;
 }
 
 /* ── Multi-line wrapped header styles for AG Grid ── */

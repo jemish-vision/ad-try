@@ -7,7 +7,7 @@ import moment from "moment-timezone";
 import { Toast } from "../../../helper/links/Link";
 import { ShadcnDateRangePicker as DateRangePicker } from "../../../components/ui/date-range-picker";
 import { predefinedRanges } from "../../../common/helper/calendarValues/calendarValues";
-import { ApiAditLogListing } from "../../../api-wrapper/auditLog/ApiAuditLog";
+import { ApiAditLogListing, ApiAuditLogEvents } from "../../../api-wrapper/auditLog/ApiAuditLog";
 import { useTranslation } from "react-i18next";
 import { PermissionCheck } from "../../../helper/permission/PermissionCheck";
 import { useParams } from "react-router-dom";
@@ -209,6 +209,23 @@ function AuditLog() {
   const [perPage, setPerPage] = useState(firstPageRows);
   const [arg, setArg] = useState({ pageNo: 1, perPage: firstPageRows });
   const [types, setTypes] = useState([]);
+  const [eventCatalog, setEventCatalog] = useState([]);
+  const [scope, setScope] = useState("mine");
+  const [canViewOrganization, setCanViewOrganization] = useState(false);
+  const [outcome, setOutcome] = useState("");
+  const [actorId, setActorId] = useState("");
+  const [profileFilter, setProfileFilter] = useState(profileId?.value || "");
+  const [listError, setListError] = useState("");
+  const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    let active = true;
+    ApiAuditLogEvents().then((res) => {
+      if (active && res?.isSuccess && Array.isArray(res.data)) setEventCatalog(res.data);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+  useEffect(() => { setProfileFilter(profileId?.value || ""); }, [profileId?.value]);
 
   const allOptions = useMemo(() => {
     const flat = [];
@@ -217,8 +234,12 @@ function AuditLog() {
         flat.push({ ...opt, label: t(opt.label), category: t(group.label) });
       });
     });
-    return flat;
-  }, [t]);
+    const byEvent = new Map(flat.map(option => [option.value, option]));
+    eventCatalog.forEach(item => {
+      if (item?.event) byEvent.set(item.event, { value: item.event, label: t(item.label || item.event), category: t(item.category || "Other") });
+    });
+    return [...byEvent.values()];
+  }, [t, eventCatalog]);
   const [auditLogData, setAuditLogData] = useState();
   const [date, setDate] = useState(() => {
     if (selectedDate && Array.isArray(selectedDate) && selectedDate.length >= 2) {
@@ -256,6 +277,11 @@ function AuditLog() {
   const dispatch = useDispatch();
 
   const columns = [
+    { headerName: t("Actor"), field: "actorName", title: "Actor", minWidth: 200,
+      cellRenderer: ({ data }) => <div className="py-2 text-xs break-words"><div>{data?.actorName || data?.actorType || "—"}</div><code>{String(data?.userId?._id || data?.userId || "")}</code></div> },
+    { headerName: t("Outcome"), field: "outcome", title: "Outcome", minWidth: 110 },
+    { headerName: t("Resource"), field: "resourceId", title: "Resource", minWidth: 210,
+      cellRenderer: ({ data }) => <div className="py-2 text-xs break-words"><div>{data?.resourceType || "—"}</div><code>{String(data?.resourceId ?? "")}</code></div> },
     {
       headerName: t("Event"),
       field: "event",
@@ -268,7 +294,7 @@ function AuditLog() {
       cellRenderer: (params) => {
         const row = params.data;
         if (!row) return null;
-        const label = row?.event?.replaceAll("_", " ") ?? "";
+        const label = allOptions.find(option => option.value === row.event)?.label || row?.event?.replaceAll("_", " ") || "";
         const { bg, color, border } = getEventStyle(row.event, isDark);
         return (
           <div style={{ padding: "10px 4px" }}>
@@ -318,7 +344,7 @@ function AuditLog() {
       width: 110,
       cellRenderer: (params) => {
         const row = params.data;
-        if (!row?.metadata) return <span style={{ color: "#CBD5E1", padding: "10px 4px", display: "block", fontSize: 12 }}>—</span>;
+        if (!row) return null;
         return (
           <div style={{ padding: "10px 4px" }}>
             <button
@@ -412,8 +438,11 @@ function AuditLog() {
   ];
 
   useEffect(() => {
-    AuditLogList(arg);
-  }, [date, profileId?.value, selectedAdType, types, debouncedSearchName]);
+    const firstPage = { pageNo: 1, perPage };
+    setArg(firstPage);
+    AuditLogList(firstPage);
+    return () => { requestIdRef.current += 1; };
+  }, [date, profileFilter, selectedAdType, types, debouncedSearchName, scope, outcome, actorId]);
 
   const handlePageChange = (page) => {
     setArg({ pageNo: page, perPage });
@@ -427,32 +456,48 @@ function AuditLog() {
   };
 
   const AuditLogList = async (argOverride) => {
-    if (!profileId?.value || !selectedAdType) return;
+    const requestId = ++requestIdRef.current;
     const data = {
       fromDate: moment(date?.[0]).format("YYYY-MM-DD"),
       toDate: moment(date?.[1]).format("YYYY-MM-DD"),
-      profileId: profileId.value,
+      profileId: String(profileFilter).trim() || undefined,
+      scope,
+      outcome: outcome || undefined,
+      actorId: scope === "organization" ? actorId.trim() || undefined : undefined,
       event: types,
       search: argOverride?.hasOwnProperty("searchName") ? argOverride.searchName : debouncedSearchName,
       ...argOverride,
     };
     setLoadingGrid(true);
+    setListError("");
     try {
       const [e] = await Promise.all([
         ApiAditLogListing(data),
         new Promise(resolve => setTimeout(resolve, 300))
       ]);
+      if (requestId !== requestIdRef.current) return;
       if (e?.isSuccess) {
+        const allowed = e.canViewOrganization === true;
+        setCanViewOrganization(allowed);
+        if (!allowed && scope === "organization") { setScope("mine"); setActorId(""); }
         dispatch(handleLoader(false));
-        setTableData(e.data);
+        setTableData(Array.isArray(e.data) ? e.data : []);
         setAuditLogData(e);
       } else {
-        Toast.error(e?.message);
+        const message = e?.message || t("Unable to load audit logs. Please retry.");
+        setListError(message);
+        Toast.error(message);
+        setTableData([]);
+        setAuditLogData(undefined);
       }
     } catch (err) {
+      if (requestId !== requestIdRef.current) return;
+      setListError(t("Unable to load audit logs. Please retry."));
+      setTableData([]);
+      setAuditLogData(undefined);
       Toast.error(t("Something went wrong"));
     } finally {
-      setLoadingGrid(false);
+      if (requestId === requestIdRef.current) setLoadingGrid(false);
     }
   };
 
@@ -502,6 +547,18 @@ function AuditLog() {
 
             {/* Controls */}
             <div className="flex flex-wrap items-center gap-3 mt-2 ml-auto" style={{ width: isMobile ? "100%" : "auto" }}>
+              {canViewOrganization && (
+                <select aria-label={t("Audit scope")} value={scope} onChange={e => { setScope(e.target.value); setActorId(""); }} className="h-10 px-3 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-sm">
+                  <option value="mine">{t("My activity")}</option>
+                  <option value="organization">{t("Organization activity")}</option>
+                </select>
+              )}
+              <select aria-label={t("Audit outcome")} value={outcome} onChange={e => setOutcome(e.target.value)} className="h-10 px-3 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 text-sm">
+                <option value="">{t("All outcomes")}</option>
+                {["SUCCESS", "FAILURE", "PARTIAL", "PENDING", "DENIED"].map(value => <option key={value} value={value}>{t(value.charAt(0) + value.slice(1).toLowerCase())}</option>)}
+              </select>
+              {scope === "organization" && <Input aria-label={t("Actor ID")} placeholder={t("Actor ID")} value={actorId} onChange={e => setActorId(e.target.value)} className="h-10 w-44" />}
+              <Input aria-label={t("Profile ID filter")} placeholder={t("All profiles (optional ID)")} value={profileFilter} onChange={e => setProfileFilter(e.target.value)} className="h-10 w-44" />
               <div id="audit-log-type" className="relative z-30" style={{ flex: isMobile ? "1 1 100%" : "0 0 200px", width: isMobile ? "100%" : "200px" }}>
                 <MultiSelect
                   options={allOptions}
@@ -571,6 +628,7 @@ function AuditLog() {
 
           {PermissionCheck(SYSTEM_PAGES.AUDIT_LOG, PAGE_ACTIONS.VIEW_ONLY) && (
             <div className="p-0">
+              {listError && <div role="alert" className="mx-6 mb-3 p-3 rounded-md border border-red-200 dark:border-red-900 text-red-700 dark:text-red-300 text-sm">{listError}<button type="button" onClick={() => AuditLogList(arg)} className="ml-3 underline">{t("Retry")}</button></div>}
               <div id="audit-log" className="data_table" style={{ padding: "0 24px 24px 24px" }}>
                 <AgTable ref={gridRef}
                   tableId="audit-log-main-table"
@@ -601,8 +659,20 @@ function AuditLog() {
         onHide={closeModal}
         event={selectedRow?.event}
         metadata={selectedRow?.metadata}
+        changes={selectedRow ? Object.fromEntries(["previousValue", "newValue"].filter(key => Object.prototype.hasOwnProperty.call(selectedRow, key)).map(key => [key, selectedRow[key]])) : {}}
         isDark={isDark}
         extraFields={selectedRow ? {
+          auditId: selectedRow._id,
+          actorType: selectedRow.actorType,
+          actorName: selectedRow.actorName,
+          userId: selectedRow.userId,
+          organizationId: selectedRow.organizationId,
+          profileId: selectedRow.profileId,
+          resourceType: selectedRow.resourceType,
+          resourceId: selectedRow.resourceId,
+          operationId: selectedRow.operationId,
+          source: selectedRow.source,
+          outcome: selectedRow.outcome,
           message: selectedRow.message,
           ipAddress: selectedRow.ipAddress,
           userAgent: selectedRow.userAgent,

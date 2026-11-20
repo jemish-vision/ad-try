@@ -3606,7 +3606,11 @@ exports.saveAgingConfig = async (req, res) => {
         const product = await productListingSchema?.findOne({ profileId: Number(profileId), asin })
         if (!product) return res.status(203).send({ isSuccess: false, message: "Product not found!" });
 
-        await logAudit("INVENTORY_SETTINGS", `Aging configuration for SKU ${sku} updated successfully.`, { itemName: product?.itemName, asin, sku, minOrders, lookbackDays, isEnabled }, req?.user?.id);
+        const previousConfig = await inventoryAgingConfigSchema.findOne({ configId, profileId: Number(profileId), sku }).lean();
+        const previousValue = previousConfig ? { minOrders: previousConfig.minOrders, lookbackDays: previousConfig.lookbackDays, isEnabled: previousConfig.isEnabled } : null;
+        const newValue = { minOrders, lookbackDays, isEnabled };
+
+        await logAudit("INVENTORY_AGING_SETTINGS_UPDATED", `Aging configuration for SKU ${sku} updated successfully.`, { itemName: product?.itemName, asin, sku, minOrders, lookbackDays, isEnabled, previousValue, newValue }, req?.user?.id);
 
         await inventoryAgingConfigSchema.findOneAndUpdate(
             { configId, profileId: Number(profileId), sku },
@@ -4024,7 +4028,8 @@ exports.cronInventoryForecastAlerts = async () => {
 
                 if (configuredWarehouses.length > 0) {
                     const latestFcLedger = await fcInventoryLedgerSchema.findOne({
-                        $or: [{ profileId }, { profileId: String(profileId) }],
+                        configId,
+                        profileId: Number(profileId),
                         reportDate: { $exists: true, $ne: null }
                     })
                         .sort({ reportDate: -1 })
@@ -4037,7 +4042,8 @@ exports.cronInventoryForecastAlerts = async () => {
 
                     if (fcReportDate) {
                         const fcMatch = {
-                            $or: [{ profileId }, { profileId: String(profileId) }],
+                            configId,
+                            profileId: Number(profileId),
                             reportDate: fcReportDate
                         };
 
@@ -4063,7 +4069,7 @@ exports.cronInventoryForecastAlerts = async () => {
 
                         // Historical shipments per FC x SKU
                         const shipmentAgg = await fcInventoryLedgerSchema.aggregate([
-                            { $match: { $or: [{ profileId }, { profileId: String(profileId) }] } },
+                            { $match: { configId, profileId: Number(profileId) } },
                             {
                                 $group: {
                                     _id: { fcCode: "$fcCode", sku: "$sku" },
@@ -4307,6 +4313,12 @@ exports.getWarehousePlanning = async (req, res) => {
         const cleanAsin = asin ? String(asin).trim().toUpperCase() : "";
         const cleanSku = sku ? String(sku).trim() : "";
 
+        let configId = req.body.configId || req.query?.configId || req?.config?.configId || req?.headers?.["x-config-id"];
+        if (!configId) {
+            const prof = await profilesSchema.findOne({ profileId: cleanProfileId }).select("configId").lean();
+            if (prof?.configId) configId = prof.configId;
+        }
+
         // 1. Fetch saved warehouse planning configurations
         const configFilter = { profileId: cleanProfileId };
         if (cleanAsin && cleanSku) {
@@ -4342,30 +4354,19 @@ exports.getWarehousePlanning = async (req, res) => {
             productCondition.asin = cleanAsin;
         }
 
-        const profileCondition = {
-            $or: [{ profileId: cleanProfileId }, { profileId: String(profileId) }]
-        };
+        const profileCondition = { profileId: cleanProfileId };
+        if (configId && mongoose.Types.ObjectId.isValid(configId)) {
+            profileCondition.configId = new mongoose.Types.ObjectId(configId);
+        }
 
-        // Find the latest reportDate specifically for this product
-        let latestLedger = await fcInventoryLedgerSchema.findOne({
+        // Find the profile's latest sync date (all products sync together in Amazon ledger)
+        const latestLedger = await fcInventoryLedgerSchema.findOne({
             ...profileCondition,
-            ...productCondition,
             reportDate: { $exists: true, $ne: null }
         })
             .sort({ reportDate: -1 })
             .select("reportDate")
             .lean();
-
-        // If not found specifically for this SKU/ASIN, fallback to the profile's latest sync date
-        if (!latestLedger?.reportDate) {
-            latestLedger = await fcInventoryLedgerSchema.findOne({
-                ...profileCondition,
-                reportDate: { $exists: true, $ne: null }
-            })
-                .sort({ reportDate: -1 })
-                .select("reportDate")
-                .lean();
-        }
 
         const targetDate = latestLedger?.reportDate || null;
 
@@ -4445,9 +4446,10 @@ exports.getWarehousePlanning = async (req, res) => {
 
         const productMarketplaceAds = salesAgg?.[0]?.weightedADS ? Math.round(salesAgg[0].weightedADS * 100) / 100 : 0;
 
-        // Calculate warehouse-specific daily sales velocity (ADS) from historical customer shipments
+        // Calculate warehouse-specific daily sales velocity (ADS) from historical customer shipments (last 30 days)
         const shipmentMatch = {
             ...profileCondition,
+            reportDate: { $gte: last30DaysDate, $lte: endDate },
             ...productCondition,
         };
 

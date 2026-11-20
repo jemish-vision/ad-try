@@ -4,28 +4,23 @@ const shipmentQueueItemSchema = new mongoose.Schema(
   {
     configId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "config",
-      index: true
+      ref: "config"
     },
 
     profileId: {
-      type: Number,
-      index: true
+      type: Number
     },
 
     shipmentId: {
-      type: String,
-      index: true
+      type: String
     },
 
     sellerSKU: {
-      type: String,
-      index: true
+      type: String
     },
 
     fulfillmentNetworkSKU: {
-      type: String,
-      index: true
+      type: String
     },
 
     quantityShipped: {
@@ -53,6 +48,7 @@ const shipmentQueueItemSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Unique identity and deduplication index (serves report stream upserts, shipment lookups, and queue item joins)
 shipmentQueueItemSchema.index(
   {
     configId: 1,

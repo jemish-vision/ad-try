@@ -23,6 +23,31 @@ const { generateAndUploadModuleImages, getAllVariationAsins, addAsinsToAPlusCont
 const { sendNotificationToUser } = require("../helper/sendNotification");
 const { submitAPlusImageBatchJob, checkBatchJobStatus, saveBatchImageToDisk } = require("../helper/geminiBatch.helper");
 const axios = require("axios");
+const { writeAuditEvent } = require("../helpers/auditHelper");
+
+// Claim only an existing status transition. Initial imports are baselines, and
+// overlapping polling runs must not emit the same transition twice.
+const recordImportedApprovalTransitions = async (bulkOps, configId, profileId) => {
+    for (const { updateOne } of bulkOps) {
+        const contentStatus = updateOne.update.$set.contentStatus;
+        if (typeof contentStatus !== "string" || !contentStatus) continue;
+        const previous = await asinAPlusContentModel.findOneAndUpdate(
+            { ...updateOne.filter, contentStatus: { $ne: contentStatus } },
+            { $set: { contentStatus } },
+            { new: false }
+        ).select("_id contentStatus").lean();
+        if (!previous?.contentStatus || previous.contentStatus === contentStatus) continue;
+        await writeAuditEvent({
+            event: "APLUS_APPROVAL_STATUS_CHANGED", actorType: "system", source: "worker",
+            configId, profileId, resourceType: "aplus_content", resourceId: updateOne.filter.contentReferenceKey,
+            outcome: "SUCCESS", message: "Amazon A+ content approval status changed",
+            previousValue: { contentStatus: previous.contentStatus }, newValue: { contentStatus },
+            metadata: { asin: updateOne.filter.asin, locale: updateOne.filter.locale,
+                contentReferenceKey: updateOne.filter.contentReferenceKey,
+                marketplaceId: updateOne.update.$set.marketplaceId },
+        });
+    }
+};
 
 exports.cronFetchAPlusContentFromAmazon = async (pastSyncData = null) => {
 
@@ -251,6 +276,7 @@ const fetchAPlusContentData = async (profile, currentDate, checkSPConfig) => {
                                 message: `Stored ${bulkOps.length} A+ records for ASIN ${asin}`,
                                 log_type: "info",
                             });
+                            await recordImportedApprovalTransitions(bulkOps, configId, profileId);
                             await parallelBulkWrite(asinAPlusContentModel, bulkOps);
                         }
 
@@ -762,6 +788,11 @@ exports.submitAPlusContentForApproval = async (req, res) => {
         const { endPoint, marketPlaceId } = marketplaceConfig;
 
         // AMAZON APPROVAL API
+        const target = { configId, profileId: Number(profileId), marketplaceId: marketPlaceId, contentReferenceKey };
+        req.auditChange = { resourceType: "aplus_content", resourceId: contentReferenceKey,
+            configId, profileId: Number(profileId), metadata: { contentReferenceKey, marketplaceId: marketPlaceId } };
+        const previousRows = await asinAPlusContentModel.find(target).select("contentStatus").lean();
+        req.auditChange.previousValue = { contentStatuses: [...new Set(previousRows.map(row => row.contentStatus).filter(Boolean))] };
         const config = {
             method: "post",
             url: `${endPoint}/aplus/2020-11-01/contentDocuments/${contentReferenceKey}/approvalSubmissions`,
@@ -773,10 +804,23 @@ exports.submitAPlusContentForApproval = async (req, res) => {
 
         const response = await retryWithBackoff(() => amazonAxios(config));
 
+        if (!response || response.status < 200 || response.status >= 300) {
+            req.auditChange.outcome = "FAILURE";
+            req.auditChange.metadata.providerStatus = response?.status;
+            return res.status(203).json({ isSuccess: false, message: "Amazon did not accept the A+ approval submission" });
+        }
+        req.auditChange.outcome = "PENDING";
+        req.auditChange.newValue = { approvalSubmission: "ACCEPTED" };
+        req.auditChange.metadata.providerStatus = response.status;
+        req.auditChange.metadata.providerAccepted = true;
+        const providerRequestId = response.headers?.["x-amzn-requestid"] || response.headers?.["x-amzn-request-id"];
+        if (typeof providerRequestId === "string") req.auditChange.metadata.providerRequestId = providerRequestId.slice(0, 200);
+
         await asinAPlusContentModel.updateMany(
-            { configId, profileId: Number(profileId), marketplaceId: marketPlaceId, contentReferenceKey },
-            { $set: { contentStatus: "APPROVED", updateTime: new Date() } }
+            target,
+            { $set: { contentStatus: "SUBMITTED", updateTime: new Date() } }
         );
+        req.auditChange.newValue = { contentStatus: "SUBMITTED" };
 
         return res.status(200).json({
             isSuccess: true,
@@ -784,7 +828,12 @@ exports.submitAPlusContentForApproval = async (req, res) => {
             data: response?.data
         });
     } catch (error) {
-        write_logs({ message: `submitAPlusContentForApproval: ${error.message} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+        if (req.auditChange) {
+            req.auditChange.outcome = req.auditChange.metadata.providerAccepted ? "PARTIAL" : "FAILURE";
+            req.auditChange.metadata.reasonCode = req.auditChange.metadata.providerAccepted ? "LOCAL_STATUS_UPDATE_FAILED" : "APPROVAL_SUBMISSION_FAILED";
+            if (Number.isInteger(error?.response?.status)) req.auditChange.metadata.providerStatus = error.response.status;
+        }
+        write_logs({ message: "submitAPlusContentForApproval: APLUS_APPROVAL_SUBMISSION_FAILED", log_type: "error" });
         return res.status(203).json({
             isSuccess: false,
             message: error?.response?.data?.errors?.[0]?.message || error?.message || "Failed to submit A+ Content for approval"

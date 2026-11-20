@@ -4,7 +4,7 @@ import { Toast } from "../../../helper/links/Link";
 import { ApiDisconnectSPAmazonConfig, ApiSellerConfigList, ApiUpdateProfileSyncSettings, ApiGetProfileSyncDetails } from "../../../api-wrapper/ApiAdsConfig";
 import Filter from "../../../helper/filter/Filter";
 import { useEffect, useState, useRef, useMemo } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import AgTable from "../../../common/grid/AgTable";
 import moment from "moment";
 import axios from "axios";
@@ -18,11 +18,14 @@ import { AppTooltip } from "../../../components/ui/AppTooltip";
 // Portal-based tooltip immune to AG-Grid CSS transform offsets
 
 const formatDate = (date) => date ? moment(date).format("DD/MM/YYYY hh:mm:ss A") : "--";
+const getSyncConfigId = (row) => row?.configId?._id || row?.configId || row?.sellerConfig?.configId;
 
 const SellerConfig = () => {
   const { t } = useTranslation();
   const location = useLocation();
+  const navigate = useNavigate();
   const handledQueryRef = useRef(false);
+  const isSellerCallbackRef = useRef(false);
   const [configList, setConfigList] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isDark, setIsDark] = useState(document.documentElement.getAttribute("data-theme") === "dark");
@@ -39,19 +42,49 @@ const SellerConfig = () => {
     const status = params.get("status");
     const connected = params.get("connected");
     const message = params.get("message");
+    const autoOpenSync = params.get("autoOpenSync");
+    const sellerId = params.get("sellerId");
 
-    if (!handledQueryRef.current) {
-      if (status === "success" && (connected === "amazon_seller" || params.has("sellerId"))) {
+    const oauthDedupeKey = status
+      ? `seller_oauth_${status}_${connected || ""}_${autoOpenSync || sellerId || ""}`
+      : null;
+
+    if (!handledQueryRef.current && status) {
+      const alreadyHandledInSession = oauthDedupeKey && sessionStorage.getItem(oauthDedupeKey);
+
+      if (status === "success" && (connected === "amazon_seller" || params.has("sellerId") || params.has("autoOpenSync"))) {
         handledQueryRef.current = true;
-        Toast.success(t("Amazon Account Connected Successfully!"));
-        window.history.replaceState({}, "", window.location.pathname);
+        isSellerCallbackRef.current = true;
+        if (!alreadyHandledInSession) {
+          if (oauthDedupeKey) sessionStorage.setItem(oauthDedupeKey, "true");
+          Toast.success(t("Amazon Account Connected Successfully!"), {
+            toastId: "amazon-seller-connect-success"
+          });
+        }
+        // Immediately remove status, connected, and message to prevent duplicate toasts on component remount
+        const cleanParams = new URLSearchParams(location.search);
+        cleanParams.delete("status");
+        cleanParams.delete("connected");
+        cleanParams.delete("message");
+        const cleanSearch = cleanParams.toString() ? `?${cleanParams.toString()}` : "?tab=seller-config";
+        navigate(cleanSearch, { replace: true });
       } else if (status === "error" && message) {
         handledQueryRef.current = true;
-        Toast.error(decodeURIComponent(message));
-        window.history.replaceState({}, "", window.location.pathname);
+        if (!alreadyHandledInSession) {
+          if (oauthDedupeKey) sessionStorage.setItem(oauthDedupeKey, "true");
+          Toast.error(message, {
+            toastId: "amazon-seller-connect-error"
+          });
+        }
+        const cleanParams = new URLSearchParams(location.search);
+        cleanParams.delete("status");
+        cleanParams.delete("connected");
+        cleanParams.delete("message");
+        const cleanSearch = cleanParams.toString() ? `?${cleanParams.toString()}` : "?tab=seller-config";
+        navigate(cleanSearch, { replace: true });
       }
     }
-  }, [location.search]);
+  }, [location.search, navigate, t]);
 
 
   const [subscriptionModal, setSubscriptionModal] = useState(null);
@@ -110,15 +143,15 @@ const SellerConfig = () => {
         });
         setConfigList(listData);
 
-        const configIds = [...new Set(listData.map(r => r.configId?._id || r.configId || r.sellerConfig?.configId).filter(Boolean))];
+        const configIds = [...new Set(listData.map(getSyncConfigId).filter(Boolean))];
         if (configIds.length > 0) {
           const syncResults = await Promise.all(configIds.map(id => ApiGetProfileSyncDetails(id).catch(() => null)));
           const statusMap = {};
-          syncResults.forEach(syncRes => {
+          syncResults.forEach((syncRes, index) => {
             if (syncRes?.isSuccess && Array.isArray(syncRes?.data)) {
               syncRes.data.forEach(r => {
                 if (r.type === "seller") {
-                  const pIdKey = String(r.profileId);
+                  const pIdKey = `${configIds[index]}:${r.profileId}`;
                   if (!statusMap[pIdKey]) statusMap[pIdKey] = [];
                   statusMap[pIdKey].push(r);
                 }
@@ -129,16 +162,16 @@ const SellerConfig = () => {
           const finalMap = {};
           Object.keys(statusMap).forEach(pIdKey => {
             const records = statusMap[pIdKey];
+            const hasCompleted = records.some(r => r.requestStatus === "COMPLETED");
             let status = "NONE";
             if (records.some(r => r.requestStatus === "IN_PROGRESS")) {
               status = "IN_PROGRESS";
-            } else if (records.some(r => r.requestStatus === "COMPLETED")) {
-              status = "COMPLETED";
             } else if (records.some(r => r.requestStatus === "PENDING")) {
               status = "PENDING";
+            } else if (hasCompleted) {
+              status = "COMPLETED";
             }
-            finalMap[pIdKey] = status;
-            finalMap[Number(pIdKey)] = status;
+            finalMap[pIdKey] = { status, hasCompleted };
           });
           setSyncDetailsMap(finalMap);
         }
@@ -162,27 +195,26 @@ const SellerConfig = () => {
     const params = new URLSearchParams(location.search);
     const targetSeller = params.get("autoOpenSync");
 
-    if (targetSeller && targetSeller !== "latest" && targetSeller !== "true" && configList.length > 0 && !autoOpenSyncRef.current) {
-      const matchRow = configList.find((r) =>
-        String(r.sellerId) === String(targetSeller) ||
-        String(r.sellerConfig?.sellerId) === String(targetSeller) ||
-        String(r.profileId) === String(targetSeller) ||
-        String(r.configId) === String(targetSeller) ||
-        String(r.sellerConfig?._id) === String(targetSeller) ||
-        String(r._id) === String(targetSeller)
-      );
+    if (targetSeller && /^[a-z0-9]+$/i.test(targetSeller) && targetSeller !== "latest" && targetSeller !== "true" && !loadingGrid && configList.length > 0 && !autoOpenSyncRef.current) {
+      const isSellerCallback = isSellerCallbackRef.current || params.get("status") === "success";
+      const matchRow = configList.find((row) => row.sellerConfig?.isActive &&
+        (String(row.sellerConfig._id) === targetSeller ||
+         String(row.sellerConfig.sellerId) === targetSeller ||
+         String(row.configId?._id || row.configId) === targetSeller ||
+         (isSellerCallback && String(row.sellerConfig._id) === targetSeller)));
 
       if (matchRow) {
         autoOpenSyncRef.current = true;
-        setSyncSetupModal(matchRow);
+        const syncKey = `${getSyncConfigId(matchRow)}:${matchRow.profileId}`;
+        if (!syncDetailsMap[syncKey]) setSyncSetupModal(matchRow);
         localStorage.removeItem("appstore_seller_id");
         sessionStorage.removeItem("appstore_seller_id");
         localStorage.removeItem("amazon_appstore_flow");
         sessionStorage.removeItem("amazon_appstore_flow");
-        window.history.replaceState({}, "", window.location.pathname + "?tab=seller-config");
+        navigate("?tab=seller-config", { replace: true });
       }
     }
-  }, [location.search, configList]);
+  }, [location.search, configList, loadingGrid, syncDetailsMap, navigate]);
 
   const handleDisconnect = (row) => {
     setDisconnectConfirm(row);
@@ -205,7 +237,9 @@ const SellerConfig = () => {
     }
   };
 
-  const handleConnectSeller = async (profileId) => {
+  const handleConnectSeller = async (row) => {
+    const profileId = row.profileId;
+    const configId = row.configId?._id || row.configId;
     // Pre-open new tab synchronously (inside click context) to avoid popup blockers
     const newTab = window.open("", "_blank");
     // Show a clean loading page so the tab doesn't appear blank
@@ -225,12 +259,13 @@ const SellerConfig = () => {
     setConnectingProfileId(profileId);
     try {
       const response = await axios.post(`${process.env.REACT_APP_API_BASE}/api/config/amazonSPRedirect`, {
-        profileId: profileId,
-        reconnect: false
+        profileId,
+        configId,
       });
 
       if (response.data && response.data.isSuccess && response.data.data.authUrl) {
-        newTab.location.href = response.data.data.authUrl;
+        if (newTab) newTab.location.href = response.data.data.authUrl;
+        else window.location.assign(response.data.data.authUrl);
       } else {
         if (newTab) newTab.close();
         Toast.error(t("Failed to initiate connection:") + " " + (response.data.message || t("Unknown error")));
@@ -238,7 +273,7 @@ const SellerConfig = () => {
     } catch (error) {
       if (newTab) newTab.close();
       console.error("Error connecting seller central:", error);
-      Toast.error(t("An error occurred while connecting."));
+      Toast.error(error.response?.data?.message || t("An error occurred while connecting."));
     } finally {
       setConnectingProfileId(null);
     }
@@ -246,9 +281,7 @@ const SellerConfig = () => {
 
   const getProfileSyncStatus = (row) => {
     if (!row) return "NONE";
-    const pIdStr = String(row?.profileId);
-    const pIdNum = Number(row?.profileId);
-    return syncDetailsMap[pIdStr] || syncDetailsMap[pIdNum] || "NONE";
+    return syncDetailsMap[`${getSyncConfigId(row)}:${row.profileId}`]?.status || "NONE";
   };
 
   const columns = useMemo(() => [
@@ -292,7 +325,7 @@ const SellerConfig = () => {
                     <i className="fa fa-unlink" />
                   </button>
                 </AppTooltip>
-              ) : connectingProfileId === row?.profileId ? (
+              ) : row.type !== "seller" ? null : connectingProfileId === row?.profileId ? (
                 <div
                   style={{
                     width: "32px",
@@ -308,7 +341,8 @@ const SellerConfig = () => {
               ) : (
                 <AppTooltip text={row?.sellerConfig?.disconnectedAt ? t("Reconnect Seller Account") : t("Click here to Connect")}>
                   <button
-                    onClick={() => handleConnectSeller(row?.profileId)}
+                    onClick={() => handleConnectSeller(row)}
+                    aria-label={t("Connect Seller Central")}
                     style={{
                       background: isDark ? "rgba(16, 185, 129, 0.1)" : "#ecfdf5",
                       border: isDark ? "1px solid rgba(16, 185, 129, 0.2)" : "1px solid #d1fae5",
@@ -454,16 +488,18 @@ const SellerConfig = () => {
         const hasSellerId = Boolean(row.sellerConfig?.sellerId || row.sellerId);
         const isConnected = Boolean(row.sellerConfig?.isActive);
         const syncStatus = getProfileSyncStatus(row);
-        const isComplete = syncStatus === "COMPLETED";
+        const hasCompleted = syncDetailsMap[`${getSyncConfigId(row)}:${row.profileId}`]?.hasCompleted;
         const isSpSyncActive = hasSellerId && row.isSpSyncEnabled === true;
-        const isSwitchDisabled = !hasSellerId || !isConnected || !isComplete || updatingSellerId === row.profileId;
+        const isSwitchDisabled = !hasSellerId || !isConnected || !hasCompleted || syncStatus === "IN_PROGRESS" || updatingSellerId === row.profileId;
 
         let tooltipText = "";
         if (!hasSellerId) {
           tooltipText = t("No seller account connected");
         } else if (!isConnected) {
           tooltipText = t("Account is not connected");
-        } else if (!isComplete) {
+        } else if (syncStatus === "IN_PROGRESS") {
+          tooltipText = t("Synchronization in progress");
+        } else if (!hasCompleted) {
           tooltipText = t("Synchronization is not completed");
         } else if (isSpSyncActive) {
           tooltipText = t("Seller SP Sync Active (Click to Pause)");
@@ -560,6 +596,18 @@ const SellerConfig = () => {
         const row = params.data;
         if (!row) return null;
         if (!row.sellerConfig?.isActive) {
+          if (row.type !== "seller") {
+            const label = row.type === "vendor" ? t("Vendor Ads profile") : t("Seller Central unavailable");
+            return (
+              <div className="flex items-center" style={{ height: "100%" }}>
+                <AppTooltip text={t("Seller Central Connect requires an Amazon Seller Ads profile.")}>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-500">
+                    {label}
+                  </span>
+                </AppTooltip>
+              </div>
+            );
+          }
           if (row.sellerConfig?.disconnectedAt) {
             return (
               <div className="flex items-center" style={{ height: "100%" }}>
@@ -609,7 +657,7 @@ const SellerConfig = () => {
         );
       }
     }
-  ], [isDark, syncDetailsMap, updatingSellerId]);
+  ], [isDark, syncDetailsMap, updatingSellerId, connectingProfileId]);
 
   const [selectedConfigId, setSelectedConfigId] = useState("all");
 
@@ -965,7 +1013,7 @@ const SellerConfig = () => {
         show={Boolean(syncSetupModal)}
         onHide={() => setSyncSetupModal(null)}
         profile={syncSetupModal}
-        configId={syncSetupModal?.configId?._id || syncSetupModal?.configId || syncSetupModal?.sellerConfig?.configId}
+        configId={getSyncConfigId(syncSetupModal)}
         type="seller"
         isDark={isDark}
         onSuccess={ApiListing}

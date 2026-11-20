@@ -25,7 +25,7 @@ const ApiSellerConfigList = (data, skip = false) => {
 const ApiAmazonAuthConfig = (data) => {
   return axios.post(`${apiConfig}amazonRedirect`, data, { headers })
     .then((res) => res.data)
-    .catch((res) => res.data);
+    .catch(error => error.response?.data);
 };
 
 const ApiDisconnectAmazonConfig = (data) => {
@@ -82,12 +82,12 @@ const ApiSaveRuleSettings = (data) => {
 
 const ApiGetAmazonProfiles = (data) => {
   return axios.get(`${apiConfig}getAmazonProfiles?configId=${data.configId}`, { headers })
-    .then(res => res.data).catch(res => res.data)
+    .then(res => res.data).catch(error => error.response?.data)
 }
 
 const ApiSaveAmazonProfiles = (data) => {
   return axios.post(`${apiConfig}saveAmazonProfiles`, data, { headers })
-    .then(res => res.data).catch(res => res.data)
+    .then(res => res.data).catch(error => error.response?.data)
 }
 
 const ApiGetReportDetails = () => {
@@ -102,7 +102,7 @@ const ApiGetCoreGroups = (params) => {
 
 const ApiSaveSynchronizationDetails = (data) => {
   return axios.post(`${apiConfig}saveSynchronizationDetails`, data, { headers })
-    .then(res => res.data).catch(res => res.data);
+    .then(res => res.data).catch(error => error.response?.data);
 };
 
 const ApiGetRetentionDays = () => {
@@ -122,7 +122,7 @@ const ApiExecuteSync = (data) => {
 
 const ApiGetProfileSyncDetails = (configId) => {
   return axios.get(`${apiConfig}getProfileSyncDetails?configId=${configId}`, { headers })
-    .then(res => res.data).catch(res => res.data);
+    .then(res => res.data).catch(error => error.response?.data);
 };
 
 const ApiUpdateProfileSyncSettings = (data) => {
@@ -144,7 +144,7 @@ const ApiInitiateAmazonSellerAuth = (data) => {
 const ApiLinkExistingSellerConfig = (data) => {
   return axios.post(`${apiConfig}linkExistingSellerConfig`, data, { headers })
     .then((res) => res.data)
-    .catch((res) => res.data);
+    .catch(error => error.response?.data);
 };
 
 const ApiConfirmDeactivateProfile = (data) => {

@@ -2,7 +2,7 @@ const userSchema = require("../models/user.model");
 const organizationSchema = require("../models/organization.model");
 require("../models/packages.model");
 const profileSchema = require("../models/profiles.model");
-const auditLogSchema = require("../models/auditLog.model");
+const { writeAuditEvent } = require("../helpers/auditHelper");
 const { sendEmailHelper } = require("./emailHelper");
 const { buildNewSellerConnectionEmail } = require("../../emailTemplate/buildNewSellerConnectionEmail");
 const { write_logs } = require("../../winston/ams/logger");
@@ -93,18 +93,18 @@ async function notifyNewSellerConnection({
 
     // 6. Record audit log
     try {
-      await auditLogSchema.create({
-        userId: userId || null,
+      await writeAuditEvent({
+        req, actorType: "system", source: "system",
+        outcome: result?.delivered === true ? "SUCCESS" : "FAILED",
         organizationId: orgId || null,
         event: "SELLER_CONNECTION_NOTIFICATION_SENT",
-        message: `Notification email dispatched for new Amazon seller connection: ${sellerId}`,
+        message: result?.delivered === true ? "Seller connection notification delivered" : "Seller connection notification delivery failed",
         ipAddress: req?.ip,
         userAgent: req?.headers ? req.headers["user-agent"] : null,
         metadata: {
           sellerId,
           deliveryStatus: result?.status,
           delivered: result?.delivered,
-          recipient: process.env.RECEIVER_EMAIL,
           source,
         },
       });
@@ -122,6 +122,9 @@ async function notifyNewSellerConnection({
 
     return result;
   } catch (error) {
+    await writeAuditEvent({ actorType: "system", source: "system", organizationId,
+      event: "SELLER_CONNECTION_NOTIFICATION_SENT", message: "Seller connection notification failed",
+      outcome: "FAILURE", metadata: { sellerId, reason: "NOTIFICATION_EXECUTION_FAILED" } });
     write_logs({
       message: `[notifyNewSellerConnection Error] ${error?.message || error}`,
       log_type: "error",

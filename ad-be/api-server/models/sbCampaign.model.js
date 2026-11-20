@@ -127,20 +127,7 @@ const sbCampaignsSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// 1️⃣ Unique identity (REQUIRED)
-sbCampaignsSchema.index(
-  { configId: 1, profileId: 1, campaignId: 1, reportDate: 1 },
-  { unique: true }
-);
-
-// 2️⃣ Cron / reporting
-sbCampaignsSchema.index({
-  configId: 1,
-  profileId: 1,
-  reportDate: 1,
-});
-
-// 3️⃣ Rules execution
+// 1️⃣ Rules execution
 sbCampaignsSchema.index({
   configId: 1,
   profileId: 1,
@@ -148,7 +135,7 @@ sbCampaignsSchema.index({
   reportDate: 1,
 });
 
-// 4️⃣ UI listing (optional)
+// 2️⃣ UI listing / Reporting
 sbCampaignsSchema.index({
   configId: 1,
   profileId: 1,
@@ -156,6 +143,16 @@ sbCampaignsSchema.index({
   spend: -1,
 });
 
+// 3️⃣ Covered index for campaign lookups & pipelines
+sbCampaignsSchema.index({
+  campaignId: 1,
+  profileId: 1,
+  reportDate: 1,
+  status: 1,
+  name: 1
+}, { name: "campaign_lookup_covered_index" });
+
+// 4️⃣ Covered index for recommendations & active campaign status
 sbCampaignsSchema.index({
   profileId: 1,
   reportDate: 1,

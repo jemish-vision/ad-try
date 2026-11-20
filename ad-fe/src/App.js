@@ -36,100 +36,100 @@ const SelectOrganization = lazy(() => import('./layout/views/SelectOrganization'
 const SelectPlan = lazy(() => import('./layout/views/SelectPlan'));
 const AcceptInvitation = lazy(() => import('./layout/views/users/AcceptInvitation'));
 
-function App() {
+function RequireAuth() {
+  const token = localStorage.getItem('sellerToken');
+  const { pagePermission, isPlanActive } = useContext(ProfileContext);
+  const location = useLocation();
 
-  function RequireAuth() {
-    const token = localStorage.getItem('sellerToken');
-    const { pagePermission, isPlanActive } = useContext(ProfileContext);
-    const location = useLocation();
+  if (!token) {
+    localStorage.clear();
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
 
-    if (!token) {
-      localStorage.clear();
-      return <Navigate to="/login" state={{ from: location }} replace />;
+  if (token && pagePermission === undefined) {
+    return <Spinner />;
+  }
+
+  if (pagePermission) {
+    const isConnected = localStorage.getItem("connection") !== "false";
+    const role = localStorage.getItem("role");
+
+    // Enforce organization selection for ADMIN role before allowing access to dashboard or layout pages
+    if (role === ROLES.ADMIN && !localStorage.getItem("organizationId") && !["/select-organization", "/select-plan", "/purchase-plans", "/update-subscription", "/maintenance-mode", "/payment-success", "/payment-failed", "/accept-invitation"].includes(location.pathname)) {
+      return <Navigate to="/select-organization" replace />;
     }
 
-    if (token && pagePermission === undefined) {
-      return <Spinner />;
+    // Enforce plan purchase restriction if free trial has expired or plan is not active
+    const hasUsedTrial = localStorage.getItem("hasUsedTrial") === "true";
+    const isPlanActiveStorage = localStorage.getItem("isPlanActive") === "true";
+    const isPlanActiveEffective = isPlanActive && isPlanActiveStorage;
+    if (role !== ROLES.SUPER_ADMIN && (hasUsedTrial || !isPlanActiveEffective) && !["/select-organization", "/select-plan", "/purchase-plans", "/update-subscription", "/maintenance-mode", "/payment-success", "/payment-failed", "/accept-invitation"].includes(location.pathname)) {
+      return <Navigate to="/select-plan" replace />;
     }
+    const allowedNames = pagePermission.map(p => p.pageName);
 
-    if (pagePermission) {
-      const isConnected = localStorage.getItem("connection") !== "false";
-      const role = localStorage.getItem("role");
+    // Always allow basic pages
+    const alwaysAllow = ["User Guide", "Profile", "Purchase Plans", "Update Subscription", "Plans", "Warehouse Details", "Warehouse Inventory", "Product Performance", "MFN to FBA", "API Capacity & Usage"];
 
-      // Enforce organization selection for ADMIN role before allowing access to dashboard or layout pages
-      if (role === ROLES.ADMIN && !localStorage.getItem("organizationId") && !["/select-organization", "/select-plan", "/purchase-plans", "/update-subscription", "/maintenance-mode", "/payment-success", "/payment-failed", "/accept-invitation"].includes(location.pathname)) {
-        return <Navigate to="/select-organization" replace />;
+    // Find current route config
+    const currentRoute = routes.find(r =>
+      matchPath({ path: r.path, end: true, caseSensitive: false }, location.pathname)
+    );
+
+    if (currentRoute && currentRoute.name) {
+      // 1. Check connection status restriction
+      if (!isConnected && role !== ROLES.SUPER_ADMIN && !alwaysAllow.includes(currentRoute.name)) {
+        return <Navigate to="/" replace />;
       }
 
-      // Enforce plan purchase restriction if free trial has expired or plan is not active
-      const hasUsedTrial = localStorage.getItem("hasUsedTrial") === "true";
-      const isPlanActiveStorage = localStorage.getItem("isPlanActive") === "true";
-      const isPlanActiveEffective = isPlanActive && isPlanActiveStorage;
-      if (role !== ROLES.SUPER_ADMIN && (hasUsedTrial || !isPlanActiveEffective) && !["/select-organization", "/select-plan", "/purchase-plans", "/update-subscription", "/maintenance-mode", "/payment-success", "/payment-failed", "/accept-invitation"].includes(location.pathname)) {
-        return <Navigate to="/select-plan" replace />;
+      // 2. Explicitly prevent non-Owners from accessing /admin-dashboard
+      if (location.pathname === "/admin-dashboard" && role !== ROLES.SUPER_ADMIN) {
+        return <Navigate to="/" replace />;
       }
-      const allowedNames = pagePermission.map(p => p.pageName);
 
-      // Always allow basic pages
-      const alwaysAllow = ["User Guide", "Profile", "Purchase Plans", "Update Subscription", "Plans", "Warehouse Details", "Warehouse Inventory", "Product Performance", "MFN to FBA", "API Capacity & Usage"];
+      // 3. Check dynamic permissions from BE
+      let isAllowed = role === ROLES.SUPER_ADMIN || allowedNames.some(name => currentRoute.name === name || currentRoute.name.includes(name)) || alwaysAllow.includes(currentRoute.name);
 
-      // Find current route config
-      const currentRoute = routes.find(r =>
-        matchPath({ path: r.path, end: true, caseSensitive: false }, location.pathname)
-      );
+      if (currentRoute.name === SYSTEM_PAGES.DASHBOARD && role !== ROLES.SUPER_ADMIN) {
+        const dashPerm = pagePermission.find(p => p.pageName === SYSTEM_PAGES.DASHBOARD);
+        const hasDashView = dashPerm?.allocatedActions?.some(a => (a.actionType === PAGE_ACTIONS?.VIEW_ONLY) && a.status === true);
+        if (!hasDashView) isAllowed = false;
+      }
 
-      if (currentRoute && currentRoute.name) {
-        // 1. Check connection status restriction
-        if (!isConnected && role !== ROLES.SUPER_ADMIN && !alwaysAllow.includes(currentRoute.name)) {
-          return <Navigate to="/" replace />;
-        }
-
-        // 2. Explicitly prevent non-Owners from accessing /admin-dashboard
-        if (location.pathname === "/admin-dashboard" && role !== ROLES.SUPER_ADMIN) {
-          return <Navigate to="/" replace />;
-        }
-
-        // 3. Check dynamic permissions from BE
-        let isAllowed = role === ROLES.SUPER_ADMIN || allowedNames.some(name => currentRoute.name === name || currentRoute.name.includes(name)) || alwaysAllow.includes(currentRoute.name);
-
-        if (currentRoute.name === SYSTEM_PAGES.DASHBOARD && role !== ROLES.SUPER_ADMIN) {
-          const dashPerm = pagePermission.find(p => p.pageName === SYSTEM_PAGES.DASHBOARD);
-          const hasDashView = dashPerm?.allocatedActions?.some(a => (a.actionType === PAGE_ACTIONS?.VIEW_ONLY) && a.status === true);
-          if (!hasDashView) isAllowed = false;
-        }
-
-        if (!isAllowed) {
-          let firstPath = null;
-          if (pagePermission && pagePermission.length) {
-            for (let p of pagePermission) {
-              const hasView = p.allocatedActions?.some((action) => (action.actionType === PAGE_ACTIONS?.VIEW_ONLY) && action.status === true);
-              if (hasView) {
-                const matchingRoute = routes.find(r => r.name === p.pageName && r.path !== "/");
-                if (matchingRoute) {
-                  firstPath = matchingRoute.path;
-                  break;
-                }
+      if (!isAllowed) {
+        let firstPath = null;
+        if (pagePermission && pagePermission.length) {
+          for (let p of pagePermission) {
+            const hasView = p.allocatedActions?.some((action) => (action.actionType === PAGE_ACTIONS?.VIEW_ONLY) && action.status === true);
+            if (hasView) {
+              const matchingRoute = routes.find(r => r.name === p.pageName && r.path !== "/");
+              if (matchingRoute) {
+                firstPath = matchingRoute.path;
+                break;
               }
             }
           }
-          if (firstPath && firstPath !== location.pathname) {
-            return <Navigate to={firstPath} replace />;
-          }
-          return null;
         }
+        if (firstPath && firstPath !== location.pathname) {
+          return <Navigate to={firstPath} replace />;
+        }
+        return null;
       }
     }
-
-    return <Outlet />;
   }
 
-  function PublicRoute() {
-    const token = localStorage.getItem('sellerToken');
-    if (token) {
-      return <Navigate to="/" replace />;
-    }
-    return <Outlet />;
+  return <Outlet />;
+}
+
+function PublicRoute() {
+  const token = localStorage.getItem('sellerToken');
+  if (token) {
+    return <Navigate to="/" replace />;
   }
+  return <Outlet />;
+}
+
+function App() {
 
   useEffect(() => {
     const getSystemTheme = () => window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";

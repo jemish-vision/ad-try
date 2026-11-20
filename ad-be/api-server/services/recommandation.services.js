@@ -23,14 +23,14 @@ const { isValidASIN } = require("../helper/common");
 const SP_PLACEMENT_MAP = {
   "Top of Search": "PLACEMENT_TOP",
   "Rest of Search": "PLACEMENT_REST_OF_SEARCH",
-  "Product pages": "PLACEMENT_PRODUCT_PAGE",
+  "Product Pages": "PLACEMENT_PRODUCT_PAGE",
   "Product Page": "PLACEMENT_PRODUCT_PAGE",
 };
 
 const SB_PLACEMENT_MAP = {
   "Top of Search": "TOP_OF_SEARCH",
   "Rest of Search": "OTHER",
-  "Product pages": "DETAIL_PAGE",
+  "Product Pages": "DETAIL_PAGE",
   "Product Page": "DETAIL_PAGE",
 };
 
@@ -260,7 +260,7 @@ const CampaignSBBudget = async (profile, checkConfigAds, rule, item, budget, ope
             "budgetTracking.lastUpdated": new Date(),
           },
         }
-      ).catch(() => {});
+      ).catch(() => { });
 
       return { isSuccess: true, message: "Campaign Budget Updated Successfully" }
     }
@@ -368,7 +368,7 @@ const CampaignSDBudget = async (profile, checkConfigAds, rule, item, budget, ope
             "budgetTracking.lastUpdated": new Date(),
           },
         }
-      ).catch(() => {});
+      ).catch(() => { });
 
       return { isSuccess: true, message: "Campaign Budget Updated Successfully" }
     }
@@ -570,7 +570,7 @@ const CampaignSBStatus = async (profile, checkConfigAds, rule, item, status, ope
       await sbCampaignsSchema.updateMany(
         { configId: profile?.configId, profileId: profile?.profileId, campaignId: item?.campaignId },
         { $set: { status, state: status } }
-      ).catch(() => {});
+      ).catch(() => { });
 
       return { isSuccess: true, message: "Campaign Status Updated Successfully" }
     }
@@ -669,7 +669,7 @@ const CampaignSDStatus = async (profile, checkConfigAds, rule, item, status, ope
       await sdCampaignsSchema.updateMany(
         { configId: profile?.configId, profileId: profile?.profileId, campaignId: item?.campaignId },
         { $set: { status, state: status } }
-      ).catch(() => {});
+      ).catch(() => { });
 
       return { isSuccess: true, message: "Campaign Status Updated Successfully" }
     }
@@ -894,7 +894,7 @@ const PlacementSBBid = async (profile, checkConfigAds, rule, item, newBid, opera
       await sbPlacementSchema.updateMany(
         { configId: profile?.configId, profileId: profile?.profileId, campaignId: item?.campaignId, placement: item?.placement },
         { $set: { placementModifier: newBid, percentage: newBid } }
-      ).catch(() => {});
+      ).catch(() => { });
 
       return { isSuccess: true, message: "Placement Bid Updated Successfully" };
     } else {
@@ -1139,7 +1139,7 @@ const TargetingSBBid = async (profile, checkConfigAds, rule, item, newBid, opera
       await sbTargetingSchema.updateMany(
         { configId: rule?.configId, profileId: rule?.profileId, $or: [{ targetId: item?.targetId }, { targeting: item?.targeting, campaignId: item?.campaignId }] },
         { $set: { keywordBid: newBid } }
-      ).catch(() => {});
+      ).catch(() => { });
 
       return { isSuccess: true, message: "Targeting Bid Updated Successfully" };
     } else {

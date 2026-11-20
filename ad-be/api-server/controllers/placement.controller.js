@@ -27,6 +27,7 @@ const profileSchema = require("../models/profiles.model");
 const placementSchema = require("../models/placement.model");
 // const campaignSchema = require("../models/campaign.model");
 const { logAudit } = require("../helpers/auditHelper");
+const { auditValues, readAuditValues, ruleAuditFields } = require("../helpers/auditChanges");
 const campaignChangeHistorySchema = require("../models/campaignChangeHistory.model");
 const reportsSchema = require("../models/report.model");
 const placementRuleHistorySchema = require("../models/placementRuleHistory.model");
@@ -87,8 +88,8 @@ exports.cronGeneratePlacementReport = async (generateWeeklyReport = false, gener
     const cronName = generateBiWeeklyReport
       ? "BiWeekly Report"
       : generateWeeklyReport || pastSyncObj?.isWeekly
-      ? "Weekly Report"
-      : "Placement Report";
+        ? "Weekly Report"
+        : "Placement Report";
 
     const allowedProfiles = await getAllowedSyncProfiles("TARGETING", "ads", recurring);
     const getProfileId = (await profileSchema.find({ isActive: true, isAdsSyncEnabled: true, ...(profileId && { profileId }), ...(configId && { configId }) }).lean())
@@ -140,28 +141,28 @@ exports.cronGeneratePlacementReport = async (generateWeeklyReport = false, gener
         }
 
         let getCronData = null;
-              if (recurring) {
-                try {
-                  getCronData = new cronJobHistorySchema({
-                    configId: profile.configId,
-                    profileId: profile.profileId,
-                    cronName: cronName,
-                    historyDate: currentDate,
-                    status: "PENDING",
-                    details: {
-                      startedAt: new Date().toISOString(),
-                      startDate,
-                      endDate,
-                    },
-                  });
-                  await getCronData.save();
-                } catch (saveErr) {
-                  cron_logs({
-                    message: `[${cronName}] Failed to create cron history for profile ${profile.profileId}: ${saveErr.message}`,
-                    log_type: "warn",
-                  });
-                }
-              }
+        if (recurring) {
+          try {
+            getCronData = new cronJobHistorySchema({
+              configId: profile.configId,
+              profileId: profile.profileId,
+              cronName: cronName,
+              historyDate: currentDate,
+              status: "PENDING",
+              details: {
+                startedAt: new Date().toISOString(),
+                startDate,
+                endDate,
+              },
+            });
+            await getCronData.save();
+          } catch (saveErr) {
+            cron_logs({
+              message: `[${cronName}] Failed to create cron history for profile ${profile.profileId}: ${saveErr.message}`,
+              log_type: "warn",
+            });
+          }
+        }
 
         const reportSpResponse = await spGenerateReport(
           profile.profileId,
@@ -373,7 +374,7 @@ async function spGenerateReport(
       await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
       existing = null;
     } else {
-      processStagedReportBatches(["placement"]).catch(() => {});
+      processStagedReportBatches(["placement"]).catch(() => { });
       return "STAGED";
     }
   }
@@ -530,7 +531,7 @@ async function sbGenerateReport(
       await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
       existing = null;
     } else {
-      processStagedReportBatches(["sbPlacement"]).catch(() => {});
+      processStagedReportBatches(["sbPlacement"]).catch(() => { });
       return "STAGED";
     }
   }
@@ -651,7 +652,7 @@ const processReportFileStream = async (
       } else if (
         value.placementClassification == "Detail Page on-Amazon"
       ) {
-        placementName = "Product pages";
+        placementName = "Product Pages";
       } else if (
         value.placementClassification == "Top of Search on-Amazon" ||
         value.placementClassification == "Top of Search"
@@ -833,7 +834,7 @@ exports.manualGenerateReport = async (req, res) => {
       });
     }
   } catch (error) {
-      write_logs({ message: `[manualGenerateReport Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[manualGenerateReport Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     return res.status(203).send({
       error: "An internal server error occurred",
       message: "Something went wrong, please try again!",
@@ -972,11 +973,11 @@ exports.updatePlacementBid = async (req, res) => {
         );
       }
       if (productPageBid !== undefined && productPageBid !== null && productPageBid !== "") {
-        await createHistory(campaignIds, "Product pages", productPageBid, configId, profileId, userId);
+        await createHistory(campaignIds, "Product Pages", productPageBid, configId, profileId, userId);
         await placementSchema.updateMany(
           {
             campaignId: { $in: campaignIds },
-            placement: "Product pages"
+            placement: "Product Pages"
           },
           {
             $set: { placementModifier: productPageBid }
@@ -1060,7 +1061,7 @@ exports.updatePlacementBidInDB = async (req, res) => {
       if (p.productPageBid !== undefined && p.productPageBid !== null) {
         singlePlacementPromises.push(
           placementSchema.updateMany(
-            { ...campaignQuery, placement: "Product pages" },
+            { ...campaignQuery, placement: "Product Pages" },
             { $set: { placementModifier: p.productPageBid } }
           )
         );
@@ -1079,7 +1080,7 @@ exports.updatePlacementBidInDB = async (req, res) => {
       isSuccess: true,
     });
   } catch (error) {
-      write_logs({ message: `[updatePlacementBidInDB Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[updatePlacementBidInDB Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     return res.status(203).send({
       error: "An internal server error occurred",
       message: "Something went wrong, please try again!",
@@ -1225,10 +1226,10 @@ exports.updatePlacementBidApplyInAmazon = async (req, res) => {
         );
       }
       if (p.productPageBid !== undefined && p.productPageBid !== null) {
-        await createHistory([campaignId], "Product pages", p?.productPageBid, configId, profileId, userId)
+        await createHistory([campaignId], "Product Pages", p?.productPageBid, configId, profileId, userId)
         singlePlacementPromises.push(
           placementSchema.updateMany(
-            { ...campaignQuery, placement: "Product pages" },
+            { ...campaignQuery, placement: "Product Pages" },
             { $set: { placementModifier: p.productPageBid } }
           )
         );
@@ -1246,7 +1247,7 @@ exports.updatePlacementBidApplyInAmazon = async (req, res) => {
       amazonResponse: amazonResponse.data,
     });
   } catch (error) {
-      write_logs({ message: `[updatePlacementBidApplyInAmazon Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[updatePlacementBidApplyInAmazon Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     return res.status(203).send({
       error: "An internal server error occurred",
       message: "Something went wrong, please try again!",
@@ -1343,7 +1344,7 @@ exports.createRule = async (req, res) => {
         });
       })
       .catch((error) => {
-          write_logs({ message: `[createRule Promise Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+        write_logs({ message: `[createRule Promise Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
         return res.status(203).send({
           message: "Something went wrong, please try again!",
           isSuccess: false,
@@ -1351,7 +1352,7 @@ exports.createRule = async (req, res) => {
         });
       });
   } catch (error) {
-      write_logs({ message: `[createRule Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[createRule Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     return res.status(203).send({
       message: "Something went wrong, please try again!",
       isSuccess: false,
@@ -1382,8 +1383,10 @@ exports.updateRule = async (req, res) => {
     delete updateData._id;
     delete updateData.isActive;
 
+    const ruleFilter = { _id: ruleId, ...(configId && { configId }) };
+    const previousValue = await readAuditValues(placementRulesSchema, ruleFilter, ruleAuditFields);
     await placementRulesSchema
-      .findOneAndUpdate({ _id: ruleId, ...(configId && { configId }) }, updateData, { new: true })
+      .findOneAndUpdate(ruleFilter, updateData, { new: true })
       .then(async (rule) => {
         if (!rule) {
           return res
@@ -1416,6 +1419,8 @@ exports.updateRule = async (req, res) => {
         };
 
         await logAudit("PLACEMENT_RULE_UPDATE", `Updated placement rule: ${rule.ruleName}`, {
+          configId: rule.configId, profileId: rule.profileId, resourceType: "rule", resourceId: String(rule._id),
+          previousValue, newValue: auditValues(rule, ruleAuditFields),
           ruleName: rule?.ruleName,
           conditions: rule?.conditions,
           actionType: rule?.actionType,
@@ -1436,7 +1441,7 @@ exports.updateRule = async (req, res) => {
         });
       })
       .catch((error) => {
-          write_logs({ message: `[updateRule Promise Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+        write_logs({ message: `[updateRule Promise Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
         return res.status(203).send({
           error: "An internal server error occurred",
           message: "Something went wrong, please try again!",
@@ -1444,7 +1449,7 @@ exports.updateRule = async (req, res) => {
         });
       });
   } catch (error) {
-      write_logs({ message: `[updateRule Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[updateRule Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     return res.status(203).send({
       error: "An internal server error occurred",
       message: "Something went wrong, please try again!",
@@ -1493,7 +1498,7 @@ exports.changeStatus = async (req, res) => {
     });
 
   } catch (error) {
-      write_logs({ message: `[changeStatus Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[changeStatus Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     return res.status(203).send({
       message: "Something went wrong, please try again!",
       isSuccess: false,
@@ -1522,7 +1527,7 @@ exports.deleteRule = async (req, res) => {
           .send({ message: "Rule deleted successfully.", isSuccess: true });
       })
       .catch((error) => {
-          write_logs({ message: `[deleteRule Promise Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+        write_logs({ message: `[deleteRule Promise Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
         return res.status(203).send({
           error: "An internal server error occurred",
           message: "Something went wrong, please try again!",
@@ -1530,7 +1535,7 @@ exports.deleteRule = async (req, res) => {
         });
       });
   } catch (error) {
-      write_logs({ message: `[deleteRule Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[deleteRule Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     return res.status(203).send({
       message: "Something went wrong, please try again!",
       isSuccess: false,
@@ -1664,7 +1669,7 @@ exports.getPlacementRules = async (req, res) => {
       adminBlockedSchedule,
     });
   } catch (error) {
-      write_logs({ message: `[getPlacementRules Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[getPlacementRules Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     return res.status(203).send({
       error: "An internal server error occurred",
       message: "Something went wrong, please try again!",
@@ -1684,7 +1689,7 @@ exports.getRule = async (req, res) => {
       isSuccess: true,
     });
   } catch (error) {
-      write_logs({ message: `[getRule Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[getRule Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     return res.status(203).send({
       error: "An internal server error occurred",
       message: "Something went wrong, please try again!",
@@ -2174,7 +2179,7 @@ const runSponsoredProductRule = async (finalRulesToRun, checkConfigAds, profile,
               else if (action.placement == "Rest of Search") {
                 placementName = "PLACEMENT_REST_OF_SEARCH";
               }
-              else if (action.placement == "Product pages") {
+              else if (action.placement == "Product Pages") {
                 placementName = "PLACEMENT_PRODUCT_PAGE";
               }
 
@@ -2243,19 +2248,19 @@ const runSponsoredProductRule = async (finalRulesToRun, checkConfigAds, profile,
 
       if (!isManual) {
         await ruleRunHistorySchema.findOneAndUpdate(
-        {
-          configId: profile.configId,
-          profileId: profile.profileId,
-          ruleId: rule._id,
-          ruleSchema: "PlacementRule",
-          ruleDate: currentDate,
-          ruleTime: finalRule.scheduledTime
-        },
-        {
-          $set: { isRun: true }
-        },
-        { new: true, upsert: true }
-      ).lean();
+          {
+            configId: profile.configId,
+            profileId: profile.profileId,
+            ruleId: rule._id,
+            ruleSchema: "PlacementRule",
+            ruleDate: currentDate,
+            ruleTime: finalRule.scheduledTime
+          },
+          {
+            $set: { isRun: true }
+          },
+          { new: true, upsert: true }
+        ).lean();
       }
 
     })
@@ -2452,7 +2457,7 @@ const runSponsoredBrandRule = async (finalRulesToRun, checkConfigAds, profile, c
               else if (action.placement == "Rest of Search") {
                 placementName = "OTHER";
               }
-              else if (action.placement == "Product pages") {
+              else if (action.placement == "Product Pages") {
                 placementName = "DETAIL_PAGE";
               }
 
@@ -2520,19 +2525,19 @@ const runSponsoredBrandRule = async (finalRulesToRun, checkConfigAds, profile, c
 
       if (!isManual) {
         await ruleRunHistorySchema.findOneAndUpdate(
-        {
-          configId: profile.configId,
-          profileId: profile.profileId,
-          ruleId: rule._id,
-          ruleSchema: "PlacementRule",
-          ruleDate: currentDate,
-          ruleTime: finalRule.scheduledTime
-        },
-        {
-          $set: { isRun: true }
-        },
-        { new: true, upsert: true }
-      ).lean();
+          {
+            configId: profile.configId,
+            profileId: profile.profileId,
+            ruleId: rule._id,
+            ruleSchema: "PlacementRule",
+            ruleDate: currentDate,
+            ruleTime: finalRule.scheduledTime
+          },
+          {
+            $set: { isRun: true }
+          },
+          { new: true, upsert: true }
+        ).lean();
       }
 
     })
@@ -2571,73 +2576,73 @@ const runSponsoredBrandRule = async (finalRulesToRun, checkConfigAds, profile, c
     Object.values(campaignMap)
       .filter((c) => successCampaignIds.has(String(c.campaignId)))
       .flatMap((c) =>
-      c.history.map(async (h) => {
-        await recordRuleExecutionChange({
-          conditionSnapshot: h.conditionSnapshot,
-          configId: h?.rule?.configId,
-          profileId: h?.rule?.profileId,
-          userId: h?.rule?.userId,
-          ruleSchema: "PlacementRule",
-          ruleId: h?.rule?._id,
-          ruleDate: currentDate,
-          ruleTime: h?.currentTime ?? currentTime,
-          type: "SB",
-          campaignId: h.campaignId,
-          placement: h.placement,
-          name: h?.campaignName,
-          oldValue: h?.oldBid,
-          newValue: h?.newBid,
-          changed: "bidAdjustment",
-          metrics: {
-            impressions: h?.impressions || 0,
-            clicks: h?.clicks || 0,
-            spend: h?.spend || 0,
-            sales: h?.sales || 0,
-            orders: h?.orders || 0,
-            acos: h?.acos || 0,
-            roas: h?.roas || 0,
-            cpc: h?.cpc || 0,
-            ctr: h?.ctr || 0,
-          },
-          notes: "Placement rule SB execution",
-        });
-
-        const isDayparting = Boolean(h?.rule?.isHourlyBid || h?.rule?.hourlyConfig?.slots?.length);
-        const title = isDayparting
-          ? `Dayparting Rule Run (${h?.rule?.ruleName || "Placement"}): Placement Bid Update`
-          : `Cron Rule Run (${h?.rule?.ruleName || "Placement"}): Placement Bid Update`;
-
-        await createBidHistory(
-          h.campaignId,
-          h.placement,
-          h.newBid,
-          profile.configId,
-          profile.profileId,
-          title,
-          h?.rule?.userId,
-          "SB",
-          isDayparting ? "DAYPARTING" : "RULE"
-        );
-
-        const result = await sbPlacementSchema.findOneAndUpdate(
-          {
-            configId: profile.configId,
-            profileId: profile.profileId,
+        c.history.map(async (h) => {
+          await recordRuleExecutionChange({
+            conditionSnapshot: h.conditionSnapshot,
+            configId: h?.rule?.configId,
+            profileId: h?.rule?.profileId,
+            userId: h?.rule?.userId,
+            ruleSchema: "PlacementRule",
+            ruleId: h?.rule?._id,
+            ruleDate: currentDate,
+            ruleTime: h?.currentTime ?? currentTime,
+            type: "SB",
             campaignId: h.campaignId,
             placement: h.placement,
-            reportDate: currentDate,
-          },
-          { $set: { placementModifier: h.newBid } },
-          { new: true, upsert: true }
-        ).lean();
+            name: h?.campaignName,
+            oldValue: h?.oldBid,
+            newValue: h?.newBid,
+            changed: "bidAdjustment",
+            metrics: {
+              impressions: h?.impressions || 0,
+              clicks: h?.clicks || 0,
+              spend: h?.spend || 0,
+              sales: h?.sales || 0,
+              orders: h?.orders || 0,
+              acos: h?.acos || 0,
+              roas: h?.roas || 0,
+              cpc: h?.cpc || 0,
+              ctr: h?.ctr || 0,
+            },
+            notes: "Placement rule SB execution",
+          });
 
-        cron_logs({
-          message: `runSponsoredBrandRule -> Placement Updated: ${JSON.stringify(result)}`,
-          log_type: "info",
-        });
+          const isDayparting = Boolean(h?.rule?.isHourlyBid || h?.rule?.hourlyConfig?.slots?.length);
+          const title = isDayparting
+            ? `Dayparting Rule Run (${h?.rule?.ruleName || "Placement"}): Placement Bid Update`
+            : `Cron Rule Run (${h?.rule?.ruleName || "Placement"}): Placement Bid Update`;
 
-      })
-    )
+          await createBidHistory(
+            h.campaignId,
+            h.placement,
+            h.newBid,
+            profile.configId,
+            profile.profileId,
+            title,
+            h?.rule?.userId,
+            "SB",
+            isDayparting ? "DAYPARTING" : "RULE"
+          );
+
+          const result = await sbPlacementSchema.findOneAndUpdate(
+            {
+              configId: profile.configId,
+              profileId: profile.profileId,
+              campaignId: h.campaignId,
+              placement: h.placement,
+              reportDate: currentDate,
+            },
+            { $set: { placementModifier: h.newBid } },
+            { new: true, upsert: true }
+          ).lean();
+
+          cron_logs({
+            message: `runSponsoredBrandRule -> Placement Updated: ${JSON.stringify(result)}`,
+            log_type: "info",
+          });
+
+        })
+      )
   );
 
   return true;
@@ -2693,7 +2698,7 @@ const getTypeBasedRuleData = async (rule, type, model, capture = false) => {
     configId: rule.configId,
     profileId: rule.profileId,
     campaignId: { $in: targetCampaignIds },
-    placement: { $in: ["Top of Search", "Rest of Search", "Product pages"] },
+    placement: { $in: ["Top of Search", "Rest of Search", "Product Pages"] },
   };
 
   let { fromDate, toDate } = getRuleDate(rule.timezone, rule.reportDate, rule.toDate);
@@ -2747,7 +2752,7 @@ exports.ruleEffectedPlacement = async (req, res) => {
     });
 
   } catch (error) {
-      write_logs({ message: `[ruleEffectedPlacement Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[ruleEffectedPlacement Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     return res.status(203).send({
       error: "An internal server error occurred",
       message: "Something went wrong, please try again!",
@@ -2850,7 +2855,7 @@ exports.manualRunPlacementRule = async (req, res) => {
     });
 
   } catch (error) {
-      write_logs({ message: `[manualRunPlacementRule Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[manualRunPlacementRule Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     return res.status(500).send({
       isSuccess: false,
       message: "Something went wrong",
@@ -2962,128 +2967,128 @@ exports.ruleHistory = async (req, res) => {
 
     pipeline.push({
       $facet: {
-          data: [
-            { $skip: perPage * (pageNo - 1) },
-            { $limit: perPage },
-            {
-              $lookup: {
-                from: "affectedcampaignbyrules",
-                let: {
-                  ruleId: "$ruleId",
-                  ruleDate: "$ruleDate",
-                  ruleTime: "$ruleTime",
-                  profileId: "$profileId",
-                },
-                pipeline: [
-                  {
-                    $match: {
-                      $expr: {
-                        $and: [
-                          { $eq: ["$profileId", "$$profileId"] },
-                          { $eq: ["$ruleSchema", "PlacementRule"] },
-                          { $eq: ["$ruleId", "$$ruleId"] },
-                          { $eq: ["$ruleDate", "$$ruleDate"] },
-                          { $eq: ["$ruleTime", "$$ruleTime"] }
-                        ]
-                      }
-                    }
-                  },
-                  {
-                    $group: {
-                      _id: "$campaignId",
-                      campaignId: { $first: "$campaignId" },
-                      name: { $first: "$name" },
-                      type: { $first: "$type" },
-                      ruleDate: { $first: "$ruleDate" },
-                      ruleTime: { $first: "$ruleTime" },
-                    }
-                  },
-                  {
-                    $project: {
-                      _id: 0,
-                      campaignId: 1,
-                      name: 1,
-                      ruleDate: 1,
-                      ruleTime: 1,
-                      type: 1,
+        data: [
+          { $skip: perPage * (pageNo - 1) },
+          { $limit: perPage },
+          {
+            $lookup: {
+              from: "affectedcampaignbyrules",
+              let: {
+                ruleId: "$ruleId",
+                ruleDate: "$ruleDate",
+                ruleTime: "$ruleTime",
+                profileId: "$profileId",
+              },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $and: [
+                        { $eq: ["$profileId", "$$profileId"] },
+                        { $eq: ["$ruleSchema", "PlacementRule"] },
+                        { $eq: ["$ruleId", "$$ruleId"] },
+                        { $eq: ["$ruleDate", "$$ruleDate"] },
+                        { $eq: ["$ruleTime", "$$ruleTime"] }
+                      ]
                     }
                   }
-                ],
-                as: "affectedCampaigns"
-              }
-            },
-            {
-              $lookup: {
-                from: "affectedcampaignbyrules",
-                let: {
-                  ruleId: "$ruleId",
-                  ruleDate: "$ruleDate",
-                  ruleTime: "$ruleTime",
-                  profileId: "$profileId",
                 },
-                pipeline: [
-                  {
-                    $match: {
-                      $expr: {
-                        $and: [
-                          { $eq: ["$profileId", "$$profileId"] },
-                          { $eq: ["$ruleSchema", "PlacementRule"] },
-                          { $eq: ["$ruleId", "$$ruleId"] },
-                          { $eq: ["$ruleDate", "$$ruleDate"] },
-                          { $eq: ["$ruleTime", "$$ruleTime"] }
-                        ]
-                      }
-                    }
-                  },
-                  {
-                    $project: {
-                      _id: 1,
-                      campaignId: 1,
-                      placement: 1,
-                      name: 1,
-                      oldValue: 1,
-                      newValue: 1,
-                      ruleDate: 1,
-                      ruleTime: 1,
-                      type: 1,
-                      changed: 1,
-                      isReverted: 1,
-                      isActive: 1,
-                      closedAt: 1,
-                      impressions: 1,
-                      clicks: 1,
-                      spend: 1,
-                      sales: 1,
-                      orders: 1,
-                      acos: 1,
-                      roas: 1,
-                      cpc: 1,
-                      ctr: 1,
-                    }
-                  },
-                ],
-                as: "affectedPlacements"
-              }
-            },
-            {
-              $lookup: {
-                from: "campaignproducteligiblestatusbyrules",
-                let: { ruleId: "$ruleId", ruleDate: "$ruleDate", profileId: "$profileId", configId: "$configId" },
-                pipeline: [
-                  {
-                    $match: { $expr: { $and: [{ $eq: ["$ruleId", "$$ruleId"] }, { $eq: ["$ruleDate", "$$ruleDate"] }, { $eq: ["$profileId", "$$profileId"] }, { $eq: ["$configId", "$$configId"] }] } },
-                  },
-                  { $count: "count" },
-                ],
-                as: "lowProductStats",
-              },
+                {
+                  $group: {
+                    _id: "$campaignId",
+                    campaignId: { $first: "$campaignId" },
+                    name: { $first: "$name" },
+                    type: { $first: "$type" },
+                    ruleDate: { $first: "$ruleDate" },
+                    ruleTime: { $first: "$ruleTime" },
+                  }
+                },
+                {
+                  $project: {
+                    _id: 0,
+                    campaignId: 1,
+                    name: 1,
+                    ruleDate: 1,
+                    ruleTime: 1,
+                    type: 1,
+                  }
+                }
+              ],
+              as: "affectedCampaigns"
             }
-          ],
-          totalCount: [
-            { $count: "count" }
-          ]
-        }
-      });
+          },
+          {
+            $lookup: {
+              from: "affectedcampaignbyrules",
+              let: {
+                ruleId: "$ruleId",
+                ruleDate: "$ruleDate",
+                ruleTime: "$ruleTime",
+                profileId: "$profileId",
+              },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: {
+                      $and: [
+                        { $eq: ["$profileId", "$$profileId"] },
+                        { $eq: ["$ruleSchema", "PlacementRule"] },
+                        { $eq: ["$ruleId", "$$ruleId"] },
+                        { $eq: ["$ruleDate", "$$ruleDate"] },
+                        { $eq: ["$ruleTime", "$$ruleTime"] }
+                      ]
+                    }
+                  }
+                },
+                {
+                  $project: {
+                    _id: 1,
+                    campaignId: 1,
+                    placement: 1,
+                    name: 1,
+                    oldValue: 1,
+                    newValue: 1,
+                    ruleDate: 1,
+                    ruleTime: 1,
+                    type: 1,
+                    changed: 1,
+                    isReverted: 1,
+                    isActive: 1,
+                    closedAt: 1,
+                    impressions: 1,
+                    clicks: 1,
+                    spend: 1,
+                    sales: 1,
+                    orders: 1,
+                    acos: 1,
+                    roas: 1,
+                    cpc: 1,
+                    ctr: 1,
+                  }
+                },
+              ],
+              as: "affectedPlacements"
+            }
+          },
+          {
+            $lookup: {
+              from: "campaignproducteligiblestatusbyrules",
+              let: { ruleId: "$ruleId", ruleDate: "$ruleDate", profileId: "$profileId", configId: "$configId" },
+              pipeline: [
+                {
+                  $match: { $expr: { $and: [{ $eq: ["$ruleId", "$$ruleId"] }, { $eq: ["$ruleDate", "$$ruleDate"] }, { $eq: ["$profileId", "$$profileId"] }, { $eq: ["$configId", "$$configId"] }] } },
+                },
+                { $count: "count" },
+              ],
+              as: "lowProductStats",
+            },
+          }
+        ],
+        totalCount: [
+          { $count: "count" }
+        ]
+      }
+    });
 
     const result = await placementRuleHistorySchema.aggregate(pipeline);
     const getRules = await enrichWithCampaignMetrics(result[0].data, profileId, "PlacementRule");
@@ -3097,7 +3102,7 @@ exports.ruleHistory = async (req, res) => {
       data: getRules,
     });
   } catch (error) {
-      write_logs({ message: `[ruleHistory Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[ruleHistory Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     return res.status(203).send({
       error: "An internal server error occurred",
       message: "Something went wrong, please try again!",
@@ -3159,7 +3164,7 @@ exports.ruleReverted = async (req, res) => {
     });
 
   } catch (error) {
-      write_logs({ message: `[ruleReverted Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[ruleReverted Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     return res.status(203).send({
       error: "An internal server error occurred",
       message: "Something went wrong, please try again!",
@@ -3184,7 +3189,7 @@ const revertedSPRuleEffect = async (SPList, rule, checkConfigAds, profile) => {
       let placementName = "";
       if (item.placement === "Top of Search") placementName = "PLACEMENT_TOP";
       else if (item.placement === "Rest of Search") placementName = "PLACEMENT_REST_OF_SEARCH";
-      else if (item.placement === "Product pages") placementName = "PLACEMENT_PRODUCT_PAGE";
+      else if (item.placement === "Product Pages") placementName = "PLACEMENT_PRODUCT_PAGE";
 
       if (!placementName) {
         failed.push({ _id: item._id, reason: `Unknown placement: ${item.placement}` });
@@ -3353,7 +3358,7 @@ const revertedSBRuleEffect = async (SBList, rule, checkConfigAds, profile) => {
       let placementName = "";
       if (item.placement === "Top of Search") placementName = "TOP_OF_SEARCH";
       else if (item.placement === "Rest of Search") placementName = "OTHER";
-      else if (item.placement === "Product pages") placementName = "DETAIL_PAGE";
+      else if (item.placement === "Product Pages") placementName = "DETAIL_PAGE";
 
       if (!placementName) {
         failed.push({ _id: item._id, reason: `Unknown placement: ${item.placement}` });
@@ -3629,7 +3634,7 @@ exports.exportBidPlacementRule = async (req, res) => {
     return res.end();
 
   } catch (error) {
-      write_logs({ message: `[exportBidPlacementRule Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[exportBidPlacementRule Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     console.error(error);
     return res.status(500).send({
       isSuccess: false,
@@ -3781,7 +3786,7 @@ exports.importBidPlacementRule = async (req, res) => {
           });
         }
       } catch (err) {
-          write_logs({ message: `[importBidPlacementRule Error] ${err?.message || err} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+        write_logs({ message: `[importBidPlacementRule Error] ${err?.message || err} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
         errors.push({
           row: rowNumber,
           message: err.message,
@@ -3804,7 +3809,7 @@ exports.importBidPlacementRule = async (req, res) => {
     });
 
   } catch (error) {
-      write_logs({ message: `[importBidPlacementRule Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[importBidPlacementRule Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     return res.status(203).send({
       isSuccess: false,
       message: "Import failed",
@@ -4051,7 +4056,7 @@ exports.getAllPlacements = async (req, res) => {
 
         const placementKeyMap = {
           "Top of Search": "PLACEMENT_TOP",
-          "Product pages": "PLACEMENT_PRODUCT_PAGE",
+          "Product Pages": "PLACEMENT_PRODUCT_PAGE",
           "Rest of Search": "PLACEMENT_REST_OF_SEARCH",
           "Audience Segment": "AUDIENCE_SEGMENT",
           "Business Placement": "SITE_AMAZON_BUSINESS",
@@ -4112,7 +4117,7 @@ exports.getAllPlacements = async (req, res) => {
     });
 
   } catch (error) {
-      write_logs({ message: `[getAllPlacements Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[getAllPlacements Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     return res.status(203).send({
       message: "Something went wrong, please try again!",
       isSuccess: false,
@@ -4206,7 +4211,7 @@ exports.checkRuleBlockCampaign = async (req, res) => {
       data: campaignData,
     });
   } catch (error) {
-      write_logs({ message: `[checkRuleBlockCampaign Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[checkRuleBlockCampaign Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     return res.status(203).send({
       message: "Something went wrong, please try again!",
       isSuccess: false,

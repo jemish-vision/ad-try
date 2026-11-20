@@ -118,7 +118,7 @@ const Organizations = () => {
       headerName: "Action",
       field: "action",
       title: "Action",
-      width: 140,
+      width: 170,
       sortable: false,
       resizable: false,
       cellRenderer: (params) => {

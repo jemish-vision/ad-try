@@ -15,7 +15,7 @@ const campaignsSchema = require("../models/campaign.model");
 const adNotificationSchema = require("../models/adNotification.model");
 const googleconfigSchema = require("../models/googleconfig.model");
 const newProfileSyncSchema = require("../models/newProfileSync.model");
-const auditLogSchema = require("../models/auditLog.model");
+const { writeAuditEvent } = require("../helpers/auditHelper");
 const organizationSchema = require("../models/organization.model");
 const roleBasedPermissionSchema = require("../models/roleBasedPermission.model");
 const profileBasedPermissionSchema = require("../models/profileBasedPermission.model");
@@ -42,7 +42,8 @@ const { default: mongoose } = require("mongoose");
 
 exports.login = async (req, res) => {
   try {
-    const { email, password, ip_address, location, timeZone } = req.body;
+    const { email, password, location, timeZone } = req.body;
+    const ip_address = req.ip;
     if (typeof email !== "string" || typeof password !== "string" || !email.trim() || !password) {
       return res.status(203).json({ message: "Valid email and password required!", isSuccess: false });
     }
@@ -85,11 +86,11 @@ exports.login = async (req, res) => {
 
       const { authToken } = await generateAuthToken(findEmail._id, ip_address, location, timeZone);
 
-      await auditLogSchema.create({
+      await writeAuditEvent({ req,
         userId: findEmail._id,
         event: "USER_LOGIN",
         message: "User logged in successfully",
-        ipAddress: ip_address || req?.ip,
+        ipAddress: req?.ip,
         userAgent: req?.headers["user-agent"],
         metadata: { email, location, timeZone, status: "SUCCESS", loginType: "NORMAL" },
       });
@@ -108,11 +109,12 @@ exports.login = async (req, res) => {
         isMockUser: Boolean(findEmail.isMockUser),
       });
     } else {
-      await auditLogSchema.create({
+      await writeAuditEvent({ req,
         userId: findEmail._id,
         event: "USER_LOGIN",
         message: "Login failed - Invalid password!",
-        ipAddress: ip_address || req?.ip,
+        outcome: "FAILED",
+        ipAddress: req?.ip,
         userAgent: req?.headers["user-agent"],
         metadata: { email, location, timeZone, status: "FAILED", reason: "INVALID_PASSWORD" },
       });
@@ -158,16 +160,17 @@ exports.verify2faLogin = async (req, res) => {
       return res.status(203).json({ message: "Invalid verification code", isSuccess: false });
     }
 
-    const { ip_address, location, timeZone } = decoded;
+    const { location, timeZone } = decoded;
+    const ip_address = req.ip;
     const { authToken } = await generateAuthToken(findEmail._id, ip_address, location, timeZone);
 
     await userSchema.findByIdAndUpdate(findEmail._id, { twoFactorLastUsed: new Date() });
 
-    await auditLogSchema.create({
+    await writeAuditEvent({ req,
       userId: findEmail._id,
       event: "USER_LOGIN",
       message: "User logged in successfully (2FA)",
-      ipAddress: ip_address || req?.ip,
+      ipAddress: req?.ip,
       userAgent: req?.headers["user-agent"],
       metadata: { email: findEmail.email, location, timeZone, status: "SUCCESS", loginType: "2FA" },
     });
@@ -1421,6 +1424,47 @@ exports.getAllConfigs = async (req, res) => {
   }
 };
 
+function sellerConnectionLookup(cfgId, profileId, advertiserId, organizationId, userId) {
+  return {
+    from: "sellerconfigs",
+    let: { cfgId, profId: profileId, advertiserId, configOrgId: { $ifNull: [organizationId, null] } },
+    pipeline: [
+      {
+        $match: {
+          $expr: {
+            $and: [
+              { $eq: ["$configId", "$$cfgId"] },
+              { $eq: ["$profileId", "$$profId"] },
+              { $eq: ["$sellerId", "$$advertiserId"] },
+              { $ne: [{ $ifNull: ["$$advertiserId", ""] }, ""] },
+              {
+                $or: [
+                  { $and: [{ $ne: ["$$configOrgId", null] }, { $eq: ["$organizationId", "$$configOrgId"] }] },
+                  { $and: [{ $eq: [{ $ifNull: ["$organizationId", null] }, null] }, { $eq: ["$userId", userId] }] },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      {
+        $set: {
+          isActive: {
+            $and: [
+              { $eq: ["$isActive", true] },
+              { $ne: [{ $ifNull: ["$spRefreshToken", ""] }, ""] },
+            ],
+          },
+        },
+      },
+      { $sort: { isActive: -1, updatedAt: -1, _id: 1 } },
+      { $limit: 1 },
+      { $project: { spAccessToken: 0, spRefreshToken: 0, spClientSecret: 0 } },
+    ],
+    as: "sellerConfig",
+  };
+}
+
 exports.getAllSellerConfigs = async (req, res) => {
   try {
     const userId = req.user._id;
@@ -1430,30 +1474,12 @@ exports.getAllSellerConfigs = async (req, res) => {
 
     if (isOwner) {
       const pipeline = [
-        // { $match: { isActive: true } },
-        ...(matchOrgId ? [
-          {
-            $lookup: {
-              from: "configs",
-              localField: "configId",
-              foreignField: "_id",
-              as: "configDoc"
-            }
-          },
-          { $unwind: "$configDoc" },
-          { $match: { $or: [{ "configDoc.organizationId": matchOrgId }, { "configDoc.organizationId": null }, { "configDoc.organizationId": { $exists: false } }] } }
-        ] : []),
+        { $lookup: { from: "configs", localField: "configId", foreignField: "_id", as: "configDoc" } },
+        { $unwind: "$configDoc" },
+        ...(matchOrgId ? [{ $match: { "configDoc.organizationId": matchOrgId } }] : []),
+        { $unset: ["configDoc.adsAccessToken", "configDoc.adsRefressToken", "configDoc.adsClientSeceret"] },
         {
-          $lookup: {
-            from: "sellerconfigs",
-            let: { cfgId: "$configId", profId: "$profileId" },
-            pipeline: [
-              { $match: { $expr: { $and: [{ $eq: ["$configId", "$$cfgId"] }, { $eq: ["$profileId", "$$profId"] }] } } },
-              { $project: { spAccessToken: 0, spRefreshToken: 0, spClientSecret: 0 } },
-              { $limit: 1 }
-            ],
-            as: "sellerConfig"
-          }
+          $lookup: sellerConnectionLookup("$configId", "$profileId", "$advertiserId", "$configDoc.organizationId", userId),
         },
         { $addFields: { sellerConfig: { $arrayElemAt: ["$sellerConfig", 0] } } },
         {
@@ -1468,22 +1494,9 @@ exports.getAllSellerConfigs = async (req, res) => {
           }
         },
         {
-          $lookup: {
-            from: "configs",
-            localField: "configId",
-            foreignField: "_id",
-            as: "configId"
-          }
-        },
-        {
-          $addFields: {
-            configId: { $arrayElemAt: ["$configId", 0] }
-          }
-        },
-        {
           $project: {
             _id: 1,
-            configId: 1,
+            configId: "$configDoc",
             profileId: 1,
             name: 1,
             countryCode: 1,
@@ -1511,6 +1524,7 @@ exports.getAllSellerConfigs = async (req, res) => {
         {
           $match: {
             userId,
+            hasAccess: true,
             ...(matchOrgId && { organizationId: matchOrgId })
           }
         },
@@ -1518,7 +1532,8 @@ exports.getAllSellerConfigs = async (req, res) => {
           $lookup: {
             from: "profiles",
             let: {
-              pId: "$profileId"
+              pId: "$profileId",
+              cfgId: "$configId"
             },
             pipeline: [
               {
@@ -1528,6 +1543,7 @@ exports.getAllSellerConfigs = async (req, res) => {
                       {
                         $eq: ["$profileId", "$$pId"]
                       },
+                      { $eq: ["$configId", "$$cfgId"] },
                       // {
                       //   $eq: ["$isActive", true]
                       // }
@@ -1540,6 +1556,7 @@ exports.getAllSellerConfigs = async (req, res) => {
                   _id: 1,
                   configId: 1,
                   profileId: 1,
+                  advertiserId: 1,
                   name: 1,
                   countryCode: 1,
                   type: 1,
@@ -1567,35 +1584,12 @@ exports.getAllSellerConfigs = async (req, res) => {
           }
         },
         {
-          $lookup: {
-            from: "sellerconfigs",
-            let: {
-              cfgId: { $ifNull: ["$configId", "$profiles.configId"] },
-              profId: "$profileId"
-            },
-            pipeline: [
-              {
-                $match: {
-                  $expr: {
-                    $and: [
-                      {
-                        $eq: ["$configId", "$$cfgId"]
-                      },
-                      {
-                        $eq: ["$profileId", "$$profId"]
-                      }
-                    ]
-                  }
-                }
-              },
-              { $project: { spAccessToken: 0, spRefreshToken: 0, spClientSecret: 0 } },
-              {
-                $limit: 1
-              }
-            ],
-            as: "sellerConfig"
-          }
+          $lookup: { from: "configs", localField: "profiles.configId", foreignField: "_id", as: "configDoc" },
         },
+        { $unwind: "$configDoc" },
+        ...(matchOrgId ? [{ $match: { "configDoc.organizationId": matchOrgId } }] : []),
+        { $unset: ["configDoc.adsAccessToken", "configDoc.adsRefressToken", "configDoc.adsClientSeceret"] },
+        { $lookup: sellerConnectionLookup("$profiles.configId", "$profileId", "$profiles.advertiserId", "$configDoc.organizationId", userId) },
         {
           $addFields: {
             sellerConfig: {
@@ -1633,19 +1627,6 @@ exports.getAllSellerConfigs = async (req, res) => {
               }
             ],
             as: "amsSubscription"
-          }
-        },
-        {
-          $lookup: {
-            from: "configs",
-            localField: "profiles.configId",
-            foreignField: "_id",
-            as: "configDoc"
-          }
-        },
-        {
-          $addFields: {
-            configDoc: { $arrayElemAt: ["$configDoc", 0] }
           }
         },
         {
@@ -2388,16 +2369,17 @@ exports.verify2faEmailOtp = async (req, res) => {
 
     await otpSchema.deleteOne({ _id: otpRecord._id });
 
-    const { ip_address, location, timeZone } = decoded;
+    const { location, timeZone } = decoded;
+    const ip_address = req.ip;
     const { authToken } = await generateAuthToken(findEmail._id, ip_address, location, timeZone);
 
     await userSchema.findByIdAndUpdate(findEmail._id, { twoFactorLastUsed: new Date() });
 
-    await auditLogSchema.create({
+    await writeAuditEvent({ req,
       userId: findEmail._id,
       event: "USER_LOGIN",
       message: "User logged in successfully (2FA Email OTP)",
-      ipAddress: ip_address || req?.ip,
+      ipAddress: req?.ip,
       userAgent: req?.headers["user-agent"],
       metadata: { email: findEmail.email, location, timeZone, status: "SUCCESS", loginType: "2FA_EMAIL_OTP" },
     });

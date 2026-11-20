@@ -111,31 +111,16 @@ const productListingSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-productListingSchema.index({
-  configId: 1,
-  profileId: 1,
-  marketplaceId: 1,
-  productType: 1,
-  asin: 1
-})
+// 1️⃣ Unique identity: covers SyncProductListing upsert and findOne({ configId, profileId, sku }) in 0ms
+productListingSchema.index(
+  { configId: 1, profileId: 1, sku: 1, asin: 1 },
+  { unique: true, name: "configId_1_profileId_1_sku_1_asin_1" }
+);
 
-productListingSchema.index({
-  sku: "text",
-  asin: "text",
-  itemName: "text"
-})
+// 2️⃣ Cross-collection $lookup and ASIN queries
+productListingSchema.index({ profileId: 1, asin: 1 });
 
-productListingSchema.index({
-  productCreatedDate: -1
-})
-
-productListingSchema.index({
-  profileId: 1,
-  asin: 1
-})
-
-
-// Optimized Index for getSPProduct Pipeline Filters
+// 3️⃣ Optimized Index for getSPProduct Pipeline Filters & creation-date sorting
 productListingSchema.index({ configId: 1, profileId: 1, isFavorite: 1, productCreatedDate: -1 });
 
 module.exports = new mongoose.model("productlisting", productListingSchema);

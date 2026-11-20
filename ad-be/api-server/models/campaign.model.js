@@ -153,18 +153,8 @@ const campaignsSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// 1️⃣ Unique identity (REQUIRED)
-campaignsSchema.index(
-  { configId: 1, profileId: 1, campaignId: 1, reportDate: 1 },
-  { unique: true }
-);
-
-// 2️⃣ Cron / reporting
-campaignsSchema.index({
-  configId: 1,
-  profileId: 1,
-  reportDate: 1,
-});
+// Point queries for { configId, profileId, campaignId, reportDate } are covered
+// by the compound reporting index below ({ configId: 1, profileId: 1, reportDate: -1, campaignId: 1, ... }).
 
 // 3️⃣ Rules execution
 campaignsSchema.index({
@@ -172,21 +162,6 @@ campaignsSchema.index({
   profileId: 1,
   status: 1,
   reportDate: 1,
-});
-
-// 4️⃣ UI listing (optional)
-campaignsSchema.index({
-  configId: 1,
-  profileId: 1,
-  reportDate: -1,
-  spend: -1,
-});
-
-campaignsSchema.index({
-  configId: 1,
-  profileId: 1,
-  campaignId: 1,
-  reportDate: -1
 });
 
 campaignsSchema.index({
@@ -200,19 +175,6 @@ campaignsSchema.index({
   impressions: 1,
   orders: 1,
   budget: 1
-});
-
-campaignsSchema.index({
-  campaignId: 1,
-  profileId: 1,
-  reportDate: 1
-});
-
-campaignsSchema.index({
-  campaignId: 1,
-  profileId: 1,
-  reportDate: 1,
-  status: 1
 });
 
 campaignsSchema.index({

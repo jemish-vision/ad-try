@@ -18,7 +18,7 @@ function loadExport(source, name, dependencies) {
     const start = source.indexOf(`exports.${name} =`);
     const end = source.indexOf('\nexports.', start + 1);
     assert.ok(start >= 0);
-    const context = { exports: {}, ...dependencies };
+    const context = { exports: {}, writeAuditEvent: async () => {}, ...dependencies };
     vm.runInNewContext(source.slice(start, end < 0 ? undefined : end), context);
     return context.exports[name];
 }
@@ -34,6 +34,78 @@ test('approval endpoints use Super Admin middleware and the same import handler'
     const denied = { status(code) { this.code = code; return this; }, json() {} };
     requireSuperAdmin({ role: { roleName: ROLES.ADMIN } }, denied, () => assert.fail('not Super Admin'));
     assert.equal(denied.code, 403);
+});
+
+test('saving Seller groups preserves unchanged approvals and stores choices under the selected configuration', async () => {
+    const scope = { configId, profileId: 7, type: 'seller' };
+    const records = [
+        { ...scope, _id: 'kept', groupId: 'catalog', selectedSyncDays: 30, requestStatus: 'COMPLETED' },
+        { ...scope, _id: 'removed', groupId: 'listing', selectedSyncDays: 30, requestStatus: 'PENDING' },
+        { ...scope, _id: 'ads', type: 'ads', groupId: 'ads-group', selectedSyncDays: 30, requestStatus: 'PENDING' },
+        { ...scope, _id: 'other', configId: '222222222222222222222222', groupId: 'listing', selectedSyncDays: 30, requestStatus: 'PENDING' }
+    ];
+    const matches = (record, filter) => Object.entries(filter).every(([key, value]) => {
+        if (value?.$in) return value.$in.includes(record[key]);
+        if (value?.$ne) return record[key] !== value.$ne;
+        return record[key] === value;
+    });
+    const pendingWrites = [];
+    let failWrite = true;
+    const save = loadExport(config, 'saveSynchronizationDetails', {
+        mongoose: { isValidObjectId: objectIds.Types.ObjectId.isValid },
+        configSchema: { findById: () => ({ lean: async () => ({ organizationId: 'org' }) }) },
+        canManageAdsConfig: req => req.organizationId === 'org',
+        sellerOwnerScope: (organizationId, userId) => ({ organizationId, userId }),
+        profileSchema: { findOne: () => ({ lean: async () => ({ advertiserId: 'merchant' }) }) },
+        sellerConfigSchema: { exists: async filter => filter.configId === configId && filter.sellerId === 'merchant' },
+        coreGroupSchema: { find: query => ({
+            lean: async () => query.id.$in.map(id => ({ id, maxDays: 90 }))
+        }) },
+        synchronizeDetailsSchema: {
+            find(filter) {
+                const lean = async () => records.filter(record => matches(record, filter));
+                return { lean, sort: () => ({ lean }) };
+            },
+            findOneAndUpdate(filter, update) {
+                return { lean: async () => {
+                    if (failWrite) throw new Error('fixture write failure');
+                    pendingWrites.push(filter.groupId);
+                    const record = { ...filter, ...update.$setOnInsert, _id: 'inserted' };
+                    records.push(record);
+                    return record;
+                } };
+            },
+            async deleteMany(filter) {
+                const ids = new Set(records.filter(record => matches(record, filter)).map(record => record._id));
+                for (let index = records.length - 1; index >= 0; index--) {
+                    if (ids.has(records[index]._id)) records.splice(index, 1);
+                }
+                return { deletedCount: ids.size };
+            }
+        },
+        write_logs() {}
+    });
+    const request = { organizationId: 'org', user: { _id: 'user' },
+        body: { ...scope, items: [{ groupId: 'catalog', selectedSyncDays: 30 }, { groupId: 'orders', selectedSyncDays: 60 }] } };
+    const failed = reply();
+    await save(request, failed);
+    assert.equal(failed.code, 500);
+    assert.deepEqual(records.map(row => row._id), ['kept', 'removed', 'ads', 'other']);
+    failWrite = false;
+
+    const saved = reply();
+    await save(request, saved);
+    assert.equal(saved.code, 200);
+    assert.match(saved.body.message, /Pending Super Admin approval/);
+    assert.deepEqual(pendingWrites, ['orders']);
+    assert.deepEqual(Array.from(saved.body.data, row => [row.groupId, row.selectedSyncDays, row.requestStatus]),
+        [['catalog', 30, 'COMPLETED'], ['orders', 60, 'PENDING']]);
+    assert.deepEqual(records.map(row => row._id), ['kept', 'ads', 'other', 'inserted']);
+
+    const denied = reply();
+    await save({ ...request, organizationId: 'foreign' }, denied);
+    assert.equal(denied.code, 403);
+    assert.deepEqual(pendingWrites, ['orders']);
 });
 
 test('profile controls require access and an existing completed request for each enabled sync type', async () => {
@@ -132,11 +204,13 @@ test('admin claims each request once, imports both account types and leaves fail
         { _id: ids[2], profileId: 8, configId, groupId: 'EMPTY', type: 'seller', selectedSyncDays: 30, requestStatus: 'PENDING' }
     ];
     const dispatches = [];
+    const auditEvents = [];
     const flags = new Map();
     let finish;
     const finished = new Promise(resolve => { finish = resolve; });
     const execute = loadExport(organization, 'executeProfileSyncCron', {
         mongoose: objectIds,
+        writeAuditEvent: async event => auditEvents.push(event),
         synchronizeDetailsSchema: {
             findOneAndUpdate: (filter, update) => ({ lean: async () => {
                 const row = rows.find(r => r._id === filter._id && filter.requestStatus.$in.includes(r.requestStatus));
@@ -166,6 +240,14 @@ test('admin claims each request once, imports both account types and leaves fail
     assert.equal(res.code, 200);
     await finished;
     assert.deepEqual(rows.map(row => row.requestStatus), ['COMPLETED', 'FAILED', 'FAILED']);
+    assert.deepEqual(auditEvents.map(row => row.event), [
+        'HISTORICAL_SYNC_ACCEPTED', 'HISTORICAL_SYNC_ACCEPTED', 'HISTORICAL_SYNC_ACCEPTED',
+        'HISTORICAL_SYNC_COMPLETED', 'HISTORICAL_SYNC_FAILED', 'HISTORICAL_SYNC_FAILED'
+    ]);
+    assert.equal(auditEvents.filter(row => row.outcome === 'FAILED').length, 2);
+    assert.equal(auditEvents[3].operationId, auditEvents[0].operationId);
+    assert.ok(auditEvents[3].operationId.endsWith(ids[0]));
+    assert.notEqual(auditEvents[0].operationId, auditEvents[1].operationId);
     assert.deepEqual(dispatches, [
         [jobs.CAMPAIGN_REPORT, '2026-08-18', '2026-11-16'],
         [jobs.ORDER_LISTING, '2026-05-20', '2026-11-16'],

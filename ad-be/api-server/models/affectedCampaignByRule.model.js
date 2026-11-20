@@ -206,20 +206,8 @@ const affectedCampaignByRuleSchema = new mongoose.Schema(
 );
 
 // --- Performance Indexing ---
-affectedCampaignByRuleSchema.index({ profileId: 1, ruleSchema: 1, ruleId: 1, ruleDate: 1, ruleTime: 1 });
-affectedCampaignByRuleSchema.index({ configId: 1, profileId: 1, userId: 1, ruleSchema: 1, ruleId: 1, ruleDate: 1, type: 1, campaignId: 1 });
-affectedCampaignByRuleSchema.index({ configId: 1, profileId: 1, userId: 1, ruleSchema: 1, ruleId: 1, ruleDate: 1, ruleTime: 1, type: 1, campaignId: 1 });
-affectedCampaignByRuleSchema.index({ configId: 1, profileId: 1, campaignId: 1, reportDate: 1 });
-affectedCampaignByRuleSchema.index({ configId: 1, profileId: 1, status: 1 });
-affectedCampaignByRuleSchema.index({ campaignId: 1 });
-affectedCampaignByRuleSchema.index({ configId: 1, profileId: 1, userId: 1, ruleSchema: 1, ruleId: 1, ruleDate: 1, type: 1 });
-affectedCampaignByRuleSchema.index({ configId: 1, profileId: 1, userId: 1, ruleSchema: 1, ruleId: 1, ruleDate: 1, ruleTime: 1, type: 1, campaignId: 1, placement: 1 });
-affectedCampaignByRuleSchema.index({ configId: 1, profileId: 1, campaignId: 1 });
-affectedCampaignByRuleSchema.index({ configId: 1, profileId: 1, userId: 1, ruleSchema: 1, type: 1, ruleId: 1, ruleDate: 1, ruleTime: 1, campaignId: 1, adGroupId: 1, keywordId: 1, searchTerm: 1 });
-affectedCampaignByRuleSchema.index({ configId: 1, profileId: 1, userId: 1, ruleSchema: 1, type: 1, ruleId: 1, ruleDate: 1, ruleTime: 1, campaignId: 1, searchTerm: 1 });
-affectedCampaignByRuleSchema.index({ profileId: 1, campaignId: 1 });
-affectedCampaignByRuleSchema.index({ configId: 1, profileId: 1, userId: 1, ruleSchema: 1, ruleId: 1, ruleDate: 1, type: 1, campaignId: 1, targetId: 1 });
-affectedCampaignByRuleSchema.index({ configId: 1, profileId: 1, userId: 1, ruleSchema: 1, ruleId: 1, ruleDate: 1, ruleTime: 1, type: 1, campaignId: 1, adGroupId: 1, targetId: 1 });
+affectedCampaignByRuleSchema.index({ configId: 1, profileId: 1, ruleSchema: 1, ruleId: 1, ruleDate: -1, campaignId: 1 });
 affectedCampaignByRuleSchema.index({ configId: 1, profileId: 1, ruleId: 1, isActive: 1, campaignId: 1, targetId: 1 });
+affectedCampaignByRuleSchema.index({ configId: 1, profileId: 1, campaignId: 1, reportDate: 1 });
 
 module.exports = new mongoose.model("affectedCampaignByRule", affectedCampaignByRuleSchema);

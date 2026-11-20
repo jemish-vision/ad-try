@@ -47,21 +47,7 @@ const reportsSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Report type IDs are reused across categories (for example, spCampaigns for
-// campaigns, placements and ad groups), so reportName belongs in this identity.
-reportsSchema.index(
-  {
-    configId: 1,
-    profileId: 1,
-    reportName: 1,
-    reportTypeId: 1,
-    startDate: 1,
-    endDate: 1,
-  },
-  { unique: true, name: "uniq_report_request_by_name" }
-);
-
-// 2. Fast report status polling (Amazon report flow)
+// 1. Fast report status polling (Amazon report flow)
 reportsSchema.index({
   configId: 1,
   profileId: 1,
@@ -69,21 +55,22 @@ reportsSchema.index({
   createdAt: -1,
 });
 
-// 3. Report history listing (latest first)
+// 2. Report history listing (latest first)
 reportsSchema.index({
   configId: 1,
   profileId: 1,
   createdAt: -1,
 });
 
-
-// --- Performance Indexing ---
-reportsSchema.index({ reportTypeId: 1, reportName: 1, status: 1 });
+// --- Performance & Lifecycle Indexing ---
+// Date-range queries for existing completed/pending reports
 reportsSchema.index({ profileId: 1, configId: 1, startDate: 1, endDate: 1, reportTypeId: 1, status: 1 });
+
+// Recent report status queries without date constraints
 reportsSchema.index({ profileId: 1, configId: 1, reportTypeId: 1, status: 1 });
-reportsSchema.index({ profileId: 1, configId: 1, startDate: 1, endDate: 1, adProduct: 1, reportTypeId: 1, status: 1 });
-reportsSchema.index({ startDate: 1, endDate: 1, reportTypeId: 1, reportName: 1, status: 1 });
-reportsSchema.index({ cronHistoryId: 1 }, { name: "cronHistoryId_1" })
+
+// Cron job execution link & history finalization (REQUIRED - DO NOT REMOVE)
+reportsSchema.index({ cronHistoryId: 1 }, { name: "cronHistoryId_1" });
 
 // TTL index for 396-day data retention
 reportsSchema.index({ createdAt: 1 }, { expireAfterSeconds: 34214400 });

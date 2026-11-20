@@ -342,6 +342,11 @@ const Config = () => {
         const flow = params.get("flow");
         const sellerId = params.get("sellerId") || localStorage.getItem("appstore_seller_id") || sessionStorage.getItem("appstore_seller_id");
         const configId = params.get("configId");
+        if (status === "error" && params.get("tab") !== "seller-config" && !oauthHandledRef.current) {
+          oauthHandledRef.current = true;
+          Toast.error(params.get("message") || t("Amazon Ads authorization failed"));
+          window.history.replaceState({}, "", window.location.pathname);
+        }
         const isStoredAppstoreFlow = flow === "amazon_appstore_seller" || localStorage.getItem("amazon_appstore_flow") === "true" || sessionStorage.getItem("amazon_appstore_flow") === "true";
 
         if (status === "success" && configId && !oauthHandledRef.current) {
@@ -453,7 +458,7 @@ const Config = () => {
         return;
       }
 
-      window.open(authUrl, "_blank");
+      window.location.assign(authUrl);
     } catch {
       Toast.error(t("Something went wrong"));
     }
@@ -812,7 +817,11 @@ const Config = () => {
           forcedFlow={isForcedFlow}
           sellerId={appstoreSellerId}
           existingConfigs={configList}
-          onSuccess={(linkedConfigId) => {
+          onSuccess={(linkedConfigId, matchedSellerId) => {
+            if (typeof matchedSellerId === "string" && /^[a-z0-9]+$/i.test(matchedSellerId)) {
+              window.location.assign(`/settings?tab=seller-config&autoOpenSync=${encodeURIComponent(matchedSellerId)}`);
+              return;
+            }
             ApiListing();
             if (linkedConfigId) {
               setManageConfigId(linkedConfigId);
@@ -875,14 +884,13 @@ const Config = () => {
               open={showManageProfilesModal}
               onClose={(matchedSellerId) => {
                 setShowManageProfilesModal(false);
-                const currentConfigId = manageConfigId;
                 setManageConfigId(null);
                 setIsOAuthFlow(false);
                 ApiListing();
 
                 localStorage.removeItem("appstore_seller_id");
                 sessionStorage.removeItem("appstore_seller_id");
-                if (matchedSellerId) {
+                if (typeof matchedSellerId === "string" && /^[a-z0-9]+$/i.test(matchedSellerId)) {
                   window.location.href = `/settings?tab=seller-config&autoOpenSync=${encodeURIComponent(matchedSellerId)}`;
                 }
               }}

@@ -153,7 +153,7 @@ function AddRule({ setaddModalFlag, editId, setEditId, getRule, editData, adminR
   const placement = [
     { value: "Top of Search", label: "Top of Search" },
     { value: "Rest of Search", label: "Rest of Search" },
-    { value: "Product pages", label: "Product pages" },
+    { value: "Product Pages", label: "Product Pages" },
   ];
 
   const validatorLabel = [
@@ -1044,11 +1044,10 @@ function AddRule({ setaddModalFlag, editId, setEditId, getRule, editData, adminR
           {/* Hourly-Based Changes Section (At the very bottom) */}
           <div className={`col-12 col-lg-12 ${isHourlyBid ? "mb-2" : "mb-4"}`} id="bid-placement-rule-hourly-section">
             <div
-              className={`p-4 rounded-xl border transition-all duration-200 shadow-sm ${
-                isHourlyBid
+              className={`p-4 rounded-xl border transition-all duration-200 shadow-sm ${isHourlyBid
                   ? "bg-sky-50/70 border-sky-300/80 dark:bg-sky-950/20 dark:border-sky-700/50"
                   : "bg-slate-50/80 border-slate-200 dark:bg-slate-900/60 dark:border-slate-800"
-              }`}
+                }`}
             >
               {/* Toggle Header: Enable Hourly Bid */}
               <div className="flex items-center justify-between gap-3">
@@ -1164,11 +1163,11 @@ function AddRule({ setaddModalFlag, editId, setEditId, getRule, editData, adminR
                       </button>
                     </div>
 
-                    
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 italic">
-                            * {t("Note: If you set the 0 in slot then it will set the value to its base value.")}
-                          </p>
-                          {error?.hourlySlots && (
+
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 italic">
+                      * {t("Note: If you set the 0 in slot then it will set the value to its base value.")}
+                    </p>
+                    {error?.hourlySlots && (
                       <p className="text-red-500 text-xs font-bold bg-red-50 dark:bg-red-950/40 p-2.5 rounded-lg border border-red-200 dark:border-red-900/50 mt-3 mb-1">
                         ⚠️ {error.hourlySlots}
                       </p>
@@ -1201,12 +1200,12 @@ function AddRule({ setaddModalFlag, editId, setEditId, getRule, editData, adminR
 
                               {activeActions.map((action, aIdx) => {
                                 const isTop = action.placement === "Top of Search";
-                                const isProduct = action.placement === "Product pages";
+                                const isProduct = action.placement === "Product Pages";
                                 const badgeClass = isTop
                                   ? "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/30"
                                   : isProduct
-                                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                                  : "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30";
+                                    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                                    : "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30";
 
                                 return (
                                   <div key={action.placement || aIdx} className="flex flex-col">
@@ -1246,9 +1245,8 @@ function AddRule({ setaddModalFlag, editId, setEditId, getRule, editData, adminR
                                           value={act?.actionValue !== undefined && act?.actionValue !== null ? act.actionValue : ""}
                                           placeholder="0"
                                           onChange={(e) => handleSlotActionChange(slotIdx, action.placement, "actionValue", e.target.value)}
-                                          className={`w-full h-8 px-2.5 text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-500 text-slate-900 dark:text-white ${
-                                            isPercentage ? "pr-6" : ""
-                                          }`}
+                                          className={`w-full h-8 px-2.5 text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-500 text-slate-900 dark:text-white ${isPercentage ? "pr-6" : ""
+                                            }`}
                                         />
                                         {isPercentage && (
                                           <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold pointer-events-none">

@@ -98,6 +98,8 @@ exports.createRole = async (req, res) => {
         }
 
         const role = await roleSchema.create({ roleName: roleNameTrimmed, organizationId: targetOrgId });
+        req.auditChange = { organizationId: role.organizationId, resourceType: "role", resourceId: String(role._id),
+            newValue: { roleName: role.roleName } };
 
         return res.status(200).send({
             message: "Role saved successfully",
@@ -177,6 +179,9 @@ exports.updateRole = async (req, res) => {
             { _id: roleId },
             { $set: { roleName: roleNameTrimmed, organizationId: targetOrgId } }
         ).lean();
+        req.auditChange = { organizationId: targetOrgId, resourceType: "role", resourceId: String(role._id),
+            previousValue: { roleName: role.roleName, organizationId: role.organizationId },
+            newValue: { roleName: roleNameTrimmed, organizationId: targetOrgId } };
 
         return res.status(200).send({
             message: "Role updated successfully",
@@ -255,6 +260,8 @@ exports.deleteRole = async (req, res) => {
 
         await roleSchema.deleteOne({ _id: roleId });
         await permissionSchema.deleteOne({ roleId });
+        req.auditChange = { organizationId: role.organizationId, resourceType: "role", resourceId: String(role._id),
+            previousValue: { roleName: role.roleName, organizationId: role.organizationId }, newValue: null };
 
         return res.status(200).send({
             message: "Role deleted successfully.",
@@ -291,12 +298,15 @@ exports.updatePermission = async (req, res) => {
 
         // Permission document
         let permissionDoc = await permissionSchema.findOne({ roleId });
+        const previousPages = permissionDoc?.toObject().pages ?? [];
         const totalAllowedPages = pages?.filter(p => p?.allocatedActions && p?.allocatedActions?.length > 0);
 
         // First time → create
         if (!permissionDoc) {
             const filteredPages = pages.filter(p => p?.allocatedActions?.length > 0);
             permissionDoc = await permissionSchema.create({ roleId, pages: filteredPages, allocatedOn: new Date() });
+            req.auditChange = { organizationId: role.organizationId, resourceType: "role",
+                resourceId: String(role._id), previousValue: { pages: previousPages }, newValue: { pages: permissionDoc.toObject().pages } };
 
             return res.status(200).send({
                 message: "Permissions created successfully",
@@ -326,6 +336,8 @@ exports.updatePermission = async (req, res) => {
 
         // Save updated result
         const updated = await permissionDoc.save();
+        req.auditChange = { organizationId: role.organizationId, resourceType: "role",
+            resourceId: String(role._id), previousValue: { pages: previousPages }, newValue: { pages: updated.toObject().pages } };
 
         // Find users who should be notified
         const users = await userSchema.find({ roleId, isRolePermissionChangeNotify: true });

@@ -20,7 +20,7 @@ const packageSchema = require("../models/packages.model");
 const subscriptionSchema = require("../models/subscriptions.model");
 const subscriptionHistorySchema = require("../models/subscriptionHistories.model");
 const googleconfigSchema = require("../models/googleconfig.model");
-const auditLogSchema = require("../models/auditLog.model");
+const { writeAuditEvent } = require("../helpers/auditHelper");
 const organizationSchema = require("../models/organization.model");
 const userInvitationSchema = require("../models/userInvitation.model");
 const roleBasedPermissionSchema = require("../models/roleBasedPermission.model");
@@ -292,7 +292,7 @@ exports.resetPassword = async (req, res) => {
       }
     );
 
-    await auditLogSchema.create({
+    await writeAuditEvent({ req,
       userId: user._id,
       event: "PASSWORD_CHANGE",
       message: "Password reset successfully",
@@ -343,6 +343,8 @@ exports.createUser = async (req, res) => {
       isMockUser: Boolean(req.body.isMockUser),
     });
     await newUser.save();
+    req.auditChange = { resourceType: "user", resourceId: String(newUser._id),
+      newValue: { fullName: newUser.fullName, roleId: newUser.roleId, isMockUser: newUser.isMockUser } };
 
     return res.status(200).send({
       message: "User added successfully.",
@@ -422,6 +424,15 @@ exports.updateUser = async (req, res) => {
         { upsert: true }
       );
     }
+    const trackedChanges = {
+      ...(fullName && { fullName }),
+      ...(companyName && { companyName }),
+      ...(allowRoleIdUpdate && { roleId }),
+      ...(typeof req.body.isMockUser === "boolean" && { isMockUser: req.body.isMockUser }),
+    };
+    req.auditChange = { resourceType: "user", resourceId: String(user._id),
+      previousValue: Object.fromEntries(Object.keys(trackedChanges).map(field => [field, user[field] ?? null])),
+      newValue: trackedChanges, metadata: { phoneNumberChanged: Boolean(phoneNumber && phoneNumber !== user.phoneNumber) } };
 
     return res.status(200).send({
       message: "User profile updated successfully.",
@@ -544,6 +555,9 @@ exports.updateProfileAccess = async (req, res) => {
     userId = new mongoose.Types.ObjectId(userId);
 
     let orgId = req.organizationId || req.body.organizationId;
+    const before = await profileBasedPermissionSchema.find({ userId, ...(orgId && { organizationId: orgId }), hasAccess: true })
+      .select("configId profileId -_id").lean();
+    const granted = [];
     if (orgId) {
       orgId = new mongoose.Types.ObjectId(orgId);
       await profileBasedPermissionSchema.deleteMany({ userId, organizationId: orgId });
@@ -572,10 +586,13 @@ exports.updateProfileAccess = async (req, res) => {
             hasAccess: true
           });
           await perm.save();
+          granted.push({ configId, profileId: numericProfileId });
         }
       }
     }
 
+    req.auditChange = { organizationId: orgId, resourceType: "user", resourceId: String(userId),
+      previousValue: before, newValue: granted, metadata: { previousGrantCount: before.length, updatedGrantCount: granted.length } };
     return res.status(200).send({
       message: "Profile access updated successfully.",
       isSuccess: true,
@@ -662,7 +679,7 @@ exports.changePassword = async (req, res) => {
 
     const isMatch = await bcrypt.compare(oldPassword, user.password);
     if (!isMatch) {
-      await auditLogSchema.create({
+      await writeAuditEvent({ req,
         userId,
         event: "PASSWORD_CHANGE",
         message: "Password change failed due to invalid old password",
@@ -687,7 +704,7 @@ exports.changePassword = async (req, res) => {
       { new: true }
     );
 
-    await auditLogSchema.create({
+    await writeAuditEvent({ req,
       userId,
       event: "PASSWORD_CHANGE",
       message: "Password changed successfully",
@@ -1069,40 +1086,54 @@ exports.stripeWebhook = async (req, res) => {
   }
 
   try {
+    const payload = event.data.object;
+    const stripeSubscriptionId = typeof payload.subscription === "string" ? payload.subscription :
+      event.type.startsWith("customer.subscription.") ? payload.id : null;
+    let processed = true;
     switch (event.type) {
       case "checkout.session.completed":
         console.log('Checkout session completed:');
-        await handleCheckoutCompleted(event.data.object);
+        processed = await handleCheckoutCompleted(payload);
         break;
 
       case "invoice.payment_succeeded":
         console.log('Invoice payment succeeded:');
-        await handleInvoicePaymentSucceeded(event.data.object);
+        processed = await handleInvoicePaymentSucceeded(payload);
         break;
 
       case "invoice.payment_failed":
         console.log('Invoice payment failed:');
-        await handleInvoicePaymentFailed(event.data.object);
+        processed = await handleInvoicePaymentFailed(payload);
         break;
 
       case "customer.subscription.updated":
         console.log('Customer subscription updated:');
-        await handleSubscriptionUpdated(event.data.object);
+        processed = await handleSubscriptionUpdated(payload);
         break;
 
       case "customer.subscription.deleted":
         console.log('Customer subscription deleted:');
-        await handleSubscriptionDeleted(event.data.object);
+        processed = await handleSubscriptionDeleted(payload);
         break;
 
       default:
         console.log(`Unhandled event: ${event.type}`);
     }
 
+    const subscription = stripeSubscriptionId && await subscriptionSchema.findOne({ stripeSubscriptionId })
+      .select("_id").lean().catch(() => null);
+    const organization = subscription && await organizationSchema.findOne({ subscriptionId: subscription._id })
+      .select("_id").lean().catch(() => null);
+    req.auditChange = {
+      organizationId: organization?._id,
+      resourceType: stripeSubscriptionId ? "subscription" : "billing webhook",
+      resourceId: String(subscription?._id || stripeSubscriptionId || event.id),
+      outcome: processed === false || event.type === "invoice.payment_failed" ? "FAILURE" : "SUCCESS",
+      metadata: { providerEventId: event.id, providerEventType: event.type },
+    };
     res.json({ received: true });
   } catch (err) {
-      write_logs({ message: `[stripeWebhook Error] ${err?.message || err} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
-    console.error("🔥 Webhook handler failed:", err);
+    write_logs({ message: "[stripeWebhook Error] Webhook processing failed", log_type: "error" });
     res.status(500).json({ error: "Webhook processing failed" });
   }
 }
@@ -1131,7 +1162,7 @@ const handleCheckoutCompleted = async (session) => {
       write_logs({
         message: `handleCheckoutCompleted -> Warning: userId is missing in session metadata. Returning.`
       });
-      return;
+      return false;
     }
 
     write_logs({
@@ -1258,10 +1289,12 @@ const handleCheckoutCompleted = async (session) => {
       });
     }
 
+    return subscription.status === "active";
   } catch (error) {
     write_logs({
       message: `handleCheckoutCompleted -> Error: ${error.message}`
     });
+    return false;
   }
 }
 
@@ -1284,7 +1317,9 @@ exports.verifyPaymentSession = async (req, res) => {
     }
 
     if (session.payment_status === "paid" || session.status === "complete") {
-      await handleCheckoutCompleted(session);
+      const activated = await handleCheckoutCompleted(session);
+      req.auditChange = { outcome: activated ? "SUCCESS" : "FAILURE", resourceType: "subscription",
+        resourceId: typeof session.subscription === "string" ? session.subscription : undefined };
       return res.status(200).send({
         isSuccess: true,
         message: "Payment verified and subscription activated successfully!",
@@ -1392,10 +1427,12 @@ const handleInvoicePaymentSucceeded = async (invoice) => {
       });
     }
 
+    return subscription.status === "active";
   } catch (error) {
     write_logs({
       message: `handleInvoicePaymentSucceeded -> Error: ${error.message}`
     });
+    return false;
   }
 }
 
@@ -1406,18 +1443,13 @@ const handleInvoicePaymentFailed = async (invoice) => {
       message: `handleInvoicePaymentFailed -> Invoice: ${JSON.stringify(invoice)}`
     });
 
-    const subscription = await stripe.subscriptions.retrieve(
-      session.subscription
-    );
-
-    write_logs({
-      message: `handleInvoicePaymentFailed -> Subscription: ${JSON.stringify(subscription)}`
-    });
+    return true;
 
   } catch (error) {
     write_logs({
       message: `handleInvoicePaymentFailed -> Error: ${error.message}`
     });
+    return false;
   }
 }
 
@@ -1427,11 +1459,13 @@ const handleSubscriptionUpdated = async (subscription) => {
     write_logs({
       message: `handleSubscriptionUpdated -> Subscription: ${JSON.stringify(subscription)}`
     });
+    return true;
 
   } catch (error) {
     write_logs({
       message: `handleSubscriptionUpdated -> Error: ${error.message}`
     });
+    return false;
   }
 }
 
@@ -1480,10 +1514,12 @@ const handleSubscriptionDeleted = async (subscription) => {
     }
 
 
+    return subscription.status === "canceled" && Boolean(userId && packageId);
   } catch (error) {
     write_logs({
       message: `handleSubscriptionDeleted -> Error: ${error.message}`
     });
+    return false;
   }
 }
 
@@ -2315,14 +2351,12 @@ exports.superAdminLoginAsUser = async (req, res) => {
       { expiresIn: process.env.TOKEN_EXPIRE_TIME }
     );
 
-    await auditLogSchema.create({
-      userId: req.user._id,
-      event: "USER_LOGIN",
-      message: `Super Admin logged in as user ${targetUser.email} for organization ${org.organizationName}`,
-      ipAddress: req?.ip,
-      userAgent: req?.headers["user-agent"],
-      metadata: { targetUserId: targetUser._id, targetEmail: targetUser.email, targetOrganizationId: org._id, status: "SUCCESS" },
-    }).catch((err) => { write_logs({ message: "[superAdminLoginAsUser Silent Error] " + (err?.message || err), log_type: "error" }); });
+    await writeAuditEvent({
+      req, userId: req.user._id, organizationId: org._id,
+      event: "SUPER_ADMIN_IMPERSONATION", resourceType: "user", resourceId: String(targetUser._id),
+      message: "Super Admin started an impersonation session",
+      metadata: { targetUserId: targetUser._id },
+    });
 
     const hasFutureEndDate = org.endDate && new Date(org.endDate) > new Date();
     if (hasFutureEndDate && !org.isTrialActive && !org.planId) {

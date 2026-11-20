@@ -62,6 +62,8 @@ const { cron_logs } = require("../../winston/cronAutomation/logger");
 const amazonAxios = require("../helper/amazonAxios");
 const { RETURN_REASON_LABELS, RETURN_TYPE_LABELS, RETURN_STATUS_LABELS, RETURN_SOURCE_LABELS } = require("../constants/returns");
 const { logAudit } = require("../helpers/auditHelper");
+const { auditValues } = require("../helpers/auditChanges");
+const productPriceFields = ["basePrice", "sellingPrice", "maximumRetailPrice"];
 
 exports.cronGenerateOrderReport = async (customStartDate = null, customEndDate = null) => {
     cron_logs({
@@ -2036,7 +2038,10 @@ exports.AddProduct = async (req, res) => {
                 log_type: "info",
             })
             if (response.status === 200) {
-                await logAudit("PRODUCT_CREATION", `Product ${sku} created successfully.`, { itemName: payload?.itemName?.[0]?.value, sku: sku, marketplace_id: marketplaceId }, req?.user?.id);
+                await logAudit("PRODUCT_CREATION", `Product ${sku} created successfully.`, {
+                    configId, profileId, itemName: payload?.itemName?.[0]?.value, sku,
+                    resourceType: "product", resourceId: sku, marketplace_id: marketplaceId,
+                }, req?.user?.id);
                 return res.status(response.status).json({
                     isSuccess: true,
                     message: "Listing created successfully",
@@ -2104,7 +2109,10 @@ exports.updateProductPrice = async (req, res) => {
                 { ...(basePrice !== undefined && { basePrice: Number(basePrice) }) }
             ).lean();
 
-            await logAudit("PRODUCT_PRICE_UPDATE", `Product ${sku} base price updated successfully.`, { itemName: findProduct?.itemName, sku, basePrice: Number(basePrice) }, req?.user?.id);
+            await logAudit("PRODUCT_PRICE_UPDATE", `Product ${sku} base price updated successfully.`, {
+                configId, profileId, sku, resourceType: "product", resourceId: sku,
+                previousValue: auditValues(findProduct, ["basePrice"]), newValue: { basePrice: Number(basePrice) },
+            }, req?.user?.id);
 
             return res.status(200).json({
                 isSuccess: true,
@@ -2171,7 +2179,12 @@ exports.updateProductPrice = async (req, res) => {
                     }
                 ).lean()
 
-                await logAudit("PRODUCT_PRICE_UPDATE", `Product ${sku} price updated successfully.`, { itemName: findProduct?.itemName, sku, basePrice: Number(basePrice), sellingPrice: Number(sellingPrice), maximumRetailPrice: Number(maximumRetailPrice) }, req?.user?.id);
+                const newValue = auditValues({ basePrice, sellingPrice, maximumRetailPrice }, productPriceFields);
+                for (const field of Object.keys(newValue)) newValue[field] = Number(newValue[field]);
+                await logAudit("PRODUCT_PRICE_UPDATE", `Product ${sku} price updated successfully.`, {
+                    configId, profileId, sku, resourceType: "product", resourceId: sku,
+                    previousValue: auditValues(findProduct, Object.keys(newValue)), newValue,
+                }, req?.user?.id);
 
                 return res.status(response.status).json({
                     isSuccess: true,
@@ -2325,7 +2338,10 @@ exports.bulkUpdateProductPrice = async (req, res) => {
                         { ...(basePrice !== undefined && { basePrice }) }
                     ).lean();
 
-                    await logAudit("PRODUCT_PRICE_UPDATE", `Product ${rawSku} base price updated in bulk.`, { itemName: findProduct?.itemName, sku: rawSku, basePrice }, req?.user?.id);
+                    await logAudit("PRODUCT_PRICE_UPDATE", `Product ${rawSku} base price updated in bulk.`, {
+                        configId, profileId, sku: rawSku, resourceType: "product", resourceId: rawSku,
+                        previousValue: auditValues(findProduct, ["basePrice"]), newValue: { basePrice },
+                    }, req?.user?.id);
 
                     successList.push({ sku: rawSku });
                 } catch (dbErr) {
@@ -2381,11 +2397,9 @@ exports.bulkUpdateProductPrice = async (req, res) => {
                     ).lean();
 
                     await logAudit("PRODUCT_PRICE_UPDATE", `Product ${rawSku} price updated in bulk.`, {
-                        itemName: findProduct?.itemName,
-                        sku: rawSku,
-                        basePrice,
-                        sellingPrice,
-                        maximumRetailPrice
+                        configId, profileId, sku: rawSku, resourceType: "product", resourceId: rawSku,
+                        previousValue: auditValues(findProduct, productPriceFields.filter(field => ({ basePrice, sellingPrice, maximumRetailPrice })[field] !== undefined)),
+                        newValue: auditValues({ basePrice, sellingPrice, maximumRetailPrice }, productPriceFields),
                     }, req?.user?.id);
 
                     successList.push({ sku: rawSku });
@@ -2893,23 +2907,16 @@ exports.getSPProduct = async (req, res) => {
                                 },
                             },
                         });
-                        adBulkOps.push({
-                            updateMany: {
-                                filter: { configId, profileId: Number(profileId), asins: asin },
-                                update: { $set: rankData },
-                            },
-                        });
                     }
 
-                    Promise.all([
-                        listingBulkOps.length ? productListingSchema.bulkWrite(listingBulkOps, { ordered: false }) : null,
-                        adBulkOps.length ? productAdsSchema.bulkWrite(adBulkOps, { ordered: false }) : null,
-                    ]).catch((err) => {
-                        write_logs({
-                            message: `[getSPProduct Rank Persist Error] ${err?.message || err}`,
-                            log_type: "warn",
+                    if (listingBulkOps.length) {
+                        productListingSchema.bulkWrite(listingBulkOps, { ordered: false }).catch((err) => {
+                            write_logs({
+                                message: `[getSPProduct Rank Persist Error] ${err?.message || err}`,
+                                log_type: "warn",
+                            });
                         });
-                    });
+                    }
                 }
             }
         }
@@ -3616,7 +3623,6 @@ exports.cronBestSellerRank = async () => {
                         continue;
                     }
                     const ops = [];
-                    const adOps = [];
                     for (const item of response?.data?.items || []) {
                         const rankSet = (item.salesRanks || []).find((s) => s.marketplaceId === marketPlaceSettings.marketPlaceId) || item.salesRanks?.[0];
                         if (!rankSet) continue;
@@ -3663,23 +3669,10 @@ exports.cronBestSellerRank = async () => {
                                 },
                             });
                         }
-                        adOps.push({
-                            updateMany: {
-                                filter: { configId: profile.configId, profileId: profile.profileId, asins: item.asin },
-                                update: { $set: rankPayload },
-                            },
-                        });
                     }
                     if (ops.length) {
                         await productListingSchema.bulkWrite(ops, { ordered: false });
                         updated += ops.length;
-                    }
-                    if (adOps.length) {
-                        await Promise.all([
-                            productAdsSchema.bulkWrite(adOps, { ordered: false }),
-                            sdProductAdsSchema.bulkWrite(adOps, { ordered: false }),
-                            sbProductAdsSchema.bulkWrite(adOps, { ordered: false }),
-                        ]);
                     }
                 }
 

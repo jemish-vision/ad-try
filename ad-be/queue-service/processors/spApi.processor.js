@@ -30,10 +30,18 @@ function createSpApiProcessor() {
         case SP_API_TASKS.SYNC_ORDER: {
           const { cronGenerateTransactionsReport } = require("../../api-server/controllers/transactions.controller");
           const { cronGenerateOrderReport, cronGenerateRefundReport } = require("../../api-server/controllers/order.controller");
+          const { createRunJobSafely } = require("../../worker-service/runJobSafely.helper");
+          const CRON_JOBS = require("../../worker-service/cronJobs.enum");
+          const runJobSafely = createRunJobSafely("queue-sp-api");
+
+          const transactions = await runJobSafely(CRON_JOBS.TRANSACTION_REPORT, cronGenerateTransactionsReport);
+          const orders = await runJobSafely(CRON_JOBS.SYNC_ORDER, cronGenerateOrderReport);
+          const refunds = await runJobSafely(CRON_JOBS.REFUND_REPORT, cronGenerateRefundReport);
+
           result = {
-            transactions: await cronGenerateTransactionsReport(),
-            orders: await cronGenerateOrderReport(),
-            refunds: await cronGenerateRefundReport(),
+            transactions,
+            orders,
+            refunds,
           };
           break;
         }
@@ -200,6 +208,24 @@ function createSpApiProcessor() {
         case SP_API_TASKS.SYNC_PAST_DATA: {
           const { SyncPastData } = require("../../api-server/controllers/config.controller");
           result = await SyncPastData();
+          break;
+        }
+
+        case SP_API_TASKS.FC_INVENTORY_LEDGER: {
+          const { cronGenerateFcInventoryLedgerReport } = require("../../api-server/controllers/fcInventory.controller");
+          const { createRunJobSafely } = require("../../worker-service/runJobSafely.helper");
+          const CRON_JOBS = require("../../worker-service/cronJobs.enum");
+          const runJobSafely = createRunJobSafely("queue-sp-api");
+          result = await runJobSafely(CRON_JOBS.FC_INVENTORY_LEDGER, cronGenerateFcInventoryLedgerReport);
+          break;
+        }
+
+        case SP_API_TASKS.FC_STORAGE_FEE: {
+          const { cronGenerateFcStorageFeeReport } = require("../../api-server/controllers/fcInventory.controller");
+          const { createRunJobSafely } = require("../../worker-service/runJobSafely.helper");
+          const CRON_JOBS = require("../../worker-service/cronJobs.enum");
+          const runJobSafely = createRunJobSafely("queue-sp-api");
+          result = await runJobSafely(CRON_JOBS.FC_STORAGE_FEE, cronGenerateFcStorageFeeReport);
           break;
         }
 

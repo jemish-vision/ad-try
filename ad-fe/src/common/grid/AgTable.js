@@ -9,6 +9,7 @@ import "ag-grid-community/styles/ag-theme-alpine.css";
 import { ApiListGetColumns, ApiListUpdateColumns } from "../../api-wrapper/columns/ApiColumns";
 import { ProfileContext } from "../../helper/usecontext/useContext";
 import CustomizeColumns from "../../helper/modal/CustomizeColumns";
+import { createRowIdentityMap } from "./rowIdentity.mjs";
 
 ModuleRegistry.registerModules([AllCommunityModule, AllEnterpriseModule]);
 
@@ -470,25 +471,21 @@ const AgTable = forwardRef(function AgTable(
     ...externalDefaultColDef,
   }), [externalDefaultColDef, t]);
 
-  // ── Stable row identifier for AG Grid ────────────────────────────────────
+  const rowIds = useMemo(() => createRowIdentityMap(rowData), [rowData]);
+  const pinnedRowIds = useMemo(
+    () => createRowIdentityMap(pinnedBottomRowData, 'pinned'), [pinnedBottomRowData]
+  );
+  // Resolve against the supplied rows: getRowId does not receive a node/index.
   const getRowId = useCallback(
     (params) => {
       if (typeof rest.getRowId === "function") {
         return rest.getRowId(params);
       }
       const data = params?.data;
-      if (!data) return String(params?.node?.rowIndex ?? Math.random());
-      if (data.id) return String(data.id);
-      if (data._id) return String(data._id);
-      if (data.guid) return String(data.guid);
-      if (data.campaignId) return String(data.campaignId);
-      if (data.sku && data.state) return `${data.sku}_${data.state}`;
-      if (data.sku && data.fcCode) return `${data.sku}_${data.fcCode}`;
-      if (data.sku) return `${data.sku}_${params?.node?.rowIndex ?? 0}`;
-      if (data.asin) return `${data.asin}_${params?.node?.rowIndex ?? 0}`;
-      return String(params?.node?.rowIndex ?? Math.random());
+      return (params.rowPinned ? pinnedRowIds.get(data) : rowIds.get(data))
+        ?? pinnedRowIds.get(data);
     },
-    [rest]
+    [rest.getRowId, rowIds, pinnedRowIds]
   );
 
   const getRowClass = useCallback(({ rowIndex, data }) => {

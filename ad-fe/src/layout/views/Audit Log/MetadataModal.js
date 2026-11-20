@@ -9,14 +9,8 @@ import {
     DialogFooter
 } from "../../../components/ui/dialog";
 
-// ─── Keys to hide from the modal entirely ───────────────────────────────────
-const SKIP_KEYS = [
-    "id",
-    "_id",
-    "campaignId",
-    "adGroupId",
-    "placementId",
-];
+// Stable identifiers remain visible for tracing an audit event to its resource.
+const SKIP_KEYS = [];
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -249,17 +243,18 @@ const SectionTable = ({ entries, isDark }) => (
 
 // ─── MetadataModal ───────────────────────────────────────────────────────────
 
-function MetadataModal({ show, onHide, event, metadata, extraFields = {}, isDark }) {
+function MetadataModal({ show, onHide, event, metadata, extraFields = {}, changes = {}, isDark }) {
     const { t } = useTranslation();
     // Apply SKIP_KEYS filter on top-level sections
     const extraEntries = filterEntries(Object.entries(extraFields));
     const metaEntries = metadata && typeof metadata === "object"
         ? filterEntries(Object.entries(metadata))
-        : [];
+        : (metadata !== null && metadata !== undefined ? [["value", metadata]] : []);
 
     const hasExtra = extraEntries.length > 0;
     const hasMetadata = metaEntries.length > 0;
-    const hasAnything = hasExtra || hasMetadata;
+    const changeEntries = Object.entries(changes);
+    const hasAnything = hasExtra || hasMetadata || changeEntries.length > 0;
 
     return (
         <Dialog open={show} onOpenChange={(open) => { if (!open) onHide(); }}>
@@ -331,6 +326,17 @@ function MetadataModal({ show, onHide, event, metadata, extraFields = {}, isDark
                         </div>
                     )}
 
+                    {changeEntries.length > 0 && (
+                        <div className="mx-5 my-4 p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+                            <SectionLabel label={t("Before / After")} isDark={isDark} />
+                            {changeEntries.map(([key, value]) => (
+                                <div key={key} className="mb-3">
+                                    <h4 className="text-xs font-semibold mb-2">{t(key === "previousValue" ? "Before" : "After")}</h4>
+                                    {isEmpty(value) ? <code>{JSON.stringify(value) ?? "Not recorded"}</code> : <RenderValue value={value} isDark={isDark} />}
+                                </div>
+                            ))}
+                        </div>
+                    )}
                     {/* Metadata section */}
                     {hasMetadata && (
                         <div style={{

@@ -1008,8 +1008,27 @@ exports.listKeywords = async (req, res) => {
       {
         $lookup: {
           from: "ad_groups",
-          localField: "keyword.adGroupId",
-          foreignField: "adGroupId",
+          let: {
+            configId: "$keyword.configId",
+            profileId: "$keyword.profileId",
+            adGroupId: "$keyword.adGroupId",
+          },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$configId", "$$configId"] },
+                    { $eq: ["$profileId", "$$profileId"] },
+                    { $eq: ["$adGroupId", "$$adGroupId"] },
+                  ],
+                },
+              },
+            },
+            { $sort: { reportDate: -1 } },
+            { $limit: 1 },
+            { $project: { _id: 0, name: 1 } },
+          ],
           as: "adGroup",
         },
       },

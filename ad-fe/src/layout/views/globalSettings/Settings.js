@@ -23,10 +23,12 @@ import { ROLES } from "src/common/constants";
 
 function Settings() {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState(0);
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState(() =>
+    new URLSearchParams(location.search).get("tab") === "seller-config" ? 1 : 0
+  );
   const [hoveredIndex, setHoveredIndex] = useState(null);
   const [role] = useState(localStorage.getItem('role'));
-  const location = useLocation();
 
   const [isDark, setIsDark] = useState(document.documentElement.getAttribute("data-theme") === "dark");
 
@@ -40,6 +42,7 @@ function Settings() {
   const visibleTabs = useMemo(() => {
     const TABS = [
       {
+        id: "ads-config",
         label: t("Ads Config"),
         icon: <SettingsIcon className="h-4 w-4" />,
         description: t("Manage your advertising configuration, credentials, and API spend limits."),
@@ -47,6 +50,7 @@ function Settings() {
         isHidden: false,
       },
       {
+        id: "seller-config",
         label: t("Seller Config"),
         icon: <StorefrontIcon className="h-4 w-4" />,
         description: t("Configure seller account connection preferences and store details."),
@@ -97,7 +101,7 @@ function Settings() {
     if (tabParam !== null) {
       // Strip spaces AND hyphens so "seller-config" (used in redirect URLs) matches the "Seller Config" label.
       const normalize = (s) => String(s).toLowerCase().replace(/[\s-]+/g, "");
-      const matchedIdx = visibleTabs.findIndex(t => normalize(t.label) === normalize(tabParam));
+      const matchedIdx = visibleTabs.findIndex(tab => tab.id === tabParam || normalize(tab.label) === normalize(tabParam));
       if (matchedIdx !== -1) {
         setActiveTab(matchedIdx);
       } else {

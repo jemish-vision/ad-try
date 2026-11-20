@@ -406,6 +406,7 @@ exports.getProductPerformanceTrend = async (req, res) => {
     if (items.length) {
       const stockFind = { reportDate: { $exists: true, $ne: null } };
       if (targetProfileId) stockFind.profileId = targetProfileId;
+      if (cleanConfigId && mongoose.Types.ObjectId.isValid(cleanConfigId)) stockFind.configId = new mongoose.Types.ObjectId(cleanConfigId);
       const latest = await fcInventoryLedgerSchema
         .findOne(stockFind)
         .sort({ reportDate: -1 })
@@ -418,6 +419,7 @@ exports.getProductPerformanceTrend = async (req, res) => {
           asin: { $in: items.map((i) => i.asin) },
         };
         if (targetProfileId) stockMatch.profileId = targetProfileId;
+        if (cleanConfigId && mongoose.Types.ObjectId.isValid(cleanConfigId)) stockMatch.configId = new mongoose.Types.ObjectId(cleanConfigId);
         const fcRows = await fcInventoryLedgerSchema.aggregate([
           { $match: stockMatch },
           {

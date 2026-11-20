@@ -807,28 +807,28 @@ function buildDefaultMockDocuments() {
 
   targets.forEach((t) => {
     const m = computeMetrics(t);
-      const normalizedKeywordType =
-        t.keywordType === "KEYWORD"
-          ? t.matchType || "EXACT"
-          : t.keywordType === "TARGET"
+    const normalizedKeywordType =
+      t.keywordType === "KEYWORD"
+        ? t.matchType || "EXACT"
+        : t.keywordType === "TARGET"
           ? "TARGETING_EXPRESSION"
           : t.keywordType || t.matchType || "EXACT";
-      docs.push({
-        userId: null,
-        moduleType: "TARGETING",
-        subType: "MAIN",
-        adType: t.adType,
-        recordId: String(t.targetId),
-        parentId: String(t.campaignId),
-        isDefault: true,
-        data: {
-          ...t,
-          keywordType: normalizedKeywordType,
-          topOfSearchImpressionShare: t.topOfSearchImpressionShare ?? 42.5,
-          ...m,
-          reportDate: today,
-        },
-      });
+    docs.push({
+      userId: null,
+      moduleType: "TARGETING",
+      subType: "MAIN",
+      adType: t.adType,
+      recordId: String(t.targetId),
+      parentId: String(t.campaignId),
+      isDefault: true,
+      data: {
+        ...t,
+        keywordType: normalizedKeywordType,
+        topOfSearchImpressionShare: t.topOfSearchImpressionShare ?? 42.5,
+        ...m,
+        reportDate: today,
+      },
+    });
   });
 
   // Keyword Suggestions (`TARGETING`, `subType: "SUGGESTION"`)
@@ -1350,7 +1350,7 @@ function buildDefaultMockDocuments() {
           },
           {
             campaignId: c.campaignId,
-            placement: "Product pages",
+            placement: "Product Pages",
             ...prodMetrics,
             biddingStartegy: c.biddingStrategy,
             bidStrategy: c.biddingStrategy,
@@ -3177,8 +3177,8 @@ exports.createMockCampaign = async (req, res, forcedAdType = null) => {
     String(rawType).toUpperCase().includes("BRAND") || String(rawType).toUpperCase() === "SB"
       ? "SB"
       : String(rawType).toUpperCase().includes("DISPLAY") || String(rawType).toUpperCase() === "SD"
-      ? "SD"
-      : "SP";
+        ? "SD"
+        : "SP";
 
   const typeLabel = AD_TYPE_LABEL[adType] || "Sponsored Products";
   const campaignId = Math.floor(850000 + Math.random() * 49000);
@@ -3249,10 +3249,10 @@ exports.createMockCampaign = async (req, res, forcedAdType = null) => {
   const submittedProducts = Array.isArray(body.productAds)
     ? body.productAds
     : Array.isArray(body.products)
-    ? body.products
-    : Array.isArray(body.asins)
-    ? body.asins.map((a) => (typeof a === "string" ? { asin: a, sku: `SKU-${a}` } : a))
-    : [];
+      ? body.products
+      : Array.isArray(body.asins)
+        ? body.asins.map((a) => (typeof a === "string" ? { asin: a, sku: `SKU-${a}` } : a))
+        : [];
 
   const firstProd = submittedProducts[0] || {
     asin: "B0MOCK0001",
@@ -3359,13 +3359,13 @@ exports.createMockCampaign = async (req, res, forcedAdType = null) => {
   const rawKeywords = Array.isArray(body.keywords)
     ? body.keywords
     : Array.isArray(body.targets)
-    ? body.targets
-    : Array.isArray(body.targetingClauses)
-    ? body.targetingClauses
-    : [
-        { keywordText: `${campaignName.split("|")[1]?.trim() || "apexgear"} wireless`, matchType: "EXACT", bid: defaultBid },
-        { keywordText: `${campaignName.split("|")[1]?.trim() || "apexgear"} pro`, matchType: "PHRASE", bid: defaultBid },
-      ];
+      ? body.targets
+      : Array.isArray(body.targetingClauses)
+        ? body.targetingClauses
+        : [
+          { keywordText: `${campaignName.split("|")[1]?.trim() || "apexgear"} wireless`, matchType: "EXACT", bid: defaultBid },
+          { keywordText: `${campaignName.split("|")[1]?.trim() || "apexgear"} pro`, matchType: "PHRASE", bid: defaultBid },
+        ];
 
   rawKeywords.forEach((kw, idx) => {
     const targetId = `T-${Math.floor(920000 + Math.random() * 70000) + idx}`;
@@ -3507,7 +3507,7 @@ exports.createMockCampaign = async (req, res, forcedAdType = null) => {
         },
         {
           campaignId,
-          placement: "Product pages",
+          placement: "Product Pages",
           ...computeMetrics({ impressions: 4200, clicks: 130, spend: 95, sales: 410, orders: 8 }),
           biddingStartegy: biddingStrategy,
           bidStrategy: biddingStrategy,
@@ -3815,8 +3815,8 @@ exports.getTargeting = async (req, res) => {
       r.keywordType === "KEYWORD"
         ? r.matchType || "EXACT"
         : r.keywordType === "TARGET"
-        ? "TARGETING_EXPRESSION"
-        : r.keywordType || r.matchType || "EXACT",
+          ? "TARGETING_EXPRESSION"
+          : r.keywordType || r.matchType || "EXACT",
     topOfSearchImpressionShare: r.topOfSearchImpressionShare ?? Number((32 + (idx % 6) * 4.3).toFixed(1)),
   }));
 
@@ -3883,10 +3883,10 @@ exports.getTargeting = async (req, res) => {
   totalRow.topOfSearchImpressionShare =
     allFiltered.length > 0
       ? Number(
-          (
-            allFiltered.reduce((sum, r) => sum + Number(r.topOfSearchImpressionShare || 0), 0) / allFiltered.length
-          ).toFixed(1)
-        )
+        (
+          allFiltered.reduce((sum, r) => sum + Number(r.topOfSearchImpressionShare || 0), 0) / allFiltered.length
+        ).toFixed(1)
+      )
       : 0;
 
   return res.status(200).send({
@@ -3921,10 +3921,10 @@ exports.addMockTargets = async (req, res) => {
   const list = Array.isArray(body.keywords)
     ? body.keywords
     : Array.isArray(body.targets)
-    ? body.targets
-    : Array.isArray(body.updateTargets)
-    ? body.updateTargets
-    : [body];
+      ? body.targets
+      : Array.isArray(body.updateTargets)
+        ? body.updateTargets
+        : [body];
 
   const docs = list.map((item, idx) => {
     const targetId = `T-${Math.floor(940000 + Math.random() * 50000) + idx}`;
@@ -4338,7 +4338,7 @@ exports.getAllPlacements = async (req, res) => {
   const normalizePlacementName = (raw) => {
     if (!raw) return "Top of Search";
     if (raw === "Top of Search on-Amazon") return "Top of Search";
-    if (raw === "Detail Page on-Amazon") return "Product pages";
+    if (raw === "Detail Page on-Amazon") return "Product Pages";
     if (raw === "Other on-Amazon") return "Rest of Search";
     return raw;
   };
@@ -6215,7 +6215,7 @@ exports.getTopProductsGrid = async (req, res) => {
   if (customFilter) {
     try {
       parsedFilter = typeof customFilter === "string" ? JSON.parse(customFilter) : customFilter;
-    } catch (_) {}
+    } catch (_) { }
   }
   const selectedMatrix = req.body?.performanceMatrix || parsedFilter?.action?.$in;
   if (Array.isArray(selectedMatrix) && selectedMatrix.length > 0) {

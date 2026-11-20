@@ -103,12 +103,6 @@ const keywordSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-keywordSchema.index({ updatedAt: -1 });
-keywordSchema.index({ clicks: -1 });
-keywordSchema.index({ impressions: -1 });
-keywordSchema.index({ acos: -1 });
-keywordSchema.index({ reportDate: -1 });
-
 // 1️⃣ Unique identity
 keywordSchema.index(
   {
@@ -135,7 +129,7 @@ keywordSchema.index({
   reportDate: 1,
 });
 
-// 4️⃣ Campaign & ad group scoped rules
+// 4️⃣ Campaign & Ad group scoped rules
 keywordSchema.index({
   configId: 1,
   profileId: 1,
@@ -169,12 +163,6 @@ keywordSchema.pre("findOneAndUpdate", function () {
   this.setUpdate({ $set: { ...tempDoc, ...m } });
 });
 
-
-// --- Performance Indexing ---
-keywordSchema.index({configId:1,profileId:1,keywordId:1,campaignId:1,adGroupId:1,reportDate:1});
-keywordSchema.index({name:1});
-keywordSchema.index({matchType:1,name:1});
-keywordSchema.index({configId:1,profileId:1,keywordId:1,campaignId:1,adGroupId:1});
 
 // TTL index for 396-day data retention
 keywordSchema.index({ createdAt: 1 }, { expireAfterSeconds: 34214400 });

@@ -228,43 +228,49 @@ axios.interceptors.request.use(
       dispatch(handleLoader(true));
     }
 
-    let parsedProfile = null;
-    try {
-      parsedProfile = JSON.parse(localStorage.getItem("profile"));
-    } catch (e) { }
+    const apiBase = process.env.REACT_APP_API_BASE || "";
+    const isAbsoluteUrl = /^https?:\/\//i.test(config.url || "");
+    const isAppRequest = !isAbsoluteUrl || (!!apiBase && config.url.startsWith(apiBase));
 
-    const configId =
-      config.headers?.["x-config-id"] ||
-      parsedProfile?.config?.configId ||
-      parsedProfile?.configId ||
-      localStorage.getItem("configId");
+    if (isAppRequest) {
+      let parsedProfile = null;
+      try {
+        parsedProfile = JSON.parse(localStorage.getItem("profile"));
+      } catch (e) { }
 
-    if (configId) {
-      config.headers["x-config-id"] = configId;
+      const configId =
+        config.headers?.["x-config-id"] ||
+        parsedProfile?.config?.configId ||
+        parsedProfile?.configId ||
+        localStorage.getItem("configId");
+
+      if (configId) {
+        config.headers["x-config-id"] = configId;
+      }
+
+      const authToken = localStorage.getItem("sellerToken");
+      if (authToken && authToken !== "null" && authToken !== "undefined") {
+        config.headers["Authorization"] = `Bearer ${authToken}`;
+      }
+
+      // A caller may set an explicit per-request adType (e.g. a drilldown or row
+      // action that must act on one entity's own type); respect it. Otherwise send
+      // "All" only on screens that implement the combined view, degrading to SP
+      // elsewhere so no screen silently shows SP-labelled data under "All".
+      if (!config.headers["adType"]) {
+        const adType = getEffectiveAdType(window.location.pathname, localStorage.getItem("adType"));
+        if (adType) config.headers["adType"] = adType;
+      }
+
+      const organizationId = localStorage.getItem("organizationId");
+      if (organizationId && organizationId !== "null" && organizationId !== "undefined") {
+        config.headers["x-organization-id"] = organizationId;
+        config.headers["organizationid"] = organizationId;
+      }
+
+      const currentLanguage = localStorage.getItem("i18nextLng") || i18n.language || "en";
+      config.headers["Accept-Language"] = currentLanguage;
     }
-
-    const authToken = localStorage.getItem("sellerToken");
-    if (authToken && authToken !== "null" && authToken !== "undefined") {
-      config.headers["Authorization"] = `Bearer ${authToken}`;
-    }
-
-    // A caller may set an explicit per-request adType (e.g. a drilldown or row
-    // action that must act on one entity's own type); respect it. Otherwise send
-    // "All" only on screens that implement the combined view, degrading to SP
-    // elsewhere so no screen silently shows SP-labelled data under "All".
-    if (!config.headers["adType"]) {
-      const adType = getEffectiveAdType(window.location.pathname, localStorage.getItem("adType"));
-      if (adType) config.headers["adType"] = adType;
-    }
-
-    const organizationId = localStorage.getItem("organizationId");
-    if (organizationId && organizationId !== "null" && organizationId !== "undefined") {
-      config.headers["x-organization-id"] = organizationId;
-      config.headers["organizationid"] = organizationId;
-    }
-
-    const currentLanguage = localStorage.getItem("i18nextLng") || i18n.language || "en";
-    config.headers["Accept-Language"] = currentLanguage;
 
     return config;
   },

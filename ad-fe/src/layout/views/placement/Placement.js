@@ -69,10 +69,10 @@ const CONDITION_OPTIONS = [
   { value: "$lte", labelKey: "lessThanOrEqualTo" }
 ];
 
-const PLACEMENT_BID = ["Top of Search", "Rest of Search", "Product pages"]
+const PLACEMENT_BID = ["Top of Search", "Rest of Search", "Product Pages"]
 
 const TABS = [
-  { label: "all_placements", title: "All Placements", query: { placement: { $in: ["Top of Search", "Rest of Search", "Product pages"] } } },
+  { label: "all_placements", title: "All Placements", query: { placement: { $in: ["Top of Search", "Rest of Search", "Product Pages"] } } },
   { label: "audiences", title: "Audiences", query: { placement: { $in: ["Audience Segment"] } } },
   { label: "amazon_business_placements", title: "Amazon Business Placements", query: { placement: { $in: ["Business Placement"] } } },
 ]
@@ -700,7 +700,7 @@ function Placement() {
       campaignIds: [campaignId],
       ...(Boolean(placement === "Top of Search") && { topOfSearchBid: newBid }),
       ...(Boolean(placement === "Rest of Search") && { restOfSearchBid: newBid }),
-      ...(Boolean(placement === "Product pages") && { productPageBid: newBid }),
+      ...(Boolean(placement === "Product Pages") && { productPageBid: newBid }),
     };
 
     await ApiUpdatePlacementBid(payload)
@@ -851,7 +851,7 @@ function Placement() {
       if (placement === "Top of Search") {
         return { campaignId: row?.campaignId, topOfSearchBid: Math.round(newBid) };
       }
-      else if (placement === "Product pages") {
+      else if (placement === "Product Pages") {
         return { campaignId: row?.campaignId, productPageBid: Math.round(newBid) };
       }
       else {

@@ -4,19 +4,16 @@ const returnSchema = new mongoose.Schema(
   {
     configId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "config",
-      index: true
+      ref: "config"
     },
 
     profileId: {
-      type: Number,
-      index: true
+      type: Number
     },
 
     returnSource: {
       type: String,
-      enum: ["MFN", "FBA"],
-      index: true
+      enum: ["MFN", "FBA"]
     },
 
     reportType: {
@@ -29,28 +26,23 @@ const returnSchema = new mongoose.Schema(
     // =========================================================
 
     orderId: {
-      type: String,
-      index: true
+      type: String
     },
 
     orderItemId: {
-      type: String,
-      index: true
+      type: String
     },
 
     orderDate: {
-      type: Date,
-      index: true
+      type: Date
     },
 
     returnRequestDate: {
-      type: Date,
-      index: true
+      type: Date
     },
 
     returnRequestStatus: {
-      type: String,
-      index: true
+      type: String
     },
 
     aToZClaim: {
@@ -72,13 +64,11 @@ const returnSchema = new mongoose.Schema(
     },
 
     asin: {
-      type: String,
-      index: true
+      type: String
     },
 
     merchantSku: {
-      type: String,
-      index: true
+      type: String
     },
 
     fnsku: {
@@ -87,8 +77,7 @@ const returnSchema = new mongoose.Schema(
     },
 
     returnReasonCode: {
-      type: String,
-      index: true
+      type: String
     },
 
     inPolicy: {
@@ -131,8 +120,7 @@ const returnSchema = new mongoose.Schema(
     // =========================================================
 
     trackingId: {
-      type: String,
-      index: true
+      type: String
     },
 
     returnCarrier: {
@@ -190,8 +178,7 @@ const returnSchema = new mongoose.Schema(
 
     safetClaimId: {
       type: String,
-      default: null,
-      index: true
+      default: null
     },
 
     safetClaimState: {
@@ -234,17 +221,13 @@ const returnSchema = new mongoose.Schema(
   }
 );
 
-returnSchema.index(
-  {
-    configId: 1,
-    profileId: 1,
-    returnSource: 1,
-    orderId: 1,
-    orderItemId: 1
-  },
-  {
-    unique: true
-  }
-);
+// 1️⃣ Primary grid listing, analytics & date-range filtering with index sort
+returnSchema.index({ configId: 1, profileId: 1, returnRequestDate: -1, returnRequestStatus: 1 });
+
+// 2️⃣ Fast order lookup for FC inventory reconciliation
+returnSchema.index({ configId: 1, profileId: 1, orderId: 1 });
+
+// 3️⃣ Order date drilldown filter
+returnSchema.index({ configId: 1, profileId: 1, orderDate: -1 });
 
 module.exports = mongoose.model("return", returnSchema);

@@ -936,15 +936,6 @@ function Sidebar({ open, setOpen }) {
                     <DropdownMenuItem className="cursor-pointer py-2 px-3 rounded-md" onClick={() => navigate("/profile")}>
                       {t("View Profile")}
                     </DropdownMenuItem>
-                    {role !== ROLES.SUPER_ADMIN && !localStorage.getItem("superAdminToken") && (
-                      <DropdownMenuItem
-                        className="cursor-pointer py-2 px-3 rounded-md flex items-center gap-2 text-slate-700 dark:text-slate-200"
-                        onClick={() => window.location.href = "/select-organization?mode=switch"}
-                      >
-                        <i className="fa fa-exchange-alt text-xs text-blue-500" />
-                        <span>{t("Switch Organization")}</span>
-                      </DropdownMenuItem>
-                    )}
                     {role === ROLES.ADMIN && (
                       <DropdownMenuItem className="cursor-pointer py-2 px-3 rounded-md" onClick={() => navigate("/purchase-plans")}>
                         {t("Purchase Plans")}

@@ -24,7 +24,7 @@ const camapignSettingSchema = require("../models/camapignSetting.model");
 const limitedCPCSchema = require("../models/limitedCPC.model");
 const newProfileSyncSchema = require("../models/newProfileSync.model");
 const amsSubscriptionSchema = require("../models/amsSubscription.model");
-const auditLogSchema = require("../models/auditLog.model");
+const { writeAuditEvent } = require("../helpers/auditHelper");
 const organizationSchema = require("../models/organization.model");
 const reportDetailsSchema = require("../models/reportDetails.model");
 const synchronizeDetailsSchema = require("../models/synchronizeDetails.model");
@@ -68,6 +68,7 @@ const { notifyNewSellerConnection } = require("../helper/sellerNotification.help
 const { cronDeleteExpiredAccountsData } = require("../services/accountDataCleanup.service");
 const { ROLES } = require("../constants/roles");
 const amazonAxios = require("../helper/amazonAxios");
+const { sellerOwnerScope, sameSeller } = require("../helper/sellerConnectionScope");
 
 exports.updateAccessToken = async () => {
   // Token lifecycles are now handled distributed and on-demand via amazonAuth.service
@@ -296,139 +297,53 @@ exports.addToFavoriteProfile = async (req, res) => {
   }
 };
 
-async function usProfiles(checkConfigAds, configId) {
-  return new Promise((resolve, reject) => {
-    const profiles = [];
-    let profileOptions = {
+async function fetchRegionalAdsProfiles(ads, configId, endpoint, region, strict = false) {
+  try {
+    const { data } = await amazonAxios({
       method: "GET",
-      url: `${process.env.ROOT_LINK}/v2/profiles`,
+      url: `${endpoint}/v2/profiles`,
       headers: {
-        "Amazon-Advertising-API-ClientId": `${checkConfigAds.adsClientId}`,
-        Authorization: `Bearer ${checkConfigAds.adsAccessToken}`,
+        "Amazon-Advertising-API-ClientId": ads.adsClientId,
+        Authorization: `Bearer ${ads.adsAccessToken}`,
       },
-      meta: { configId: configId, tokenKey: "adsAccessToken" }
-    };
-
-    amazonAxios(profileOptions).then((response) => {
-      if (response.status == 200) {
-        const body = response.data;
-        if (body.code !== "UNAUTHORIZED") {
-          body.map(async (item) => {
-            let profile = {
-              configId,
-              profileId: item.profileId,
-              countryCode: item.countryCode,
-              currencyCode: item.currencyCode,
-              timezone: item.timezone,
-              marketplaceStringId: item?.accountInfo?.marketplaceStringId,
-              advertiserId: item?.accountInfo?.id,
-              type: item.accountInfo.type,
-              name: item?.accountInfo?.name,
-              amazonUrl: process.env.ROOT_LINK,
-            };
-            profiles.push(profile);
-          });
-          resolve(profiles);
-        }
-      }
-      else {
-        resolve(profiles);
-      }
-    }).catch((error) => {
-      write_logs({ message: `[usProfiles Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
-      resolve(profiles);
-    })
-  });
+      meta: { configId, tokenKey: "adsAccessToken" },
+    });
+    if (!Array.isArray(data)) throw new Error("Unexpected Amazon Ads profiles response");
+    return data.filter(item => item?.profileId && item.accountInfo).map(item => ({
+      configId,
+      profileId: item.profileId,
+      countryCode: item.countryCode,
+      currencyCode: item.currencyCode,
+      timezone: item.timezone,
+      marketplaceStringId: item.accountInfo.marketplaceStringId,
+      advertiserId: item.accountInfo.id,
+      type: item.accountInfo.type,
+      name: item.accountInfo.name,
+      amazonUrl: endpoint,
+    }));
+  } catch (error) {
+    write_logs({ message: `[Ads profiles] region=${region} status=${error.response?.status || "unavailable"}`, log_type: "warning" });
+    if (strict) throw error;
+    return [];
+  }
 }
 
-async function euProfiles(checkConfigAds, configId) {
-  return new Promise((resolve, reject) => {
-    const profiles = [];
-    let profileOptions = {
-      method: "GET",
-      url: `${process.env.EU_ROOT_LINK}/v2/profiles`,
-      headers: {
-        "Amazon-Advertising-API-ClientId": `${checkConfigAds.adsClientId}`,
-        Authorization: `Bearer ${checkConfigAds.adsAccessToken}`,
-      },
-      meta: { configId: configId, tokenKey: "adsAccessToken" }
-    };
+const usProfiles = (ads, configId, strict) =>
+  fetchRegionalAdsProfiles(ads, configId, process.env.ROOT_LINK, "US", strict);
+const euProfiles = (ads, configId, strict) =>
+  fetchRegionalAdsProfiles(ads, configId, process.env.EU_ROOT_LINK, "EU", strict);
+const feProfiles = (ads, configId, strict) =>
+  fetchRegionalAdsProfiles(ads, configId, process.env.FE_ROOT_LINK, "FE", strict);
 
-    amazonAxios(profileOptions).then((response) => {
-      if (response.status == 200) {
-        const body = response.data;
-        if (body.code !== "UNAUTHORIZED") {
-          body.map(async (item) => {
-            let profile = {
-              configId,
-              profileId: item.profileId,
-              countryCode: item.countryCode,
-              currencyCode: item.currencyCode,
-              timezone: item.timezone,
-              marketplaceStringId: item.accountInfo.marketplaceStringId,
-              advertiserId: item?.accountInfo?.id,
-              type: item.accountInfo.type,
-              name: item.accountInfo.name,
-              amazonUrl: process.env.EU_ROOT_LINK,
-            };
-            profiles.push(profile);
-          });
-          resolve(profiles);
-        }
-      }
-      else {
-        resolve(profiles);
-      }
-    }).catch((error) => {
-      write_logs({ message: `[euProfiles Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
-      resolve(profiles);
-    })
-  });
-}
-
-async function feProfiles(checkConfigAds, configId) {
-  return new Promise((resolve, reject) => {
-    const profiles = [];
-    let profileOptions = {
-      method: "GET",
-      url: `${process.env.FE_ROOT_LINK}/v2/profiles`,
-      headers: {
-        "Amazon-Advertising-API-ClientId": `${checkConfigAds.adsClientId}`,
-        Authorization: `Bearer ${checkConfigAds.adsAccessToken}`,
-      },
-      meta: { configId: configId, tokenKey: "adsAccessToken" }
-    };
-
-    amazonAxios(profileOptions).then((response) => {
-      if (response.status == 200) {
-        const body = response.data;
-        if (body.code !== "UNAUTHORIZED") {
-          body.map(async (item) => {
-            let profile = {
-              configId,
-              profileId: item.profileId,
-              countryCode: item.countryCode,
-              currencyCode: item.currencyCode,
-              timezone: item.timezone,
-              marketplaceStringId: item.accountInfo.marketplaceStringId,
-              advertiserId: item?.accountInfo?.id,
-              type: item.accountInfo.type,
-              name: item.accountInfo.name,
-              amazonUrl: process.env.FE_ROOT_LINK,
-            };
-            profiles.push(profile);
-          });
-          resolve(profiles);
-        }
-      }
-      else {
-        resolve(profiles);
-      }
-    }).catch((error) => {
-      write_logs({ message: `[feProfiles Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
-      resolve(profiles);
-    })
-  });
+async function fetchOnboardingAdsProfiles(configId) {
+  const ads = await getAccessToken(configId);
+  if (!ads?.adsAccessToken) throw new Error("Reconnect Amazon Ads to load its profiles");
+  const regions = await Promise.allSettled(
+    [usProfiles, euProfiles, feProfiles].map(fetch => fetch(ads, configId, true))
+  );
+  const available = regions.filter(result => result.status === "fulfilled");
+  if (!available.length) throw new Error("Amazon Ads did not return profiles from any region. Try again or reconnect Amazon Ads.");
+  return available.flatMap(result => result.value).filter(profile => String(profile.profileId) !== "2371257842854194");
 }
 
 exports.checkConnectAccount = async (req, res) => {
@@ -615,6 +530,12 @@ exports.amazonRedirect = async (req, res) => {
     if (!userId) return res.status(400).json({ isSuccess: false, message: "UserId is required" });
     if (!clientId) return res.status(400).json({ isSuccess: false, message: "ClientId is required (check environment variables)" });
     if (!clientSecret) return res.status(400).json({ isSuccess: false, message: "Client Secret is required (check environment variables)" });
+    if (reconnect && configId) {
+      const existing = await configSchema.findById(configId).lean();
+      if (!existing || !canManageAdsConfig(req, existing)) {
+        return res.status(403).json({ isSuccess: false, message: "You cannot reconnect this Ads account" });
+      }
+    }
 
     // Check plan connection limits if it's a new connection
     if (!reconnect && organizationId) {
@@ -649,7 +570,7 @@ exports.amazonRedirect = async (req, res) => {
     });
 
     /* ---------------------------- Generate URL ----------------------------- */
-    const redirectUrl = `${process.env.BASE_URL}/api/config/amazonCallback`;
+    const redirectUrl = `${process.env.BASE_URL.replace(/\/+$/, "")}/api/config/amazonCallback`;
     const authUrl = `${process.env.AUTH_GRANT_URL}?response_type=code&client_id=${clientId}&scope=${process.env.SCOPE}&redirect_uri=${encodeURIComponent(redirectUrl)}&state=${state}&prompt=consent`;
 
     return res.status(200).json({
@@ -671,136 +592,32 @@ exports.amazonRedirect = async (req, res) => {
  * - Retrieves Seller ID using Profile ID (matching advertiserId / accountInfo.id with sellerId)
  * - Updates sellerConfig with profileId and configId
  */
-async function linkSellerConfigWithAdsConfig(config, userId, organizationId) {
-  try {
-    if (!config || !config._id) return;
-    const configId = config._id;
-    const orgId = organizationId || config.organizationId;
+async function linkSellerConfigWithAdsConfig(config, userId, organizationId, profiles) {
+  const configId = config?._id;
+  const orgId = organizationId || config?.organizationId;
+  const owner = sellerOwnerScope(orgId, userId);
+  if (!configId || !owner || !profiles?.length) return 0;
 
-    const ownerConditions = [];
-    if (orgId) ownerConditions.push({ organizationId: orgId });
-    if (userId) ownerConditions.push({ userId });
-    ownerConditions.push({ organizationId: null });
-
-    const queryFilter = {
-      isActive: true,
-      $or: ownerConditions,
+  let linked = 0;
+  for (const profile of profiles) {
+    const sellerId = profile.advertiserId || profile.accountInfo?.id;
+    const profileId = Number(profile.profileId);
+    if (!sellerId || !profileId || (profile.type || profile.accountInfo?.type) !== "seller") continue;
+    const connection = await sellerConfigSchema.findOneAndUpdate({
       $and: [
-        {
-          $or: [
-            { configId: null },
-            { profileId: null },
-            { configId: configId }
-          ]
-        }
-      ]
-    };
-
-    let unlinkedSellerConfigs = await sellerConfigSchema.find(queryFilter);
-    if (!unlinkedSellerConfigs || unlinkedSellerConfigs.length === 0) {
-      write_logs({ message: `[linkSellerConfigWithAdsConfig] No eligible sellerConfig records found for queryFilter: ${queryFilter}`, log_type: "info" });
-      return;
-    }
-
-    let fetchedProfiles = [];
-    try {
-      const checkConfigAds = await getAccessToken(configId);
-      if (checkConfigAds?.adsAccessToken) {
-        const [us, eu, fe] = await Promise.all([
-          usProfiles(checkConfigAds, configId),
-          euProfiles(checkConfigAds, configId),
-          feProfiles(checkConfigAds, configId),
-        ]);
-        fetchedProfiles = [...us, ...eu, ...fe].filter((p) => p?.profileId);
-      }
-    } catch (profileErr) {
-      write_logs({ message: `[linkSellerConfigWithAdsConfig] Error fetching Ads profiles: ${profileErr?.message || profileErr}`, log_type: "error" });
-    }
-
-    const dbProfiles = await profileSchema.find({ configId }).lean();
-    const allProfiles = [...fetchedProfiles];
-    for (const dbP of dbProfiles) {
-      if (!allProfiles.some((p) => String(p.profileId) === String(dbP.profileId))) {
-        allProfiles.push({
-          profileId: dbP.profileId,
-          advertiserId: dbP.advertiserId,
-          type: dbP.type,
-          accountInfo: { id: dbP.advertiserId, type: dbP.type }
-        });
-      }
-    }
-
-    for (const sellerConfig of unlinkedSellerConfigs) {
-      let isModified = false;
-
-      // 1. Always assign configId to the unlinked sellerConfig
-      if (!sellerConfig.configId || String(sellerConfig.configId) !== String(configId)) {
-        sellerConfig.configId = configId;
-        isModified = true;
-      }
-
-      if (orgId && (!sellerConfig.organizationId || String(sellerConfig.organizationId) !== String(orgId))) {
-        sellerConfig.organizationId = orgId;
-        isModified = true;
-      }
-
-      if (userId && !sellerConfig.userId) {
-        sellerConfig.userId = userId;
-        isModified = true;
-      }
-
-      // 2. Try to find matching profile
-      let matchingProfile = null;
-
-      if (sellerConfig.sellerId) {
-        matchingProfile = allProfiles.find((p) => {
-          const profSellerId = p?.advertiserId || p?.accountInfo?.id;
-          return profSellerId && String(profSellerId).trim() === String(sellerConfig.sellerId).trim();
-        });
-      }
-
-      // Fallback: If no exact sellerId match found, pick first seller type profile or first available profile
-      if (!matchingProfile && allProfiles.length > 0) {
-        matchingProfile = allProfiles.find((p) => p?.type === "seller" || p?.accountInfo?.type === "seller") || allProfiles[0];
-      }
-
-      if (matchingProfile) {
-        if (!sellerConfig.profileId || String(sellerConfig.profileId) !== String(matchingProfile.profileId)) {
-          sellerConfig.profileId = Number(matchingProfile.profileId);
-          isModified = true;
-        }
-
-        const retrievedSellerId = matchingProfile.advertiserId || matchingProfile.accountInfo?.id;
-        if (!sellerConfig.sellerId && retrievedSellerId) {
-          sellerConfig.sellerId = retrievedSellerId;
-          isModified = true;
-        }
-      }
-
-      if (isModified) {
-        await sellerConfig.save();
-        write_logs({ message: `[linkSellerConfigWithAdsConfig] Updated sellerConfig ${sellerConfig._id} with configId=${sellerConfig.configId}, profileId=${sellerConfig.profileId}, sellerId=${sellerConfig.sellerId}`, log_type: "info" });
-
-        /* Duplicate Seller Config handling: mark duplicate active sellerConfigs as isActive = false */
-        if (sellerConfig.userId && sellerConfig.organizationId && sellerConfig.sellerId && sellerConfig.configId && sellerConfig.profileId) {
-          await sellerConfigSchema.updateMany(
-            {
-              _id: { $ne: sellerConfig._id },
-              userId: sellerConfig.userId,
-              organizationId: sellerConfig.organizationId,
-              sellerId: sellerConfig.sellerId,
-              configId: sellerConfig.configId,
-              profileId: sellerConfig.profileId,
-              isActive: true,
-            },
-            { $set: { isActive: false, disconnectedAt: new Date() } }
-          );
-        }
-      }
-    }
-  } catch (err) {
-    write_logs({ message: `[linkSellerConfigWithAdsConfig Error] ${err?.message || err}`, log_type: "error" });
+        owner,
+        { $or: [{ configId: null }, { configId }] },
+        { $or: [{ profileId: null }, { profileId }] },
+      ],
+      sellerId: String(sellerId).trim(),
+      isActive: true,
+      spRefreshToken: { $type: "string", $ne: "" },
+    }, {
+      $set: { configId, profileId, organizationId: orgId || null },
+    }, { sort: { updatedAt: -1 } });
+    if (connection) linked++;
   }
+  return linked;
 }
 
 exports.initiateAmazonSellerAuth = async (req, res) => {
@@ -887,34 +704,36 @@ exports.amazonCallback = async (req, res) => {
     }
 
     if (authState.isUsed) {
-      await auditLogSchema.create({
+      await writeAuditEvent({ req,
         userId: authState.userId,
-        event: "CSRF_ATTEMPT_INVALID",
+        event: "CSRF_ATTEMPT_INVALID", outcome: "FAILURE",
         message: "Amazon OAuth state already used",
         ipAddress: req.ip,
         userAgent: req.headers["user-agent"],
-        metadata: { state, status: "FAILED" }
+        metadata: { status: "FAILED" }
       });
 
       return res.redirect(`${frontendUrl}/settings?status=error&message=${encodeURIComponent("State already used. Please initiate a new connection.")}`);
     }
 
     if (new Date() > authState.expiresAt) {
-      await auditLogSchema.create({
+      await writeAuditEvent({ req,
         userId: authState.userId,
-        event: "CSRF_ATTEMPT_EXPIRE",
+        event: "CSRF_ATTEMPT_EXPIRE", outcome: "FAILURE",
         message: "Amazon OAuth state expired",
         ipAddress: req.ip,
         userAgent: req.headers["user-agent"],
-        metadata: { state, expiresAt: authState.expiresAt, status: "FAILED" }
+        metadata: { expiresAt: authState.expiresAt, status: "FAILED" }
       });
 
       return res.redirect(`${frontendUrl}/settings?status=error&message=${encodeURIComponent("Authorization session expired. Please try again.")}`);
     }
 
     /* ------------------- Check state type (SP vs ADS) ---------------------- */
-    const isSPAuth = authState.type === "SP" || Boolean(spapi_oauth_code) || Boolean(selling_partner_id);
-    if (isSPAuth) {
+    if (authState.type === "SP") {
+      if (authState.profileId) {
+        return completeProfileSellerOAuth(req, res, "amazonCallback");
+      }
       const finalSellerId = selling_partner_id || authState.sellerId;
       if (!finalSellerId) {
         return res.redirect(`${frontendUrl}/settings?status=error&message=${encodeURIComponent("Amazon Seller ID (Merchant ID) not received")}`);
@@ -925,9 +744,13 @@ exports.amazonCallback = async (req, res) => {
         return res.redirect(`${frontendUrl}/settings?status=error&message=${encodeURIComponent("Selling Partner ID mismatch")}`);
       }
 
-      /* Mark State Used */
-      authState.isUsed = true;
-      await authState.save();
+      const claimed = await tempStateConfigSchema.updateOne(
+        { _id: authState._id, isUsed: { $ne: true }, expiresAt: { $gt: new Date() } },
+        { $set: { isUsed: true } }
+      );
+      if (!claimed.modifiedCount) {
+        return res.redirect(`${frontendUrl}/settings?status=error&message=${encodeURIComponent("Authorization session expired or was already used. Start a new connection.")}`);
+      }
 
       const { organizationId, userId } = authState;
       const clientId = process.env.AMAZON_SP_CLIENT_ID || authState.clientId;
@@ -973,18 +796,12 @@ exports.amazonCallback = async (req, res) => {
       const tokenExpiresAt = new Date(Date.now() + (expires_in - 300) * 1000);
 
       /* Save / Update sellerConfig */
-      const ownerFilter = [];
-      if (organizationId) ownerFilter.push({ organizationId });
-      if (userId) ownerFilter.push({ userId });
-      ownerFilter.push({ organizationId: null });
-
-      let sellerConfig = await sellerConfigSchema.findOne({
-        sellerId: finalSellerId,
-        $or: ownerFilter
-      });
-      if (!sellerConfig && userId) {
-        sellerConfig = await sellerConfigSchema.findOne({ userId, sellerId: { $in: [null, "", finalSellerId] } });
+      const owner = sellerOwnerScope(organizationId, userId);
+      if (!owner) {
+        return res.redirect(`${frontendUrl}/settings?status=error&message=Seller%20account%20owner%20not%20found`);
       }
+      const sellerConfigQuery = { ...owner, sellerId: finalSellerId };
+      let sellerConfig = await sellerConfigSchema.findOne(sellerConfigQuery).sort({ updatedAt: -1 });
 
       const isBrandNewSeller = !sellerConfig || !sellerConfig.newConnectionEmailSentAt;
 
@@ -1037,7 +854,7 @@ exports.amazonCallback = async (req, res) => {
         await sellerConfig.save();
       }
 
-      await auditLogSchema.create({
+      await writeAuditEvent({ req,
         userId: userId || null,
         event: "SELLER_CONFIG_CONNECT",
         message: `Amazon Seller account connected for seller "${finalSellerId}"`,
@@ -1054,9 +871,13 @@ exports.amazonCallback = async (req, res) => {
     }
 
     /* ---------------------------- ADS OAuth Flow --------------------------- */
-    /* Mark State Used */
-    authState.isUsed = true;
-    await authState.save();
+    const claimed = await tempStateConfigSchema.updateOne(
+      { _id: authState._id, isUsed: { $ne: true }, expiresAt: { $gt: new Date() } },
+      { $set: { isUsed: true } }
+    );
+    if (!claimed.modifiedCount) {
+      return res.redirect(`${frontendUrl}/settings?status=error&message=${encodeURIComponent("Authorization session expired or was already used. Start a new connection.")}`);
+    }
 
     /* Extract Data */
     const { organizationId, userId, companyName, configId: stateConfigId, clientId, clientSeceret, isNew } = authState;
@@ -1077,7 +898,7 @@ exports.amazonCallback = async (req, res) => {
           code,
           client_id: clientId,
           client_secret: clientSeceret,
-          redirect_uri: `${process.env.BASE_URL}/api/config/amazonCallback`,
+          redirect_uri: `${process.env.BASE_URL.replace(/\/+$/, "")}/api/config/amazonCallback`,
         }),
         {
           headers: {
@@ -1113,7 +934,7 @@ exports.amazonCallback = async (req, res) => {
         config = await configSchema.findOne({ companyName, adsClientId: clientId, organizationId: null });
       }
 
-      if (!config) {
+      if (!config || String(config.organizationId || "") !== String(organizationId || "")) {
         return res.redirect(`${frontendUrl}/settings?status=error&message=${encodeURIComponent("Config record to reconnect was not found")}`);
       }
 
@@ -1132,7 +953,7 @@ exports.amazonCallback = async (req, res) => {
       await seedAccessToken({ kind: "ads", configId: config._id, accessToken: access_token, expiresIn: expires_in });
       await clearAccessTokenCache(config._id).catch((err) => { write_logs({ message: "[amazonCallback Silent Error] " + (err?.message || err), log_type: "error" }); });
 
-      await auditLogSchema.create({
+      await writeAuditEvent({ req,
         userId,
         configId: config._id,
         event: "CONFIG_RECONNECT",
@@ -1163,7 +984,7 @@ exports.amazonCallback = async (req, res) => {
       await seedAccessToken({ kind: "ads", configId: config._id, accessToken: access_token, expiresIn: expires_in });
       await clearAccessTokenCache(config._id).catch((err) => { write_logs({ message: "[amazonCallback Silent Error] " + (err?.message || err), log_type: "error" }); });
 
-      await auditLogSchema.create({
+      await writeAuditEvent({ req,
         userId,
         configId: config._id,
         event: "CONFIG_CONNECT",
@@ -1179,9 +1000,6 @@ exports.amazonCallback = async (req, res) => {
       });
 
     }
-
-    /* Link Seller Account with Ads Config ID and Profile ID */
-    await linkSellerConfigWithAdsConfig(config, userId, organizationId);
 
     /* Cleanup */
     await tempStateConfigSchema.deleteOne({ _id: authState._id });
@@ -1278,17 +1096,65 @@ exports.syncLast30Days = async (req, res) => {
   }
 };
 
+const sellerCentralDomains = {
+  US: "sellercentral.amazon.com",
+  CA: "sellercentral.amazon.ca",
+  MX: "sellercentral.amazon.com.mx",
+  BR: "sellercentral.amazon.com.br",
+  IE: "sellercentral.amazon.ie",
+  UK: "sellercentral-europe.amazon.com",
+  GB: "sellercentral-europe.amazon.com",
+  FR: "sellercentral-europe.amazon.com",
+  DE: "sellercentral-europe.amazon.com",
+  IT: "sellercentral-europe.amazon.com",
+  ES: "sellercentral-europe.amazon.com",
+  BE: "sellercentral.amazon.com.be",
+  NL: "sellercentral.amazon.nl",
+  SE: "sellercentral.amazon.se",
+  ZA: "sellercentral.amazon.co.za",
+  PL: "sellercentral.amazon.pl",
+  EG: "sellercentral.amazon.eg",
+  TR: "sellercentral.amazon.com.tr",
+  SA: "sellercentral.amazon.sa",
+  AE: "sellercentral.amazon.ae",
+  IN: "sellercentral.amazon.in",
+  SG: "sellercentral.amazon.sg",
+  AU: "sellercentral.amazon.com.au",
+  JP: "sellercentral.amazon.co.jp",
+};
+
 exports.amazonSPRedirect = async (req, res) => {
   try {
-    const { profileId, sellerId, sellerConfigId, reconnect = false } = req.body;
+    const { profileId } = req.body;
     const configId = req.body.configId || req.query.configId || req?.config?.configId || req?.headers?.["x-config-id"];
-    const clientId = req.body.clientId || process.env.AMAZON_SP_CLIENT_ID || process.env.AMAZON_ADS_CLIENT_ID;
-    const clientSecret = req.body.clientSecret || process.env.AMAZON_SP_CLIENT_SECRET || process.env.AMAZON_ADS_CLIENT_SECRET;
+    const userId = req.user?._id;
+    const clientId = process.env.AMAZON_SP_CLIENT_ID;
+    const clientSecret = process.env.AMAZON_SP_CLIENT_SECRET;
+    const appId = process.env.AMAZON_SP_APP_ID;
 
     /* ---------------------------- VALIDATION ---------------------------- */
-    if (!profileId) return res.status(400).json({ isSuccess: false, message: "ProfileId is required" });
-    if (!clientId) return res.status(400).json({ isSuccess: false, message: "ClientId is required (check environment variables)" });
-    if (!clientSecret) return res.status(400).json({ isSuccess: false, message: "Client Secret is required (check environment variables)" });
+    if (!mongoose.isValidObjectId(configId) || !Number.isSafeInteger(Number(profileId)) || Number(profileId) <= 0) {
+      return res.status(400).json({ isSuccess: false, message: "Save an Ads profile before connecting Seller Central" });
+    }
+    if (!clientId || !clientSecret || !appId) {
+      return res.status(503).json({ isSuccess: false, message: "Seller Central OAuth is not configured" });
+    }
+    const adsConfig = await configSchema.findById(configId).lean();
+    if (!adsConfig || adsConfig.isActive === false || !canManageAdsConfig(req, adsConfig)) {
+      return res.status(403).json({ isSuccess: false, message: "You cannot connect Seller Central for this Ads account" });
+    }
+    const profile = await profileSchema.findOne({ configId, profileId: Number(profileId), isActive: { $ne: false } }).lean();
+    if (profile?.type === "vendor") {
+      return res.status(400).json({ isSuccess: false, message: "This is an Amazon Vendor Ads profile. Seller Central Connect requires an Amazon Seller Ads profile." });
+    }
+    if (!profile?.advertiserId || profile.type !== "seller") {
+      return res.status(400).json({ isSuccess: false, message: "Select a saved Amazon Seller Ads profile" });
+    }
+    if (req.role?.roleName !== ROLES.SUPER_ADMIN && !await profileBasedPermissionSchema.exists({
+      userId, configId, profileId: Number(profileId), hasAccess: true,
+    })) {
+      return res.status(403).json({ isSuccess: false, message: "You cannot connect Seller Central for this Ads profile" });
+    }
 
     /* -------------------------- GENERATE STATE -------------------------- */
     const state = crypto.randomBytes(32).toString("hex");
@@ -1296,25 +1162,30 @@ exports.amazonSPRedirect = async (req, res) => {
     /* -------------------------- SAVE TEMP STATE ------------------------- */
     await tempStateConfigSchema.create({
       configId: configId || null,
-      profileId,
-      sellerId: sellerId || null,
-      sellerConfigId: sellerConfigId || null,
+      profileId: Number(profileId),
+      userId,
+      organizationId: adsConfig.organizationId || null,
+      sellerId: String(profile.advertiserId).trim(),
       clientId,
       clientSeceret: clientSecret,
       state,
       type: "SP",
-      isNew: !reconnect,
+      isNew: true,
       expiresAt: new Date(Date.now() + 10 * 60 * 1000),
     });
 
     /* --------------------------- CREATE URL ----------------------------- */
-    const appId = process.env.AMAZON_SP_APP_ID || "amzn1.sp.solution.e2c36b6c-ede9-4c77-84a9-57bd09efdbc8";
     const isDev = process.env.NODE_ENV === "dev" || !process.env.NODE_ENV;
-    const authUrl = `https://sellercentral.amazon.com/apps/authorize/consent?application_id=${appId}&state=${state}${isDev ? "&version=beta" : ""}`;
+    const domain = sellerCentralDomains[String(profile.countryCode || "").toUpperCase()] || sellerCentralDomains.US;
+    const consentUrl = new URL(`https://${domain}/apps/authorize/consent`);
+    consentUrl.searchParams.set("application_id", appId);
+    consentUrl.searchParams.set("state", state);
+    consentUrl.searchParams.set("redirect_uri", `${process.env.BASE_URL.replace(/\/+$/, "")}/api/config/amazonCallback`);
+    if (isDev) consentUrl.searchParams.set("version", "beta");
 
     return res.status(200).json({
       isSuccess: true,
-      data: { authUrl },
+      data: { authUrl: consentUrl.href },
     });
   } catch (error) {
     write_logs({ message: `[amazonSPRedirect Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
@@ -1334,11 +1205,18 @@ async function resumeApprovedSellerSync(configId, profileId) {
   }
 }
 
-exports.amazonSPCallback = async (req, res) => {
+exports.amazonSPCallback = (req, res) => completeProfileSellerOAuth(req, res, "amazonSPCallback");
+
+async function completeProfileSellerOAuth(req, res, callbackPath) {
   const frontendUrl = process.env.FRONTEND_REDIRECT_URL || "http://localhost:3000";
+  let auditScope = null;
+  const recordFailure = async reason => {
+    if (auditScope) await writeAuditEvent({ req, ...auditScope, event: "SELLER_CONFIG_CONNECT_FAILED",
+      message: "Seller profile authorization failed", outcome: "FAILED", metadata: { reason } });
+  };
   try {
     const { code: rawCode, spapi_oauth_code, selling_partner_id, state, error: amazonError, error_description } = req.query;
-    const code = rawCode || spapi_oauth_code;
+    const code = spapi_oauth_code || rawCode;
 
     /* ------------------- Handle Amazon Auth Denials / Errors ---------------- */
     if (amazonError) {
@@ -1357,41 +1235,56 @@ exports.amazonSPCallback = async (req, res) => {
 
     /* ---------------------------- CHECK STATE --------------------------- */
     const authState = await tempStateConfigSchema.findOne({ state });
-    if (!authState) {
+    if (!authState || authState.type !== "SP" || !authState.userId || !authState.configId || !authState.profileId) {
       return res.redirect(`${frontendUrl}/settings?tab=seller-config&status=error&message=${encodeURIComponent("Invalid or expired state session")}`);
     }
 
+    auditScope = { userId: authState.userId, organizationId: authState.organizationId,
+      configId: authState.configId, profileId: authState.profileId };
     if (authState.isUsed) {
+      await recordFailure("STATE_ALREADY_USED");
       return res.redirect(`${frontendUrl}/settings?tab=seller-config&status=error&message=${encodeURIComponent("State already used. Please initiate a new connection.")}`);
     }
 
     if (new Date() > authState.expiresAt) {
+      await recordFailure("STATE_EXPIRED");
       return res.redirect(`${frontendUrl}/settings?tab=seller-config&status=error&message=${encodeURIComponent("Authorization session expired. Please try again.")}`);
     }
 
-    /* --------------------------- MARK USED ------------------------------ */
-    authState.isUsed = true;
-    await authState.save();
-
     /* ---------------------------- EXTRACT DATA -------------------------- */
-    const { profileId, configId: stateConfigId, sellerId: stateSellerId, sellerConfigId, clientId, clientSeceret, isNew } = authState;
+    const { profileId, configId: stateConfigId, sellerId: stateSellerId, clientId, clientSeceret, userId, organizationId } = authState;
 
-    const finalSellerId = stateSellerId || selling_partner_id;
-    if (!finalSellerId) {
-      return res.redirect(`${frontendUrl}/settings?tab=seller-config&status=error&message=${encodeURIComponent("Amazon Seller ID (Merchant ID) not received")}`);
+    const finalSellerId = selling_partner_id;
+    const owner = sellerOwnerScope(organizationId, userId);
+    const profile = await profileSchema.findOne({ configId: stateConfigId, profileId, isActive: { $ne: false } }).lean();
+    const adsConfig = await configSchema.findById(stateConfigId).lean();
+    if (!owner || !adsConfig || adsConfig.isActive === false ||
+        String(adsConfig.organizationId || "") !== String(organizationId || "") ||
+        !sameSeller(profile?.advertiserId, finalSellerId) || !sameSeller(stateSellerId, finalSellerId)) {
+      await recordFailure("SELLER_PROFILE_MISMATCH");
+      return res.redirect(`${frontendUrl}/settings?tab=seller-config&status=error&message=${encodeURIComponent("Authorize the Seller Central account that owns this Ads profile.")}`);
+    }
+
+    const claimed = await tempStateConfigSchema.updateOne(
+      { _id: authState._id, isUsed: { $ne: true }, expiresAt: { $gt: new Date() } },
+      { $set: { isUsed: true } }
+    );
+    if (!claimed.modifiedCount) {
+      await recordFailure("STATE_CLAIM_FAILED");
+      return res.redirect(`${frontendUrl}/settings?tab=seller-config&status=error&message=${encodeURIComponent("Authorization session expired or was already used. Start a new connection.")}`);
     }
 
     /* -------------------------- EXCHANGE TOKEN -------------------------- */
     let tokenResponse;
     try {
       tokenResponse = await axios.post(
-        process.env.AUTH_LINK,
+        process.env.AUTH_LINK || "https://api.amazon.com/auth/o2/token",
         new URLSearchParams({
           grant_type: "authorization_code",
           code,
           client_id: clientId,
           client_secret: clientSeceret,
-          redirect_uri: `${process.env.BASE_URL}/api/config/amazonSPCallback`,
+          redirect_uri: `${process.env.BASE_URL.replace(/\/+$/, "")}/api/config/${callbackPath}`,
         }),
         {
           headers: {
@@ -1401,6 +1294,7 @@ exports.amazonSPCallback = async (req, res) => {
         }
       );
     } catch (err) {
+      await recordFailure("TOKEN_EXCHANGE_FAILED");
       write_logs({ message: `[amazonSPCallback Error] ${err?.message || err} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
       const errMsg = err.response?.data?.error_description || err.response?.data?.message || err.message || "Failed to exchange SP token with Amazon";
       return res.redirect(`${frontendUrl}/settings?tab=seller-config&status=error&message=${encodeURIComponent(errMsg)}`);
@@ -1409,280 +1303,174 @@ exports.amazonSPCallback = async (req, res) => {
     /* ---------------------------- TOKEN DATA ---------------------------- */
     const { access_token, refresh_token, expires_in } = tokenResponse?.data || {};
     if (!access_token || !refresh_token) {
+      await recordFailure("TOKEN_RESPONSE_INVALID");
       return res.redirect(`${frontendUrl}/settings?tab=seller-config&status=error&message=${encodeURIComponent("Invalid token response received from Amazon")}`);
     }
 
-    /* ------------------------- SAVE / UPDATE ---------------------------- */
-    let config;
-
-    if (sellerConfigId) {
-      config = await sellerConfigSchema.findById(sellerConfigId);
-
-      if (!config) {
-        return res.redirect(`${frontendUrl}/settings?tab=seller-config&status=error&message=${encodeURIComponent("Seller config not found")}`);
-      }
-
-      config.spAccessToken = access_token;
-      config.spRefreshToken = refresh_token;
-      config.sellerId = finalSellerId;
-      config.tokenExpire = expires_in;
-      config.spTokenExpiresAt = new Date(Date.now() + (expires_in - 300) * 1000);
-      config.isActive = true;
-      config.disconnectedAt = null;
-      config.deletionReminder15SentAt = null;
-      config.deletionReminder1SentAt = null;
-      config.isDataDeletionStopped = false;
-
+    const scope = { configId: stateConfigId, profileId, sellerId: finalSellerId };
+    let config = await sellerConfigSchema.findOne({ ...scope, ...owner }).sort({ updatedAt: -1 });
+    const isReconnect = Boolean(config);
+    const credentials = {
+      organizationId,
+      spClientId: clientId,
+      spClientSecret: clientSeceret,
+      spAccessToken: access_token,
+      spRefreshToken: refresh_token,
+      tokenExpire: expires_in,
+      spTokenExpiresAt: new Date(Date.now() + (expires_in - 300) * 1000),
+      isActive: true,
+      disconnectedAt: null,
+      deletionReminder15SentAt: null,
+      deletionReminder1SentAt: null,
+      isDataDeletionStopped: false,
+    };
+    if (config) {
+      Object.assign(config, credentials);
       await config.save();
-      if (config.configId && config.profileId) {
-        await seedAccessToken({ kind: "sp", configId: config.configId.toString(), profileId: config.profileId, accessToken: access_token, expiresIn: expires_in });
-      }
-      await clearSPAccessTokenCache(config.configId, config.profileId).catch((err) => { write_logs({ message: "[amazonSPCallback Silent Error] " + (err?.message || err), log_type: "error" }); });
-
-      await resumeApprovedSellerSync(config.configId, config.profileId);
     } else {
-      const profile = await profileSchema.findOne({ profileId: Number(profileId), ...(stateConfigId && { configId: stateConfigId }) }).lean();
-      if (!profile) {
-        return res.redirect(`${frontendUrl}/settings?tab=seller-config&status=error&message=${encodeURIComponent("Profile not found")}`);
-      }
-
-      config = await sellerConfigSchema.create({
-        configId: profile?.configId,
-        profileId,
-        sellerId: finalSellerId,
-        spClientId: clientId,
-        spClientSecret: clientSeceret,
-        spAccessToken: access_token,
-        spRefreshToken: refresh_token,
-        tokenExpire: expires_in,
-        spTokenExpiresAt: new Date(Date.now() + (expires_in - 300) * 1000),
-        isActive: true,
-      });
-      if (config.configId && config.profileId) {
-        await seedAccessToken({ kind: "sp", configId: config.configId.toString(), profileId: config.profileId, accessToken: access_token, expiresIn: expires_in });
-      }
-      await clearSPAccessTokenCache(config.configId, config.profileId).catch((err) => { write_logs({ message: "[amazonSPCallback Silent Error] " + (err?.message || err), log_type: "error" }); });
-
-      await resumeApprovedSellerSync(profile?.configId, profileId);
+      config = await sellerConfigSchema.create({ ...scope, ...credentials, userId });
     }
 
-    if (!config.newConnectionEmailSentAt) {
-      const linkedProf = await profileSchema.findOne({ profileId: Number(profileId || config.profileId) }).lean();
-      await notifyNewSellerConnection({
-        sellerId: finalSellerId,
-        userId: authState.userId,
-        organizationId: authState.organizationId,
-        source: "In-App Seller Connect (Settings)",
-        profiles: linkedProf ? [linkedProf] : [],
-        req,
-      });
-      config.newConnectionEmailSentAt = new Date();
-      await config.save();
+    // Connection is saved. Cache, sync and notification failures should not report OAuth failure.
+    const effects = await Promise.allSettled([
+      (async () => {
+        await clearSPAccessTokenCache(String(stateConfigId), profileId);
+        await seedAccessToken({ kind: "sp", configId: String(stateConfigId), profileId, accessToken: access_token, expiresIn: expires_in });
+      })(),
+      resumeApprovedSellerSync(stateConfigId, profileId),
+      (async () => {
+        if (!config.newConnectionEmailSentAt) {
+          const notification = await notifyNewSellerConnection({
+            sellerId: finalSellerId, userId, organizationId,
+            source: "In-App Seller Connect (Settings)", profiles: [profile], req,
+          });
+          if (notification?.delivered !== true) throw new Error("Seller notification delivery failed");
+          config.newConnectionEmailSentAt = new Date();
+          await config.save();
+        }
+      })(),
+    ]);
+    if (effects.some(result => result.status === "rejected")) {
+      write_logs({ message: "[amazonSPCallback] Seller connected with incomplete post-connect work", log_type: "warning" });
     }
+
+    await writeAuditEvent({ req, ...auditScope, sellerConfigId: config._id,
+      event: isReconnect ? "SELLER_CONFIG_RECONNECT" : "SELLER_CONFIG_CONNECT",
+      message: isReconnect ? "Seller profile connection renewed" : "Seller profile connected",
+      outcome: "SUCCESS", metadata: { postConnectFailures: effects.filter(result => result.status === "rejected").length } });
 
     /* ----------------------------- CLEANUP ------------------------------ */
-    await tempStateConfigSchema.deleteOne({ _id: authState._id });
+    await tempStateConfigSchema.deleteOne({ _id: authState._id }).catch(error => {
+      write_logs({ message: `[amazonSPCallback] State cleanup failed: ${error.message}`, log_type: "warning" });
+    });
 
     /* ----------------------------- REDIRECT ----------------------------- */
     // Only the profile/seller just connected via this OAuth flow should trigger
-    // the sync setup modal — the frontend matches autoOpenSync against sellerId/profileId/configId.
-    return res.redirect(`${frontendUrl}/settings?tab=seller-config&status=success&autoOpenSync=${encodeURIComponent(finalSellerId)}`);
+    // the sync setup modal for this exact Seller configuration.
+    return res.redirect(`${frontendUrl}/settings?tab=seller-config&status=success&autoOpenSync=${encodeURIComponent(config._id)}`);
 
   } catch (error) {
+    await recordFailure("CONNECTION_SAVE_FAILED");
     write_logs({ message: `[amazonSPCallback Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     return res.redirect(`${frontendUrl}/settings?tab=seller-config&status=error&message=${encodeURIComponent(error?.message || "Internal server error")}`);
   }
 }
 
 exports.amazonSPRefreshToken = async (req, res) => {
-  const { _id: userId } = req?.user ?? {};
   try {
-    const {
-      sellerConfigId,
-      refreshToken,
+    const { sellerConfigId } = req.body;
+    const configId = req.body.configId || req.config?.configId;
+    const profileId = Number(req.body.profileId);
+    const userId = req.user._id;
+
+    if (!mongoose.isValidObjectId(configId) || !Number.isSafeInteger(profileId) || profileId <= 0 ||
+        (sellerConfigId && !mongoose.isValidObjectId(sellerConfigId))) {
+      return res.status(400).json({ isSuccess: false, message: "Select an Ads configuration and profile to refresh Seller Central" });
+    }
+
+    const adsConfig = await configSchema.findById(configId).lean();
+    if (!adsConfig || adsConfig.isActive === false || !canManageAdsConfig(req, adsConfig) ||
+        (req.role?.roleName !== ROLES.SUPER_ADMIN && !await profileBasedPermissionSchema.exists({
+          userId, configId, profileId, organizationId: adsConfig.organizationId || null, hasAccess: true,
+        }))) {
+      return res.status(403).json({ isSuccess: false, message: "You cannot refresh Seller Central for this Ads profile" });
+    }
+
+    const profile = await profileSchema.findOne({ configId, profileId, type: "seller", isActive: { $ne: false } }).lean();
+    if (!profile?.advertiserId) {
+      return res.status(404).json({ isSuccess: false, message: "Amazon Seller Ads profile not found" });
+    }
+
+    const scope = {
+      ...sellerOwnerScope(adsConfig.organizationId, userId),
+      configId,
       profileId,
-      sellerId,
-    } = req.body;
-    const clientId = req.body.clientId || process.env.AMAZON_SP_CLIENT_ID || process.env.AMAZON_ADS_CLIENT_ID;
-    const clientSecret = req.body.clientSecret || process.env.AMAZON_SP_CLIENT_SECRET || process.env.AMAZON_ADS_CLIENT_SECRET;
-    const configId = req.body.configId || req?.config?.configId;
+      sellerId: String(profile.advertiserId).trim(),
+      isActive: true,
+    };
+    if (sellerConfigId) scope._id = sellerConfigId;
 
-    /* -------------------- 1. Validate Input -------------------- */
-    if (!refreshToken || !profileId) {
-      return res.status(400).json({
-        isSuccess: false,
-        message: "refreshToken and profileId are required",
-      });
+    const sellerConfig = await sellerConfigSchema.findOne(scope).sort({ updatedAt: -1 });
+    if (!sellerConfig?.spRefreshToken || !sellerConfig.spClientId || !sellerConfig.spClientSecret) {
+      return res.status(404).json({ isSuccess: false, message: "Connect Seller Central for this Ads profile before refreshing its token" });
     }
 
-    if (!clientId || !clientSecret) {
-      return res.status(400).json({
-        isSuccess: false,
-        message: "SP Client ID and Client Secret are required (check environment variables)",
-      });
-    }
-
-    /* -------------------- 2. Find Seller Config -------------------- */
-    let sellerConfig = null;
-
-    if (sellerConfigId) {
-      sellerConfig = await sellerConfigSchema.findById(sellerConfigId);
-    }
-
-    if (!sellerConfig && configId) {
-      sellerConfig = await sellerConfigSchema.findOne({ profileId: Number(profileId), configId });
-    }
-
-    if (!sellerConfig) {
-      sellerConfig = await sellerConfigSchema.findOne({ profileId: Number(profileId) });
-    }
-
-    /* -------------------- 3. Request Amazon Token -------------------- */
-    let spResponse;
+    let token;
     try {
-      spResponse = await axios.post(
-        process.env.AUTH_LINK,
+      const response = await axios.post(
+        process.env.AUTH_LINK || "https://api.amazon.com/auth/o2/token",
         new URLSearchParams({
           grant_type: "refresh_token",
-          client_id: clientId,
-          client_secret: clientSecret,
-          refresh_token: refreshToken,
+          client_id: sellerConfig.spClientId,
+          client_secret: sellerConfig.spClientSecret,
+          refresh_token: sellerConfig.spRefreshToken,
         }),
-        {
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          timeout: 10000,
-        }
+        { headers: { "Content-Type": "application/x-www-form-urlencoded" }, timeout: 10000 }
       );
-    } catch (err) {
-      write_logs({ message: `[amazonSPRefreshToken Error] ${err?.message || err} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
-      await auditLogSchema.create({
-        userId,
-        sellerConfigId: sellerConfig?._id,
-        event: sellerConfig ? "SELLER_CONFIG_RECONNECT" : "SELLER_CONFIG_CONNECT",
-        message: `Failed to refresh Amazon Seller token for seller "${sellerId}"`,
-        ipAddress: req.ip,
-        userAgent: req.headers["user-agent"],
-        metadata: { sellerId, profileId, status: "FAILED", error: err.response?.data || err.message },
-      });
-
-      return res.status(400).json({
-        isSuccess: false,
-        message: "Failed to refresh access token from Amazon",
-        error: err.response?.data || err.message,
-      });
+      token = response.data;
+    } catch (error) {
+      await writeAuditEvent({ req, event: "SELLER_CREDENTIAL_REFRESH", message: "Seller credential refresh rejected",
+        configId, profileId, sellerConfigId: sellerConfig._id, organizationId: adsConfig.organizationId,
+        outcome: "FAILED", metadata: { reason: "AMAZON_REFRESH_REJECTED", providerStatus: error.response?.status || null } });
+      write_logs({ message: `[amazonSPRefreshToken] Amazon rejected token refresh (HTTP ${error.response?.status || "unavailable"})`, log_type: "warning" });
+      return res.status(400).json({ isSuccess: false, message: "Could not refresh the Seller token. Reconnect Seller Central and try again." });
     }
 
-    const { access_token, expires_in } = spResponse?.data || {};
-
-    if (!access_token) {
-      await auditLogSchema.create({
-        userId,
-        sellerConfigId: sellerConfig?._id,
-        event: sellerConfig ? "SELLER_CONFIG_RECONNECT" : "SELLER_CONFIG_CONNECT",
-        message: `Invalid token response received from Amazon for seller "${sellerId}"`,
-        ipAddress: req.ip,
-        userAgent: req.headers["user-agent"],
-        metadata: { sellerId, profileId, status: "FAILED" },
-      });
-
-      return res.status(500).json({
-        isSuccess: false,
-        message: "Invalid response received from Amazon",
-      });
+    const expiresIn = Number(token?.expires_in);
+    if (!token?.access_token || !Number.isFinite(expiresIn) || expiresIn <= 0) {
+      await writeAuditEvent({ req, event: "SELLER_CREDENTIAL_REFRESH", message: "Seller credential refresh failed",
+        configId, profileId, sellerConfigId: sellerConfig._id, organizationId: adsConfig.organizationId,
+        outcome: "FAILURE", metadata: { reason: "TOKEN_RESPONSE_INVALID" } });
+      return res.status(502).json({ isSuccess: false, message: "Invalid token response from Amazon" });
     }
 
-    /* -------------------- 4. Create OR Update Seller Config -------------------- */
-    let profile = null;
-    if (configId) {
-      profile = await profileSchema.findOne({ profileId: Number(profileId), configId }).lean();
-    }
-    if (!profile) {
-      profile = await profileSchema.findOne({ profileId: Number(profileId) }).lean();
-    }
-
-    // ✅ CREATE
-    if (!sellerConfig) {
-      sellerConfig = await sellerConfigSchema.create({
-        configId: profile?.configId,
-        profileId: Number(profileId),
-        sellerId,
-        spClientId: clientId,
-        spClientSecret: clientSecret,
-        spRefreshToken: refreshToken,
-        spAccessToken: access_token,
-        tokenExpire: expires_in,
-        spTokenExpiresAt: new Date(Date.now() + (expires_in - 300) * 1000),
-        isActive: true,
-      });
-
-      if (sellerConfig.configId && sellerConfig.profileId) {
-        await seedAccessToken({ kind: "sp", configId: sellerConfig.configId.toString(), profileId: sellerConfig.profileId, accessToken: access_token, expiresIn: expires_in });
-      }
-
-      await resumeApprovedSellerSync(profile?.configId, profileId);
-      await clearSPAccessTokenCache(sellerConfig.configId, sellerConfig.profileId).catch((err) => { write_logs({ message: "[amazonSPRefreshToken Silent Error] " + (err?.message || err), log_type: "error" }); });
-
-      await auditLogSchema.create({
-        userId,
-        sellerConfigId: sellerConfig._id,
-        event: "SELLER_CONFIG_CONNECT",
-        message: `Amazon Seller config connected for seller "${sellerId}" (${profile?.name || "Unknown Profile"})`,
-        ipAddress: req.ip,
-        userAgent: req.headers["user-agent"],
-        metadata: { sellerId, profileId, profileName: profile?.name || null, status: "SUCCESS", authType: "REFRESH_TOKEN" },
-      });
-    }
-    // ✅ UPDATE
-    else {
-      sellerConfig.spClientId = clientId;
-      sellerConfig.spClientSecret = clientSecret;
-      sellerConfig.spRefreshToken = refreshToken;
-      sellerConfig.spAccessToken = access_token;
-      sellerConfig.sellerId = sellerId;
-      sellerConfig.tokenExpire = expires_in;
-      sellerConfig.spTokenExpiresAt = new Date(Date.now() + (expires_in - 300) * 1000);
-      sellerConfig.isActive = true;
-      sellerConfig.disconnectedAt = null;
-      sellerConfig.deletionReminder15SentAt = null;
-      sellerConfig.deletionReminder1SentAt = null;
-      sellerConfig.isDataDeletionStopped = false;
-
-      await sellerConfig.save();
-      if (sellerConfig.configId && sellerConfig.profileId) {
-        await seedAccessToken({ kind: "sp", configId: sellerConfig.configId.toString(), profileId: sellerConfig.profileId, accessToken: access_token, expiresIn: expires_in });
-      }
-      await clearSPAccessTokenCache(sellerConfig.configId, sellerConfig.profileId).catch((err) => { write_logs({ message: "[amazonSPRefreshToken Silent Error] " + (err?.message || err), log_type: "error" }); });
-
-      await resumeApprovedSellerSync(profile?.configId, profileId);
-
-      await auditLogSchema.create({
-        userId,
-        sellerConfigId: sellerConfig._id,
-        event: "SELLER_CONFIG_RECONNECT",
-        message: `Amazon Seller config reconnected for seller "${sellerId}" (${profile?.name || "Unknown Profile"})`,
-        ipAddress: req.ip,
-        userAgent: req.headers["user-agent"],
-        metadata: { sellerId, profileId, profileName: profile?.name || null, status: "SUCCESS", authType: "REFRESH_TOKEN" },
-      });
+    const updated = await sellerConfigSchema.updateOne(
+      { ...scope, _id: sellerConfig._id, updatedAt: sellerConfig.updatedAt },
+      { $set: {
+        spAccessToken: token.access_token,
+        tokenExpire: expiresIn,
+        spTokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
+      } }
+    );
+    if (!updated.matchedCount) {
+      await writeAuditEvent({ req, event: "SELLER_CREDENTIAL_REFRESH", message: "Seller credential refresh conflicted with a connection change",
+        configId, profileId, sellerConfigId: sellerConfig._id, organizationId: adsConfig.organizationId,
+        outcome: "DENIED", metadata: { reason: "CONNECTION_CHANGED" } });
+      return res.status(409).json({ isSuccess: false, message: "This Seller connection changed. Refresh the page and try again." });
     }
 
-    /* -------------------- 5. Success Response -------------------- */
+    await writeAuditEvent({ req, event: "SELLER_CREDENTIAL_REFRESH", message: "Seller credentials refreshed",
+      configId, profileId, sellerConfigId: sellerConfig._id, organizationId: adsConfig.organizationId,
+      metadata: { expiresIn } });
+    await seedAccessToken({ kind: "sp", configId: String(configId), profileId, accessToken: token.access_token, expiresIn });
     return res.status(200).json({
       isSuccess: true,
-      message: sellerConfigId ? "Access token refreshed successfully" : "Seller config created and access token generated",
-      data: {
-        sellerConfigId: sellerConfig._id,
-        expiresIn: expires_in,
-      },
+      message: "Access token refreshed successfully",
+      data: { sellerConfigId: sellerConfig._id, expiresIn },
     });
-
   } catch (error) {
-    write_logs({ message: `[amazonSPRefreshToken Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
-    return res.status(500).json({
-      isSuccess: false,
-      message: "Internal server error",
-      error: "An internal server error occurred",
-    });
+    write_logs({ message: `[amazonSPRefreshToken] ${error?.name || "Error"}`, log_type: "error" });
+    return res.status(500).json({ isSuccess: false, message: "Internal server error" });
   }
 };
 
@@ -1725,11 +1513,12 @@ exports.amazonDisconnect = async (req, res) => {
 
     /* -------------------- Already Disconnected -------------------- */
     if (!config.isActive) {
-      await auditLogSchema.create({
+      await writeAuditEvent({ req,
         userId,
         configId: config?._id,
         event: "CONFIG_DISCONNECT",
         message: "Attempted to disconnect already inactive config",
+        outcome: "DENIED",
         ipAddress: req.ip,
         userAgent: req.headers["user-agent"],
         metadata: { companyName: config.companyName, status: "ALREADY_DISCONNECTED" },
@@ -1749,7 +1538,7 @@ exports.amazonDisconnect = async (req, res) => {
     config.isDataDeletionStopped = false;
     await config.save();
 
-    await auditLogSchema.create({
+    await writeAuditEvent({ req,
       userId,
       configId: config?._id,
       event: "CONFIG_DISCONNECT",
@@ -1851,7 +1640,7 @@ exports.amazonSPDisconnect = async (req, res) => {
 
     /* -------------------- Already Disconnected -------------------- */
     if (!config.isActive) {
-      await auditLogSchema.create({
+      await writeAuditEvent({ req,
         userId,
         sellerConfigId: config._id,
         event: "SELLER_CONFIG_DISCONNECT",
@@ -1886,7 +1675,7 @@ exports.amazonSPDisconnect = async (req, res) => {
       await clearActivePlanProfilesCache(config.profileId).catch(() => { });
     }
 
-    await auditLogSchema.create({
+    await writeAuditEvent({ req,
       userId,
       sellerConfigId: config._id,
       event: "SELLER_CONFIG_DISCONNECT",
@@ -2927,41 +2716,38 @@ exports.cronDisconnectReminder = async (req, res) => {
   }
 };
 
+function canManageAdsConfig(req, config) {
+  const organizationId = req.organizationId || req.user?.organizationId;
+  if (organizationId) return String(config.organizationId) === String(organizationId);
+  return req.role?.roleName === ROLES.SUPER_ADMIN;
+}
+
 exports.getAmazonProfiles = async (req, res) => {
   try {
     const { configId } = req.query;
     if (!configId) return res.status(400).json({ isSuccess: false, message: 'configId is required' });
 
-    const checkConfigAds = await getAccessToken(configId);
-    if (!checkConfigAds?.adsAccessToken) {
-      return res.status(400).json({ isSuccess: false, message: 'Invalid Amazon Config' });
+    const configDoc = await configSchema.findById(configId).lean();
+    if (!configDoc || !canManageAdsConfig(req, configDoc)) {
+      return res.status(403).json({ isSuccess: false, message: 'Ads account is outside your organization' });
     }
-
-    const [us, eu, fe] = await Promise.all([
-      usProfiles(checkConfigAds, configId),
-      euProfiles(checkConfigAds, configId),
-      feProfiles(checkConfigAds, configId),
-    ]);
-
-    const fetchedProfiles = [...us, ...eu, ...fe].filter((p) => p?.profileId != 2371257842854194);
+    const fetchedProfiles = await fetchOnboardingAdsProfiles(configId);
 
     const existingProfiles = await profileSchema.find({ configId }).lean();
     const existingProfileIds = new Set(existingProfiles.map((x) => x.profileId.toString()));
 
-    const configDoc = await configSchema.findById(configId).lean();
     const activeSellerConfigs = await sellerConfigSchema.find({
+      ...sellerOwnerScope(configDoc.organizationId, req.user._id),
       isActive: true,
-      $or: [
-        ...(configDoc?.organizationId ? [{ organizationId: configDoc.organizationId }] : []),
-        { configId }
-      ]
-    }).lean();
-    const activeSellerIds = activeSellerConfigs.map(s => s.sellerId).filter(Boolean);
+      spRefreshToken: { $type: "string", $ne: "" },
+      $and: [{ $or: [{ configId: null }, { configId }] }],
+    }).select("sellerId configId profileId").lean();
 
     const profilesWithStatus = [];
     for (const p of fetchedProfiles) {
       const pAdvId = p.advertiserId || p.accountInfo?.id;
-      const isSellerMatch = Boolean(pAdvId && activeSellerIds.some(sId => String(sId).trim().toLowerCase() === String(pAdvId).trim().toLowerCase()));
+      const isSellerMatch = activeSellerConfigs.some(seller => sameSeller(pAdvId, seller.sellerId) &&
+        (!seller.profileId || Number(seller.profileId) === Number(p.profileId)));
 
       profilesWithStatus.push({
         ...p,
@@ -2976,21 +2762,31 @@ exports.getAmazonProfiles = async (req, res) => {
     });
   } catch (error) {
     write_logs({ message: `[getAmazonProfiles Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
-    return res.status(500).json({ isSuccess: false, message: 'Internal server error', errorMessage: error?.message });
+    return res.status(500).json({ isSuccess: false, message: 'Could not load Amazon Ads profiles', errorMessage: error?.message });
   }
 };
 
 exports.saveAmazonProfiles = async (req, res) => {
   try {
-    const { configId, selectedProfiles } = req.body;
+    const { configId, selectedProfiles: requestedProfiles } = req.body;
     const userId = req.user._id;
 
-    if (!configId || !selectedProfiles || !Array.isArray(selectedProfiles)) {
+    if (!configId || !Array.isArray(requestedProfiles) || !requestedProfiles.length) {
       return res.status(400).json({ isSuccess: false, message: 'configId and selectedProfiles array are required' });
     }
 
     const configDoc = await configSchema.findById(configId).lean();
     if (!configDoc) return res.status(404).json({ isSuccess: false, message: 'Config not found' });
+    if (!canManageAdsConfig(req, configDoc)) return res.status(403).json({ isSuccess: false, message: 'Ads account is outside your organization' });
+
+    const requestedIds = new Set(requestedProfiles.map(profile => String(profile?.profileId)));
+    const verifiedProfiles = await fetchOnboardingAdsProfiles(configId);
+    const selectedProfiles = [...new Map(verifiedProfiles
+      .filter(profile => requestedIds.has(String(profile.profileId)))
+      .map(profile => [String(profile.profileId), profile])).values()];
+    if (selectedProfiles.length !== requestedIds.size) {
+      return res.status(400).json({ isSuccess: false, message: "One or more profiles could not be verified for this Ads account. Reload the profile list and try again." });
+    }
 
     const orgId = configDoc.organizationId;
     const org = await organizationSchema.findById(orgId).populate('planId').lean();
@@ -3034,66 +2830,35 @@ exports.saveAmazonProfiles = async (req, res) => {
       };
     });
 
-    selectedProfiles.forEach(async (profile) => {
-      clearProfileCache(profile?.configId?.toString(), profile?.profileId);
-      clearActivePlanProfilesCache(profile?.profileId);
-    });
-
-    if (profileBulkOps.length > 0) {
-      await profileSchema.bulkWrite(profileBulkOps);
-    }
-
+    await profileSchema.bulkWrite(profileBulkOps);
+    await profileBasedPermissionSchema.bulkWrite(selectedProfiles.map(profile => ({
+      updateOne: {
+        filter: { userId, organizationId: orgId, profileId: Number(profile.profileId), configId },
+        update: { $set: { hasAccess: true } },
+        upsert: true,
+      },
+    })));
     const allCrons = await cronJobSchema.find().lean();
+    const cronOps = selectedProfiles.flatMap(profile => allCrons.map(cron => ({
+      updateOne: {
+        filter: { configId, profileId: profile.profileId, cronId: cron._id },
+        update: { $set: { cronName: cron.cronName, timezone: profile.timezone } },
+        upsert: true,
+      },
+    })));
+    if (cronOps.length) await cronJobSchedularSchema.bulkWrite(cronOps);
     for (const p of selectedProfiles) {
-      try {
-        const userAccess = new profileBasedPermissionSchema({ userId, organizationId: orgId, profileId: Number(p?.profileId), configId: configId, hasAccess: true });
-        await userAccess.save();
-      } catch (err) {
-        write_logs({ message: `[saveAmazonProfiles Error] ${err?.message || err} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
-      }
-
-      allCrons.forEach(async (cron) => {
-        await cronJobSchedularSchema.findOneAndUpdate(
-          { configId, profileId: p.profileId, cronId: cron._id },
-          { $set: { cronName: cron.cronName, timezone: p.timezone } },
-          { new: true, upsert: true }
-        ).lean();
-      });
+      await Promise.allSettled([
+        clearProfileCache(String(configId), p.profileId),
+        clearActivePlanProfilesCache(p.profileId),
+      ]);
     }
 
-    if (configDoc && Array.isArray(selectedProfiles) && selectedProfiles.length > 0) {
-      const ownerConds = [];
-      if (orgId) ownerConds.push({ organizationId: orgId });
-      if (userId) ownerConds.push({ userId });
+    await linkSellerConfigWithAdsConfig(configDoc, userId, orgId, selectedProfiles);
 
-      const targetSellerConfigs = await sellerConfigSchema.find({
-        isActive: true,
-        $or: ownerConds,
-        $or: [
-          { profileId: null },
-          { configId: null },
-          { configId: configId }
-        ]
-      });
-
-      for (const sCfg of targetSellerConfigs) {
-        const matchingSelected = selectedProfiles.find((p) => {
-          const pAdvId = p?.advertiserId || p?.accountInfo?.id;
-          return sCfg.sellerId && pAdvId && String(pAdvId).trim() === String(sCfg.sellerId).trim();
-        }) || selectedProfiles[0];
-
-        if (matchingSelected) {
-          sCfg.configId = configId;
-          sCfg.profileId = Number(matchingSelected.profileId);
-          if (!sCfg.sellerId && (matchingSelected.advertiserId || matchingSelected.accountInfo?.id)) {
-            sCfg.sellerId = matchingSelected.advertiserId || matchingSelected.accountInfo?.id;
-          }
-          await sCfg.save();
-        }
-      }
-
-      await linkSellerConfigWithAdsConfig(configDoc, userId, orgId);
-    }
+    await writeAuditEvent({ req, event: "ADS_PROFILES_SAVED", message: "Ads profile selection saved",
+      configId, organizationId: orgId, resourceType: "ADS_CONFIGURATION", resourceId: configId,
+      metadata: { profileIds: selectedProfiles.map(profile => profile.profileId), selectedCount: selectedProfiles.length } });
 
     return res.status(200).json({ isSuccess: true, message: 'Profiles saved successfully' });
   } catch (error) {
@@ -3143,47 +2908,102 @@ exports.saveSynchronizationDetails = async (req, res) => {
     const userId = req.user?._id;
     const { configId, profileId, items, type } = req.body;
     const syncType = type === "seller" ? "seller" : "ads";
+    const numericProfileId = Number(profileId);
 
-    if (!configId || !profileId || !Array.isArray(items) || items.length === 0) {
+    if (!mongoose.isValidObjectId(configId) || !Number.isSafeInteger(numericProfileId) || numericProfileId <= 0 ||
+        !Array.isArray(items) || items.length === 0) {
       return res.status(400).send({
         isSuccess: false,
         message: "Missing configId, profileId, or group items",
       });
     }
 
-    // Check if synchronization is currently IN_PROGRESS
-    const activeSync = await synchronizeDetailsSchema.findOne({
-      profileId: Number(profileId),
-      configId,
-      type: syncType,
-      requestStatus: "IN_PROGRESS"
-    }).lean();
+    const config = await configSchema.findById(configId).lean();
+    if (!config || !canManageAdsConfig(req, config)) {
+      return res.status(403).send({ isSuccess: false, message: "You cannot change synchronization settings for this Ads account." });
+    }
 
-    if (activeSync) {
+    const scope = { configId, profileId: numericProfileId, type: syncType };
+    if (syncType === "seller") {
+      const profile = await profileSchema.findOne({ configId, profileId: numericProfileId, type: "seller", isActive: { $ne: false } }).lean();
+      const connected = profile?.advertiserId && await sellerConfigSchema.exists({
+        ...sellerOwnerScope(config.organizationId, userId),
+        configId, profileId: numericProfileId, sellerId: String(profile.advertiserId).trim(),
+        isActive: true, spRefreshToken: { $type: "string", $ne: "" },
+      });
+      if (!connected) {
+        return res.status(409).send({ isSuccess: false, message: "Connect Seller Central for this profile before saving its synchronization settings." });
+      }
+    }
+
+    const existing = await synchronizeDetailsSchema.find(scope).sort({ updatedAt: -1 }).lean();
+    if (existing.some(record => record.requestStatus === "IN_PROGRESS")) {
       return res.status(400).send({
         isSuccess: false,
         message: "Synchronization is currently in progress. You cannot modify sync settings until sync completes.",
       });
     }
 
-    const recordsToInsert = items.map((item) => ({
-      userId,
-      configId,
-      profileId: Number(profileId),
-      groupId: item.groupId || item.id,
-      selectedSyncDays: Number(item.selectedSyncDays || item.days),
-      type: syncType,
-      requestStatus: "PENDING",
-      syncRequestTime: new Date(),
-    }));
+    const selectedGroups = new Map();
+    for (const item of items) {
+      const groupId = item?.groupId || item?.id;
+      const days = Number(item?.selectedSyncDays ?? item?.days);
+      if (typeof groupId !== "string" || !groupId.trim() || !Number.isSafeInteger(days) || days <= 0) {
+        return res.status(400).send({ isSuccess: false, message: "Select valid groups and historical sync days." });
+      }
+      selectedGroups.set(groupId.trim(), days);
+    }
+    const groups = await coreGroupSchema.find({ id: { $in: [...selectedGroups.keys()] }, type: syncType, isActive: true }).lean();
+    if (groups.length !== selectedGroups.size || groups.some(group => selectedGroups.get(group.id) > (group.maxDays || 90))) {
+      return res.status(400).send({ isSuccess: false, message: "Select sync groups and days allowed for this account type." });
+    }
 
-    await synchronizeDetailsSchema.deleteMany({ configId, profileId: Number(profileId), type: syncType });
-    const inserted = await synchronizeDetailsSchema.insertMany(recordsToInsert);
+    const selectedRecordIds = new Set();
+    for (const [groupId, selectedSyncDays] of selectedGroups) {
+      const previous = existing.find(record => record.groupId === groupId);
+      if (previous?.selectedSyncDays === selectedSyncDays) {
+        selectedRecordIds.add(String(previous._id));
+        continue;
+      }
+      const record = await synchronizeDetailsSchema.findOneAndUpdate(
+        previous ? { ...scope, _id: previous._id, requestStatus: { $ne: "IN_PROGRESS" } } :
+          { ...scope, groupId },
+        { [previous ? "$set" : "$setOnInsert"]: { userId, selectedSyncDays, requestStatus: "PENDING", syncRequestTime: new Date() } },
+        { upsert: !previous, new: true }
+      ).lean();
+      if (!record || record.selectedSyncDays !== selectedSyncDays) {
+        return res.status(409).send({ isSuccess: false, message: "Synchronization settings changed while you were editing. Reopen the dialog and try again." });
+      }
+      selectedRecordIds.add(String(record._id));
+    }
+
+    const removedIds = existing.filter(record => !selectedRecordIds.has(String(record._id))).map(record => record._id);
+    if (removedIds.length) {
+      const removed = await synchronizeDetailsSchema.deleteMany({
+        ...scope, _id: { $in: removedIds }, requestStatus: { $ne: "IN_PROGRESS" },
+      });
+      if (removed.deletedCount !== removedIds.length) {
+        return res.status(409).send({ isSuccess: false, message: "Synchronization settings changed while you were editing. Reopen the dialog and try again." });
+      }
+    }
+
+    const saved = await synchronizeDetailsSchema.find(scope).lean();
+    if (saved.length !== selectedGroups.size || saved.some(record => selectedGroups.get(record.groupId) !== record.selectedSyncDays)) {
+      return res.status(409).send({ isSuccess: false, message: "Synchronization settings changed while you were editing. Reopen the dialog and try again." });
+    }
+
+    await writeAuditEvent({ req, event: "PROFILE_SYNC_SETTINGS_SUBMIT", message: "Profile sync selections saved",
+      configId, profileId: numericProfileId, organizationId: config.organizationId,
+      previousValue: existing.map(record => ({ groupId: record.groupId, selectedSyncDays: record.selectedSyncDays, requestStatus: record.requestStatus })),
+      newValue: saved.map(record => ({ groupId: record.groupId, selectedSyncDays: record.selectedSyncDays, requestStatus: record.requestStatus })),
+      metadata: { type: syncType, awaitingApproval: saved.some(record => record.requestStatus === "PENDING") } });
 
     return res.status(200).send({
       isSuccess: true,
-      message: "Group synchronization settings saved successfully",
-      data: inserted,
+      message: saved.some(record => record.requestStatus === "PENDING")
+        ? "Sync selections saved. Pending Super Admin approval."
+        : "Group synchronization settings saved successfully",
+      data: saved,
     });
   } catch (error) {
     write_logs({ message: `[saveSynchronizationDetails Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
@@ -3277,10 +3097,14 @@ exports.updateProfileSyncSettings = async (req, res) => {
       updateFields.isSpSyncEnabled = isSpSyncEnabled;
     }
 
-    await profileSchema.updateOne(
+    const syncUpdate = await profileSchema.updateOne(
       scope,
       { $set: updateFields }
     );
+    if (syncUpdate.matchedCount !== 0 && Object.keys(updateFields).length) {
+      await writeAuditEvent({ req, event: "PROFILE_SYNC_SETTINGS_TOGGLE", message: "Profile daily sync settings updated",
+        ...scope, newValue: updateFields });
+    }
 
     if (configId) {
       clearProfileCache(configId.toString(), Number(profileId));
@@ -3366,8 +3190,6 @@ exports.linkExistingSellerConfig = async (req, res) => {
   try {
     const { configId, profileId: reqProfileId } = req.body;
     const userId = req.user._id;
-    const organizationId = req.organizationId || req.user.organizationId;
-
     if (!configId) {
       return res.status(400).json({ isSuccess: false, message: "configId is required" });
     }
@@ -3377,115 +3199,32 @@ exports.linkExistingSellerConfig = async (req, res) => {
       return res.status(404).json({ isSuccess: false, message: "Ads config not found" });
     }
 
-    const dbProfiles = await profileSchema.find({ configId }).lean();
-    let apiProfiles = [];
-    try {
-      const checkConfigAds = await getAccessToken(configId);
-      if (checkConfigAds?.adsAccessToken) {
-        const [us, eu, fe] = await Promise.all([
-          usProfiles(checkConfigAds, configId),
-          euProfiles(checkConfigAds, configId),
-          feProfiles(checkConfigAds, configId),
-        ]);
-        apiProfiles = [...us, ...eu, ...fe].filter((p) => p?.profileId);
-      }
-    } catch (err) {
-      console.error("[linkExistingSellerConfig] Error fetching profiles:", err);
+    if (!canManageAdsConfig(req, configDoc)) {
+      return res.status(403).json({ isSuccess: false, message: "Ads account is outside your organization" });
     }
 
-    const allProfiles = [...apiProfiles];
-    for (const dbP of dbProfiles) {
-      if (!allProfiles.some((p) => String(p.profileId) === String(dbP.profileId))) {
-        allProfiles.push({
-          profileId: dbP.profileId,
-          advertiserId: dbP.advertiserId,
-          type: dbP.type,
-          accountInfo: { id: dbP.advertiserId, type: dbP.type }
-        });
-      }
+    const sellerId = typeof req.body.sellerId === "string" ? req.body.sellerId.trim() : "";
+    const profileId = Number(reqProfileId);
+    if (!sellerId || !profileId) {
+      return res.status(400).json({ isSuccess: false, message: "Seller ID and profile are required" });
     }
 
-    const ownerConditions = [];
-    if (organizationId) ownerConditions.push({ organizationId });
-    if (userId) ownerConditions.push({ userId });
-    ownerConditions.push({ organizationId: null });
-
-    const queryFilter = {
-      isActive: true,
-      $or: ownerConditions,
-      $and: [
-        {
-          $or: [
-            { configId: null },
-            { profileId: null },
-            { configId: configId }
-          ]
-        }
-      ]
-    };
-
-    let sellerConfigs = await sellerConfigSchema.find(queryFilter);
-    if (!sellerConfigs || sellerConfigs.length === 0) {
-      let targetProfile = allProfiles.find(p => reqProfileId && String(p.profileId) === String(reqProfileId)) || allProfiles.find(p => p.type === "seller" || p?.accountInfo?.type === "seller") || allProfiles[0];
-      const newSellerConfig = await sellerConfigSchema.create({
-        userId,
-        organizationId,
-        configId,
-        profileId: targetProfile ? Number(targetProfile.profileId) : (reqProfileId ? Number(reqProfileId) : null),
-        sellerId: targetProfile?.advertiserId || targetProfile?.accountInfo?.id || null,
-        isActive: true,
-      });
-
-      return res.status(200).json({
-        isSuccess: true,
-        message: "Seller account linked with existing Ads account successfully",
-        data: newSellerConfig,
-      });
+    const profiles = await fetchOnboardingAdsProfiles(configId);
+    const matching = profiles.find(profile => Number(profile.profileId) === profileId &&
+      sameSeller(profile.advertiserId || profile.accountInfo?.id, sellerId));
+    const savedProfile = matching && await profileSchema.exists({ configId, profileId, isActive: true });
+    if (!savedProfile || !(await linkSellerConfigWithAdsConfig(configDoc, userId, configDoc.organizationId, [matching]))) {
+      return res.status(409).json({ isSuccess: false, message: "No authorized Seller connection matches this Ads profile" });
     }
 
-    for (const sellerConfig of sellerConfigs) {
-      let matchingProfile = null;
-      if (reqProfileId) {
-        matchingProfile = allProfiles.find(p => String(p.profileId) === String(reqProfileId));
-      }
-
-      if (!matchingProfile && sellerConfig.sellerId) {
-        matchingProfile = allProfiles.find((p) => {
-          const profSellerId = p?.advertiserId || p?.accountInfo?.id;
-          return profSellerId && String(profSellerId).trim() === String(sellerConfig.sellerId).trim();
-        });
-      }
-
-      if (!matchingProfile && !sellerConfig.sellerId && allProfiles.length > 0) {
-        matchingProfile = allProfiles.find((p) => p?.type === "seller" || p?.accountInfo?.type === "seller") || allProfiles[0];
-      }
-
-      if (matchingProfile || reqProfileId) {
-        sellerConfig.configId = configId;
-        if (organizationId) sellerConfig.organizationId = organizationId;
-
-        if (matchingProfile) {
-          sellerConfig.profileId = Number(matchingProfile.profileId);
-          const retrievedSellerId = matchingProfile.advertiserId || matchingProfile.accountInfo?.id;
-          if (retrievedSellerId) {
-            sellerConfig.sellerId = retrievedSellerId;
-          }
-        } else if (reqProfileId) {
-          sellerConfig.profileId = Number(reqProfileId);
-        }
-
-        sellerConfig.isActive = true;
-        await sellerConfig.save();
-      }
-    }
-
-    await auditLogSchema.create({
+    await writeAuditEvent({ req,
       userId,
       configId,
       event: "SELLER_CONFIG_LINK_EXISTING",
       message: `Seller account linked to existing Ads config "${configDoc.companyName}"`,
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
+      profileId, organizationId: configDoc.organizationId,
       metadata: { configId, companyName: configDoc.companyName, status: "SUCCESS" }
     });
 
@@ -3565,7 +3304,7 @@ exports.confirmDeactivateProfile = async (req, res) => {
     }
     await clearActivePlanProfilesCache(numProfileId).catch(() => { });
 
-    await auditLogSchema.create({
+    await writeAuditEvent({ req,
       userId,
       configId: profile.configId,
       event: "CONFIRM_DEACTIVATE_PROFILE",

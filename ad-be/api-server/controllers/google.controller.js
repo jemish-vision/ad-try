@@ -14,6 +14,7 @@ const userSchema = require("../models/user.model");
 const roleSchema = require("../models/superAdmin/role.model");
 const auditLogSchema = require("../models/auditLog.model");
 const organizationSchema = require("../models/organization.model");
+const { writeAuditEvent } = require("../helpers/auditHelper");
 
 const { getGoogleConfig, getRuleDate, generatePassword, getActivePlanProfiles, generateAuthToken, safeJsonParse } = require("../helper/common");
 const { sendEmailHelper } = require("../helper/emailHelper");
@@ -136,12 +137,13 @@ exports.callBackGoogleAuth = async (req, res) => {
       ).lean();
     }
 
-    await auditLogSchema.create({
+    await writeAuditEvent({
+      req,
       userId,
       event: "GOOGLE_USER_LOGIN",
       message: "User logged in with Google successfully",
-      ipAddress: req?.ip,
-      userAgent: req?.headers["user-agent"],
+      outcome: "SUCCESS",
+      actorType: "user",
       metadata: { status: "SUCCESS", loginType: "GOOGLE", googleEmail: tokens?.id_token ? "AVAILABLE" : "NOT_AVAILABLE" },
     });
 

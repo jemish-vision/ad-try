@@ -72,6 +72,7 @@ const { isDuplicateSearchTermRule, checkDuplicateSearchTermRule } = require("../
 const AD_TYPE_COLLECTIONS = require("../helper/adTypeCollections");
 const { getSuggestedBid } = require("../helper/recommendation");
 const { logAudit } = require("../helpers/auditHelper");
+const { auditValues, readAuditValues, ruleAuditFields } = require("../helpers/auditChanges");
 const { stageReportFileInRedis } = require("../services/reportFileStager.service");
 const { processStagedReportBatches } = require("../services/reportBatchWriter.service");
 const { getRunManifest } = require("../services/reportStaging.service");
@@ -2352,7 +2353,9 @@ exports.addToNegative = async (req, res) => {
 
         const keywordsWithNames = negativeKeywordList.map((item) => ({ ...item, campaignName: campaignMap[item?.campaignId] || null, adGroupName: adGroupMap[item?.adGroupId] || null }));
 
-        await logAudit("SEARCH_TERM_ADD_AS_NEGATIVE_KEYWORD", `Search term added as negative keyword successfully.`, { negativeKeywords: keywordsWithNames, result: keywordResult }, req?.user?.id);
+        await logAudit("SEARCH_TERM_ADD_AS_NEGATIVE_KEYWORD", "Search terms added as negative keywords", {
+            configId, profileId, exclusionScope: "ad group", negativeKeywords: keywordsWithNames, result: keywordResult
+        }, req?.user?.id);
 
         return res.status(200).send({
             isSuccess: true,
@@ -2438,7 +2441,9 @@ exports.addToNegativeProduct = async (req, res) => {
 
         const keywordsWithNames = negativeTargetingList.map((item) => ({ ...item, campaignName: campaignMap[item?.campaignId] || null, adGroupName: adGroupMap[item?.adGroupId] || null }));
 
-        await logAudit("SEARCH_TERM_ADD_AS_NEGATIVE_KEYWORD", `Search term added as negative product successfully.`, { negativeProducts: keywordsWithNames, result: productResult }, req?.user?.id);
+        await logAudit("SEARCH_TERM_ADD_AS_NEGATIVE_PRODUCT", "Search terms added as negative products", {
+            configId, profileId, exclusionScope: "ad group", negativeProducts: keywordsWithNames, result: productResult
+        }, req?.user?.id);
 
         return res.status(200).send({
             isSuccess: true,
@@ -2525,7 +2530,9 @@ exports.addNegativeToCampaign = async (req, res) => {
 
         const keywordsWithNames = negativeKeywordList.map((item) => ({ ...item, campaignName: campaignMap[item?.campaignId] || null, adGroupName: adGroupMap[item?.adGroupId] || null }));
 
-        await logAudit("SEARCH_TERM_ADD_AS_NEGATIVE_KEYWORD", `Search term added as campaign negative keyword successfully.`, { negativeKeywords: keywordsWithNames, result: keywordResult }, req?.user?.id);
+        await logAudit("SEARCH_TERM_ADD_AS_NEGATIVE_KEYWORD", "Search terms added as campaign negative keywords", {
+            configId, profileId, exclusionScope: "campaign", negativeKeywords: keywordsWithNames, result: keywordResult
+        }, req?.user?.id);
 
         return res.status(200).send({
             isSuccess: true,
@@ -3160,8 +3167,10 @@ exports.updateSearchTermRule = async (req, res) => {
         delete updateData._id;
         delete updateData.isActive;
 
+        const ruleFilter = { _id: ruleId, ...(configId && { configId }) };
+        const previousValue = await readAuditValues(searchTermRuleSchema, ruleFilter, ruleAuditFields);
         await searchTermRuleSchema
-            .findOneAndUpdate({ _id: ruleId, ...(configId && { configId }) }, updateData, { new: true })
+            .findOneAndUpdate(ruleFilter, updateData, { new: true })
             .then(async (rule) => {
                 if (!rule) {
                     return res
@@ -3194,6 +3203,8 @@ exports.updateSearchTermRule = async (req, res) => {
                 };
 
                 await logAudit("SEARCH_TERM_RULE_UPDATE", `Updated search term rule: ${rule.ruleName}`, {
+                    configId: rule.configId, profileId: rule.profileId, resourceType: "rule", resourceId: String(rule._id),
+                    previousValue, newValue: auditValues(rule, ruleAuditFields),
                     ruleName: rule?.ruleName,
                     conditions: rule?.conditions,
                     actionType: rule?.actionType,
@@ -4193,8 +4204,8 @@ exports.removeSearchTerm = async (req, res) => {
 
         await Promise.all(
             items.map(async item => {
-                const campaign = await campaignSchema.findOne({ campaignId: item?.campaignId });
-                const adGroup = await adGroupSchema.findOne({ adGroupId: item?.adGroupId });
+                const campaign = await campaignSchema.findOne({ configId, profileId, campaignId: item?.campaignId }).lean();
+                const adGroup = await adGroupSchema.findOne({ configId, profileId, adGroupId: item?.adGroupId }).lean();
 
                 await logAudit("SEARCH_TERM_REMOVED", `Search term removed successfully.`, {
                     type: type === "NEVER_RECOMMANDED" ? "Never Recommanded" : "Remove from List",

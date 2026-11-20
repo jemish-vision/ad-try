@@ -99,6 +99,9 @@ app.use("/uploads", express.static(path.join(path.resolve(), "uploads"), {
   }
 }));
 
+const { auditRequest, drainAuditRequests } = require("./middleware/auditRequest");
+app.use(auditRequest);
+
 const { stripeWebhook } = require("./controllers/user.controller");
 app.post(
   "/api/user/stripeWebhook",
@@ -275,6 +278,7 @@ const gracefulShutdown = async (signal) => {
   write_logs({ message: `Received ${signal}, initiating graceful shutdown...`, log_type: "info" });
   server.close(async () => {
     try {
+      await drainAuditRequests();
       const { closeRedis } = require("./services/redis.service");
       await closeRedis();
       const mongoose = require("mongoose");

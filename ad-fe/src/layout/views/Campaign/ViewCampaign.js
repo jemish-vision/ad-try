@@ -91,7 +91,7 @@ function ViewCampaign(props) {
             }
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [viewPress, profileId?.value, campaignDetails?.campaignId, campaignDetails?.name]);
 
@@ -186,7 +186,7 @@ function ViewCampaign(props) {
       campaignIds: [campaignId],
       ...(Boolean(placement === "Top of Search") && { topOfSearchBid: newBid }),
       ...(Boolean(placement === "Rest of Search") && { restOfSearchBid: newBid }),
-      ...(Boolean(placement === "Product pages") && { productPageBid: newBid }),
+      ...(Boolean(placement === "Product Pages") && { productPageBid: newBid }),
     };
     await ApiUpdatePlacementBid(payload)
       .then(async (e) => {
@@ -1419,10 +1419,9 @@ function ViewCampaign(props) {
                 <span className="font-semibold mr-1.5 text-slate-700 dark:text-slate-300">{t("Schedule")}:</span>
                 <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-white border border-slate-300 dark:border-slate-700 shadow-xs">
                   {(campaignData?.[0]?.startDate || effectiveCampaignDetails?.startDate) ? (
-                    `${moment(campaignData?.[0]?.startDate || effectiveCampaignDetails?.startDate).format("MMM DD, YYYY")} - ${
-                      Boolean(campaignData?.[0]?.endDate || effectiveCampaignDetails?.endDate)
-                        ? moment(campaignData?.[0]?.endDate || effectiveCampaignDetails?.endDate).format("MMM DD, YYYY")
-                        : "No end date"
+                    `${moment(campaignData?.[0]?.startDate || effectiveCampaignDetails?.startDate).format("MMM DD, YYYY")} - ${Boolean(campaignData?.[0]?.endDate || effectiveCampaignDetails?.endDate)
+                      ? moment(campaignData?.[0]?.endDate || effectiveCampaignDetails?.endDate).format("MMM DD, YYYY")
+                      : "No end date"
                     }`
                   ) : (
                     "No schedule available"

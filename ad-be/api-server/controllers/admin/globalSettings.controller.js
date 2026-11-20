@@ -1,6 +1,7 @@
 const { write_logs } = require("../../../winston/utility/logger");
 const GlobalSettings = require("../../models/globalSettings.model");
 const auditLogSchema = require("../../models/auditLog.model");
+const { writeAuditEvent } = require("../../helpers/auditHelper");
 
 exports.getGlobalSettings = async (req, res) => {
   try {
@@ -54,12 +55,13 @@ exports.updateMaintenanceMode = async (req, res) => {
       const eventName = isMaintenanceMode ? "MAINTENANCE_MODE_ENABLED" : "MAINTENANCE_MODE_DISABLED";
       const logMessage = isMaintenanceMode ? "Maintenance mode enabled by Super Admin" : "Maintenance mode disabled by Super Admin";
 
-      await auditLogSchema.create({
+      await writeAuditEvent({
+        req,
         userId,
         event: eventName,
         message: logMessage,
-        ipAddress: req.ip,
-        userAgent: req.headers["user-agent"],
+        outcome: "SUCCESS",
+        actorType: "user",
         metadata: { isMaintenanceMode, status: "SUCCESS" },
       });
     }

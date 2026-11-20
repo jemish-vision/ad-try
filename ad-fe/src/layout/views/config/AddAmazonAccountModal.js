@@ -77,26 +77,30 @@ const AddAmazonAccountModal = ({ show, onHide, userId, forcedFlow = false, selle
             // Check if any profile's advertiserId strictly matches activeSellerId
             const matchingProfile = profiles.find((p) => {
                 const advId = p?.advertiserId || p?.accountInfo?.id;
-                return Boolean(activeSellerId && advId && String(advId).trim().toLowerCase() === String(activeSellerId).trim().toLowerCase());
+                return Boolean(activeSellerId && advId && String(advId).trim() === String(activeSellerId).trim());
             });
-            console.log(matchingProfile)
             if (!matchingProfile) {
                 Toast.error(t("This Ads account does not have access for this Seller account"));
-                setIsSubmitting(false);
                 return;
             }
 
-            // Match found! Save configId & profileId link in sellerConfig
+            if (!matchingProfile.isStored) {
+                if (onSuccess) onSuccess(selectedConfigId);
+                if (onHide) onHide();
+                return;
+            }
+
             const res = await ApiLinkExistingSellerConfig({
                 configId: selectedConfigId,
-                profileId: matchingProfile?.profileId
+                profileId: matchingProfile?.profileId,
+                sellerId: activeSellerId,
             });
 
             if (res?.isSuccess) {
                 Toast.success(t("Seller account linked to existing Ads account successfully!"));
                 localStorage.removeItem("amazon_appstore_flow");
                 sessionStorage.removeItem("amazon_appstore_flow");
-                if (onSuccess) onSuccess(selectedConfigId);
+                if (onSuccess) onSuccess(selectedConfigId, activeSellerId);
                 if (onHide) onHide();
             } else {
                 Toast.error(res?.message || t("Failed to link existing Ads account"));

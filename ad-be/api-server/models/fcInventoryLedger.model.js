@@ -6,12 +6,10 @@ const fcInventoryLedgerSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "config",
       required: true,
-      index: true,
     },
     profileId: {
       type: Number,
       required: true,
-      index: true,
     },
     sellerId: {
       type: String,
@@ -20,14 +18,12 @@ const fcInventoryLedgerSchema = new mongoose.Schema(
     reportDate: {
       type: String,
       required: true,
-      index: true,
     },
     fcCode: {
       type: String,
       required: true,
       trim: true,
       uppercase: true,
-      index: true,
     },
     countryCode: {
       type: String,
@@ -38,13 +34,11 @@ const fcInventoryLedgerSchema = new mongoose.Schema(
     asin: {
       type: String,
       trim: true,
-      index: true,
     },
     sku: {
       type: String,
       required: true,
       trim: true,
-      index: true,
     },
     fnsku: {
       type: String,
@@ -120,7 +114,8 @@ const fcInventoryLedgerSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// One record per Profile + Config + Date + FC + SKU + Disposition
+// 1️⃣ Unique identity for upserts: One record per Profile + Config + Date + FC + SKU + Disposition
+// Serves 100% of queries: upserts, profile queries, date queries, date-range filters, and reverse reportDate sorts
 fcInventoryLedgerSchema.index(
   {
     configId: 1,
@@ -132,29 +127,5 @@ fcInventoryLedgerSchema.index(
   },
   { unique: true }
 );
-
-// Query indexes
-fcInventoryLedgerSchema.index({
-  profileId: 1,
-  asin: 1,
-  reportDate: -1,
-});
-
-fcInventoryLedgerSchema.index({
-  profileId: 1,
-  fcCode: 1,
-  reportDate: -1,
-});
-
-fcInventoryLedgerSchema.index({
-  profileId: 1,
-  reportDate: -1,
-});
-
-
-// Optimized Query Indexes for Dashboard Grid and Cards
-fcInventoryLedgerSchema.index({ configId: 1, profileId: 1, reportDate: -1 });
-fcInventoryLedgerSchema.index({ configId: 1, profileId: 1, reportDate: -1, endingWarehouseBalance: -1 });
-fcInventoryLedgerSchema.index({ configId: 1, profileId: 1, fcCode: 1, reportDate: -1 });
 
 module.exports = mongoose.model("fcInventoryLedger", fcInventoryLedgerSchema);

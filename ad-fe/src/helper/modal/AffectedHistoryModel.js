@@ -15,7 +15,7 @@ import { getNormalizedTargetingType } from "../../utility/targetingUtils";
 
 const REVERTABLE_FIELDS = [
     "bidAdjustment", "bid", "state", "budget", "campaignState", "adGroupState",
-    "percentage", "bid_modifier", "target_harvested", "searchTermAction", 
+    "percentage", "bid_modifier", "target_harvested", "searchTermAction",
     "negativeKeyword", "negativeTargeting", "searchTerm", "dayparting"
 ];
 
@@ -339,7 +339,7 @@ const formatAmazonChangeType = (row) => {
     // 1. Placement Bids
     if (placement && (changed === "bidadjustment" || !row.targetId)) {
         if (/top of search/i.test(placement)) return "Placement bid(Top of search)";
-        if (/product pages/i.test(placement)) return "Placement bid(Product pages)";
+        if (/product pages/i.test(placement)) return "Placement bid(Product Pages)";
         if (/rest of search/i.test(placement)) return "Placement bid(Rest of search)";
         return `Placement bid(${placement})`;
     }

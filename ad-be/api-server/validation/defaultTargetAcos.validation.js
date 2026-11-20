@@ -10,7 +10,7 @@ const saveAcos = async (req, res, next) => {
       .error(new Error("Top of search acos is required.")),
     PPtargetAcos: Joi.number()
       .required()
-      .error(new Error("Product pages acos is required.")),
+      .error(new Error("Product Pages acos is required.")),
     ROStargetAcos: Joi.number()
       .required()
       .error(new Error("Rest of search acos is required.")),

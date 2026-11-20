@@ -38,8 +38,26 @@ const { clearProfileCache, clearActivePlanProfilesCache } = require("../services
 const CRON_JOBS = require("../../worker-service/cronJobs.enum");
 const configSchema = require("../models/config.model");
 const sellerConfigSchema = require("../models/sellerConfig.model");
-const auditLogSchema = require("../models/auditLog.model");
+const { writeAuditEvent } = require("../helpers/auditHelper");
 const { write_logs } = require("../../winston/utility/logger");
+
+const splitSyncDateRange = (startDate, endDate, maxDays = 31) => {
+  const start = moment.utc(startDate, "YYYY-MM-DD", true);
+  const end = moment.utc(endDate, "YYYY-MM-DD", true);
+  if (!start.isValid() || !end.isValid() || start.isAfter(end)) {
+    throw new Error(`Invalid profile sync date range: ${startDate} to ${endDate}`);
+  }
+
+  const ranges = [];
+  let cursor = start.clone();
+  while (cursor.isSameOrBefore(end, "day")) {
+    const proposedEnd = cursor.clone().add(maxDays - 1, "days");
+    const chunkEnd = proposedEnd.isAfter(end, "day") ? end.clone() : proposedEnd;
+    ranges.push({ startDate: cursor.format("YYYY-MM-DD"), endDate: chunkEnd.format("YYYY-MM-DD") });
+    cursor = chunkEnd.clone().add(1, "day");
+  }
+  return ranges;
+};
 
 const runReportCronByName = async (reportName, pastSyncObj) => {
   let attempt = 0;
@@ -361,6 +379,8 @@ exports.createOrganization = async (req, res) => {
     });
 
     await userSchema.findByIdAndUpdate(userId, { $set: { companyName: organizationName.trim() } });
+    req.auditChange = { organizationId: newOrg._id, resourceType: "ORGANIZATION", resourceId: String(newOrg._id),
+      newValue: { organizationName: newOrg.organizationName } };
 
     return res.status(200).send({
       isSuccess: true,
@@ -470,6 +490,8 @@ exports.selectOrganization = async (req, res) => {
     }
 
     const requiresPlan = !org.planId && !org.isTrialActive && !isFutureEndDate;
+    req.auditChange = { organizationId: org._id, resourceType: "ORGANIZATION", resourceId: String(org._id),
+      newValue: { organizationId: org._id } };
 
     return res.status(200).send({
       isSuccess: true,
@@ -726,6 +748,14 @@ exports.executeProfileSyncCron = async (req, res) => {
       });
     }
 
+    const syncOperationId = req.auditOperationId || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const operationIdFor = rec => `${syncOperationId}:${rec._id}`;
+    for (const rec of syncRecords) {
+      await writeAuditEvent({ req, event: "HISTORICAL_SYNC_ACCEPTED", message: "Historical sync accepted for execution",
+        configId: rec.configId, profileId: rec.profileId, resourceType: "SYNC_REQUEST", resourceId: rec._id,
+        operationId: operationIdFor(rec), metadata: { type: rec.type, groupId: rec.groupId, selectedSyncDays: rec.selectedSyncDays } });
+    }
+
     // Trigger report crons in background based on profileId, selectedSyncDays, and mapped reports for each group
     (async () => {
       cron_logs({ message: `[ExecuteProfileSyncCron] Sync started for ${syncRecords.length} record(s) [body] ${JSON.stringify(req?.body)}`, log_type: "info" });
@@ -752,38 +782,52 @@ exports.executeProfileSyncCron = async (req, res) => {
           const days = Number(rec.selectedSyncDays);
           const startDate = moment().subtract(days, "days").format("YYYY-MM-DD");
           const endDate = moment().format("YYYY-MM-DD");
-          const dates = getDatesBetween(startDate, endDate);
+          const dateRanges = splitSyncDateRange(startDate, endDate);
 
           const pastSyncObj = {
             configId: rec.configId,
             profileId: rec.profileId,
             startDate,
             endDate,
-            dates,
           };
 
           cron_logs({ message: `[ExecuteProfileSyncCron] Processing Group: ${rec.groupId}, Profile: ${rec.profileId}, Days: ${days} (${startDate} to ${endDate}) [body] ${JSON.stringify(req?.body)}`, log_type: "info" });
 
           const failedReports = [];
           for (const r of groupReports) {
-            try {
-              cron_logs({ message: `[ExecuteProfileSyncCron] Running report: ${r.name} for Profile: ${rec.profileId} [body] ${JSON.stringify(req?.body)}`, log_type: "info" });
-              if (!await runReportCronByName(r.name, { ...pastSyncObj })) failedReports.push(r.name);
-            } catch (reportError) {
-              failedReports.push(r.name);
-              cron_logs({ message: `[ExecuteProfileSyncCron] ${r.name}: ${reportError.message}`, log_type: "error" });
+            let reportFailed = false;
+            for (const range of dateRanges) {
+              try {
+                const chunkSyncObj = {
+                  ...pastSyncObj,
+                  ...range,
+                  dates: getDatesBetween(range.startDate, range.endDate),
+                };
+                cron_logs({ message: `[ExecuteProfileSyncCron] Running report: ${r.name} for Profile: ${rec.profileId}, range ${range.startDate} to ${range.endDate} [body] ${JSON.stringify(req?.body)}`, log_type: "info" });
+                if (!await runReportCronByName(r.name, chunkSyncObj)) reportFailed = true;
+              } catch (reportError) {
+                reportFailed = true;
+                cron_logs({ message: `[ExecuteProfileSyncCron] ${r.name}: ${reportError.message}`, log_type: "error" });
+              }
             }
+            if (reportFailed) failedReports.push(r.name);
           }
           if (failedReports.length) throw new Error(`Reports failed: ${failedReports.join(", ")}`);
 
           await synchronizeDetailsSchema.findByIdAndUpdate(rec._id, {
             $set: { requestStatus: "COMPLETED", updatedAt: new Date() }
           });
+          await writeAuditEvent({ req, event: "HISTORICAL_SYNC_COMPLETED", message: "Historical sync completed",
+            configId: rec.configId, profileId: rec.profileId, resourceType: "SYNC_REQUEST", resourceId: rec._id,
+            operationId: operationIdFor(rec), metadata: { type: rec.type, groupId: rec.groupId, reportCount: groupReports.length } });
         } catch (recErr) {
           cron_logs({ message: `[ExecuteProfileSyncCron] Error for record ${rec._id}: ${recErr.message} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
           await synchronizeDetailsSchema.findByIdAndUpdate(rec._id, {
             $set: { requestStatus: "FAILED", updatedAt: new Date() }
           });
+          await writeAuditEvent({ req, event: "HISTORICAL_SYNC_FAILED", message: "Historical sync failed", outcome: "FAILED",
+            configId: rec.configId, profileId: rec.profileId, resourceType: "SYNC_REQUEST", resourceId: rec._id,
+            operationId: operationIdFor(rec), metadata: { type: rec.type, groupId: rec.groupId, reason: "IMPORT_EXECUTION_FAILED" } });
         }
       }
       cron_logs({ message: `[ExecuteProfileSyncCron] Sync batch completed for ${syncRecords.length} record(s) [body] ${JSON.stringify(req?.body)}`, log_type: "info" });
@@ -848,6 +892,8 @@ exports.updateOrganizationBySuperAdmin = async (req, res) => {
       });
     }
 
+    req.auditChange = { organizationId: updatedOrg._id, resourceType: "ORGANIZATION", resourceId: String(updatedOrg._id), newValue: updateFields };
+
     if (organizationName && updatedOrg.userId) {
       await userSchema.updateOne({ _id: updatedOrg.userId._id }, { $set: { companyName: organizationName } });
     }
@@ -899,7 +945,10 @@ exports.updateOrganization = async (req, res) => {
       });
     }
 
+    const previousOrganizationName = org.organizationName;
     await organizationSchema.updateOne({ _id: organizationId }, { $set: { organizationName: organizationName.trim() } });
+    req.auditChange = { organizationId: org._id, resourceType: "ORGANIZATION", resourceId: String(org._id),
+      previousValue: { organizationName: previousOrganizationName }, newValue: { organizationName: organizationName.trim() } };
     await userSchema.updateOne({ _id: userId }, { $set: { companyName: organizationName.trim() } });
 
     return res.status(200).send({
@@ -1079,46 +1128,49 @@ exports.toggleStopDataDeletionBySuperAdmin = async (req, res) => {
       });
     }
 
+    const mutationResults = [];
     if (organizationId) {
-      await organizationSchema.updateOne(
+      mutationResults.push(await organizationSchema.updateOne(
         { _id: organizationId },
         { $set: { isDataDeletionStopped: shouldStop, dataDeletionStoppedAt: stoppedAt, dataDeletionStoppedBy: stoppedBy } }
-      );
-      await configSchema.updateMany(
+      ));
+      mutationResults.push(await configSchema.updateMany(
         { organizationId },
         { $set: { isDataDeletionStopped: shouldStop, dataDeletionStoppedAt: stoppedAt, dataDeletionStoppedBy: stoppedBy } }
-      );
-      await sellerConfigSchema.updateMany(
+      ));
+      mutationResults.push(await sellerConfigSchema.updateMany(
         { organizationId },
         { $set: { isDataDeletionStopped: shouldStop, dataDeletionStoppedAt: stoppedAt, dataDeletionStoppedBy: stoppedBy } }
-      );
+      ));
     }
 
     if (configId) {
-      await configSchema.updateOne(
+      mutationResults.push(await configSchema.updateOne(
         { _id: configId },
         { $set: { isDataDeletionStopped: shouldStop, dataDeletionStoppedAt: stoppedAt, dataDeletionStoppedBy: stoppedBy } }
-      );
-      await sellerConfigSchema.updateMany(
+      ));
+      mutationResults.push(await sellerConfigSchema.updateMany(
         { configId },
         { $set: { isDataDeletionStopped: shouldStop, dataDeletionStoppedAt: stoppedAt, dataDeletionStoppedBy: stoppedBy } }
-      );
+      ));
     }
 
     if (sellerConfigId) {
-      await sellerConfigSchema.updateOne(
+      mutationResults.push(await sellerConfigSchema.updateOne(
         { _id: sellerConfigId },
         { $set: { isDataDeletionStopped: shouldStop, dataDeletionStoppedAt: stoppedAt, dataDeletionStoppedBy: stoppedBy } }
-      );
+      ));
     }
 
-    await auditLogSchema.create({
+    await writeAuditEvent({ req,
       userId: req.user?._id,
       event: "DATA_DELETION_PROCESS_TOGGLE",
       message: `Super Admin ${shouldStop ? "stopped" : "resumed"} account data deletion for target (org: ${organizationId || "N/A"}, config: ${configId || "N/A"}, sellerConfig: ${sellerConfigId || "N/A"})`,
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
-      metadata: { organizationId, configId, sellerConfigId, isDataDeletionStopped: shouldStop },
+      outcome: mutationResults.some(result => result.matchedCount > 0) ? "SUCCESS" : "DENIED",
+      organizationId, configId, sellerConfigId, newValue: { isDataDeletionStopped: shouldStop },
+      metadata: { organizationId, configId, sellerConfigId, isDataDeletionStopped: shouldStop, matchedCount: mutationResults.reduce((count, result) => count + (result.matchedCount || 0), 0) },
     }).catch(() => {});
 
     return res.status(200).send({
@@ -1296,6 +1348,7 @@ exports.toggleProfileDataDeletionBySuperAdmin = async (req, res) => {
       ? updates
       : [{ profileDbId, profileId, configId, sellerConfigId, type, isDataDeletionStopped }];
 
+    const mutationResults = [];
     for (const item of listToUpdate) {
       const shouldStop = Boolean(item.isDataDeletionStopped);
       const stoppedAt = shouldStop ? now : null;
@@ -1303,34 +1356,36 @@ exports.toggleProfileDataDeletionBySuperAdmin = async (req, res) => {
       if (item.type === "sp" || item.sellerConfigId) {
         const scId = item.sellerConfigId || item.profileDbId || item._id;
         if (scId) {
-          await sellerConfigSchema.updateOne(
+          mutationResults.push(await sellerConfigSchema.updateOne(
             { _id: scId },
             { $set: { isDataDeletionStopped: shouldStop, dataDeletionStoppedAt: stoppedAt, dataDeletionStoppedBy: shouldStop ? stoppedBy : null } }
-          );
+          ));
         }
       } else {
         // Ads profile
         if (item.profileDbId || item._id) {
-          await profileSchema.updateOne(
+          mutationResults.push(await profileSchema.updateOne(
             { _id: item.profileDbId || item._id },
             { $set: { isDataDeletionStopped: shouldStop, dataDeletionStoppedAt: stoppedAt, dataDeletionStoppedBy: shouldStop ? stoppedBy : null } }
-          );
+          ));
         } else if (item.profileId && item.configId) {
-          await profileSchema.updateOne(
+          mutationResults.push(await profileSchema.updateOne(
             { profileId: item.profileId, configId: item.configId },
             { $set: { isDataDeletionStopped: shouldStop, dataDeletionStoppedAt: stoppedAt, dataDeletionStoppedBy: shouldStop ? stoppedBy : null } }
-          );
+          ));
         }
       }
     }
 
-    await auditLogSchema.create({
+    await writeAuditEvent({ req,
       userId: req.user?._id,
       event: "PROFILE_DATA_DELETION_TOGGLE",
       message: `Super Admin updated data deletion protection for ${listToUpdate.length} profile(s) (orgId: ${organizationId || "N/A"})`,
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
-      metadata: { organizationId, updatesCount: listToUpdate.length },
+      outcome: mutationResults.some(result => result.matchedCount > 0) ? "SUCCESS" : "DENIED",
+      organizationId,
+      metadata: { organizationId, updatesCount: listToUpdate.length, updates: listToUpdate.map(item => ({ profileId: item.profileId, configId: item.configId, sellerConfigId: item.sellerConfigId, profileDbId: item.profileDbId, isDataDeletionStopped: Boolean(item.isDataDeletionStopped) })) },
     }).catch(() => {});
 
     return res.status(200).send({

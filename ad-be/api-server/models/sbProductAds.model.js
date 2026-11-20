@@ -206,13 +206,6 @@ sbProductAdsSchema.index({
   reportDate: 1,
 });
 
-sbProductAdsSchema.index({
-  profileId: 1,
-  campaignId: 1,
-  adGroupId: 1,
-  reportDate: 1
-});
-
 // 🔵 Auto-calc before SAVE
 sbProductAdsSchema.pre("save", function (next) {
   const m = calcMetrics(this);

@@ -31,7 +31,7 @@ const requiredNumber = (value, field, context) => {
 
 const placementLabel = (classification) => {
   if (["Other on-Amazon", "Other Placements"].includes(classification)) return "Rest of Search";
-  if (classification === "Detail Page on-Amazon") return "Product pages";
+  if (classification === "Detail Page on-Amazon") return "Product Pages";
   if (["Top of Search on-Amazon", "Top of Search"].includes(classification)) return "Top of Search";
   return "";
 };

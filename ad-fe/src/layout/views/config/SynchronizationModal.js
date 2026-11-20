@@ -5,7 +5,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../compo
 import { Button } from "../../../components/ui/button";
 import Toast from "../../../common/helper/toast/Toast";
 import { ApiGetReportDetails, ApiSaveSynchronizationDetails, ApiGetRetentionDays, ApiGetCoreGroups, ApiGetProfileSyncDetails } from "../../../api-wrapper/ApiAdsConfig";
-import { t } from "i18next";
 
 const SynchronizationModal = ({ show, onHide, profile, configId, isDark, onSuccess, type = "ads" }) => {
   const { t } = useTranslation();
@@ -13,29 +12,36 @@ const SynchronizationModal = ({ show, onHide, profile, configId, isDark, onSucce
   const [retentionOptions, setRetentionOptions] = useState([]);
   const [coreGroups, setCoreGroups] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   // Per-group assigned sync days map: { groupId: days }
   const [groupDaysMap, setGroupDaysMap] = useState({});
   // Per-group toggle status map: { groupId: isEnabled }
   const [groupEnabledMap, setGroupEnabledMap] = useState({});
+  const targetConfigId = configId?._id || configId || profile?.configId?._id || profile?.configId || profile?.sellerConfig?.configId;
+  const targetProfileId = Number(profile?.profileId || profile?.sellerConfig?.profileId || profile?._id);
 
   useEffect(() => {
     if (show) {
       fetchData();
     }
-  }, [show, profile, type]);
+  }, [show, targetConfigId, targetProfileId, type]);
 
   const fetchData = async () => {
     setLoading(true);
+    setLoadError("");
     try {
-      const targetConfigId = configId || profile?.configId || profile?.sellerConfig?.configId;
       const [reportsRes, retentionRes, coreGroupsRes, syncDetailsRes] = await Promise.all([
         ApiGetReportDetails(),
         ApiGetRetentionDays(),
         ApiGetCoreGroups({ type }),
         targetConfigId ? ApiGetProfileSyncDetails(targetConfigId) : Promise.resolve(null),
       ]);
+      if (!coreGroupsRes?.isSuccess || !retentionRes?.isSuccess || !syncDetailsRes?.isSuccess) {
+        setLoadError(syncDetailsRes?.message || t("Failed to load synchronization settings. Reopen this dialog to retry."));
+        return;
+      }
 
       let availableDays = [];
       if (retentionRes?.isSuccess && Array.isArray(retentionRes?.data) && retentionRes.data.length > 0) {
@@ -52,10 +58,9 @@ const SynchronizationModal = ({ show, onHide, profile, configId, isDark, onSucce
         }
         setCoreGroups(filteredGroups);
 
-        const targetProfileId = Number(profile?.profileId || profile?._id);
-        const existingRecords = (syncDetailsRes?.isSuccess && Array.isArray(syncDetailsRes?.data))
-          ? syncDetailsRes.data.filter((r) => Number(r.profileId) === targetProfileId)
-          : [];
+        const existingRecords = (syncDetailsRes.data || []).filter(
+          (record) => Number(record.profileId) === targetProfileId && (record.type || "ads") === type
+        );
 
         const initialDaysMap = {};
         const initialEnabledMap = {};
@@ -81,7 +86,7 @@ const SynchronizationModal = ({ show, onHide, profile, configId, isDark, onSucce
         setReports(reportsRes.data);
       }
     } catch {
-      Toast.error(t("Failed to load report list"));
+      setLoadError(t("Failed to load synchronization settings. Reopen this dialog to retry."));
     } finally {
       setLoading(false);
     }
@@ -121,9 +126,6 @@ const SynchronizationModal = ({ show, onHide, profile, configId, isDark, onSucce
         };
       });
 
-      const targetConfigId = configId || profile?.configId || profile?.sellerConfig?.configId;
-      const targetProfileId = profile?.profileId || profile?._id || profile?.sellerConfig?.profileId;
-
       if (!targetConfigId || !targetProfileId) {
         Toast.error(t("Missing profile or configuration details"));
         setSubmitting(false);
@@ -139,7 +141,7 @@ const SynchronizationModal = ({ show, onHide, profile, configId, isDark, onSucce
 
       const res = await ApiSaveSynchronizationDetails(payload);
       if (res?.isSuccess) {
-        Toast.success(t("Group synchronization settings saved successfully!"));
+        Toast.success(t(res.message || "Group synchronization settings saved successfully!"));
         if (onSuccess) onSuccess();
         onHide();
       } else {
@@ -187,13 +189,15 @@ const SynchronizationModal = ({ show, onHide, profile, configId, isDark, onSucce
               <div className="p-8 text-center text-slate-500 text-xs flex items-center justify-center gap-2">
                 <i className="fa fa-spinner fa-spin text-base" /> {t("Loading group settings...")}
               </div>
+            ) : loadError ? (
+              <p role="alert" className="p-8 text-center text-sm text-red-600 dark:text-red-400">{loadError}</p>
             ) : (
               <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300 border-collapse">
                 <thead className="bg-slate-100 dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 uppercase sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
                   <tr>
                     <th className="px-4 py-3 bg-slate-100 dark:bg-slate-800 text-center whitespace-nowrap w-[100px]">
-                      {t("Daily Sync")}
-                      <i className="fa fa-info-circle text-slate-400 dark:text-slate-500 cursor-help ml-1.5" title={t("Enable to run daily synchronization. If OFF, daily cron will not run.")} />
+                      {t("Include in Sync")}
+                      <i className="fa fa-info-circle text-slate-400 dark:text-slate-500 cursor-help ml-1.5" title={t("Submit to save these groups. New historical imports require Super Admin approval before daily sync can run.")} />
                     </th>
                     <th className="px-4 py-3 bg-slate-100 dark:bg-slate-800">{t("Group Name")}</th>
                     <th className="px-4 py-3 bg-slate-100 dark:bg-slate-800 whitespace-nowrap">{t("Timeline Permission")}</th>
@@ -222,6 +226,7 @@ const SynchronizationModal = ({ show, onHide, profile, configId, isDark, onSucce
                           <label className="relative inline-flex items-center cursor-pointer mb-0">
                             <input
                               type="checkbox"
+                              aria-label={group.title}
                               checked={isEnabled}
                               onChange={(e) => handleGroupToggleChange(group.id, e.target.checked)}
                               className="sr-only peer"
@@ -295,7 +300,7 @@ const SynchronizationModal = ({ show, onHide, profile, configId, isDark, onSucce
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={submitting}
+            disabled={submitting || loading || Boolean(loadError) || coreGroups.length === 0}
             className="h-[36px] px-5 text-xs font-semibold bg-gradient-to-r from-sky-500 to-blue-600 text-white rounded-lg shadow-sm flex items-center gap-1.5"
           >
             {submitting ? <i className="fa fa-spinner fa-spin" /> : <i className="fa fa-check" />}

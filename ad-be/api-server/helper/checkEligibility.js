@@ -1,5 +1,6 @@
 
 
+const mongoose = require("mongoose");
 const productAdsSchema = require("../models/productAds.model");
 const sbProductAdsSchema = require("../models/sbProductAds.model");
 const sdProductAdsSchema = require("../models/sdProductAds.model");
@@ -9,9 +10,14 @@ const AD_TYPE_COLLECTIONS = require("./adTypeCollections");
 
 const checkProductAvailability = async (configId, profileId, campaignIds, reportDate) => {
   let eligibleRatio = 100;
+  const cfgId = configId ? (configId instanceof mongoose.Types.ObjectId ? configId : new mongoose.Types.ObjectId(configId)) : null;
+  const pId = profileId !== undefined && profileId !== null ? Number(profileId) : null;
+
   const pipeline = [
     {
       $match: {
+        ...(cfgId ? { configId: cfgId } : {}),
+        ...(pId !== null ? { profileId: pId } : {}),
         campaignId: {
           $in: campaignIds
         },

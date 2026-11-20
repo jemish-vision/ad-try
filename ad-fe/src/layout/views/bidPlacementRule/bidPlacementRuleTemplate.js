@@ -87,7 +87,7 @@ export const getBidPlacementRuleTemplates = (t) => [
       ],
       actionType: [
         {
-          placement: "Product pages",
+          placement: "Product Pages",
           actionName: "Decrease Bid",
           actionValue: 15,
           actionValueType: "Percentage"
@@ -148,7 +148,7 @@ export const getBidPlacementRuleTemplates = (t) => [
           actionValueType: "Percentage"
         },
         {
-          placement: "Product pages",
+          placement: "Product Pages",
           actionName: "Decrease Bid",
           actionValue: 10,
           actionValueType: "Percentage"
@@ -173,12 +173,12 @@ export const getBidPlacementRuleTemplates = (t) => [
         frequency: "DAILY",
         slotType: "4_HOUR",
         slots: [
-          { slotIndex: 0, startTime: "00:00", endTime: "04:00", enabled: true, actions: [{ placement: "Top of Search", actionName: "Decrease Bid", actionValue: 10, actionValueType: "Percentage" }, { placement: "Rest of Search", actionName: "Decrease Bid", actionValue: 15, actionValueType: "Percentage" }, { placement: "Product pages", actionName: "Decrease Bid", actionValue: 10, actionValueType: "Percentage" }] },
-          { slotIndex: 1, startTime: "04:00", endTime: "08:00", enabled: true, actions: [{ placement: "Top of Search", actionName: "Increase Bid", actionValue: 5, actionValueType: "Percentage" }, { placement: "Rest of Search", actionName: "Decrease Bid", actionValue: 10, actionValueType: "Percentage" }, { placement: "Product pages", actionName: "Increase Bid", actionValue: 5, actionValueType: "Percentage" }] },
-          { slotIndex: 2, startTime: "08:00", endTime: "12:00", enabled: true, actions: [{ placement: "Top of Search", actionName: "Increase Bid", actionValue: 25, actionValueType: "Percentage" }, { placement: "Rest of Search", actionName: "Increase Bid", actionValue: 5, actionValueType: "Percentage" }, { placement: "Product pages", actionName: "Increase Bid", actionValue: 15, actionValueType: "Percentage" }] },
-          { slotIndex: 3, startTime: "12:00", endTime: "16:00", enabled: true, actions: [{ placement: "Top of Search", actionName: "Increase Bid", actionValue: 20, actionValueType: "Percentage" }, { placement: "Rest of Search", actionName: "Increase Bid", actionValue: 5, actionValueType: "Percentage" }, { placement: "Product pages", actionName: "Increase Bid", actionValue: 15, actionValueType: "Percentage" }] },
-          { slotIndex: 4, startTime: "16:00", endTime: "20:00", enabled: true, actions: [{ placement: "Top of Search", actionName: "Increase Bid", actionValue: 30, actionValueType: "Percentage" }, { placement: "Rest of Search", actionName: "Increase Bid", actionValue: 10, actionValueType: "Percentage" }, { placement: "Product pages", actionName: "Increase Bid", actionValue: 20, actionValueType: "Percentage" }] },
-          { slotIndex: 5, startTime: "20:00", endTime: "24:00", enabled: true, actions: [{ placement: "Top of Search", actionName: "Increase Bid", actionValue: 15, actionValueType: "Percentage" }, { placement: "Rest of Search", actionName: "Decrease Bid", actionValue: 5, actionValueType: "Percentage" }, { placement: "Product pages", actionName: "Increase Bid", actionValue: 10, actionValueType: "Percentage" }] },
+          { slotIndex: 0, startTime: "00:00", endTime: "04:00", enabled: true, actions: [{ placement: "Top of Search", actionName: "Decrease Bid", actionValue: 10, actionValueType: "Percentage" }, { placement: "Rest of Search", actionName: "Decrease Bid", actionValue: 15, actionValueType: "Percentage" }, { placement: "Product Pages", actionName: "Decrease Bid", actionValue: 10, actionValueType: "Percentage" }] },
+          { slotIndex: 1, startTime: "04:00", endTime: "08:00", enabled: true, actions: [{ placement: "Top of Search", actionName: "Increase Bid", actionValue: 5, actionValueType: "Percentage" }, { placement: "Rest of Search", actionName: "Decrease Bid", actionValue: 10, actionValueType: "Percentage" }, { placement: "Product Pages", actionName: "Increase Bid", actionValue: 5, actionValueType: "Percentage" }] },
+          { slotIndex: 2, startTime: "08:00", endTime: "12:00", enabled: true, actions: [{ placement: "Top of Search", actionName: "Increase Bid", actionValue: 25, actionValueType: "Percentage" }, { placement: "Rest of Search", actionName: "Increase Bid", actionValue: 5, actionValueType: "Percentage" }, { placement: "Product Pages", actionName: "Increase Bid", actionValue: 15, actionValueType: "Percentage" }] },
+          { slotIndex: 3, startTime: "12:00", endTime: "16:00", enabled: true, actions: [{ placement: "Top of Search", actionName: "Increase Bid", actionValue: 20, actionValueType: "Percentage" }, { placement: "Rest of Search", actionName: "Increase Bid", actionValue: 5, actionValueType: "Percentage" }, { placement: "Product Pages", actionName: "Increase Bid", actionValue: 15, actionValueType: "Percentage" }] },
+          { slotIndex: 4, startTime: "16:00", endTime: "20:00", enabled: true, actions: [{ placement: "Top of Search", actionName: "Increase Bid", actionValue: 30, actionValueType: "Percentage" }, { placement: "Rest of Search", actionName: "Increase Bid", actionValue: 10, actionValueType: "Percentage" }, { placement: "Product Pages", actionName: "Increase Bid", actionValue: 20, actionValueType: "Percentage" }] },
+          { slotIndex: 5, startTime: "20:00", endTime: "24:00", enabled: true, actions: [{ placement: "Top of Search", actionName: "Increase Bid", actionValue: 15, actionValueType: "Percentage" }, { placement: "Rest of Search", actionName: "Decrease Bid", actionValue: 5, actionValueType: "Percentage" }, { placement: "Product Pages", actionName: "Increase Bid", actionValue: 10, actionValueType: "Percentage" }] },
         ]
       },
       selectedDays: [
@@ -212,7 +212,7 @@ export const getBidPlacementRuleTemplates = (t) => [
           actionValueType: "Percentage"
         },
         {
-          placement: "Product pages",
+          placement: "Product Pages",
           actionName: "Increase Bid",
           actionValue: 15,
           actionValueType: "Percentage"

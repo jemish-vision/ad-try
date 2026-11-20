@@ -4,7 +4,7 @@ const sellerConfigSchema = require("../models/sellerConfig.model");
 const profileSchema = require("../models/profiles.model");
 const profileBasedPermissionSchema = require("../models/profileBasedPermission.model");
 const userSchema = require("../models/user.model");
-const auditLogSchema = require("../models/auditLog.model");
+const { writeAuditEvent } = require("../helpers/auditHelper");
 const configHistorySchema = require("../models/configHistory.model");
 const { sendEmailHelper } = require("./emailHelper");
 const { buildDisconnectEmail } = require("../../emailTemplate/buildDisconnectEmail");
@@ -46,6 +46,25 @@ const handleAutoDisconnectSP = async ({ configId, profileId, sellerConfigId, rea
     sellerConfig.disconnectedAt = now;
     await sellerConfig.save();
 
+    // Write audit log
+    await writeAuditEvent({ actorType: "system", source: "worker",
+      organizationId: sellerConfig.organizationId,
+      profileId: sellerConfig.profileId,
+      sellerConfigId: sellerConfig._id,
+      configId: sellerConfig.configId,
+      event: "SELLER_CONFIG_DISCONNECT",
+      message: `Amazon Seller config automatically disconnected`,
+      metadata: {
+        sellerId: sellerConfig.sellerId,
+        profileId: sellerConfig.profileId,
+        reason: "AMAZON_AUTHORIZATION_INVALID",
+        disconnectedAt: now,
+        autoDisconnect: true,
+      },
+    }).catch((err) => write_logs({ message: `[AuditLog Error] ${err.message}`, log_type: "error" }));
+
+
+
     // Disable SP sync on profile
     await profileSchema.updateOne(
       { configId: sellerConfig.configId, profileId: sellerConfig.profileId },
@@ -56,22 +75,6 @@ const handleAutoDisconnectSP = async ({ configId, profileId, sellerConfigId, rea
     await clearSPAccessTokenCache(sellerConfig.configId?.toString(), sellerConfig.profileId);
     await clearProfileCache(sellerConfig.configId?.toString(), sellerConfig.profileId);
     await clearActivePlanProfilesCache(sellerConfig.profileId);
-
-    // Write audit log
-    await auditLogSchema.create({
-      userId: sellerConfig.userId || null,
-      sellerConfigId: sellerConfig._id,
-      configId: sellerConfig.configId,
-      event: "SELLER_CONFIG_DISCONNECT",
-      message: `Amazon Seller config automatically disconnected. Reason: ${reason}`,
-      metadata: {
-        sellerId: sellerConfig.sellerId,
-        profileId: sellerConfig.profileId,
-        reason,
-        disconnectedAt: now,
-        autoDisconnect: true,
-      },
-    }).catch((err) => write_logs({ message: `[AuditLog Error] ${err.message}`, log_type: "error" }));
 
     // Write config history
     await configHistorySchema.create({
@@ -144,6 +147,22 @@ const handleAutoDisconnectAds = async ({ configId, reason = "Amazon LWA token re
     config.disconnectedAt = now;
     await config.save();
 
+    // Write audit log
+    await writeAuditEvent({ actorType: "system", source: "worker",
+      configId: config._id,
+      organizationId: config.organizationId,
+      event: "CONFIG_DISCONNECT",
+      message: `Amazon Ads config automatically disconnected`,
+      metadata: {
+        companyName: config.companyName,
+        reason: "AMAZON_AUTHORIZATION_INVALID",
+        disconnectedAt: now,
+        autoDisconnect: true,
+      },
+    }).catch((err) => write_logs({ message: `[AuditLog Error] ${err.message}`, log_type: "error" }));
+
+
+
     // Disable Ads sync on all profiles linked to this config
     await profileSchema.updateMany(
       { configId: config._id },
@@ -153,19 +172,6 @@ const handleAutoDisconnectAds = async ({ configId, reason = "Amazon LWA token re
     // Clear caches
     await clearAccessTokenCache(config._id.toString());
     await clearActivePlanProfilesCache("ALL");
-
-    // Write audit log
-    await auditLogSchema.create({
-      configId: config._id,
-      event: "CONFIG_DISCONNECT",
-      message: `Amazon Ads config automatically disconnected. Reason: ${reason}`,
-      metadata: {
-        companyName: config.companyName,
-        reason,
-        disconnectedAt: now,
-        autoDisconnect: true,
-      },
-    }).catch((err) => write_logs({ message: `[AuditLog Error] ${err.message}`, log_type: "error" }));
 
     // Write config history
     await configHistorySchema.create({

@@ -4,18 +4,15 @@ const shipmentQueueSchema = new mongoose.Schema(
   {
     configId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "config",
-      index: true
+      ref: "config"
     },
 
     profileId: {
-      type: Number,
-      index: true
+      type: Number
     },
 
     shipmentId: {
-      type: String,
-      index: true
+      type: String
     },
 
     shipmentName: {
@@ -23,18 +20,15 @@ const shipmentQueueSchema = new mongoose.Schema(
     },
 
     shipmentStatus: {
-      type: String,
-      index: true
+      type: String
     },
 
     shipmentCreatedAt: {
-      type: Date,
-      index: true
+      type: Date
     },
 
     destinationFulfillmentCenterId: {
-      type: String,
-      index: true
+      type: String
     },
 
     labelPrepType: {
@@ -58,6 +52,7 @@ const shipmentQueueSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// 1. Unique identity and deduplication index (serves report stream upserts, point lookups, and queue item joins)
 shipmentQueueSchema.index(
   {
     configId: 1,
@@ -69,9 +64,20 @@ shipmentQueueSchema.index(
   }
 );
 
+// 2. Primary chronological listing & range query index (serves getAllShippingQueue and date pagination)
+shipmentQueueSchema.index({
+  configId: 1,
+  profileId: 1,
+  shipmentCreatedAt: -1
+});
 
-// --- Performance Indexing ---
-shipmentQueueSchema.index({configId:1,profileId:1,shipmentStatus:1,shipmentCreatedAt:1});
+// 3. Status filter & date index (serves getAllShippingQueue status filters and cronReminderForReimbursement)
+shipmentQueueSchema.index({
+  configId: 1,
+  profileId: 1,
+  shipmentStatus: 1,
+  shipmentCreatedAt: -1
+});
 
 module.exports = new mongoose.model(
   "shipmentQueue",

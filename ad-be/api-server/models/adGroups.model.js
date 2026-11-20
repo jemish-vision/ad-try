@@ -132,25 +132,6 @@ adGroupSchema.index({
   reportDate: 1,
 });
 
-adGroupSchema.index({
-  adGroupId: 1,
-  profileId: 1,
-  reportDate: 1
-});
-
-adGroupSchema.index({
-  adGroupId: 1,
-  profileId: 1,
-  reportDate: 1,
-  name: 1
-});
-
-adGroupSchema.index({
-  profileId: 1,
-  reportDate: 1,
-  adGroupId: 1
-});
-
 // 🔵 Auto-calc before SAVE
 adGroupSchema.pre("save", function (next) {
   const m = calcMetrics(this);
@@ -174,12 +155,5 @@ adGroupSchema.pre("findOneAndUpdate", function () {
 
   this.setUpdate({ $set: { ...tempDoc, ...m } });
 });
-
-
-// --- Performance Indexing ---
-adGroupSchema.index({configId:1,profileId:1,campaignId:1,adGroupId:1});
-adGroupSchema.index({profileId:1,campaignId:1,status:1});
-adGroupSchema.index({configId:1,profileId:1,campaignId:1,adGroupId:1,reportDate:1});
-adGroupSchema.index({ profileId: 1, reportDate: 1, status: 1, adGroupId: 1, name: 1 }, { name: "profile_reportDate_status_covered" });
 
 module.exports = new mongoose.model("ad_group", adGroupSchema);

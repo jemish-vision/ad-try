@@ -31,6 +31,8 @@ const MIGRATED_TASKS = new Set([
   "HourlyDataConsolidation",
   // SP-API tasks migrated to sp-api-queue
   "SyncOrder",
+  "TransactionReport",
+  "RefundReport",
   "OrderListing",
   "SyncInventory",
   "DetectDeadInventory",

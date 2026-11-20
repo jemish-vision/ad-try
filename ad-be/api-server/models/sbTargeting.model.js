@@ -129,50 +129,8 @@ sbTargetingSchema.index({ configId: 1, profileId: 1, reportDate: -1 });
 
 // Drilldowns
 sbTargetingSchema.index({ configId: 1, profileId: 1, campaignId: 1, reportDate: -1 });
-sbTargetingSchema.index({ configId: 1, profileId: 1, adGroupId: 1, reportDate: -1 });
 
 
-
-sbTargetingSchema.index(
-  {
-    configId: 1,
-    profileId: 1,
-    campaignId: 1,
-    adGroupId: 1,
-    targetId: 1,
-    reportDate: 1
-  },
-  { unique: true, name: "uniq_targeting_per_day" }
-);
-
-sbTargetingSchema.index(
-  {
-    configId: 1,
-    profileId: 1,
-    reportDate: -1
-  },
-  { name: "targeting_daily_list" }
-);
-
-sbTargetingSchema.index(
-  {
-    configId: 1,
-    profileId: 1,
-    campaignId: 1,
-    reportDate: -1
-  },
-  { name: "targeting_campaign_view" }
-);
-
-sbTargetingSchema.index(
-  {
-    configId: 1,
-    profileId: 1,
-    adGroupId: 1,
-    reportDate: -1
-  },
-  { name: "targeting_adgroup_view" }
-);
 
 // 🔵 Auto-calc before SAVE
 sbTargetingSchema.pre("save", function (next) {
@@ -200,9 +158,6 @@ sbTargetingSchema.pre("findOneAndUpdate", function () {
 
 
 // --- Performance Indexing ---
-sbTargetingSchema.index({ profileId: 1, adGroupId: 1, status: 1 });
-sbTargetingSchema.index({ configId: 1, profileId: 1, targeting: 1, targetId: 1, reportDate: 1 });
-sbTargetingSchema.index({ profileId: 1, reportDate: 1, campaignId: 1, adGroupId: 1, targeting: 1 });
 sbTargetingSchema.index({ configId: 1, profileId: 1, status: 1, reportDate: 1, targeting: 1 });
 
 // TTL index for 396-day data retention

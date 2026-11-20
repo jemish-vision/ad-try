@@ -121,7 +121,8 @@ const {
   fetchSDCreativePreview,
   fetchSDCreatives,
 } = require("../helper/amazonBrandApi");
-const { logAudit } = require("../helpers/auditHelper");
+const { logAudit, logAuditBatch } = require("../helpers/auditHelper");
+const { auditValues, readAuditValues } = require("../helpers/auditChanges");
 const { sanitizeQueryObject } = require("../helper/sanitizeQuery");
 const { syncAmazonCampaignStatusHistory, syncProfileCampaignStatusHistory } = require("../services/amazonHistory.service");
 const { observeCampaignStatus, eventDate, normalizeCampaignAdType } = require("../services/campaignStatusHistory.service");
@@ -284,6 +285,8 @@ exports.updateCampaignStatus = async (req, res) => {
         message: `Campaign status updated to ${status.toUpperCase()} - Config ID: ${configId}, Profile: ${profileId}, Campaign: ${campaignId}`,
         log_type: "info",
       });
+      req.auditChange = { configId, profileId: numericProfileId,
+        previousValue: { status: existingCamp?.status ?? null }, newValue: { status: status.toUpperCase() } };
 
       return res.status(200).send({
         isSuccess: true,
@@ -2623,23 +2626,27 @@ exports.cronGenerateCampaignReport = async (
                 log_type: "info"
               });
 
+              const historyId = getCronData?._id || cronjobid;
               await linkReportHistory({
-                historyId: getCronData?._id || cronjobid,
+                historyId,
                 configId: profile.configId, profileId: profile.profileId,
                 reportName: "CAMPAIGNS", startDate, endDate,
               });
 
-              if (recurring && getCronData?._id) {
-                const reportStatuses = [reportSpResponse, reportSbResponse, reportSdResponse];
-                const combinedStatus = reportStatuses.includes("ERROR") ? "FAILED"
-                  : reportStatuses.every((status) => status === "COMPLETED") ? "COMPLETED"
-                    : reportStatuses.includes("STAGED") ? "STAGED" : reportSpResponse;
-                if (combinedStatus === "FAILED") {
+              if (historyId) {
+                const reportStatuses = { SP: reportSpResponse, SB: reportSbResponse, SD: reportSdResponse };
+                const statuses = Object.values(reportStatuses);
+                if (statuses.includes("ERROR")) {
                   await cronJobHistorySchema.updateOne(
-                    { _id: getCronData._id },
-                    { $set: { status: "FAILED", error: reportRequestFailureReason({ SP: reportSpResponse, SB: reportSbResponse, SD: reportSdResponse }) } },
+                    { _id: historyId },
+                    { $set: { status: "FAILED", error: reportRequestFailureReason(reportStatuses) } },
                   );
-                } else {
+                } else if (!recurring && statuses.every((status) => status === "COMPLETED")) {
+                  await cronJobHistorySchema.updateOne(
+                    { _id: historyId },
+                    { $set: { status: "COMPLETED", error: null } },
+                  );
+                } else if (recurring && getCronData?._id) {
                   await finalizeReportHistory(getCronData._id);
                 }
               }
@@ -2885,7 +2892,7 @@ async function processSPCampaigs({ profile, checkConfigAds, dates }) {
 
         const placements = [
           { key: "PLACEMENT_TOP", value: "Top of Search" },
-          { key: "PLACEMENT_PRODUCT_PAGE", value: "Product pages" },
+          { key: "PLACEMENT_PRODUCT_PAGE", value: "Product Pages" },
           { key: "PLACEMENT_REST_OF_SEARCH", value: "Rest of Search" },
           { key: "AUDIENCE_SEGMENT", value: "Audience Segment" },
           { key: "SITE_AMAZON_BUSINESS", value: "Business Placement" },
@@ -3077,7 +3084,7 @@ async function processSBCampaigs({ profile, checkConfigAds, dates }) {
 
         const placements = [
           { key: "PLACEMENT_TOP", value: "Top of Search" },
-          { key: "PLACEMENT_PRODUCT_PAGE", value: "Product pages" },
+          { key: "PLACEMENT_PRODUCT_PAGE", value: "Product Pages" },
           { key: "PLACEMENT_REST_OF_SEARCH", value: "Rest of Search" },
           { key: "AUDIENCE_SEGMENT", value: "Audience Segment" },
           { key: "SITE_AMAZON_BUSINESS", value: "Business Placement" },
@@ -3341,7 +3348,7 @@ async function spGenerateReport(
         await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
         existing = null;
       } else {
-        processStagedReportBatches(["campaign"]).catch(() => {});
+        processStagedReportBatches(["campaign"]).catch(() => { });
         return "STAGED";
       }
     } else if (existing && !["PENDING", "IN_PROGRESS", "PROCESSING"].includes(existing?.status)) {
@@ -3607,7 +3614,7 @@ async function sbGenerateReport(
   if (existing.status === "COMPLETED") return "COMPLETED";
   if (["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) {
     // Age alone does not prove a staged import failed. Let the writer finish.
-    processStagedReportBatches(["sbCampaign"]).catch(() => {});
+    processStagedReportBatches(["sbCampaign"]).catch(() => { });
     return existing.status;
   }
 
@@ -3730,7 +3737,7 @@ async function sdGenerateReport(
         await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
         existing = null;
       } else {
-        processStagedReportBatches(["sdCampaign"]).catch(() => {});
+        processStagedReportBatches(["sdCampaign"]).catch(() => { });
         return existing.status;
       }
     }
@@ -3757,7 +3764,7 @@ async function sdGenerateReport(
         await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
         existing = null;
       } else {
-        processStagedReportBatches(["sdCampaign"]).catch(() => {});
+        processStagedReportBatches(["sdCampaign"]).catch(() => { });
         return existing.status;
       }
     }
@@ -6270,7 +6277,7 @@ exports.getHistory = async (req, res) => {
           const placementNames = {
             TOP_OF_SEARCH: "Top of Search",
             REST_OF_SEARCH: "Rest of Search",
-            PRODUCT_PAGE: "Product pages",
+            PRODUCT_PAGE: "Product Pages",
           };
 
           const existingHistory = await campaignChangeHistorySchema.find({
@@ -6398,15 +6405,17 @@ exports.getHistory = async (req, res) => {
 
     if (req.body?.targetId) {
       const requestedTargetId = String(req.body.targetId);
-      const targetIdentity = { $or: [
-        { targetId: { $in: [requestedTargetId, requestedTargetId.replace(/^[TK]-/, "")] } },
-        ...(filter.targeting ? [{
-          $and: [
-            { $or: [{ targetId: { $exists: false } }, { targetId: null }, { targetId: "" }] },
-            { targeting: filter.targeting },
-          ],
-        }] : []),
-      ] };
+      const targetIdentity = {
+        $or: [
+          { targetId: { $in: [requestedTargetId, requestedTargetId.replace(/^[TK]-/, "")] } },
+          ...(filter.targeting ? [{
+            $and: [
+              { $or: [{ targetId: { $exists: false } }, { targetId: null }, { targetId: "" }] },
+              { targeting: filter.targeting },
+            ],
+          }] : []),
+        ]
+      };
       (filter.$and ||= []).push(targetIdentity);
       (historyIdentityFilter.$and ||= []).push(targetIdentity);
     }
@@ -6585,7 +6594,7 @@ exports.getHistory = async (req, res) => {
                 { updatedFrom: { $ne: "Amazon Stream" } },
                 {
                   changeType: {
-                    $regex: /^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$|^Revert/i,
+                    $regex: /^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product Pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$|^Revert/i,
                   },
                 },
               ],
@@ -6604,7 +6613,7 @@ exports.getHistory = async (req, res) => {
                   { updatedFrom: "Amazon Stream" },
                   {
                     changeType: {
-                      $not: /^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
+                      $not: /^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product Pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
                     },
                   },
                 ],
@@ -6647,7 +6656,7 @@ exports.getHistory = async (req, res) => {
             source: { $nin: ["AMAZON_SQS", "AMAZON_API", "DAYPARTING"] },
             updatedFrom: { $ne: "Amazon Stream" },
             changeType: {
-              $regex: /^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
+              $regex: /^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product Pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
             },
           }
         );
@@ -6669,7 +6678,7 @@ exports.getHistory = async (req, res) => {
             source: { $nin: ["DAYPARTING", "RECOMMENDATION", "AMAZON_SQS", "AMAZON_API"] },
             updatedFrom: { $ne: "Amazon Stream" },
             changeType: {
-              $not: /dayparting|rule|cron|^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
+              $not: /dayparting|rule|cron|^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product Pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
             },
           }
         );
@@ -6713,7 +6722,7 @@ exports.getHistory = async (req, res) => {
                 {
                   $regexMatch: {
                     input: { $ifNull: ["$changeType", ""] },
-                    regex: "^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$",
+                    regex: "^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product Pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$",
                     options: "i",
                   },
                 },
@@ -6765,7 +6774,7 @@ exports.getHistory = async (req, res) => {
       if (source === "MANUAL") return "Manual";
       if (
         source === "RECOMMENDATION" ||
-        /^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$|^Revert/i.test(
+        /^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product Pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$|^Revert/i.test(
           changeType
         )
       ) {
@@ -6870,8 +6879,8 @@ exports.getHistory = async (req, res) => {
           const sameCamp = exCId === cId;
           const sameTarget =
             tId && exTId ? tId === exTId :
-            (target && exTarget && target === exTarget) ||
-            (!target && !exTarget && !tId && !exTId);
+              (target && exTarget && target === exTarget) ||
+              (!target && !exTarget && !tId && !exTId);
           const sameAdGroup = !doc.adGroupId || !ex.adGroupId || String(doc.adGroupId) === String(ex.adGroupId);
           const sameAdType = !doc.type || !ex.type || String(doc.type).toUpperCase() === String(ex.type).toUpperCase();
           const sameType = exCType === cType && (cType !== "placement" ||
@@ -7561,7 +7570,7 @@ exports.getLatestCampaignHistory = async (req, res) => {
             { source: { $regex: /^recommendation$/i } },
             {
               changeType: {
-                $regex: /^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
+                $regex: /^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product Pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
               },
             }
           );
@@ -7571,7 +7580,7 @@ exports.getLatestCampaignHistory = async (req, res) => {
           combinedScopeOr.push({
             source: { $not: /^(dayparting|recommendation)$/i },
             changeType: {
-              $not: /dayparting|^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
+              $not: /dayparting|^Update (Targeting Bid|Target Bid|Camapign Budget|Campaign Budget|Placement Bid|Product Pages Placement Bid|Rest of Search Placement Bid|Top of Search Placement Bid|Targeting Status|Target Status|Camapign Status|Campaign Status)$|^Add (Target|Negative Target)$/i,
             },
           });
         }
@@ -7598,7 +7607,7 @@ exports.getLatestCampaignHistory = async (req, res) => {
       ],
     };
 
-    // 2. Placement-level records (Top of Search, Product pages, Rest of Search)
+    // 2. Placement-level records (Top of Search, Product Pages, Rest of Search)
     const placementMatch = {
       $and: [
         baseMatch,
@@ -8770,7 +8779,7 @@ exports.hourlyPlacementTracking = async (req, res) => {
             sortStage,
           ],
           productPages: [
-            { $match: { placement: "Product pages" } },
+            { $match: { placement: "Product Pages" } },
             groupStage,
             addFieldsStage,
             sortStage,
@@ -9248,18 +9257,25 @@ async function updateCampaignBudgetUsage(data, profile) {
   if (!Number.isFinite(usage) || usage < 0 || !Number.isFinite(budget) || budget <= 0) throw new Error("Invalid campaign budget-usage event");
   const adType = normalizeCampaignAdType(data.advertising_product_type);
   const isOutOfBudget = usage >= 100;
-  await observeCampaignStatus({ configId: profile.configId, profileId: profile.profileId,
+  await observeCampaignStatus({
+    configId: profile.configId, profileId: profile.profileId,
     campaignId: data.budget_scope_id, adType, dimension: "IN_BUDGET",
-    value: isOutOfBudget ? "OUT_OF_BUDGET" : "IN_BUDGET", timestamp });
+    value: isOutOfBudget ? "OUT_OF_BUDGET" : "IN_BUDGET", timestamp
+  });
   const schema = adType === "SB" ? sbCampaignsSchema : adType === "SD" ? sdCampaignsSchema : campaignsSchema;
   // Budget availability is not Enabled/Paused or proof that ads are delivering.
   // Update tracking only; campaign configuration stays owned by campaign sync.
-  await schema.updateMany({ configId: profile.configId, profileId: Number(profile.profileId),
+  await schema.updateMany({
+    configId: profile.configId, profileId: Number(profile.profileId),
     campaignId: Number(data.budget_scope_id), reportDate: moment(timestamp).tz(profile.timezone || "UTC").format("YYYY-MM-DD"),
     $or: [{ "budgetTracking.lastUpdated": { $lte: timestamp } }, { "budgetTracking.lastUpdated": { $exists: false } }],
-  }, { $set: { "budgetTracking.estimatedSpend": Number((usage * budget / 100).toFixed(2)),
-    "budgetTracking.lastUsagePercentage": usage, "budgetTracking.lastUpdated": timestamp,
-    "budgetTracking.isOutOfBudget": isOutOfBudget } });
+  }, {
+    $set: {
+      "budgetTracking.estimatedSpend": Number((usage * budget / 100).toFixed(2)),
+      "budgetTracking.lastUsagePercentage": usage, "budgetTracking.lastUpdated": timestamp,
+      "budgetTracking.isOutOfBudget": isOutOfBudget
+    }
+  });
   return true;
 }
 
@@ -9282,7 +9298,7 @@ async function updateKeywordsHourlyData(data, profile) {
   ) {
     placementName = "Rest of Search";
   } else if (data.placement == "Detail Page on-Amazon") {
-    placementName = "Product pages";
+    placementName = "Product Pages";
   } else if (
     data.placement == "Top of Search on-Amazon" ||
     data.placement == "Top of Search"
@@ -9379,7 +9395,7 @@ async function updateConversionData(data, profile) {
   ) {
     placementName = "Rest of Search";
   } else if (data.placement == "Detail Page on-Amazon") {
-    placementName = "Product pages";
+    placementName = "Product Pages";
   } else if (
     data.placement == "Top of Search on-Amazon" ||
     data.placement == "Top of Search"
@@ -9475,7 +9491,8 @@ async function updateCampaignManagementData(data, profile) {
   const streamType = normalizeCampaignAdType(parsedData?.advertising_product_type || parsedData?.ad_product);
   if (campaignIdentity && (parsedData?.state || parsedData?.delivery_status || parsedData?.serving_status)) {
     const timestamp = eventDate(streamTimestamp);
-    const previous = await bidDataSchema.findOne({ configId: profile.configId, profileId: Number(profile.profileId),
+    const previous = await bidDataSchema.findOne({
+      configId: profile.configId, profileId: Number(profile.profileId),
       campaign_id: { $in: [String(campaignIdentity), Number(campaignIdentity)] }, dataset_id: "ads-campaign-management-campaigns",
     }).sort({ last_updated_date_time: -1, createdAt: -1 }).lean();
     const common = { configId: profile.configId, profileId: profile.profileId, campaignId: campaignIdentity, adType: streamType };
@@ -9610,7 +9627,7 @@ async function updateCampaignManagementData(data, profile) {
         const placementNames = {
           TOP_OF_SEARCH: "Top of Search",
           REST_OF_SEARCH: "Rest of Search",
-          PRODUCT_PAGE: "Product pages",
+          PRODUCT_PAGE: "Product Pages",
         };
         for (const newAdj of newPlacements) {
           const oldAdj = oldPlacements.find((o) => o.placement === newAdj.placement);
@@ -10143,13 +10160,12 @@ exports.saveCamapignBidThreshold = async (req, res) => {
     const configId = req?.config?.configId;
     const { profileId, campaignId, minBid, maxBid, targetACOS } = req.body;
 
-    await campaignBidThresholdSchema
+    const thresholdScope = { configId, profileId, campaignId };
+    const bidFields = ["minBid", "maxBid", "targetACOS"];
+    const previousValue = await readAuditValues(campaignBidThresholdSchema, thresholdScope, bidFields);
+    const updatedThreshold = await campaignBidThresholdSchema
       .findOneAndUpdate(
-        {
-          configId,
-          profileId,
-          campaignId,
-        },
+        thresholdScope,
         {
           $set: {
             maxBid,
@@ -10168,10 +10184,11 @@ exports.saveCamapignBidThreshold = async (req, res) => {
     });
     await logAudit(
       "CAMPAIGN_BID_THRESHOLD",
-      `Campaign ${campaign?.name} bid threshold saved successfully.`,
+      `Campaign ${campaign?.name || campaignId} bid threshold saved successfully.`,
       {
-        ...(!campaign?.campaignName && { campaignId }),
-        campaignName: campaign?.campaignName,
+        configId, profileId, campaignId, resourceType: "campaign", resourceId: String(campaignId),
+        previousValue, newValue: auditValues(updatedThreshold, bidFields),
+        campaignName: campaign?.name,
         minBid,
         maxBid,
         targetACOS,
@@ -10570,16 +10587,8 @@ exports.cronMaxBidSetting = async () => {
             thresholdMap.set(t.campaignId, t);
           });
 
-          const users = await profileBasedPermissionModel
-            ?.findOne({
-              profileId: profile.profileId,
-              configId: profile.configId,
-              hasAccess: true,
-            })
-            .sort({ createdAt: 1 })
-            .lean();
-
           const bulkOps = [];
+          const auditEntries = [];
 
           await Promise.all(
             campaignData.map(async (row) => {
@@ -10595,17 +10604,15 @@ exports.cronMaxBidSetting = async () => {
                 (row.productPrice * (targetACOS / 100)).toFixed(2),
               );
 
-              await logAudit(
-                "CAMPAIGN_BID_THRESHOLD",
-                `Campaign ${row?.name} bid threshold saved successfully.`,
-                {
-                  ...(!row?.name && { campaignId: row?.campaignId }),
-                  campaignName: row?.name,
-                  maxBid,
-                  targetACOS,
-                },
-                users?.userId || req?.user?.id,
-              );
+              auditEntries.push({
+                event: "CAMPAIGN_BID_THRESHOLD", actorType: "system", source: "worker",
+                configId: profile.configId, profileId: profile.profileId,
+                resourceType: "campaign", resourceId: String(row.campaignId),
+                message: "Scheduled campaign bid threshold updated",
+                previousValue: auditValues(threshold, ["maxBid", "targetACOS"]),
+                newValue: { maxBid, targetACOS },
+                metadata: { campaignName: row.name },
+              });
 
               bulkOps.push({
                 updateOne: {
@@ -10623,6 +10630,7 @@ exports.cronMaxBidSetting = async () => {
 
           if (bulkOps.length) {
             await campaignBidThresholdSchema.bulkWrite(bulkOps);
+            await logAuditBatch(auditEntries);
           }
 
           const createCronHistory = new cronJobHistorySchema({
@@ -10800,11 +10808,15 @@ exports.addTargetings = async (req, res) => {
       });
 
       const campaign = await campaignsSchema.findOne({
+        configId,
+        profileId,
         campaignId: item?.campaignId,
-      });
+      }).lean();
       const adGroup = await adGroupsSchema.findOne({
+        configId,
+        profileId,
         adGroupId: item?.adGroupId,
-      });
+      }).lean();
 
       await logAudit(
         "SEARCH_TERM_ADD_AS_KEYWORD",
@@ -10870,11 +10882,15 @@ exports.addNegativeTargetings = async (req, res) => {
       });
 
       const campaign = await campaignsSchema.findOne({
+        configId,
+        profileId,
         campaignId: item?.campaignId,
-      });
+      }).lean();
       const adGroup = await adGroupsSchema.findOne({
+        configId,
+        profileId,
         adGroupId: item?.adGroupId,
-      });
+      }).lean();
 
       await logAudit(
         "SEARCH_TERM_ADD_AS_NEGATIVE_KEYWORD",

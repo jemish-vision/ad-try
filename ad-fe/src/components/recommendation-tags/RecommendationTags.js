@@ -122,7 +122,7 @@ export function TagSelector({ value = [], options = [], onChange, onTagCreated, 
   return (
     <div ref={rootRef} className="relative w-full" id={id}>
       <div
-        className="min-h-[38px] w-full flex flex-wrap items-center gap-1.5 px-2 py-1.5 rounded-md border border-input bg-background cursor-text focus-within:ring-1 focus-within:ring-ring"
+        className="tag-selector-wrapper min-h-[38px] w-full flex flex-wrap items-center gap-1.5 px-2 py-1.5 rounded-md border border-input bg-background cursor-text focus-within:ring-1 focus-within:ring-ring"
         onClick={() => {
           setOpen(true);
           inputRef.current?.focus();
@@ -152,7 +152,7 @@ export function TagSelector({ value = [], options = [], onChange, onTagCreated, 
             }
           }}
           placeholder={value.length ? "" : placeholder || t("Add tags…")}
-          className="flex-1 min-w-[120px] bg-transparent outline-none border-0 text-[13px] text-slate-800 dark:text-slate-100 placeholder:text-slate-400 py-0.5"
+          className="tag-selector-input flex-1 min-w-[120px] bg-transparent outline-none border-0 text-[13px] text-slate-800 dark:text-slate-100 placeholder:text-slate-400 py-0.5"
           style={{ border: "none", boxShadow: "none", background: "transparent", outline: "none", height: "auto", padding: "2px 0" }}
         />
       </div>

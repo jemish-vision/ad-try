@@ -324,7 +324,7 @@ export const formatAmazonChangeType = (row) => {
       return "Placement bid(Top of search)";
     }
     if (/product pages|product page/i.test(rawType)) {
-      return "Placement bid(Product pages)";
+      return "Placement bid(Product Pages)";
     }
     if (/rest of search/i.test(rawType)) {
       return "Placement bid(Rest of search)";

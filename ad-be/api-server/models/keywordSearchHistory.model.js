@@ -18,7 +18,7 @@ const keywordSearchHistorySchema = new mongoose.Schema(
 );
 
 // --- Performance Indexing ---
-keywordSearchHistorySchema.index({ currentDate: 1 });
+keywordSearchHistorySchema.index({ configId: 1, currentDate: 1 });
 
 // TTL index for 396-day data retention
 keywordSearchHistorySchema.index({ createdAt: 1 }, { expireAfterSeconds: 34214400 });

@@ -6,12 +6,10 @@ const fcStorageFeeSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "config",
       required: true,
-      index: true,
     },
     profileId: {
       type: Number,
       required: true,
-      index: true,
     },
     sellerId: {
       type: String,
@@ -20,14 +18,12 @@ const fcStorageFeeSchema = new mongoose.Schema(
     monthYear: {
       type: String, // "YYYY-MM"
       required: true,
-      index: true,
     },
     fcCode: {
       type: String,
       required: true,
       trim: true,
       uppercase: true,
-      index: true,
     },
     countryCode: {
       type: String,
@@ -38,12 +34,10 @@ const fcStorageFeeSchema = new mongoose.Schema(
     asin: {
       type: String,
       trim: true,
-      index: true,
     },
     sku: {
       type: String,
       trim: true,
-      index: true,
     },
     fnsku: {
       type: String,
@@ -91,15 +85,18 @@ const fcStorageFeeSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// 1. Unique identity and deduplication index (serves report stream upserts and warehouse lookups)
 fcStorageFeeSchema.index(
   { configId: 1, profileId: 1, monthYear: 1, fcCode: 1, asin: 1, fnsku: 1 },
   { unique: true }
 );
-fcStorageFeeSchema.index({ profileId: 1, monthYear: 1, fcCode: 1 });
 
-
-// Optimized Query Indexes for Storage Fees
-fcStorageFeeSchema.index({ configId: 1, profileId: 1, monthYear: -1 });
-fcStorageFeeSchema.index({ configId: 1, profileId: 1, monthYear: -1, estimatedMonthlyStorageFee: -1 });
+// 2. Primary listing, KPI aggregation, and sorted fee index (serves getFcStorageFees, exists, and latest month sort)
+fcStorageFeeSchema.index({
+  configId: 1,
+  profileId: 1,
+  monthYear: -1,
+  estimatedMonthlyStorageFee: -1,
+});
 
 module.exports = mongoose.model("fcStorageFee", fcStorageFeeSchema);

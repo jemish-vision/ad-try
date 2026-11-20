@@ -107,7 +107,7 @@ const ACTION_OPTIONS = {
 const PLACEMENT_OPTIONS = [
   { value: 'Top of Search', label: 'Top of Search' },
   { value: 'Rest of Search', label: 'Rest of Search' },
-  { value: 'Product pages', label: 'Product Page' },
+  { value: 'Product Pages', label: 'Product Page' },
 ];
 
 const MATCH_TYPE_OPTIONS = [

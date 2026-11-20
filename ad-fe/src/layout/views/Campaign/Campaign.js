@@ -1756,7 +1756,7 @@ function Campaign() {
         campaignId: Number(campaignId),
         ...(getValue("Top of Search") && { topOfSearchBid: getValue("Top of Search") }),
         ...(getValue("Rest of Search") && { restOfSearchBid: getValue("Rest of Search") }),
-        ...(getValue("Product pages") && { productPageBid: getValue("Product pages") }),
+        ...(getValue("Product Pages") && { productPageBid: getValue("Product Pages") }),
       };
     });
 

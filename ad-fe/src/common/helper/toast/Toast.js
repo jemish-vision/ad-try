@@ -20,19 +20,31 @@ class Toast {
     return message;
   }
 
-  success(message) {
+  success(message, options = {}) {
     if (!message || (typeof message === "string" && !message.trim())) return;
-    toast.success(this.translate(message), TOAST_OPTS);
+    const opts = { ...TOAST_OPTS, ...options };
+    if (opts.toastId && toast.isActive(opts.toastId)) {
+      return;
+    }
+    toast.success(this.translate(message), opts);
   }
 
-  warning(message) {
+  warning(message, options = {}) {
     if (!message || (typeof message === "string" && !message.trim())) return;
-    toast.warning(this.translate(message), TOAST_OPTS);
+    const opts = { ...TOAST_OPTS, ...options };
+    if (opts.toastId && toast.isActive(opts.toastId)) {
+      return;
+    }
+    toast.warning(this.translate(message), opts);
   }
 
-  error(message) {
+  error(message, options = {}) {
     if (!message || (typeof message === "string" && !message.trim())) return;
-    toast.error(this.translate(message), TOAST_OPTS);
+    const opts = { ...TOAST_OPTS, ...options };
+    if (opts.toastId && toast.isActive(opts.toastId)) {
+      return;
+    }
+    toast.error(this.translate(message), opts);
   }
 }
 const toastInstance = new Toast();

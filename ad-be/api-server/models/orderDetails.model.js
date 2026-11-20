@@ -5,18 +5,15 @@ const orderDetailsSchema = new mongoose.Schema(
     configId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "config",
-      index: true,
     },
 
     profileId: {
       type: Number,
-      index: true,
     },
 
     marketplaceId: {
       type: String,
       trim: true,
-      index: true,
     },
 
     // =========================
@@ -26,18 +23,15 @@ const orderDetailsSchema = new mongoose.Schema(
       type: String,
       trim: true,
       required: true,
-      index: true,
     },
 
     orderStatus: {
       type: String,
       trim: true,
-      index: true,
     },
 
     orderCreatedTime: {
       type: Date,
-      index: true,
     },
 
     orderLastUpdatedTime: {
@@ -185,7 +179,6 @@ const orderDetailsSchema = new mongoose.Schema(
           asin: {
             type: String,
             trim: true,
-            index: true,
           },
 
           title: {
@@ -302,7 +295,7 @@ orderDetailsSchema.index(
 );
 
 // --- Performance Indexing ---
-orderDetailsSchema.index({ configId: 1, profileId: 1, orderCreatedTime: -1 });
+orderDetailsSchema.index({ configId: 1, profileId: 1, orderCreatedTime: -1, orderStatus: 1 });
 orderDetailsSchema.index({ configId: 1, profileId: 1, "orderItems.product.sellerSku": 1 });
 
 module.exports = mongoose.model("orderDetails", orderDetailsSchema);

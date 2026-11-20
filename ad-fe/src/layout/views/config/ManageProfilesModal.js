@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useContext, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Search } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../../../components/ui/dialog';
 import { Button } from '../../../components/ui/button';
+import { Input } from '../../../components/ui/input';
 import { ProfileContext } from '../../../helper/usecontext/useContext';
 import { ApiGetAmazonProfiles, ApiSaveAmazonProfiles, ApiGetProfileSyncDetails } from '../../../api-wrapper/ApiAdsConfig';
 import Toast from '../../../common/helper/toast/Toast';
@@ -13,6 +15,7 @@ const ManageProfilesModal = ({ open, onClose, configId, sellerId = null, isOAuth
   const { t } = useTranslation();
   const { profileLimit, totalOrgProfiles, setRefreshSideBar, setProfileList } = useContext(ProfileContext);
   const [profiles, setProfiles] = useState([]);
+  const [profileSearch, setProfileSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -24,6 +27,7 @@ const ManageProfilesModal = ({ open, onClose, configId, sellerId = null, isOAuth
 
   useEffect(() => {
     if (open && configId) {
+      setProfileSearch('');
       fetchProfiles();
     }
   }, [open, configId]);
@@ -107,8 +111,12 @@ const ManageProfilesModal = ({ open, onClose, configId, sellerId = null, isOAuth
   };
 
   const handleSave = async () => {
-    const selectedProfilesData = profiles.filter(p => !p.isStored && selectedIds.has(p.profileId.toString()));
-    const targetSellerId = isOAuthFlow ? (activeSellerId || localStorage.getItem("appstore_seller_id") || sessionStorage.getItem("appstore_seller_id") || configId) : null;
+    const selectedProfiles = profiles.filter(p => selectedIds.has(p.profileId.toString()));
+    const selectedProfilesData = selectedProfiles.filter(p => !p.isStored);
+    const targetSellerId = isOAuthFlow && typeof activeSellerId === "string" &&
+      /^[a-z0-9]+$/i.test(activeSellerId) &&
+      selectedProfiles.some(p => p.isSellerMatch && String(p.advertiserId || "").trim() === activeSellerId)
+      ? activeSellerId : null;
 
     if (selectedProfilesData.length === 0) {
       if (onSuccess) onSuccess(targetSellerId);
@@ -144,10 +152,17 @@ const ManageProfilesModal = ({ open, onClose, configId, sellerId = null, isOAuth
   const newSelectedCount = Math.max(0, selectedIds.size - storedCount);
   const storedProfilesOtherConfigs = Math.max(0, (totalOrgProfiles || 0) - storedCount);
   const totalAfterSave = storedProfilesOtherConfigs + selectedIds.size;
+  const searchTerms = profileSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const visibleProfiles = searchTerms.length
+    ? profiles.filter(profile => {
+        const searchableText = [profile.name, profile.countryCode, profile.profileId].join(' ').toLowerCase();
+        return searchTerms.every(term => searchableText.includes(term));
+      })
+    : profiles;
 
   return (
     <Dialog open={open} onOpenChange={(val) => !val && onClose()}>
-      <DialogContent className="sm:max-w-[700px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-0 shadow-2xl overflow-hidden">
+      <DialogContent className="sm:max-w-[700px] max-h-[90dvh] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-0 shadow-2xl overflow-y-auto">
         <DialogHeader className="p-5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
           <div className="flex items-center justify-between pr-8">
             <DialogTitle className="text-xl font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -183,6 +198,18 @@ const ManageProfilesModal = ({ open, onClose, configId, sellerId = null, isOAuth
             </div>
           </div>
 
+          <div className="relative mb-4">
+            <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              type="search"
+              aria-label={t('Search profiles')}
+              placeholder={t('Search by profile name, country code, or ID')}
+              value={profileSearch}
+              onChange={(event) => setProfileSearch(event.target.value)}
+              className="pl-9"
+            />
+          </div>
+
           <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
             <div className="max-h-[400px] overflow-y-auto custom-scrollbar">
               {loading ? (
@@ -195,6 +222,10 @@ const ManageProfilesModal = ({ open, onClose, configId, sellerId = null, isOAuth
                   <i className="fa fa-exclamation-circle text-3xl mb-3 text-slate-400"></i>
                   <p>{t('No profiles found for this account.')}</p>
                 </div>
+              ) : visibleProfiles.length === 0 ? (
+                <p role="status" className="py-12 px-4 text-center text-sm text-slate-500 dark:text-slate-400">
+                  {t('No profiles match your search.')}
+                </p>
               ) : (
                 <table className="w-full text-sm text-left">
                   <thead className="text-xs text-slate-500 uppercase bg-slate-50 dark:bg-slate-800/80 sticky top-0 z-10">
@@ -206,7 +237,7 @@ const ManageProfilesModal = ({ open, onClose, configId, sellerId = null, isOAuth
                     </tr>
                   </thead>
                   <tbody>
-                    {profiles.map((p, idx) => {
+                    {visibleProfiles.map((p) => {
                       const pIdStr = p.profileId.toString();
                       const checked = selectedIds.has(pIdStr);
                       const isInProgress = syncStatusMap[pIdStr] === "IN_PROGRESS";
@@ -217,7 +248,7 @@ const ManageProfilesModal = ({ open, onClose, configId, sellerId = null, isOAuth
                         ? t("Profile is already stored.")
                         : "";
                       return (
-                        <tr key={idx} className="border-b border-slate-100 dark:border-slate-800 last:border-0 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                        <tr key={pIdStr} className="border-b border-slate-100 dark:border-slate-800 last:border-0 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
                           <td className="px-4 py-3">
                             <AppTooltip text={tooltipMsg}>
                               <label className={`relative inline-flex items-center ${isDisabled ? "cursor-not-allowed opacity-75" : "cursor-pointer"} select-none`}>
@@ -266,7 +297,7 @@ const ManageProfilesModal = ({ open, onClose, configId, sellerId = null, isOAuth
         <DialogFooter className="p-5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
           <Button
             variant="outline"
-            onClick={onClose}
+            onClick={() => onClose()}
             disabled={saving}
             className="!bg-white !border-slate-300 !text-slate-700 hover:!bg-slate-50 dark:!bg-transparent dark:!border-slate-700 dark:!text-slate-300 dark:hover:!bg-slate-800"
           >

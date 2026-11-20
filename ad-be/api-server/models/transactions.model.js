@@ -7,15 +7,13 @@ const financialTransactionSchema = new mongoose.Schema(
       ref: "config",
     },
     profileId: {
-      type: Number,
-      index: true
+      type: Number
     },
 
     // ── Root Level Order Info ─────────────────────────────────
     amazonOrderId: {
       type: String,
-      trim: true,
-      index: true,
+      trim: true
     },
     sellerOrderId: {
       type: String,
@@ -236,11 +234,10 @@ const financialTransactionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-financialTransactionSchema.index({ configId: 1, postedDate: -1 });
-financialTransactionSchema.index({ amazonOrderId: 1, configId: 1 });
-financialTransactionSchema.index({ transactionStatus: 1 });
-financialTransactionSchema.index({ sellerSKU: 1 });
-
+// 1. Core financial transaction lookup index (serves profit analysis joins, order refunds, fee lookups, and campaign tracking)
 financialTransactionSchema.index({ amazonOrderId: 1, configId: 1, profileId: 1, transactionType: 1 });
+
+// 2. Chronological settlement / reporting index (serves tenant-isolated postedDate queries and chronological audits)
+financialTransactionSchema.index({ configId: 1, profileId: 1, postedDate: -1 });
 
 module.exports = mongoose.model("transactions", financialTransactionSchema);

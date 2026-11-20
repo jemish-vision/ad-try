@@ -182,11 +182,14 @@ exports.updateCustomerPermissions = async (req, res) => {
 
     // Permission document
     let permissionDoc = await permissionSchema.findOne({ userId });
+    const previousPages = permissionDoc?.toObject().pages ?? [];
 
     // First time → create
     if (!permissionDoc) {
       const filteredPages = pages.filter(p => p?.allocatedActions?.length > 0);
       permissionDoc = await permissionSchema.create({ userId, pages: filteredPages, allocatedOn: new Date() });
+      req.auditChange = { organizationId: user.organizationId, resourceType: "user", resourceId: String(user._id),
+        previousValue: { pages: previousPages }, newValue: { pages: permissionDoc.toObject().pages } };
 
       return res.status(200).send({
         message: "Permissions created successfully",
@@ -216,6 +219,8 @@ exports.updateCustomerPermissions = async (req, res) => {
 
     // Save updated result
     const updated = await permissionDoc.save();
+    req.auditChange = { organizationId: user.organizationId, resourceType: "user", resourceId: String(user._id),
+      previousValue: { pages: previousPages }, newValue: { pages: updated.toObject().pages } };
 
     return res.status(200).send({
       message: "Permissions updated successfully",
@@ -265,8 +270,12 @@ exports.updateCustomerPermission = async (req, res) => {
         isSuccess: false,
       });
     }
+    const previousStatus = actionToUpdate.status;
     actionToUpdate.status = status;
     await getUserPermission.save();
+    req.auditChange = { resourceType: "user", resourceId: String(userId),
+      previousValue: { status: previousStatus }, newValue: { status },
+      metadata: { pageId: String(pageId), actionId: String(actionId) } };
     return res.status(200).send({
       message: "Permission updated successfully.",
       isSuccess: true,

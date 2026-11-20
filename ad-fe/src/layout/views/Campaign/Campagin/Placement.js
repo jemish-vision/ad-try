@@ -16,7 +16,7 @@ import { AgGridReact } from "ag-grid-react";
 import { CustomNoRowsOverlay } from "../../../../common/grid/AgTable";
 
 const Placement = (props) => {
-  const { t } = useTranslation();
+    const { t } = useTranslation();
     const { profileId, currencyCode } = useContext(ProfileContext);
 
     const {
@@ -33,7 +33,7 @@ const Placement = (props) => {
             campaignIds: [campaignId],
             ...(Boolean(placement === "Top of Search") && { topOfSearchBid: newBid }),
             ...(Boolean(placement === "Rest of Search") && { restOfSearchBid: newBid }),
-            ...(Boolean(placement === "Product pages") && { productPageBid: newBid }),
+            ...(Boolean(placement === "Product Pages") && { productPageBid: newBid }),
         };
 
         await ApiUpdatePlacementBid(payload)

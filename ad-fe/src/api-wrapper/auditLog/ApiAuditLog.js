@@ -10,10 +10,14 @@ const headers = {
 const ApiAditLogListing = (data) => {
   return axios.post(`${api}get`, data, { headers: { ...headers, 'x-skip-loader': true }, skipLoader: true })
     .then((res) => res.data)
-    .catch((res) => res.data);
+    .catch((error) => error.response?.data || { isSuccess: false, message: "Unable to load audit logs. Please retry." });
 };
 
+const ApiAuditLogEvents = () => axios.get(`${api}events`, { headers, skipLoader: true })
+  .then((res) => res.data)
+  .catch(() => ({ isSuccess: false, data: [] }));
 
 export {
   ApiAditLogListing,
+  ApiAuditLogEvents,
 };

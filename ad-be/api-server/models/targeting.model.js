@@ -169,68 +169,11 @@ targetingSchema.index(
 );
 
 targetingSchema.index({
-  campaignId: 1,
-  adGroupId: 1,
-  targetId: 1,
-  profileId: 1,
-  reportDate: 1
-});
-
-targetingSchema.index({
-  reportDate: 1,
-  campaignId: 1,
-  adGroupId: 1,
-  targetId: 1,
-  profileId: 1
-});
-
-targetingSchema.index({
-  campaignId: 1,
-  adGroupId: 1,
-  targetId: 1,
-  profileId: 1,
-  reportDate: 1,
-  impressions: 1,
-  clicks: 1,
-  orders: 1,
-  spend: 1,
-  sales: 1
-});
-
-targetingSchema.index({
   configId: 1,
   profileId: 1,
   targeting: 1,
   matchType: 1
 }, { name: "lookup_fast_index" });
-
-targetingSchema.index({
-  configId: 1,
-  profileId: 1,
-  reportDate: 1,
-  keywordType: 1,
-  status: 1,
-  campaignId: 1,
-  targeting: 1,
-  matchType: 1,
-  adGroupId: 1,
-  impressions: 1,
-  clicks: 1,
-  spend: 1,
-  sales: 1,
-  orders: 1
-}, { name: "keyword_analysis_covered_index" });
-
-targetingSchema.index(
-  {
-    configId: 1,
-    profileId: 1,
-    reportDate: 1,
-    campaignId: 1,
-    targetId: 1
-  },
-  { name: "keyword_analysis_campaign_target" }
-);
 
 // 🔵 Auto-calc before SAVE
 targetingSchema.pre("save", function (next) {
@@ -256,7 +199,6 @@ targetingSchema.pre("findOneAndUpdate", function () {
   this.setUpdate({ $set: { ...tempDoc, ...m } });
 });
 
-targetingSchema.index({ profileId: 1, reportDate: 1, campaignId: 1, adGroupId: 1, targeting: 1 });
 targetingSchema.index({ configId: 1, profileId: 1, status: 1, reportDate: 1, targeting: 1 });
 targetingSchema.index({ createdAt: 1 });
 

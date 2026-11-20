@@ -4,7 +4,6 @@ const processedSQSMessageSchema = new mongoose.Schema({
   idempotencyId: {
     type: String,
     required: true,
-    unique: true
   },
   createdAt: {
     type: Date,

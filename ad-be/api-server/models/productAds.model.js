@@ -179,25 +179,14 @@ const productAdsSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// 1️⃣ Unique identity (critical)
-productAdsSchema.index(
-  {
-    configId: 1,
-    profileId: 1,
-    adId: 1,
-    reportDate: 1,
-  },
-  { unique: true }
-);
-
-// 2️⃣ Daily listing
+// 1️⃣ Daily listing & metrics
 productAdsSchema.index({
   configId: 1,
   profileId: 1,
   reportDate: 1,
 });
 
-// 3️⃣ Campaign view
+// 2️⃣ Campaign view & eligibility checks
 productAdsSchema.index({
   configId: 1,
   profileId: 1,
@@ -205,45 +194,12 @@ productAdsSchema.index({
   reportDate: 1,
 });
 
-// 4️⃣ AdGroup view
+// 3️⃣ AdGroup view & validation
 productAdsSchema.index({
   configId: 1,
   profileId: 1,
   adGroupId: 1,
   reportDate: 1,
-});
-
-productAdsSchema.index({
-  profileId: 1,
-  sku: 1,
-  reportDate: 1
-})
-
-productAdsSchema.index({
-  configId: 1,
-  profileId: 1,
-  asins: 1,
-  reportDate: 1
-})
-
-productAdsSchema.index({
-  campaignId: 1,
-  reportDate: 1,
-  asins: 1
-});
-
-productAdsSchema.index({
-  campaignId: 1,
-  reportDate: 1,
-  asins: 1,
-  _id: 1
-});
-
-productAdsSchema.index({
-  profileId: 1,
-  campaignId: 1,
-  adGroupId: 1,
-  reportDate: 1
 });
 
 // 🔵 Auto-calc before SAVE
@@ -269,11 +225,6 @@ productAdsSchema.pre("findOneAndUpdate", function () {
 
   this.setUpdate({ $set: { ...tempDoc, ...m } });
 });
-
-
-// --- Performance Indexing ---
-productAdsSchema.index({name:1});
-productAdsSchema.index({asins:1,type:1});
 
 // TTL index for 396-day data retention
 productAdsSchema.index({ createdAt: 1 }, { expireAfterSeconds: 34214400 });

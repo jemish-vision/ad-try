@@ -35,6 +35,7 @@ const amazonAxios = require("../helper/amazonAxios");
 const { processBatchUpdates } = require("../services/amazonBatchService");
 const AD_TYPE_COLLECTIONS = require("../helper/adTypeCollections");
 const { logAudit } = require("../helpers/auditHelper");
+const { auditValues, ruleAuditFields } = require("../helpers/auditChanges");
 const { write_logs } = require("../../winston/utility/logger");
 
 const safeInsertHistoryDocs = (docs, operationId) =>
@@ -177,7 +178,7 @@ exports.getAllDayparting = async (req, res) => {
     });
 
   } catch (error) {
-      write_logs({ message: `[getAllDayparting Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[getAllDayparting Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     console.error("Get Dayparting Error:", error);
 
     return res.status(500).send({
@@ -310,7 +311,7 @@ exports.createDayparting = async (req, res) => {
     });
 
   } catch (error) {
-      write_logs({ message: `[getTargetNames Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[getTargetNames Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     console.error("Create Dayparting Error:", error);
 
     return res.status(500).send({
@@ -358,6 +359,7 @@ exports.updateDayparting = async (req, res) => {
       });
     }
 
+    const previousValue = auditValues(existingRule, ruleAuditFields);
     /* ---------- UPDATE RULE ---------- */
     existingRule.name = name;
     existingRule.type = type;
@@ -438,6 +440,9 @@ exports.updateDayparting = async (req, res) => {
     await existingRule.save();
 
     await logAudit("DAYPARTING_RULE_UPDATE", `Updated dayparting rule: ${existingRule?.name}`, {
+      configId: existingRule.configId, profileId: existingRule.profileId,
+      resourceType: "rule", resourceId: String(existingRule._id),
+      previousValue, newValue: auditValues(existingRule, ruleAuditFields),
       name: existingRule?.name,
       type: existingRule?.type,
       frequency: existingRule?.frequency,
@@ -455,7 +460,7 @@ exports.updateDayparting = async (req, res) => {
     });
 
   } catch (error) {
-      write_logs({ message: `[getTargetNames Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[getTargetNames Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     console.error("Update Dayparting Error:", error);
 
     return res.status(500).send({
@@ -519,7 +524,7 @@ exports.statusChangeDayparting = async (req, res) => {
     });
 
   } catch (error) {
-      write_logs({ message: `[statusChangeDayparting Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[statusChangeDayparting Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     console.error("Dayparting Status Change Error:", error);
 
     return res.status(500).send({
@@ -566,7 +571,7 @@ exports.deleteDayparting = async (req, res) => {
     });
 
   } catch (error) {
-      write_logs({ message: `[deleteDayparting Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[deleteDayparting Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     console.error("Delete Dayparting Error:", error);
 
     return res.status(500).send({
@@ -1419,69 +1424,69 @@ const updateSPCampaignBudgetInternal = async (profile, rule, campaignList, campa
     const successIds = new Set(successfulItems.map(c => String(c.campaignId)));
     if (successIds.size === 0) return;
 
-      const existingCampaigns = await campaignSchema.find({ campaignId: { $in: campaignIds }, reportDate }).lean();
+    const existingCampaigns = await campaignSchema.find({ campaignId: { $in: campaignIds }, reportDate }).lean();
 
-      const oldValueMap = {};
-      existingCampaigns.forEach(cp => {
-        if (cp.campaignId && !isNaN(cp.budget)) {
-          oldValueMap[cp.campaignId] = Number(cp.budget);
-        }
+    const oldValueMap = {};
+    existingCampaigns.forEach(cp => {
+      if (cp.campaignId && !isNaN(cp.budget)) {
+        oldValueMap[cp.campaignId] = Number(cp.budget);
+      }
+    });
+
+    const historyDocs = [];
+    const bulkUpdates = [];
+
+    for (const [campaignId] of Object.entries(campaignMap)) {
+
+      // 🔹 Skip if Amazon rejected this campaign
+      if (successIds.size > 0 && !successIds.has(String(campaignId))) continue;
+
+      const oldValue = oldValueMap[campaignId];
+      const newValue = campaignMap[campaignId]
+
+      // 🔹 Skip if no change
+      if (Number(oldValue) === Number(newValue)) continue;
+
+      /* ---------- HISTORY ---------- */
+      historyDocs.push({
+        configId: rule?.configId,
+        profileId: profile?.profileId,
+        changeLevel: campaignId,
+        changeType: "Cron Job: Dayparting rule updated Budget",
+        oldValue,
+        newValue,
+        updatedFrom: "Campaign",
+        source: "DAYPARTING",
+        userId: rule?.userId,
+        type: "SP"
       });
 
-      const historyDocs = [];
-      const bulkUpdates = [];
-
-      for (const [campaignId] of Object.entries(campaignMap)) {
-
-        // 🔹 Skip if Amazon rejected this campaign
-        if (successIds.size > 0 && !successIds.has(String(campaignId))) continue;
-
-        const oldValue = oldValueMap[campaignId];
-        const newValue = campaignMap[campaignId]
-
-        // 🔹 Skip if no change
-        if (Number(oldValue) === Number(newValue)) continue;
-
-        /* ---------- HISTORY ---------- */
-        historyDocs.push({
-          configId: rule?.configId,
-          profileId: profile?.profileId,
-          changeLevel: campaignId,
-          changeType: "Cron Job: Dayparting rule updated Budget",
-          oldValue,
-          newValue,
-          updatedFrom: "Campaign",
-          source: "DAYPARTING",
-          userId: rule?.userId,
-          type: "SP"
-        });
-
-        /* ---------- DB UPDATE ---------- */
-        bulkUpdates.push({
-          updateMany: {
-            filter: {
-              campaignId: Number(campaignId),
-              reportDate
-            },
-            update: { $set: { budget: newValue } },
+      /* ---------- DB UPDATE ---------- */
+      bulkUpdates.push({
+        updateMany: {
+          filter: {
+            campaignId: Number(campaignId),
+            reportDate
           },
-        });
-
-      }
-
-      /* ---------- EXECUTE WRITES ---------- */
-      if (historyDocs.length) {
-        await safeInsertHistoryDocs(historyDocs, operationId);
-      }
-
-      if (bulkUpdates.length) {
-        await campaignSchema.bulkWrite(bulkUpdates);
-      }
-
-      cron_logs({
-        message: `Dayparting Rule | Profile: ${profile.name} | budget updated for ${bulkUpdates.length} SP campaigns.`,
-        log_type: "info",
+          update: { $set: { budget: newValue } },
+        },
       });
+
+    }
+
+    /* ---------- EXECUTE WRITES ---------- */
+    if (historyDocs.length) {
+      await safeInsertHistoryDocs(historyDocs, operationId);
+    }
+
+    if (bulkUpdates.length) {
+      await campaignSchema.bulkWrite(bulkUpdates);
+    }
+
+    cron_logs({
+      message: `Dayparting Rule | Profile: ${profile.name} | budget updated for ${bulkUpdates.length} SP campaigns.`,
+      log_type: "info",
+    });
 
   } catch (err) {
     if (err?.historyPersistenceFailure) throw err;
@@ -1622,69 +1627,69 @@ const updateSBCampaignBudgetInternal = async (profile, rule, campaignList, campa
     const successIds = new Set(successfulItems.map(c => String(c.campaignId)));
     if (successIds.size === 0) return;
 
-      const existingCampaigns = await sbCampaignsSchema.find({ campaignId: { $in: campaignIds }, reportDate }).lean();
+    const existingCampaigns = await sbCampaignsSchema.find({ campaignId: { $in: campaignIds }, reportDate }).lean();
 
-      const oldValueMap = {};
-      existingCampaigns.forEach(cp => {
-        if (cp.campaignId && !isNaN(cp.budget)) {
-          oldValueMap[cp.campaignId] = Number(cp.budget);
-        }
+    const oldValueMap = {};
+    existingCampaigns.forEach(cp => {
+      if (cp.campaignId && !isNaN(cp.budget)) {
+        oldValueMap[cp.campaignId] = Number(cp.budget);
+      }
+    });
+
+    const historyDocs = [];
+    const bulkUpdates = [];
+
+    for (const [campaignId] of Object.entries(campaignMap)) {
+
+      // 🔹 Skip if Amazon rejected this campaign
+      if (successIds.size > 0 && !successIds.has(String(campaignId))) continue;
+
+      const oldValue = oldValueMap[campaignId];
+      const newValue = campaignMap[campaignId]
+
+      // 🔹 Skip if no change
+      if (Number(oldValue) === Number(newValue)) continue;
+
+      /* ---------- HISTORY ---------- */
+      historyDocs.push({
+        configId: rule?.configId,
+        profileId: profile?.profileId,
+        changeLevel: campaignId,
+        changeType: "Cron Job: Dayparting rule updated Budget",
+        oldValue,
+        newValue,
+        updatedFrom: "Campaign",
+        source: "DAYPARTING",
+        userId: rule?.userId,
+        type: "SB"
       });
 
-      const historyDocs = [];
-      const bulkUpdates = [];
-
-      for (const [campaignId] of Object.entries(campaignMap)) {
-
-        // 🔹 Skip if Amazon rejected this campaign
-        if (successIds.size > 0 && !successIds.has(String(campaignId))) continue;
-
-        const oldValue = oldValueMap[campaignId];
-        const newValue = campaignMap[campaignId]
-
-        // 🔹 Skip if no change
-        if (Number(oldValue) === Number(newValue)) continue;
-
-        /* ---------- HISTORY ---------- */
-        historyDocs.push({
-          configId: rule?.configId,
-          profileId: profile?.profileId,
-          changeLevel: campaignId,
-          changeType: "Cron Job: Dayparting rule updated Budget",
-          oldValue,
-          newValue,
-          updatedFrom: "Campaign",
-          source: "DAYPARTING",
-          userId: rule?.userId,
-          type: "SB"
-        });
-
-        /* ---------- DB UPDATE ---------- */
-        bulkUpdates.push({
-          updateMany: {
-            filter: {
-              campaignId: Number(campaignId),
-              reportDate
-            },
-            update: { $set: { budget: newValue } },
+      /* ---------- DB UPDATE ---------- */
+      bulkUpdates.push({
+        updateMany: {
+          filter: {
+            campaignId: Number(campaignId),
+            reportDate
           },
-        });
-
-      }
-
-      /* ---------- EXECUTE WRITES ---------- */
-      if (historyDocs.length) {
-        await safeInsertHistoryDocs(historyDocs, operationId);
-      }
-
-      if (bulkUpdates.length) {
-        await sbCampaignsSchema.bulkWrite(bulkUpdates);
-      }
-
-      cron_logs({
-        message: `Dayparting Rule | Profile: ${profile.name} | budget updated for ${bulkUpdates.length} SB campaigns.`,
-        log_type: "info",
+          update: { $set: { budget: newValue } },
+        },
       });
+
+    }
+
+    /* ---------- EXECUTE WRITES ---------- */
+    if (historyDocs.length) {
+      await safeInsertHistoryDocs(historyDocs, operationId);
+    }
+
+    if (bulkUpdates.length) {
+      await sbCampaignsSchema.bulkWrite(bulkUpdates);
+    }
+
+    cron_logs({
+      message: `Dayparting Rule | Profile: ${profile.name} | budget updated for ${bulkUpdates.length} SB campaigns.`,
+      log_type: "info",
+    });
 
   } catch (err) {
     if (err?.historyPersistenceFailure) throw err;
@@ -1823,69 +1828,69 @@ const updateSDCampaignBudgetInternal = async (profile, rule, campaignList, campa
     const successIds = new Set(successfulItems.map(c => String(c.campaignId)));
     if (successIds.size === 0) return;
 
-      const existingCampaigns = await sdCampaignsSchema.find({ campaignId: { $in: campaignIds }, reportDate }).lean();
+    const existingCampaigns = await sdCampaignsSchema.find({ campaignId: { $in: campaignIds }, reportDate }).lean();
 
-      const oldValueMap = {};
-      existingCampaigns.forEach(cp => {
-        if (cp.campaignId && !isNaN(cp.budget)) {
-          oldValueMap[cp.campaignId] = Number(cp.budget);
-        }
+    const oldValueMap = {};
+    existingCampaigns.forEach(cp => {
+      if (cp.campaignId && !isNaN(cp.budget)) {
+        oldValueMap[cp.campaignId] = Number(cp.budget);
+      }
+    });
+
+    const historyDocs = [];
+    const bulkUpdates = [];
+
+    for (const [campaignId] of Object.entries(campaignMap)) {
+
+      // 🔹 Skip if Amazon rejected this campaign
+      if (successIds.size > 0 && !successIds.has(String(campaignId))) continue;
+
+      const oldValue = oldValueMap[campaignId];
+      const newValue = campaignMap[campaignId]
+
+      // 🔹 Skip if no change
+      if (Number(oldValue) === Number(newValue)) continue;
+
+      /* ---------- HISTORY ---------- */
+      historyDocs.push({
+        configId: rule?.configId,
+        profileId: profile?.profileId,
+        changeLevel: campaignId,
+        changeType: "Cron Job: Dayparting rule updated Budget",
+        oldValue,
+        newValue,
+        updatedFrom: "Campaign",
+        source: "DAYPARTING",
+        userId: rule?.userId,
+        type: "SD"
       });
 
-      const historyDocs = [];
-      const bulkUpdates = [];
-
-      for (const [campaignId] of Object.entries(campaignMap)) {
-
-        // 🔹 Skip if Amazon rejected this campaign
-        if (successIds.size > 0 && !successIds.has(String(campaignId))) continue;
-
-        const oldValue = oldValueMap[campaignId];
-        const newValue = campaignMap[campaignId]
-
-        // 🔹 Skip if no change
-        if (Number(oldValue) === Number(newValue)) continue;
-
-        /* ---------- HISTORY ---------- */
-        historyDocs.push({
-          configId: rule?.configId,
-          profileId: profile?.profileId,
-          changeLevel: campaignId,
-          changeType: "Cron Job: Dayparting rule updated Budget",
-          oldValue,
-          newValue,
-          updatedFrom: "Campaign",
-          source: "DAYPARTING",
-          userId: rule?.userId,
-          type: "SD"
-        });
-
-        /* ---------- DB UPDATE ---------- */
-        bulkUpdates.push({
-          updateMany: {
-            filter: {
-              campaignId: Number(campaignId),
-              reportDate
-            },
-            update: { $set: { budget: newValue } },
+      /* ---------- DB UPDATE ---------- */
+      bulkUpdates.push({
+        updateMany: {
+          filter: {
+            campaignId: Number(campaignId),
+            reportDate
           },
-        });
-
-      }
-
-      /* ---------- EXECUTE WRITES ---------- */
-      if (historyDocs.length) {
-        await safeInsertHistoryDocs(historyDocs, operationId);
-      }
-
-      if (bulkUpdates.length) {
-        await sdCampaignsSchema.bulkWrite(bulkUpdates);
-      }
-
-      cron_logs({
-        message: `Dayparting Rule | Profile: ${profile.name} | budget updated for ${bulkUpdates.length} SD campaigns.`,
-        log_type: "info",
+          update: { $set: { budget: newValue } },
+        },
       });
+
+    }
+
+    /* ---------- EXECUTE WRITES ---------- */
+    if (historyDocs.length) {
+      await safeInsertHistoryDocs(historyDocs, operationId);
+    }
+
+    if (bulkUpdates.length) {
+      await sdCampaignsSchema.bulkWrite(bulkUpdates);
+    }
+
+    cron_logs({
+      message: `Dayparting Rule | Profile: ${profile.name} | budget updated for ${bulkUpdates.length} SD campaigns.`,
+      log_type: "info",
+    });
 
   } catch (err) {
     if (err?.historyPersistenceFailure) throw err;
@@ -2058,7 +2063,7 @@ const updateSPPlacementModifierInternal = async (profile, rule, PlacementList, p
   const getAmazonPlacement = (placement) => {
     if (placement === "Top of Search") return "PLACEMENT_TOP";
     if (placement === "Rest of Search") return "PLACEMENT_REST_OF_SEARCH";
-    if (placement === "Product pages") return "PLACEMENT_PRODUCT_PAGE";
+    if (placement === "Product Pages") return "PLACEMENT_PRODUCT_PAGE";
     else return null
   }
 
@@ -2101,50 +2106,50 @@ const updateSPPlacementModifierInternal = async (profile, rule, PlacementList, p
 
     for (const [campaignId, placements] of Object.entries(placementMap)) {
       if (!successCampaignIds.has(String(campaignId))) continue;
-        for (const [placement, newValue] of Object.entries(placements)) {
+      for (const [placement, newValue] of Object.entries(placements)) {
 
-          const oldValue = oldValueMap?.[campaignId]?.[placement];
+        const oldValue = oldValueMap?.[campaignId]?.[placement];
 
-          if (Number(oldValue) === Number(newValue)) continue;
+        if (Number(oldValue) === Number(newValue)) continue;
 
-          /* ---------- HISTORY ---------- */
-          historyDocs.push({
-            configId: rule?.configId,
-            profileId: profile?.profileId,
-            changeLevel: campaignId,
-            changeType: "Cron Job: Dayparting rule updated placement",
-            placement,
-            oldValue,
-            newValue,
-            updatedFrom: "Placement",
-            source: "DAYPARTING",
-            userId: rule?.userId,
-            type: "SP"
-          });
+        /* ---------- HISTORY ---------- */
+        historyDocs.push({
+          configId: rule?.configId,
+          profileId: profile?.profileId,
+          changeLevel: campaignId,
+          changeType: "Cron Job: Dayparting rule updated placement",
+          placement,
+          oldValue,
+          newValue,
+          updatedFrom: "Placement",
+          source: "DAYPARTING",
+          userId: rule?.userId,
+          type: "SP"
+        });
 
-          /* ---------- DB UPDATE ---------- */
-          bulkUpdates.push({
-            updateMany: {
-              filter: { campaignId, placement, reportDate },
-              update: { $set: { placementModifier: newValue } },
-            },
-          });
-        }
+        /* ---------- DB UPDATE ---------- */
+        bulkUpdates.push({
+          updateMany: {
+            filter: { campaignId, placement, reportDate },
+            update: { $set: { placementModifier: newValue } },
+          },
+        });
       }
+    }
 
-      /* ---------- EXECUTE WRITES ---------- */
-      if (historyDocs.length) {
-        await safeInsertHistoryDocs(historyDocs, operationId);
-      }
+    /* ---------- EXECUTE WRITES ---------- */
+    if (historyDocs.length) {
+      await safeInsertHistoryDocs(historyDocs, operationId);
+    }
 
-      if (bulkUpdates.length) {
-        await placementSchema.bulkWrite(bulkUpdates);
-      }
+    if (bulkUpdates.length) {
+      await placementSchema.bulkWrite(bulkUpdates);
+    }
 
-      cron_logs({
-        message: `Dayparting Rule | Profile ${profile.name} placement modifiers updated`,
-        log_type: "info",
-      });
+    cron_logs({
+      message: `Dayparting Rule | Profile ${profile.name} placement modifiers updated`,
+      log_type: "info",
+    });
 
   } catch (err) {
     if (err?.historyPersistenceFailure) throw err;
@@ -2282,7 +2287,7 @@ const updateSBPlacementModifierInternal = async (profile, rule, PlacementList, p
   const getAmazonPlacement = (placement) => {
     if (placement === "Top of Search") return "TOP_OF_SEARCH";
     if (placement === "Rest of Search") return "OTHER";
-    if (placement === "Product pages") return "DETAIL_PAGE";
+    if (placement === "Product Pages") return "DETAIL_PAGE";
     else return null
   }
 
@@ -2326,50 +2331,50 @@ const updateSBPlacementModifierInternal = async (profile, rule, PlacementList, p
 
     for (const [campaignId, placements] of Object.entries(placementMap)) {
       if (!successCampaignIds.has(String(campaignId))) continue;
-        for (const [placement, newValue] of Object.entries(placements)) {
+      for (const [placement, newValue] of Object.entries(placements)) {
 
-          const oldValue = oldValueMap?.[campaignId]?.[placement];
+        const oldValue = oldValueMap?.[campaignId]?.[placement];
 
-          if (Number(oldValue) === Number(newValue)) continue;
+        if (Number(oldValue) === Number(newValue)) continue;
 
-          /* ---------- HISTORY ---------- */
-          historyDocs.push({
-            configId: rule?.configId,
-            profileId: profile?.profileId,
-            changeLevel: campaignId,
-            changeType: "Cron Job: Dayparting rule updated placement",
-            placement,
-            oldValue,
-            newValue,
-            updatedFrom: "Placement",
-            source: "DAYPARTING",
-            userId: rule?.userId,
-            type: "SB"
-          });
+        /* ---------- HISTORY ---------- */
+        historyDocs.push({
+          configId: rule?.configId,
+          profileId: profile?.profileId,
+          changeLevel: campaignId,
+          changeType: "Cron Job: Dayparting rule updated placement",
+          placement,
+          oldValue,
+          newValue,
+          updatedFrom: "Placement",
+          source: "DAYPARTING",
+          userId: rule?.userId,
+          type: "SB"
+        });
 
-          /* ---------- DB UPDATE ---------- */
-          bulkUpdates.push({
-            updateMany: {
-              filter: { campaignId, placement, reportDate },
-              update: { $set: { placementModifier: newValue } },
-            },
-          });
-        }
+        /* ---------- DB UPDATE ---------- */
+        bulkUpdates.push({
+          updateMany: {
+            filter: { campaignId, placement, reportDate },
+            update: { $set: { placementModifier: newValue } },
+          },
+        });
       }
+    }
 
-      /* ---------- EXECUTE WRITES ---------- */
-      if (historyDocs.length) {
-        await safeInsertHistoryDocs(historyDocs, operationId);
-      }
+    /* ---------- EXECUTE WRITES ---------- */
+    if (historyDocs.length) {
+      await safeInsertHistoryDocs(historyDocs, operationId);
+    }
 
-      if (bulkUpdates.length) {
-        await sbPlacementSchema.bulkWrite(bulkUpdates);
-      }
+    if (bulkUpdates.length) {
+      await sbPlacementSchema.bulkWrite(bulkUpdates);
+    }
 
-      cron_logs({
-        message: `Dayparting Rule | Profile ${profile.name} placement modifiers updated`,
-        log_type: "info",
-      });
+    cron_logs({
+      message: `Dayparting Rule | Profile ${profile.name} placement modifiers updated`,
+      log_type: "info",
+    });
 
   } catch (err) {
     if (err?.historyPersistenceFailure) throw err;
@@ -2726,16 +2731,16 @@ exports.ruleHistory = async (req, res) => {
       pipeline.push({
         $match: isAffected
           ? {
-              appliedBudget: { $exists: true, $ne: null },
-              $expr: { $gt: [{ $size: { $objectToArray: "$appliedBudget" } }, 0] }
-            }
+            appliedBudget: { $exists: true, $ne: null },
+            $expr: { $gt: [{ $size: { $objectToArray: "$appliedBudget" } }, 0] }
+          }
           : {
-              $or: [
-                { appliedBudget: { $exists: false } },
-                { appliedBudget: null },
-                { $expr: { $eq: [{ $size: { $objectToArray: { $ifNull: ["$appliedBudget", {}] } } }, 0] } }
-              ]
-            }
+            $or: [
+              { appliedBudget: { $exists: false } },
+              { appliedBudget: null },
+              { $expr: { $eq: [{ $size: { $objectToArray: { $ifNull: ["$appliedBudget", {}] } } }, 0] } }
+            ]
+          }
       });
     }
 
@@ -2765,7 +2770,7 @@ exports.ruleHistory = async (req, res) => {
     });
 
   } catch (error) {
-      write_logs({ message: `[ruleHistory Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[ruleHistory Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     return res.status(203).send({
       error: "An internal server error occurred",
       message: "Something went wrong, please try again!",
@@ -2862,7 +2867,7 @@ exports.exportDaypartingRule = async (req, res) => {
     return res.end();
 
   } catch (error) {
-      write_logs({ message: `[exportDaypartingRule Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[exportDaypartingRule Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     console.error(error);
     return res.status(500).send({
       isSuccess: false,
@@ -3000,7 +3005,7 @@ exports.importDaypartingRule = async (req, res) => {
           });
         }
       } catch (err) {
-          write_logs({ message: `[importDaypartingRule Error] ${err?.message || err} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+        write_logs({ message: `[importDaypartingRule Error] ${err?.message || err} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
         errors.push({
           row: rowNumber,
           message: err.message,
@@ -3022,7 +3027,7 @@ exports.importDaypartingRule = async (req, res) => {
     });
 
   } catch (error) {
-      write_logs({ message: `[importDaypartingRule Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    write_logs({ message: `[importDaypartingRule Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     return res.status(203).send({
       isSuccess: false,
       message: "Import failed",

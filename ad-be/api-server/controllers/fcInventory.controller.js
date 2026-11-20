@@ -1370,7 +1370,11 @@ exports.getFcStorageFees = async (req, res) => {
 
     const summary = summaryAgg[0] || { totalFee: 0, totalUnits: 0, totalVolume: 0 };
     await enrichProductsWithListing(items, cleanProfileId, cleanConfigId);
-    const availableMonths = await fcStorageFeeSchema.distinct("monthYear", { profileId: cleanProfileId });
+    const distinctMonthMatch = { profileId: cleanProfileId };
+    if (cleanConfigId && mongoose.Types.ObjectId.isValid(cleanConfigId)) {
+      distinctMonthMatch.configId = new mongoose.Types.ObjectId(cleanConfigId);
+    }
+    const availableMonths = await fcStorageFeeSchema.distinct("monthYear", distinctMonthMatch);
     availableMonths.sort().reverse();
 
     return res.status(200).json({
@@ -1763,7 +1767,12 @@ async function resolveMonthYear(profileId, configId, requestedMonth) {
     return defaultMonth;
   }
 
-  let latest = await fcStorageFeeSchema.findOne({ profileId: Number(profileId) })
+  const latestMatch = { profileId: Number(profileId) };
+  if (configId && mongoose.Types.ObjectId.isValid(configId)) {
+    latestMatch.configId = new mongoose.Types.ObjectId(configId);
+  }
+
+  let latest = await fcStorageFeeSchema.findOne(latestMatch)
     .sort({ monthYear: -1 })
     .select("monthYear")
     .lean();

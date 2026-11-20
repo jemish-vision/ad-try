@@ -121,8 +121,7 @@ sellerConfigSchema.post("findOneAndUpdate", function(doc) {
 
 
 // --- Performance Indexing ---
-sellerConfigSchema.index({isActive:1,disconnectedAt:1});
-sellerConfigSchema.index({isActive:1});
+sellerConfigSchema.index({ isActive: 1, disconnectedAt: 1 });
 
 module.exports = mongoose.model("sellerConfig", sellerConfigSchema);
 

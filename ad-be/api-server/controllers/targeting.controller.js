@@ -85,6 +85,7 @@ const { settleTargetingItems } = require("../helpers/settleTargetingItems");
 const AD_TYPE_COLLECTIONS = require("../helper/adTypeCollections");
 const { resolveTargeting } = require("../helper/findTargeting");
 const { logAudit } = require("../helpers/auditHelper");
+const { auditValues, readAuditValues, ruleAuditFields } = require("../helpers/auditChanges");
 const adNotificationSchema = require("../models/adNotification.model");
 const { sendNotificationToUser } = require("../helper/sendNotification");
 const { stageReportFileInRedis } = require("../services/reportFileStager.service");
@@ -2188,6 +2189,7 @@ exports.adjustBid = async (req, res) => {
         const configId = req?.config?.configId;
         const userId = req.user._id;
         const { profileId, targetIds, bid, actionType } = req.body;
+        const selection = { configId, profileId: Number(profileId) };
 
         const getAccount = await getProfile(configId, profileId);
         const checkConfigAds = await getAccessToken(configId);
@@ -2222,10 +2224,11 @@ exports.adjustBid = async (req, res) => {
         let hadMinClamping = false;
 
         const bulkTargetOps = [];
+        const changedBids = [];
         if (targetList.length > 0) {
             const targetsToBatch = [];
             for (const targetId of targetList) {
-                const targeting = await targetingSchema.findOne({ targetId }).lean();
+                const targeting = await targetingSchema.findOne({ ...selection, targetId }).sort({ reportDate: -1, createdAt: -1 }).lean();
                 if (!targeting) continue;
 
                 const bidThreshold = await getBidThreshold(configId, profileId, targeting.campaignId);
@@ -2249,6 +2252,7 @@ exports.adjustBid = async (req, res) => {
                     bid: Number(newValue),
                     rawTargetId: targetId,
                     action,
+                    previousBid: targeting.keywordBid ?? null,
                     newValue
                 });
             }
@@ -2266,10 +2270,11 @@ exports.adjustBid = async (req, res) => {
                     await createBidHistory(item.rawTargetId, item.newValue, configId, profileId, item.action, userId);
                     bulkTargetOps.push({
                         updateMany: {
-                            filter: { targetId: item.rawTargetId },
+                            filter: { ...selection, targetId: item.rawTargetId },
                             update: { $set: { keywordBid: item.newValue } }
                         }
                     });
+                    changedBids.push({ targetId: item.rawTargetId, previousBid: item.previousBid, newBid: item.newValue });
                 }
             }
         }
@@ -2277,7 +2282,7 @@ exports.adjustBid = async (req, res) => {
         if (keywordList.length > 0) {
             const keywordsToBatch = [];
             for (const keywordId of keywordList) {
-                const targeting = await targetingSchema.findOne({ targetId: keywordId }).lean();
+                const targeting = await targetingSchema.findOne({ ...selection, targetId: keywordId }).sort({ reportDate: -1, createdAt: -1 }).lean();
                 if (!targeting) continue;
 
                 const bidThreshold = await getBidThreshold(configId, profileId, targeting.campaignId);
@@ -2301,6 +2306,7 @@ exports.adjustBid = async (req, res) => {
                     bid: Number(newValue),
                     rawKeywordId: keywordId,
                     action,
+                    previousBid: targeting.keywordBid ?? null,
                     newValue
                 });
             }
@@ -2318,10 +2324,11 @@ exports.adjustBid = async (req, res) => {
                     await createBidHistory(item.rawKeywordId, item.newValue, configId, profileId, item.action, userId);
                     bulkTargetOps.push({
                         updateMany: {
-                            filter: { targetId: item.rawKeywordId },
+                            filter: { ...selection, targetId: item.rawKeywordId },
                             update: { $set: { keywordBid: item.newValue } }
                         }
                     });
+                    changedBids.push({ targetId: item.rawKeywordId, previousBid: item.previousBid, newBid: item.newValue });
                 }
             }
         }
@@ -2329,6 +2336,10 @@ exports.adjustBid = async (req, res) => {
         if (bulkTargetOps.length > 0) {
             await targetingSchema.bulkWrite(bulkTargetOps);
         }
+        req.auditChange = {
+            ...selection, items: changedBids.slice(0, 50),
+            counts: { succeeded: changedBids.length, failed: Math.max(0, targetIds.length - changedBids.length) },
+        };
 
 
         const message = hadMinClamping
@@ -2700,8 +2711,11 @@ exports.changeStatus = async (req, res) => {
         const keywordList = targetIds.filter(id => id.startsWith("K-"));
 
         // 3. Batch DB Lookup to check existing items (Optimized from N+1 query loop)
-        const existingItems = await targetingSchema.find({ targetId: { $in: targetIds } }).select("targetId").lean();
+        const selection = { configId, profileId: Number(profileId) };
+        const existingItems = await targetingSchema.find({ ...selection, targetId: { $in: targetIds } })
+            .sort({ reportDate: -1, createdAt: -1 }).select("targetId status").lean();
         const existingItemIds = new Set(existingItems.map(item => item.targetId));
+        const previousStatuses = new Map(existingItems.slice().reverse().map(item => [item.targetId, item.status]));
 
         let targetSuccessIds = [];
         let keywordSuccessIds = [];
@@ -2754,13 +2768,18 @@ exports.changeStatus = async (req, res) => {
             await Promise.all(
                 allSuccessIds.map(async (id) => {
                     await createStatusHistory(id, status, configId, profileId, `Update Targeting Status`, userId);
-                    await targetingSchema.updateMany({ targetId: id }, { $set: { status: status } });
+                    await targetingSchema.updateMany({ ...selection, targetId: id }, { $set: { status: status } });
                 })
             );
         }
 
         // 7. Structure response indicating execution details
         const totalRequested = targetList.length + keywordList.length;
+        req.auditChange = {
+            ...selection,
+            items: allSuccessIds.slice(0, 50).map(targetId => ({ targetId, previousStatus: previousStatuses.get(targetId), newStatus: status })),
+            counts: { succeeded: allSuccessIds.length, failed: totalRequested - allSuccessIds.length },
+        };
         if (allSuccessIds.length === 0) {
             return res.status(203).send({
                 isSuccess: false,
@@ -4135,8 +4154,10 @@ exports.updateTargetingRule = async (req, res) => {
         delete updateData._id;
         delete updateData.isActive;
 
+        const ruleFilter = { _id: ruleId, ...(configId && { configId }) };
+        const previousValue = await readAuditValues(targetingRuleSchema, ruleFilter, ruleAuditFields);
         await targetingRuleSchema
-            .findOneAndUpdate({ _id: ruleId, ...(configId && { configId }) }, updateData, { new: true })
+            .findOneAndUpdate(ruleFilter, updateData, { new: true })
             .then(async (rule) => {
                 if (!rule) {
                     return res
@@ -4170,6 +4191,8 @@ exports.updateTargetingRule = async (req, res) => {
                 };
 
                 await logAudit("TARGETING_RULE_UPDATE", `Updated targeting rule: ${rule.ruleName}`, {
+                    configId: rule.configId, profileId: rule.profileId, resourceType: "rule", resourceId: String(rule._id),
+                    previousValue, newValue: auditValues(rule, ruleAuditFields),
                     ruleName: rule?.ruleName,
                     conditions: rule?.conditions,
                     actionType: rule?.actionType,

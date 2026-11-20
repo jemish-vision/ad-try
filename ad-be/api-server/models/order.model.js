@@ -66,15 +66,13 @@ const orderSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// --- Performance Indexing ---
-orderSchema.index({configId:1,profileId:1,marketplaceId:1,amazonOrderId:1});
+// 1. Unique order identity index (serves report stream upserts, point lookups, and return joins)
+orderSchema.index({ amazonOrderId: 1, configId: 1, profileId: 1 }, { unique: true });
 
-
-// Optimized Index for getSPProduct Aggregation Pipeline Lookups
+// 2. Optimized index for SKU & orderStatus lookups (serves allTimeOrders and review triggers)
 orderSchema.index({ sellerSKU: 1, orderStatus: 1 });
 
-// Supports date-ranged order lookups (e.g. hourly performance tracking), so the
-// purchaseDate range can be served by an index instead of a collection scan.
+// 3. Date-ranged order lookups (serves hourly performance tracking and organic order metrics)
 orderSchema.index({ profileId: 1, purchaseDate: 1 });
 
 module.exports = new mongoose.model("order", orderSchema);

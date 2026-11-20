@@ -1,3 +1,4 @@
+const { writeAuditEvent } = require("../helpers/auditHelper");
 const ruleConditionSnapshotSchema = require("../models/ruleConditionSnapshot.model");
 const moment = require("moment-timezone");
 const { cron_logs } = require("../../winston/cronAutomation/logger");
@@ -167,6 +168,7 @@ exports.cronDeleteExpiredAccountsData = async () => {
             ? { configId, profileId: { $in: unprotectedProfileIds } }
             : { configId };
           let totalDeleted = 0;
+          const failedCollections = [];
 
           // Collections related solely to Ads (Tiers 1, 3, 4)
           const adsCollections = [
@@ -244,6 +246,7 @@ exports.cronDeleteExpiredAccountsData = async () => {
                 });
               }
             } catch (err) {
+              failedCollections.push(name);
               cron_logs({
                 message: `  ✗ ${name}: ${err.message}`,
                 log_type: "error",
@@ -262,8 +265,8 @@ exports.cronDeleteExpiredAccountsData = async () => {
           if (!hasProtected) {
             const historyResult = await configHistorySchema.deleteMany({ configId });
             totalDeleted += historyResult.deletedCount;
-            await configSchema.deleteOne({ _id: configId });
-            totalDeleted += 1;
+            const deletedConfig = await configSchema.deleteOne({ _id: configId });
+            totalDeleted += deletedConfig.deletedCount || 0;
           } else {
             cron_logs({
               message: `Preserved configId=${configId} because ${protectedProfiles.length} protected profile(s) remain.`,
@@ -289,12 +292,19 @@ exports.cronDeleteExpiredAccountsData = async () => {
             cron_logs({ message: `Ads Deletion email failed: ${emailErr.message}`, log_type: "error" });
           }
 
+          grandTotalDeleted += totalDeleted;
+          await writeAuditEvent({ actorType: "system", source: "worker", event: "ACCOUNT_DATA_CLEANUP",
+            message: "Ads account data cleanup finished", outcome: failedCollections.length ? "PARTIAL" : "SUCCESS", configId, organizationId: config.organizationId,
+            operationId: cronDoc?._id && String(cronDoc._id), metadata: { type: "ads", deletedCount: totalDeleted, failedCollections } });
           cron_logs({
             message: `✅ Ads Cleanup COMPLETE for configId=${configId}. Total records deleted: ${totalDeleted}`,
             log_type: "info",
           });
 
         } catch (innerErr) {
+          await writeAuditEvent({ actorType: "system", source: "worker", event: "ACCOUNT_DATA_CLEANUP",
+            message: "Ads account data cleanup failed", outcome: "FAILED", configId, organizationId: config.organizationId,
+            operationId: cronDoc?._id && String(cronDoc._id), metadata: { type: "ads", reason: "CLEANUP_EXECUTION_FAILED" } });
           cron_logs({
             message: `Ads Cleanup FAILED for configId=${configId}: ${innerErr.message}`,
             log_type: "error",
@@ -352,6 +362,7 @@ exports.cronDeleteExpiredAccountsData = async () => {
           // Delete from SP-API Seller tables using configId (Tier 2 Data)
           const filter = { configId, profileId };
           let totalDeleted = 0;
+          const failedCollections = [];
 
           const sellerCollections = [
             { model: orderSchema, name: "orders" },
@@ -379,6 +390,7 @@ exports.cronDeleteExpiredAccountsData = async () => {
                 });
               }
             } catch (err) {
+              failedCollections.push(name);
               cron_logs({
                 message: `  ✗ ${name}: ${err.message}`,
                 log_type: "error",
@@ -387,8 +399,8 @@ exports.cronDeleteExpiredAccountsData = async () => {
           }
 
           // Delete the sellerConfig itself
-          await sellerConfigSchema.deleteOne({ _id: sellerConfigId });
-          totalDeleted += 1;
+          const deletedSellerConfig = await sellerConfigSchema.deleteOne({ _id: sellerConfigId });
+          totalDeleted += deletedSellerConfig.deletedCount || 0;
 
           // Send confirmation email
           try {
@@ -407,12 +419,19 @@ exports.cronDeleteExpiredAccountsData = async () => {
             cron_logs({ message: `SP Deletion email failed: ${emailErr.message}`, log_type: "error" });
           }
 
+          grandTotalDeleted += totalDeleted;
+          await writeAuditEvent({ actorType: "system", source: "worker", event: "ACCOUNT_DATA_CLEANUP",
+            message: "SP-API account data cleanup finished", outcome: failedCollections.length ? "PARTIAL" : "SUCCESS", configId, sellerConfigId, profileId, organizationId: sellerConfig.organizationId,
+            operationId: cronDoc?._id && String(cronDoc._id), metadata: { type: "seller", deletedCount: totalDeleted, failedCollections } });
           cron_logs({
             message: `✅ SP-API Cleanup COMPLETE for sellerConfigId=${sellerConfigId}. Total records deleted: ${totalDeleted}`,
             log_type: "info",
           });
 
         } catch (innerErr) {
+          await writeAuditEvent({ actorType: "system", source: "worker", event: "ACCOUNT_DATA_CLEANUP",
+            message: "SP-API account data cleanup failed", outcome: "FAILED", configId, sellerConfigId, profileId, organizationId: sellerConfig.organizationId,
+            operationId: cronDoc?._id && String(cronDoc._id), metadata: { type: "seller", reason: "CLEANUP_EXECUTION_FAILED" } });
           cron_logs({
             message: `SP-API Cleanup FAILED for sellerConfigId=${sellerConfigId}: ${innerErr.message}`,
             log_type: "error",

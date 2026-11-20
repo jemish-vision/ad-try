@@ -122,14 +122,7 @@ sdCampaignsSchema.index(
   { unique: true }
 );
 
-// 2️⃣ Cron / reporting
-sdCampaignsSchema.index({
-  configId: 1,
-  profileId: 1,
-  reportDate: 1,
-});
-
-// 3️⃣ Rules execution
+// 2️⃣ Rules execution
 sdCampaignsSchema.index({
   configId: 1,
   profileId: 1,
@@ -137,7 +130,7 @@ sdCampaignsSchema.index({
   reportDate: 1,
 });
 
-// 4️⃣ UI listing (optional)
+// 3️⃣ UI listing / Reporting
 sdCampaignsSchema.index({
   configId: 1,
   profileId: 1,
@@ -145,6 +138,16 @@ sdCampaignsSchema.index({
   spend: -1,
 });
 
+// 4️⃣ Covered index for campaign lookups & pipelines
+sdCampaignsSchema.index({
+  campaignId: 1,
+  profileId: 1,
+  reportDate: 1,
+  status: 1,
+  name: 1
+}, { name: "campaign_lookup_covered_index" });
+
+// 5️⃣ Covered index for recommendations & active campaign status
 sdCampaignsSchema.index({
   profileId: 1,
   reportDate: 1,

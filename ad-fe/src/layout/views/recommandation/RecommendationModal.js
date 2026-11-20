@@ -528,7 +528,7 @@ const PLACEMENT_LABEL_MAP = {
     "Top of Search": "Top Search",
     "Rest of Search": "Rest Search",
     "Product Page": "Product Page",
-    "Product pages": "Product Page",
+    "Product Pages": "Product Page",
 };
 
 const getActionIcon = (actionName, size = 12) => {
@@ -1093,11 +1093,12 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         if (!row) return "";
         if (gridName === "Campaign") return String(row.campaignId || row.campaignName || "");
         if (gridName === "Placement") return `${row.campaignId}-${row.placement || row.placementType}`;
-        if (gridName === "Targeting") return `${row.campaignId}-${row.adGroupId}-${row.targetId || row.keywordId || row.targeting || ""}`;
+        if (gridName === "Targeting") return `${row.campaignId}-${row.adGroupId}-${row.targetId || row.keywordId || row._id?.targetId || row._id?.keywordId || row.targeting || ""}`;
         if (gridName === "Search Term") return `${row.campaignId}-${row.adGroupId}-${row.searchTerm}`;
         if (gridName === "Products") return `${row.campaignId}-${row.adGroupId}-${row.adId || row.asins || row.sku || ""}`;
         return String(row._id || `${row.campaignId}-${row.targetId || row.placement || ""}`);
     }, [gridName]);
+    const getGridRowId = useCallback(({ data }) => getRowId(data), [getRowId]);
 
     const refreshCheckboxCells = useCallback(() => {
         if (gridRef.current?.api) {
@@ -1936,11 +1937,10 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                         type="button"
                                         onClick={() => setHistoryFilter((prev) => (prev === "new_only" ? "all" : "new_only"))}
                                         title={historyFilter === "new_only" ? t("Show all recommendations") : t("Filter to show only new recommendations")}
-                                        className={`px-3 py-1 rounded-full text-xs font-semibold cursor-pointer transition-all flex items-center gap-1 ${
-                                            historyFilter === "new_only"
+                                        className={`px-3 py-1 rounded-full text-xs font-semibold cursor-pointer transition-all flex items-center gap-1 ${historyFilter === "new_only"
                                                 ? "bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/40"
                                                 : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25"
-                                        }`}
+                                            }`}
                                     >
                                         <span>+{displayNewCount} {t("new")}</span>
                                         {historyFilter === "new_only" && <span className="text-[10px] opacity-80">✕</span>}
@@ -2086,8 +2086,8 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                     onClick={handleSelectAllPagesToggle}
                                     disabled={selectAllLoading}
                                     className={`inline-flex items-center gap-2 px-3 py-1 rounded-xl text-xs font-semibold border transition-all duration-150 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-wait ${isAllTotalSelected
-                                            ? "bg-sky-500 text-white border-sky-600 dark:bg-sky-600 dark:border-sky-500 hover:bg-sky-600"
-                                            : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200/90 dark:border-white/10 hover:border-sky-500/50 hover:bg-sky-50/50 dark:hover:bg-white/5"
+                                        ? "bg-sky-500 text-white border-sky-600 dark:bg-sky-600 dark:border-sky-500 hover:bg-sky-600"
+                                        : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200/90 dark:border-white/10 hover:border-sky-500/50 hover:bg-sky-50/50 dark:hover:bg-white/5"
                                         }`}
                                     title={isAllTotalSelected ? t("Deselect all records") : t("Select all {{count}} records", { count: totalCount })}
                                 >
@@ -2108,8 +2108,8 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                     </span>
                                     <span
                                         className={`px-1.5 py-0.5 rounded-full text-[11px] font-bold ${isAllTotalSelected
-                                                ? "bg-white/25 text-white"
-                                                : "bg-sky-500/10 text-sky-600 dark:bg-sky-500/20 dark:text-[#38bdf8]"
+                                            ? "bg-white/25 text-white"
+                                            : "bg-sky-500/10 text-sky-600 dark:bg-sky-500/20 dark:text-[#38bdf8]"
                                             }`}
                                     >
                                         {selectedRows.length > 0 && isAllTotalSelected
@@ -2193,8 +2193,8 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                         <div
                                             onClick={() => toggleScope("all")}
                                             className={`flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${outsideHistoryScopes.includes("all") || INDIVIDUAL_SCOPES.every((s) => outsideHistoryScopes.includes(s))
-                                                    ? "bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300"
-                                                    : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                                                ? "bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300"
+                                                : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
                                                 }`}
                                         >
                                             <span>{t("All History")}</span>
@@ -2213,8 +2213,8 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                                     key={scopeVal}
                                                     onClick={() => toggleScope(scopeVal)}
                                                     className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors ${isChecked
-                                                            ? "bg-sky-50/50 dark:bg-sky-950/20 text-sky-700 dark:text-sky-300"
-                                                            : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                                                        ? "bg-sky-50/50 dark:bg-sky-950/20 text-sky-700 dark:text-sky-300"
+                                                        : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
                                                         }`}
                                                 >
                                                     <span>{opt?.label}</span>
@@ -2350,6 +2350,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                     height={"calc(86vh - 430px)"}
                                     minHeight={"240px"}
                                     rowData={displayData}
+                                    getRowId={getGridRowId}
                                     columnDefs={columnDefs}
                                     defaultColDef={defaultColDef}
                                     totalRecords={totalRecords || filteredData.length}

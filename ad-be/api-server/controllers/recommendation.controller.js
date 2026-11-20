@@ -55,6 +55,7 @@ const {
 const AD_TYPE_COLLECTIONS = require("../helper/adTypeCollections");
 const { CampaignSPBudget, CampaignSBBudget, CampaignSDBudget, CampaignSPStatus, CampaignSBStatus, CampaignSDStatus, PlacementSPBid, PlacementSBBid, TargetingSPBid, TargetingSBBid, TargetingSDBid, TargetingSPStatus, TargetingSBStatus, TargetingSDStatus, AddToSPTargeting, AddToSBTargeting, AddToSDTargeting, AddToSPNegativeTargeting, AddToSBNegativeTargeting, AddToSDNegativeTargeting, SaveSearchTermRecord } = require("../services/recommandation.services");
 const { logAudit, logAuditBatch } = require("../helpers/auditHelper");
+const { auditValues, readAuditValues, ruleAuditFields } = require("../helpers/auditChanges");
 const { checkDuplicateRecommandationRule } = require("../helper/ruleChecker");
 // =========================
 // 📊 COLUMN CONFIG
@@ -1377,7 +1378,9 @@ exports.updateRules = async (req, res) => {
             );
         }
 
-        const updateRule = await recommendationRuleSchema.findOneAndUpdate({ _id: ruleId, ...(configId && { configId }) }, updateData, { new: true });
+        const ruleFilter = { _id: ruleId, ...(configId && { configId }) };
+        const previousValue = await readAuditValues(recommendationRuleSchema, ruleFilter, ruleAuditFields);
+        const updateRule = await recommendationRuleSchema.findOneAndUpdate(ruleFilter, updateData, { new: true });
 
         if (!updateRule) {
             return res.status(203).send({
@@ -1387,6 +1390,8 @@ exports.updateRules = async (req, res) => {
         }
 
         await logAudit("RECOMMENDATION_RULE_UPDATE", `Updated recommendation rule: ${updateRule?.ruleName}`, {
+            configId: updateRule.configId, profileId: updateRule.profileId, resourceType: "rule", resourceId: String(updateRule._id),
+            previousValue, newValue: auditValues(updateRule, ruleAuditFields),
             ruleName: updateRule?.ruleName,
             gridName: updateRule?.gridName,
             reportDate: updateRule?.reportDate,
@@ -1396,7 +1401,7 @@ exports.updateRules = async (req, res) => {
             campaignIds: updateRule?.campaignIds,
         }, req?.user?.id);
 
-        const effectiveProfileId = updateRule?.profileId || profileId;
+        const effectiveProfileId = updateRule?.profileId || req.body?.profileId;
         if (effectiveProfileId) {
             try {
                 await deletePatternWithLog(`rec_counts:*_${effectiveProfileId}_*`); await deletePatternWithLog(`rec_data:*_${effectiveProfileId}_*`);
@@ -1493,8 +1498,8 @@ const isSameRecommendationRuleConfig = (existingRule, candidateRule) => {
                     conditionValue: isOob
                         ? ""
                         : c?.conditionValue !== undefined && c?.conditionValue !== null && c?.conditionValue !== ""
-                        ? String(Number(c.conditionValue))
-                        : "",
+                            ? String(Number(c.conditionValue))
+                            : "",
                     oobPeriod: isOob ? String(c?.oobPeriod || "").trim().toUpperCase() : "",
                     oobDays: isOob && String(c?.oobPeriod || "").trim().toUpperCase() === "CUSTOM"
                         ? String(Number(c?.oobDays || 0))
@@ -2236,7 +2241,7 @@ exports.recommendationPipeline = (query, lastDate, rule, adType = "SP", options 
                     } else if (norm.includes("rest")) {
                         mappedPlacements.push("Rest of Search", "Rest Search");
                     } else if (norm.includes("product")) {
-                        mappedPlacements.push("Product pages", "Product Page", "Product Pages");
+                        mappedPlacements.push("Product Pages", "Product Page", "Product Pages");
                     } else {
                         mappedPlacements.push(pt);
                     }
@@ -3245,27 +3250,27 @@ const computeRecommendationCounts = async ({ configId, profileId, adType, models
 
             let effectiveCampaigns = enabledCampaigns;
             if (effectiveCampaigns.length === 0 && adTypeCampaignSchema) {
-                const latestDate = await findLatestActiveDate(adTypeCampaignSchema, { profileId, status: "ENABLED" }, today);
+                const latestDate = await findLatestActiveDate(adTypeCampaignSchema, { configId: configObjectId, profileId: numProfileId, status: "ENABLED" }, today);
                 if (latestDate) {
-                    effectiveCampaigns = await adTypeCampaignSchema.find({ profileId, reportDate: latestDate, status: "ENABLED" }, { campaignId: 1 }).lean();
+                    effectiveCampaigns = await adTypeCampaignSchema.find({ configId: configObjectId, profileId: numProfileId, reportDate: latestDate, status: "ENABLED" }, { campaignId: 1 }).lean();
                 }
             }
             enabledCampIds = Array.from(new Set((effectiveCampaigns || []).map(c => c.campaignId)));
 
             let effectiveAdGroups = enabledAdGroups;
             if (effectiveAdGroups.length === 0 && adTypeAdGroupSchema) {
-                const latestDate = await findLatestActiveDate(adTypeAdGroupSchema, { profileId, status: "ENABLED" }, today);
+                const latestDate = await findLatestActiveDate(adTypeAdGroupSchema, { configId: configObjectId, profileId: numProfileId, status: "ENABLED" }, today);
                 if (latestDate) {
-                    effectiveAdGroups = await adTypeAdGroupSchema.find({ profileId, reportDate: latestDate, status: "ENABLED" }, { adGroupId: 1 }).lean();
+                    effectiveAdGroups = await adTypeAdGroupSchema.find({ configId: configObjectId, profileId: numProfileId, reportDate: latestDate, status: "ENABLED" }, { adGroupId: 1 }).lean();
                 }
             }
             enabledAgIds = Array.from(new Set((effectiveAdGroups || []).map(a => a.adGroupId)));
 
             let effectiveTargetings = enabledTargetings;
             if (effectiveTargetings.length === 0 && adTypeTargetingSchema) {
-                const latestDate = await findLatestActiveDate(adTypeTargetingSchema, { profileId, status: "ENABLED" }, today);
+                const latestDate = await findLatestActiveDate(adTypeTargetingSchema, { configId: configObjectId, profileId: numProfileId, status: "ENABLED" }, today);
                 if (latestDate) {
-                    effectiveTargetings = await adTypeTargetingSchema.find({ profileId, reportDate: latestDate, status: "ENABLED" }, { adGroupId: 1, targeting: 1 }).lean();
+                    effectiveTargetings = await adTypeTargetingSchema.find({ configId: configObjectId, profileId: numProfileId, reportDate: latestDate, status: "ENABLED" }, { adGroupId: 1, targeting: 1 }).lean();
                 }
             }
             enabledTgtSet = new Set((effectiveTargetings || []).map(t => `${t.adGroupId}:::${(t.targeting || '').toLowerCase().trim()}`));
@@ -4239,15 +4244,15 @@ exports.getRecommendationData = async (req, res) => {
             const appliedTgtSet = new Set();
             const rId = String(rule._id || "");
 
-            const campFilter = { profileId, reportDate: toDate, status: "ENABLED" };
+            const campFilter = { configId, profileId, reportDate: toDate, status: "ENABLED" };
             if (isTargetingRule) {
                 campFilter.targetingType = "MANUAL";
             }
 
             let [enabledCampaigns, enabledAdGroups, enabledTargetings, notNewRecords, appliedRecords, appliedHistory] = await Promise.all([
                 adTypeCampaignSchema.find(campFilter, { campaignId: 1, name: 1, status: 1 }).lean(),
-                adTypeAdGroupSchema.find({ profileId, reportDate: toDate, status: "ENABLED" }, { adGroupId: 1, name: 1, status: 1 }).lean(),
-                adTypeTargetingSchema.find({ profileId, reportDate: toDate, status: "ENABLED" }, { campaignId: 1, adGroupId: 1, targeting: 1 }).lean(),
+                adTypeAdGroupSchema.find({ configId, profileId, reportDate: toDate, status: "ENABLED" }, { adGroupId: 1, name: 1, status: 1 }).lean(),
+                adTypeTargetingSchema.find({ configId, profileId, reportDate: toDate, status: "ENABLED" }, { campaignId: 1, adGroupId: 1, targeting: 1 }).lean(),
                 recommandationStatusSchema.find({
                     configId,
                     profileId,
@@ -4278,15 +4283,15 @@ exports.getRecommendationData = async (req, res) => {
 
             if (!enabledCampaigns.length && adTypeCampaignSchema) {
                 const latestCamp = await adTypeCampaignSchema.findOne(
-                    { profileId, reportDate: { $lte: toDate }, status: "ENABLED", ...(isTargetingRule ? { targetingType: "MANUAL" } : {}) },
+                    { configId, profileId, reportDate: { $lte: toDate }, status: "ENABLED", ...(isTargetingRule ? { targetingType: "MANUAL" } : {}) },
                     { reportDate: 1 }
                 ).sort({ reportDate: -1 }).lean();
                 if (latestCamp?.reportDate) {
-                    const fbCampFilter = { profileId, reportDate: latestCamp.reportDate, status: "ENABLED" };
+                    const fbCampFilter = { configId, profileId, reportDate: latestCamp.reportDate, status: "ENABLED" };
                     if (isTargetingRule) fbCampFilter.targetingType = "MANUAL";
                     enabledCampaigns = await adTypeCampaignSchema.find(fbCampFilter, { campaignId: 1, name: 1, status: 1 }).lean();
                 } else {
-                    const fbCampFilter = { profileId, status: "ENABLED" };
+                    const fbCampFilter = { configId, profileId, status: "ENABLED" };
                     if (isTargetingRule) fbCampFilter.targetingType = "MANUAL";
                     enabledCampaigns = await adTypeCampaignSchema.find(fbCampFilter, { campaignId: 1, name: 1, status: 1 }).limit(5000).lean();
                 }
@@ -4294,25 +4299,25 @@ exports.getRecommendationData = async (req, res) => {
 
             if (!enabledAdGroups.length && adTypeAdGroupSchema) {
                 const latestAg = await adTypeAdGroupSchema.findOne(
-                    { profileId, reportDate: { $lte: toDate }, status: "ENABLED" },
+                    { configId, profileId, reportDate: { $lte: toDate }, status: "ENABLED" },
                     { reportDate: 1 }
                 ).sort({ reportDate: -1 }).lean();
                 if (latestAg?.reportDate) {
-                    enabledAdGroups = await adTypeAdGroupSchema.find({ profileId, reportDate: latestAg.reportDate, status: "ENABLED" }, { adGroupId: 1, name: 1, status: 1 }).lean();
+                    enabledAdGroups = await adTypeAdGroupSchema.find({ configId, profileId, reportDate: latestAg.reportDate, status: "ENABLED" }, { adGroupId: 1, name: 1, status: 1 }).lean();
                 } else {
-                    enabledAdGroups = await adTypeAdGroupSchema.find({ profileId, status: "ENABLED" }, { adGroupId: 1, name: 1, status: 1 }).limit(5000).lean();
+                    enabledAdGroups = await adTypeAdGroupSchema.find({ configId, profileId, status: "ENABLED" }, { adGroupId: 1, name: 1, status: 1 }).limit(5000).lean();
                 }
             }
 
             if (!enabledTargetings.length && adTypeTargetingSchema) {
                 const latestTgt = await adTypeTargetingSchema.findOne(
-                    { profileId, reportDate: { $lte: toDate }, status: "ENABLED" },
+                    { configId, profileId, reportDate: { $lte: toDate }, status: "ENABLED" },
                     { reportDate: 1 }
                 ).sort({ reportDate: -1 }).lean();
                 if (latestTgt?.reportDate) {
-                    enabledTargetings = await adTypeTargetingSchema.find({ profileId, reportDate: latestTgt.reportDate, status: "ENABLED" }, { campaignId: 1, adGroupId: 1, targeting: 1 }).lean();
+                    enabledTargetings = await adTypeTargetingSchema.find({ configId, profileId, reportDate: latestTgt.reportDate, status: "ENABLED" }, { campaignId: 1, adGroupId: 1, targeting: 1 }).lean();
                 } else {
-                    enabledTargetings = await adTypeTargetingSchema.find({ profileId, status: "ENABLED" }, { campaignId: 1, adGroupId: 1, targeting: 1 }).limit(5000).lean();
+                    enabledTargetings = await adTypeTargetingSchema.find({ configId, profileId, status: "ENABLED" }, { campaignId: 1, adGroupId: 1, targeting: 1 }).limit(5000).lean();
                 }
             }
 
@@ -4359,16 +4364,16 @@ exports.getRecommendationData = async (req, res) => {
 
             let currentCampaigns = enabledCampaigns;
             if (currentCampaigns.length === 0 && adTypeCampaignSchema) {
-                const latestCamp = await adTypeCampaignSchema.findOne({ profileId, status: "ENABLED", ...(isTargetingRule ? { targetingType: "MANUAL" } : {}) }, { reportDate: 1 }).sort({ reportDate: -1 }).lean();
+                const latestCamp = await adTypeCampaignSchema.findOne({ configId, profileId, status: "ENABLED", ...(isTargetingRule ? { targetingType: "MANUAL" } : {}) }, { reportDate: 1 }).sort({ reportDate: -1 }).lean();
                 if (latestCamp?.reportDate) {
-                    currentCampaigns = await adTypeCampaignSchema.find({ profileId, reportDate: latestCamp.reportDate, status: "ENABLED", ...(isTargetingRule ? { targetingType: "MANUAL" } : {}) }, { campaignId: 1, name: 1, status: 1 }).lean();
+                    currentCampaigns = await adTypeCampaignSchema.find({ configId, profileId, reportDate: latestCamp.reportDate, status: "ENABLED", ...(isTargetingRule ? { targetingType: "MANUAL" } : {}) }, { campaignId: 1, name: 1, status: 1 }).lean();
                 }
             }
             let currentAdGroups = enabledAdGroups;
             if (currentAdGroups.length === 0 && adTypeAdGroupSchema) {
-                const latestAg = await adTypeAdGroupSchema.findOne({ profileId, status: "ENABLED" }, { reportDate: 1 }).sort({ reportDate: -1 }).lean();
+                const latestAg = await adTypeAdGroupSchema.findOne({ configId, profileId, status: "ENABLED" }, { reportDate: 1 }).sort({ reportDate: -1 }).lean();
                 if (latestAg?.reportDate) {
-                    currentAdGroups = await adTypeAdGroupSchema.find({ profileId, reportDate: latestAg.reportDate, status: "ENABLED" }, { adGroupId: 1, name: 1, status: 1 }).lean();
+                    currentAdGroups = await adTypeAdGroupSchema.find({ configId, profileId, reportDate: latestAg.reportDate, status: "ENABLED" }, { adGroupId: 1, name: 1, status: 1 }).lean();
                 }
             }
             const campMap = new Map(currentCampaigns.map(c => [c.campaignId, c]));
@@ -4382,11 +4387,11 @@ exports.getRecommendationData = async (req, res) => {
             } else {
                 let currentTargetings = enabledTargetings;
                 if (currentTargetings.length === 0 && adTypeTargetingSchema) {
-                    const latestTgts = await adTypeTargetingSchema.find({ profileId, status: "ENABLED" }, { reportDate: 1 }).sort({ reportDate: -1 }).limit(1).lean();
+                    const latestTgts = await adTypeTargetingSchema.find({ configId, profileId, status: "ENABLED" }, { reportDate: 1 }).sort({ reportDate: -1 }).limit(1).lean();
                     const latestDate = latestTgts?.[0]?.reportDate;
                     if (latestDate) {
                         currentTargetings = await adTypeTargetingSchema.find(
-                            { profileId, reportDate: latestDate, status: "ENABLED" },
+                            { configId, profileId, reportDate: latestDate, status: "ENABLED" },
                             { campaignId: 1, adGroupId: 1, targeting: 1 }
                         ).lean();
                     }
@@ -4810,31 +4815,33 @@ exports.deleteRecommendation = async (req, res) => {
                 event: "RECOMMENDATION_DISMISSED",
                 message: `Recommendation dismissed: ${rule?.ruleName}`,
                 userId: req?.user?.id,
+                configId, profileId, resourceType: "recommendation rule", resourceId: String(ruleId),
+                operationId: req.auditOperationId,
                 metadata: {
                     ruleName: rule?.ruleName,
                     gridName: rule?.gridName,
                     fromDate: rule?.fromDate,
                     toDate: rule?.toDate,
-                    campaignName: item?.campaignName || null,
-                    adGroupName: item?.adGroupName || null,
-                    keywordType: item?.keywordType || null,
-                    targeting: item?.targeting || null,
-                    matchType: item?.matchType || null,
-                    placement: item?.placement || null,
-                    searchTerm: item?.searchTerm || null,
-                    budget: item?.budget || null,
-                    placementBid: item?.placementBid || null,
-                    targetingBid: item?.targetingBid || null,
-                    impressions: item?.impressions || null,
-                    clicks: item?.clicks || null,
-                    spend: item?.spend || null,
-                    sales: item?.sales || null,
-                    cpc: item?.cpc || null,
-                    ctr: item?.ctr || null,
-                    cvr: item?.cvr || null,
-                    orders: item?.orders || null,
-                    acos: item?.acos || null,
-                    roas: item?.roas || null
+                    campaignName: item?.campaignName ?? null,
+                    adGroupName: item?.adGroupName ?? null,
+                    keywordType: item?.keywordType ?? null,
+                    targeting: item?.targeting ?? null,
+                    matchType: item?.matchType ?? null,
+                    placement: item?.placement ?? null,
+                    searchTerm: item?.searchTerm ?? null,
+                    budget: item?.budget ?? null,
+                    placementBid: item?.placementBid ?? null,
+                    targetingBid: item?.targetingBid ?? null,
+                    impressions: item?.impressions ?? null,
+                    clicks: item?.clicks ?? null,
+                    spend: item?.spend ?? null,
+                    sales: item?.sales ?? null,
+                    cpc: item?.cpc ?? null,
+                    ctr: item?.ctr ?? null,
+                    cvr: item?.cvr ?? null,
+                    orders: item?.orders ?? null,
+                    acos: item?.acos ?? null,
+                    roas: item?.roas ?? null
                 },
             }));
 
@@ -4987,35 +4994,37 @@ exports.applyRuleRecommendation = async (req, res) => {
             event: "RECOMMENDATION_APPLIED",
             message: `Recommendation applied: ${rule?.ruleName}`,
             userId: req?.user?.id,
+            configId, profileId, resourceType: "recommendation rule", resourceId: String(ruleId),
+            operationId: req.auditOperationId,
             metadata: {
                 ruleName: rule?.ruleName,
                 gridName: rule?.gridName,
                 fromDate: rule?.fromDate,
                 toDate: rule?.toDate,
-                campaignName: item?.campaignName || null,
-                adGroupName: item?.adGroupName || null,
-                keywordType: item?.keywordType || null,
-                targeting: item?.targeting || null,
-                matchType: item?.matchType || null,
-                placement: item?.placement || null,
-                searchTerm: item?.searchTerm || null,
-                budget: item?.budget || null,
-                placementBid: item?.placementBid || null,
-                targetingBid: item?.targetingBid || null,
-                impressions: item?.impressions || null,
-                clicks: item?.clicks || null,
-                spend: item?.spend || null,
-                sales: item?.sales || null,
-                cpc: item?.cpc || null,
-                ctr: item?.ctr || null,
-                cvr: item?.cvr || null,
-                orders: item?.orders || null,
-                acos: item?.acos || null,
-                roas: item?.roas || null,
-                targetId: item?.targetId || null,
-                adId: item?.adId || null,
-                asins: item?.asins || null,
-                sku: item?.sku || null,
+                campaignName: item?.campaignName ?? null,
+                adGroupName: item?.adGroupName ?? null,
+                keywordType: item?.keywordType ?? null,
+                targeting: item?.targeting ?? null,
+                matchType: item?.matchType ?? null,
+                placement: item?.placement ?? null,
+                searchTerm: item?.searchTerm ?? null,
+                budget: item?.budget ?? null,
+                placementBid: item?.placementBid ?? null,
+                targetingBid: item?.targetingBid ?? null,
+                impressions: item?.impressions ?? null,
+                clicks: item?.clicks ?? null,
+                spend: item?.spend ?? null,
+                sales: item?.sales ?? null,
+                cpc: item?.cpc ?? null,
+                ctr: item?.ctr ?? null,
+                cvr: item?.cvr ?? null,
+                orders: item?.orders ?? null,
+                acos: item?.acos ?? null,
+                roas: item?.roas ?? null,
+                targetId: item?.targetId ?? null,
+                adId: item?.adId ?? null,
+                asins: item?.asins ?? null,
+                sku: item?.sku ?? null,
             }
         }));
 
@@ -5091,7 +5100,7 @@ const chunkArray = (array, size = 1000) => {
 const SP_PLACEMENT_MAP = {
     "Top of Search": "PLACEMENT_TOP",
     "Rest of Search": "PLACEMENT_REST_OF_SEARCH",
-    "Product pages": "PLACEMENT_PRODUCT_PAGE",
+    "Product Pages": "PLACEMENT_PRODUCT_PAGE",
     "Product Page": "PLACEMENT_PRODUCT_PAGE",
 };
 
@@ -5237,7 +5246,7 @@ const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds,
                         confirmed.forEach(({ item }) => appliedItems.add(item));
                     }
                 } catch (err) {
-                        if (err?.historyPersistenceFailure) throw err;
+                    if (err?.historyPersistenceFailure) throw err;
                     recommendation_logs({
                         log_type: "error",
                         message: `[applyCampaignRecommendation SP Budget Batch Error] ${err?.message || err}`
@@ -5350,7 +5359,7 @@ const applyCampaignRecommendation = async (rule, items, profile, checkConfigAds,
                         confirmed.forEach(item => appliedItems.add(item));
                     }
                 } catch (err) {
-                        if (err?.historyPersistenceFailure) throw err;
+                    if (err?.historyPersistenceFailure) throw err;
                     recommendation_logs({
                         log_type: "error",
                         message: `[applyCampaignRecommendation SP Status Batch Error] ${err?.message || err}`
@@ -5514,7 +5523,7 @@ const applyPlacementRecommendation = async (rule, items, profile, checkConfigAds
                     confirmed.forEach(({ item }) => appliedItems.add(item));
                 }
             } catch (err) {
-                        if (err?.historyPersistenceFailure) throw err;
+                if (err?.historyPersistenceFailure) throw err;
                 recommendation_logs({
                     log_type: "error",
                     message: `[applyPlacementRecommendation SP Batch Error] ${err?.message || err}`
@@ -6246,7 +6255,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                     targeting: item?.searchTerm,
                     matchType: action?.matchType || "EXACT",
                     targetId: item?.targetId ? String(item.targetId).replace(/^[TK]-/, "") : null,
-                                historyEntityId: item?.targetId,
+                    historyEntityId: item?.targetId,
                     adGroupId: item?.adGroupId,
                     oldValue: "—",
                     newValue: `Negative (${action?.matchType || "EXACT"})`,
@@ -6450,7 +6459,7 @@ const applySearchTermRecommendation = async (rule, items, profile, checkConfigAd
                     targeting: item?.searchTerm,
                     matchType: action?.matchType || "EXACT",
                     targetId: item?.targetId ? String(item.targetId).replace(/^[TK]-/, "") : null,
-                                historyEntityId: item?.targetId,
+                    historyEntityId: item?.targetId,
                     adGroupId: item?.adGroupId,
                     oldValue: "—",
                     newValue: `Target (${action?.matchType || "EXACT"})`,
@@ -6497,8 +6506,8 @@ const applyProductRecommendation = async (rule, items, profile, checkConfigAds, 
     const effectiveAdType = adType || "SP";
     const targetModel =
         effectiveAdType === "SB" ? sbProductAdsSchema
-        : effectiveAdType === "SD" ? sdProductAdsSchema
-        : productAdsSchema;
+            : effectiveAdType === "SD" ? sdProductAdsSchema
+                : productAdsSchema;
 
     const validItems = (items || []).filter((it) => it?.adId != null);
     if (!validItems.length) {

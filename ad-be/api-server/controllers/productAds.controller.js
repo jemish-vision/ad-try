@@ -2090,7 +2090,7 @@ async function createSbProductCollection(req, res) {
     } = req.body;
     const escapedName = name.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const nameRegex = new RegExp("^" + escapedName + "$", "i");
-    const getAdGroup = await adGroupsSchema.findOne({ adGroupId }).lean();
+    const getAdGroup = await adGroupsSchema.findOne({ configId, profileId, adGroupId }).lean();
     if (!getAdGroup) {
       return res.status(203).send({
         message: "Adgroup not found!",
@@ -2217,7 +2217,7 @@ async function createSbVideo(req, res) {
     let { profileId, name, asins, state, adGroupId, videoAssetIds } = req.body;
     const escapedName = name.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const nameRegex = new RegExp("^" + escapedName + "$", "i");
-    const getAdGroup = await adGroupsSchema.findOne({ adGroupId }).lean();
+    const getAdGroup = await adGroupsSchema.findOne({ configId, profileId, adGroupId }).lean();
     if (!getAdGroup) {
       return res.status(203).send({
         message: "Adgroup not found!",
@@ -3164,7 +3164,6 @@ exports.listProductAds = async (req, res) => {
         });
 
         if (fetchedRanks.size > 0) {
-          const adBulkOps = [];
           const listingBulkOps = [];
 
           for (const row of getProductAds) {
@@ -3182,12 +3181,6 @@ exports.listProductAds = async (req, res) => {
           }
 
           for (const [asin, rankData] of fetchedRanks.entries()) {
-            adBulkOps.push({
-              updateMany: {
-                filter: { configId, profileId: Number(profileId), asins: asin },
-                update: { $set: rankData },
-              },
-            });
             listingBulkOps.push({
               updateMany: {
                 filter: { configId, profileId: Number(profileId), asin },
@@ -3203,15 +3196,14 @@ exports.listProductAds = async (req, res) => {
             });
           }
 
-          Promise.all([
-            adBulkOps.length ? adTypeProductAdsSchema.bulkWrite(adBulkOps, { ordered: false }) : null,
-            listingBulkOps.length ? productListingSchema.bulkWrite(listingBulkOps, { ordered: false }) : null,
-          ]).catch((err) => {
-            write_logs({
-              message: `[listProductAds Rank Persist Error] ${err?.message || err}`,
-              log_type: "warn",
+          if (listingBulkOps.length) {
+            productListingSchema.bulkWrite(listingBulkOps, { ordered: false }).catch((err) => {
+              write_logs({
+                message: `[listProductAds Rank Persist Error] ${err?.message || err}`,
+                log_type: "warn",
+              });
             });
-          });
+          }
         }
       }
     }
@@ -4197,8 +4189,27 @@ exports.topPerformanceProductAds = async (req, res) => {
       {
         $lookup: {
           from: "ad_groups",
-          localField: "_id.adGroupId",
-          foreignField: "adGroupId",
+          let: {
+            configId: "$productAds.configId",
+            profileId: "$productAds.profileId",
+            adGroupId: "$_id.adGroupId",
+          },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$configId", "$$configId"] },
+                    { $eq: ["$profileId", "$$profileId"] },
+                    { $eq: ["$adGroupId", "$$adGroupId"] },
+                  ],
+                },
+              },
+            },
+            { $sort: { reportDate: -1 } },
+            { $limit: 1 },
+            { $project: { _id: 0, name: 1 } },
+          ],
           as: "adGroup",
         },
       },

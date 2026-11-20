@@ -13,12 +13,10 @@ const targetingHistorySchema = new mongoose.Schema(
     targetId: {
       type: String,
       trim: true,
-      index: true,
     },
     campaignId: {
       type: String,
       trim: true,
-      index: true,
     },
     adGroupId: {
       type: String,
@@ -88,6 +86,5 @@ targetingHistorySchema.index({ configId: 1, profileId: 1, targetId: 1, createdAt
 targetingHistorySchema.index({ targetId: 1, last_updated_date_time: -1 });
 targetingHistorySchema.index({ campaignId: 1, targetId: 1 });
 targetingHistorySchema.index({ profileId: 1, campaignId: 1, last_updated_date_time: -1, createdAt: -1 });
-targetingHistorySchema.index({ campaignId: 1, last_updated_date_time: -1, createdAt: -1 });
 
 module.exports = mongoose.model("targetingHistory", targetingHistorySchema);

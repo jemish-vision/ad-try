@@ -26,6 +26,8 @@ const CRON_NAME_MAP = Object.freeze({
 
   // SP-API tasks (heavy / periodic)
   "syncorder": { queue: QUEUES.SP_API, task: SP_API_TASKS.SYNC_ORDER, family: "sp-api" },
+  "transactionreport": { queue: QUEUES.SP_API, task: SP_API_TASKS.SYNC_ORDER, family: "sp-api" },
+  "refundreport": { queue: QUEUES.SP_API, task: SP_API_TASKS.SYNC_ORDER, family: "sp-api" },
   "orderlisting": { queue: QUEUES.SP_API, task: SP_API_TASKS.ORDER_LISTING, family: "sp-api" },
   "syncinventory": { queue: QUEUES.SP_API, task: SP_API_TASKS.SYNC_INVENTORY, family: "sp-api" },
   "detectdeadinventory": { queue: QUEUES.SP_API, task: SP_API_TASKS.DETECT_DEAD_INVENTORY, family: "sp-api" },

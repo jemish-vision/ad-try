@@ -5,7 +5,7 @@ const auditLogSchema = new mongoose.Schema(
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "users",
-      required: true,
+      required: function () { return this.actorType === 'user'; },
       index: true,
     },
 
@@ -23,82 +23,7 @@ const auditLogSchema = new mongoose.Schema(
 
     event: {
       type: String,
-      enum: [
-        "USER_LOGIN",
-        "USER_LOGOUT",
-        "GOOGLE_USER_LOGIN",
-
-        "PASSWORD_CHANGE",
-
-        "CONFIG_CONNECT",
-        "CONFIG_RECONNECT",
-        "CONFIG_DISCONNECT",
-
-        "SELLER_CONFIG_CONNECT",
-        "SELLER_CONFIG_RECONNECT",
-        "SELLER_CONFIG_DISCONNECT",
-        "SELLER_CONFIG_SUBSCRIPTIONS",
-        "SELLER_CONFIG_LINK_EXISTING",
-        "SELLER_CONNECTION_NOTIFICATION_SENT",
-
-        "CSRF_ATTEMPT_EXPIRE",
-        "CSRF_ATTEMPT_INVALID",
-
-        "PLACEMENT_RULE_CREATION",
-        "PLACEMENT_RULE_UPDATE",
-        "PLACEMENT_RULE_DELETION",
-        "PLACEMENT_RULE_STATUS_CHANGE",
-
-        "BUDGET_RULE_CREATION",
-        "BUDGET_RULE_UPDATE",
-        "BUDGET_RULE_DELETION",
-        "BUDGET_RULE_STATUS_CHANGE",
-
-        "TARGETING_RULE_CREATION",
-        "TARGETING_RULE_UPDATE",
-        "TARGETING_RULE_DELETION",
-        "TARGETING_RULE_STATUS_CHANGE",
-
-        "SEARCH_TERM_RULE_CREATION",
-        "SEARCH_TERM_RULE_UPDATE",
-        "SEARCH_TERM_RULE_DELETION",
-        "SEARCH_TERM_RULE_STATUS_CHANGE",
-
-        "DAYPARTING_RULE_CREATION",
-        "DAYPARTING_RULE_UPDATE",
-        "DAYPARTING_RULE_DELETION",
-        "DAYPARTING_RULE_STATUS_CHANGE",
-
-        "RECOMMENDATION_RULE_CREATION",
-        "RECOMMENDATION_RULE_UPDATE",
-        "RECOMMENDATION_RULE_DELETION",
-        "RECOMMENDATION_RULE_STATUS_CHANGE",
-        "RECOMMENDATION_APPLIED",
-        "RECOMMENDATION_DISMISSED",
-
-        "CRON_JOB_SETTINGS",
-        "INVENTORY_SETTINGS",
-        "FBA_CONFIGURATION",
-        "REIMBURSEMENT_SETTINGS",
-
-        "CAMPAIGN_CREATION",
-        "CAMPAIGN_BID_THRESHOLD",
-        "CAMPAIGN_NOTIFICATION_THRESHOLD",
-
-        "PRODUCT_CREATION",
-        "PRODUCT_PRICE_UPDATE",
-        "PRODUCT_NOTIFICATION_THRESHOLD",
-
-        "CAMPAIGN_PRODUCT_ELIGIBILITY_THRESHOLD",
-        "RULES_SETTINGS",
-
-        "SEARCH_TERM_ADD_AS_KEYWORD",
-        "SEARCH_TERM_ADD_AS_NEGATIVE_KEYWORD",
-        "SEARCH_TERM_REMOVED",
-
-        "MAINTENANCE_MODE_ENABLED",
-        "MAINTENANCE_MODE_DISABLED",
-      ],
+      enum: require("../constants/auditEvents").events,
       required: true,
     },
 
@@ -121,11 +46,30 @@ const auditLogSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       required: false,
     },
+    actorType: { type: String, enum: ['user', 'system', 'integration', 'anonymous'], default: function () { return this.userId ? 'user' : 'system'; } },
+    organizationId: { type: mongoose.Schema.Types.ObjectId, ref: 'organization', default: null },
+    profileId: { type: String, maxlength: 32, match: /^\d{1,32}$/ },
+    resourceType: { type: String, maxlength: 100 },
+    resourceId: { type: String, maxlength: 200 },
+    outcome: { type: String, enum: ['SUCCESS', 'FAILURE', 'PARTIAL', 'PENDING', 'DENIED'], default: 'SUCCESS' },
+    previousValue: { type: mongoose.Schema.Types.Mixed },
+    newValue: { type: mongoose.Schema.Types.Mixed },
+    source: { type: String, enum: ['api', 'ui', 'worker', 'webhook', 'integration', 'system'], default: 'api' },
+    operationId: { type: String, maxlength: 200 },
   },
   { timestamps: true }
 );
 
+auditLogSchema.pre('validate', function () {
+  const { sanitizeAuditValue } = require('../helpers/auditHelper');
+  for (const field of ['metadata', 'previousValue', 'newValue', 'message', 'userAgent']) {
+    if (this[field] !== undefined) this[field] = sanitizeAuditValue(this[field]);
+  }
+});
+
 auditLogSchema.index({ userId: 1, createdAt: -1 });
+auditLogSchema.index({ organizationId: 1, createdAt: -1 });
+auditLogSchema.index({ organizationId: 1, userId: 1, createdAt: -1 });
 
 auditLogSchema.index({ event: 1 });
 

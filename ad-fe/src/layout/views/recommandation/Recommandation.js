@@ -20,7 +20,7 @@ import { ApiGetRecommendationTags } from "../../../api-wrapper/recommendation/Ap
 import RecommendationRules from "../recommendationRule/RecommendationRules";
 import { PermissionCheck } from "../../../helper/permission/PermissionCheck";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Sparkles, Sliders, RefreshCw } from "lucide-react";
+import { Sparkles, Sliders, RefreshCw, Tag as TagIcon, ChevronDown } from "lucide-react";
 import { FiInfo } from "react-icons/fi";
 import {
   RECOMMENDATION_FILTER_OPTIONS,
@@ -52,7 +52,7 @@ const PLACEMENT_LABEL_MAP = {
   "Top of Search": "Top Search",
   "Rest of Search": "Rest Search",
   "Product Page": "Product Page",
-  "Product pages": "Product Page",
+  "Product Pages": "Product Page",
 };
 
 function formatDate(iso) {
@@ -126,7 +126,7 @@ const getActionColors = (actionName, isDark = false) => {
   };
 };
 
-function RecommendationItem({ id, recommendation, onClick, onEdit, onDelete, isDark, isMobile, isLoading, isAnyLoading }) {
+function RecommendationItem({ id, recommendation, onClick, onEdit, onDelete, isDark, isMobile, isLoading, isAnyLoading, isInsideGroup = false }) {
   const { t } = useTranslation();
   const [hovered, setHovered] = useState(false);
   const actions = getActionDetails(recommendation.actions, recommendation.gridName);
@@ -143,16 +143,18 @@ function RecommendationItem({ id, recommendation, onClick, onEdit, onDelete, isD
         justifyContent: "space-between",
         alignItems: "center",
         padding: isMobile ? "12px 16px" : "16px 20px",
-        marginBottom: "12px",
+        marginBottom: isInsideGroup ? "0" : "12px",
         borderRadius: "12px",
         border: isLoading
           ? (isDark ? "1px solid #38bdf8" : "1px solid #0284c7")
-          : (isDark ? "1px solid rgba(255, 255, 255, 0.08)" : "1px solid #e2e8f0"),
+          : (isDark
+              ? (isInsideGroup ? "1px solid rgba(255, 255, 255, 0.06)" : "1px solid rgba(255, 255, 255, 0.08)")
+              : (isInsideGroup ? "1px solid rgba(0, 0, 0, 0.06)" : "1px solid #e2e8f0")),
         cursor: isLoading ? "wait" : (isAnyLoading ? "not-allowed" : "pointer"),
         transition: "all 0.2s ease-in-out",
         backgroundColor: isDark
-          ? (isLoading ? "rgba(14, 165, 233, 0.08)" : (hovered ? "#1e293b" : "#0f172a"))
-          : (isLoading ? "rgba(14, 165, 233, 0.04)" : (hovered ? "#f8fafc" : "#ffffff")),
+          ? (isLoading ? "rgba(14, 165, 233, 0.08)" : (hovered ? "#1e293b" : (isInsideGroup ? "#0f172a" : "#0f172a")))
+          : (isLoading ? "rgba(14, 165, 233, 0.04)" : (hovered ? "#ffffff" : (isInsideGroup ? "#ffffff" : "#ffffff"))),
         boxShadow: isLoading
           ? (isDark ? "0 0 16px rgba(56, 189, 248, 0.25)" : "0 0 16px rgba(14, 165, 233, 0.18)")
           : (hovered ? (isDark ? "0 4px 12px rgba(0, 0, 0, 0.3)" : "0 4px 12px rgba(0, 0, 0, 0.05)") : "0 2px 4px rgba(0, 0, 0, 0.02)"),
@@ -385,6 +387,118 @@ function SkeletonItem({ isDark }) {
         <div className="flex items-center" style={{ gap: 20 }}>
           <div style={{ background: isDark ? "#1e293b" : "#e2e8f0", height: 14, width: 60, borderRadius: 4 }} />
           <div style={{ background: isDark ? "#1e293b" : "#e2e8f0", height: 28, width: 45, borderRadius: 30 }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TagGroupHeader({ group, isDark, isMobile, isCollapsed, onToggle }) {
+  const { t } = useTranslation();
+  const [hovered, setHovered] = useState(false);
+  const tagColor = group.tag?.color || "#2563EB";
+  const totalCount = group.items.length;
+  const totalOpportunities = useMemo(
+    () => group.items.reduce((sum, item) => sum + (Number(item.count) || 0), 0),
+    [group.items]
+  );
+  const totalNew = useMemo(
+    () => group.items.reduce((sum, item) => sum + (Number(item.newCount) || 0), 0),
+    [group.items]
+  );
+
+  return (
+    <div
+      onClick={onToggle}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className={`tag-group-header flex items-center justify-between gap-3 px-4 py-3 cursor-pointer select-none transition-colors duration-150 ${
+        isCollapsed ? "" : (isDark ? "border-b border-white/5" : "border-b border-slate-200/80")
+      }`}
+      style={{
+        background: isDark
+          ? (hovered ? "rgba(30, 41, 59, 0.55)" : "rgba(30, 41, 59, 0.25)")
+          : (hovered ? "#f1f5f9" : "#f8fafc"),
+      }}
+      title={isCollapsed ? t("Click to expand") : t("Click to collapse")}
+    >
+      {/* Left: Color Accent + Tag Badge + Name + Count Pill */}
+      <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+        <span
+          className="w-1.5 h-4.5 rounded-full shrink-0"
+          style={{ backgroundColor: tagColor }}
+        />
+        <div
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[13px] font-semibold border shadow-sm shrink-0"
+          style={{
+            color: tagColor,
+            backgroundColor: `${tagColor}1C`,
+            borderColor: `${tagColor}4D`,
+          }}
+        >
+          <TagIcon className="w-3.5 h-3.5 shrink-0" style={{ color: tagColor }} />
+          <span className="truncate max-w-[160px] sm:max-w-[240px]">{group.tag.name}</span>
+        </div>
+
+        <span
+          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[12px] font-medium"
+          style={{
+            color: isDark ? "#cbd5e1" : "#475569",
+            backgroundColor: isDark ? "rgba(255, 255, 255, 0.06)" : "#f1f5f9",
+            border: isDark ? "1px solid rgba(255, 255, 255, 0.08)" : "1px solid #e2e8f0",
+          }}
+        >
+          <span className="font-semibold">{totalCount}</span>
+          <span className="text-[11.5px] opacity-80">
+            {totalCount === 1 ? t("recommendation") : t("recommendations")}
+          </span>
+        </span>
+      </div>
+
+      {/* Right: Stats Summary + Collapse Toggle */}
+      <div className="flex items-center gap-2.5 shrink-0">
+        {totalNew > 0 && (
+          <span
+            className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11.5px] font-semibold"
+            style={{
+              color: "#34d399",
+              backgroundColor: "rgba(16, 185, 129, 0.14)",
+              border: "1px solid rgba(16, 185, 129, 0.28)",
+            }}
+            title={t("{{count}} new opportunities across this group", { count: totalNew })}
+          >
+            <span>+{totalNew}</span>
+            <span className="text-[10.5px] opacity-90">{t("new")}</span>
+          </span>
+        )}
+
+        {totalOpportunities > 0 && (
+          <span
+            className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11.5px] font-semibold"
+            style={{
+              color: isDark ? "#94a3b8" : "#64748b",
+              backgroundColor: isDark ? "rgba(255, 255, 255, 0.04)" : "#f8fafc",
+              border: isDark ? "1px solid rgba(255, 255, 255, 0.08)" : "1px solid #e2e8f0",
+            }}
+            title={t("{{count}} total opportunities", { count: totalOpportunities })}
+          >
+            <span>{totalOpportunities}</span>
+            <span className="text-[10.5px] opacity-80">{t("total")}</span>
+          </span>
+        )}
+
+        <div
+          className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-200 ${
+            isDark
+              ? (hovered ? "bg-white/10 text-white" : "bg-white/5 text-slate-400")
+              : (hovered ? "bg-slate-200 text-slate-800" : "bg-slate-100 text-slate-500")
+          }`}
+        >
+          <ChevronDown
+            className={`w-4 h-4 transition-transform duration-200 ${
+              isCollapsed ? "-rotate-90" : "rotate-0"
+            }`}
+          />
         </div>
       </div>
     </div>
@@ -678,10 +792,38 @@ function Recommendation() {
       .filter((g) => g.items.length > 0);
   }, [appliedTagIds, tagOptions, sortedRecommendations]);
 
+  const [collapsedGroups, setCollapsedGroups] = useState({});
+
+  useEffect(() => {
+    setCollapsedGroups({});
+  }, [appliedTagIds]);
+
+  const toggleGroupCollapse = useCallback((tagId) => {
+    setCollapsedGroups((prev) => ({
+      ...prev,
+      [tagId]: !prev[tagId],
+    }));
+  }, []);
+
+  const allGroupsCollapsed = useMemo(() => {
+    if (!tagGroups || tagGroups.length === 0) return false;
+    return tagGroups.every((g) => !!collapsedGroups[g.tag?._id]);
+  }, [tagGroups, collapsedGroups]);
+
+  const toggleAllGroups = useCallback(() => {
+    if (!tagGroups || tagGroups.length === 0) return;
+    const shouldCollapse = !allGroupsCollapsed;
+    const next = {};
+    tagGroups.forEach((g) => {
+      if (g.tag?._id) next[g.tag._id] = shouldCollapse;
+    });
+    setCollapsedGroups(next);
+  }, [tagGroups, allGroupsCollapsed]);
+
   return (
     <div className="placement-tracking-container" id="recommandation-page">
       <Filter name="Recommendations" profileShow={true} dateShow={false} nameShow={false} />
-      
+
       <div className="middle_container">
         {/* ── Top Tabs Navigation Bar ── */}
         <div
@@ -700,13 +842,12 @@ function Recommendation() {
                 id={`tab-${tab.key}`}
                 type="button"
                 onClick={() => handleTabChange(idx, tab.key)}
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-xs md:text-sm transition-all duration-200 cursor-pointer ${
-                  isActive
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-xs md:text-sm transition-all duration-200 cursor-pointer ${isActive
                     ? "bg-gradient-to-r from-[#1A9FD4] to-[#2374F2] text-white shadow-md shadow-blue-500/20"
                     : isDark
-                    ? "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/70"
-                }`}
+                      ? "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/70"
+                  }`}
               >
                 {tab.icon}
                 <span>{tab.label}</span>
@@ -863,33 +1004,88 @@ function Recommendation() {
                 </div>
               ) : (
                 <div>
-                  {(tagGroups || [{ tag: null, items: sortedRecommendations }]).map((group) => (
-                    <div key={group.tag?._id || "all"} className={group.tag ? "mb-5" : ""}>
-                      {group.tag && (
-                        <div className="flex items-center gap-2 mb-2.5" id={`recommendation-tag-group-${group.tag._id}`}>
-                          <span style={{ width: 10, height: 10, borderRadius: 9999, background: group.tag.color || "#2563EB", display: "inline-block" }} />
-                          <span className="text-[14px] font-bold" style={{ color: "var(--text-heading, var(--text-primary))" }}>{group.tag.name}</span>
-                          <span className="text-[12px]" style={{ color: "var(--text-secondary)" }}>
-                            {t("{{count}} recommendations", { count: group.items.length })}
-                          </span>
+                  {tagGroups && tagGroups.length > 1 && (
+                    <div className="flex items-center justify-between mb-3.5 px-1 text-[12.5px]">
+                      <span className="font-medium text-slate-500 dark:text-slate-400">
+                        {t("Grouped by tag ({{count}})", { count: tagGroups.length })}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={toggleAllGroups}
+                        className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                      >
+                        {allGroupsCollapsed ? t("Expand All") : t("Collapse All")}
+                      </button>
+                    </div>
+                  )}
+                  {(tagGroups || [{ tag: null, items: sortedRecommendations }]).map((group) => {
+                    if (!group.tag) {
+                      return (
+                        <div key="all">
+                          {group.items.map((recommendation, index) => (
+                            <RecommendationItem
+                              id={`recommendation-item-${index}`}
+                              key={`all-${recommendation._id}`}
+                              recommendation={recommendation}
+                              onClick={handleItemClick}
+                              onEdit={handleItemClick}
+                              onDelete={handleDeleteClick}
+                              isDark={isDark}
+                              isMobile={isMobile}
+                              isLoading={itemLoadingId === recommendation._id}
+                              isAnyLoading={!!itemLoadingId}
+                              isInsideGroup={false}
+                            />
+                          ))}
                         </div>
-                      )}
-                      {group.items.map((recommendation, index) => (
-                        <RecommendationItem
-                          id={`recommendation-item-${group.tag ? `${group.tag._id}-` : ""}${index}`}
-                          key={`${group.tag?._id || "all"}-${recommendation._id}`}
-                          recommendation={recommendation}
-                          onClick={handleItemClick}
-                          onEdit={handleItemClick}
-                          onDelete={handleDeleteClick}
+                      );
+                    }
+
+                    const isCollapsed = !!collapsedGroups[group.tag._id];
+
+                    return (
+                      <div
+                        key={group.tag._id}
+                        className="tag-group-box rounded-2xl border mb-5 overflow-hidden transition-all duration-200"
+                        id={`recommendation-tag-group-${group.tag._id}`}
+                        style={{
+                          background: isDark ? "rgba(11, 18, 33, 0.75)" : "rgba(248, 250, 252, 0.95)",
+                          borderColor: isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(226, 232, 240, 0.9)",
+                          boxShadow: isDark
+                            ? "0 4px 20px -2px rgba(0, 0, 0, 0.35)"
+                            : "0 2px 8px -2px rgba(0, 0, 0, 0.05)",
+                          backdropFilter: "blur(12px)",
+                        }}
+                      >
+                        <TagGroupHeader
+                          group={group}
                           isDark={isDark}
                           isMobile={isMobile}
-                          isLoading={itemLoadingId === recommendation._id}
-                          isAnyLoading={!!itemLoadingId}
+                          isCollapsed={isCollapsed}
+                          onToggle={() => toggleGroupCollapse(group.tag._id)}
                         />
-                      ))}
-                    </div>
-                  ))}
+                        {!isCollapsed && (
+                          <div className="p-3 sm:p-3.5 space-y-2.5">
+                            {group.items.map((recommendation, index) => (
+                              <RecommendationItem
+                                id={`recommendation-item-${group.tag._id}-${index}`}
+                                key={`${group.tag._id}-${recommendation._id}`}
+                                recommendation={recommendation}
+                                onClick={handleItemClick}
+                                onEdit={handleItemClick}
+                                onDelete={handleDeleteClick}
+                                isDark={isDark}
+                                isMobile={isMobile}
+                                isLoading={itemLoadingId === recommendation._id}
+                                isAnyLoading={!!itemLoadingId}
+                                isInsideGroup={true}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -974,7 +1170,7 @@ function Recommendation() {
               editData={editData}
               setEditData={setEditData}
               allRulesSchedule={[]}
-              showTags={false}
+              showTags={true}
             />
           </div>
         </DialogContent>

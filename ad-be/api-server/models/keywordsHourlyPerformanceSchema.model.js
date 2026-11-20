@@ -39,12 +39,27 @@ const keywordsHourlyPerformanceSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Secondary index for profile-level reporting / account cleanup fallback
 keywordsHourlyPerformanceSchema.index({ profileId: 1, marketplaceId: 1, reportDate: 1 });
-keywordsHourlyPerformanceSchema.index({ campaignId: 1, adGroupId: 1 });
-keywordsHourlyPerformanceSchema.index({ keywordId: 1, matchType: 1 });
-keywordsHourlyPerformanceSchema.index({ reportDate: 1, startTime: 1, endTime: 1 });
-keywordsHourlyPerformanceSchema.index({ configId: 1 });
-keywordsHourlyPerformanceSchema.index({ configId: 1, profileId: 1, reportDate: 1, campaignId: 1, adGroupId: 1, keywordId: 1, startTime: 1, placement: 1 });
+
+// Real-time stream identity and compound performance analytics index
+// Matches ams-worker stream_hourly_identity and all campaign hourly queries
+keywordsHourlyPerformanceSchema.index(
+  {
+    configId: 1,
+    profileId: 1,
+    reportDate: 1,
+    campaignId: 1,
+    adGroupId: 1,
+    keywordId: 1,
+    placement: 1,
+    startTime: 1,
+    type: 1,
+  },
+  { name: "stream_hourly_identity" }
+);
+
+// Hourly consolidation service index
 keywordsHourlyPerformanceSchema.index({ reportDate: 1, isHourlyAggregated: 1 });
 
 // TTL index for 396-day data retention

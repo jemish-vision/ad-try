@@ -1,6 +1,6 @@
 const { write_logs } = require("../../winston/utility/logger");
 const DeviceToken = require("../models/deviceToken");
-const auditLogSchema = require("../models/auditLog.model");
+const { writeAuditEvent } = require("../helpers/auditHelper");
 
 const createToken = async (req, res) => {
   try {
@@ -57,13 +57,14 @@ const deleteToken = async (req, res) => {
 
     const result = await DeviceToken.deleteMany(query);
 
-    await auditLogSchema.create({
+    await writeAuditEvent({ req,
       userId,
       event: "USER_LOGOUT",
       message: "User logged out successfully",
       ipAddress: req?.ip,
       userAgent: req?.headers["user-agent"],
-      metadata: { deletedCount: result?.deletedCount, deviceToken: deviceToken || "ALL_DEVICES", status: "SUCCESS" },
+      outcome: "SUCCESS",
+      metadata: { deletedCount: result?.deletedCount, scope: deviceToken ? "CURRENT_DEVICE" : "ALL_DEVICES" },
     });
 
     return res.status(200).json({

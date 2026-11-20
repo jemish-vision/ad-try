@@ -128,50 +128,9 @@ const searchTermReportSchema = new mongoose.Schema(
     }
 );
 
-// Uniqueness / upsert
-searchTermReportSchema.index(
-    { configId: 1, profileId: 1, reportDate: 1, campaignId: 1, adGroupId: 1, keywordId: 1, searchTerm: 1 },
-    { unique: true }
-);
-
-// Core filters
-searchTermReportSchema.index({ configId: 1, profileId: 1, reportDate: -1 });
-
 // Drilldowns
 searchTermReportSchema.index({ configId: 1, profileId: 1, campaignId: 1, reportDate: -1 });
 searchTermReportSchema.index({ configId: 1, profileId: 1, adGroupId: 1, reportDate: -1 });
-
-searchTermReportSchema.index({
-    campaignId: 1,
-    adGroupId: 1,
-    keywordId: 1,
-    searchTerm: 1,
-    profileId: 1,
-    reportDate: -1
-});
-
-searchTermReportSchema.index({
-    campaignId: 1,
-    adGroupId: 1,
-    keywordId: 1,
-    searchTerm: 1,
-    profileId: 1,
-    reportDate: -1,
-    impressions: 1,
-    clicks: 1,
-    orders: 1,
-    spend: 1,
-    sales: 1
-});
-
-searchTermReportSchema.index({
-    configId: 1,
-    profileId: 1,
-    reportDate: -1,
-    searchTerm: 1,
-    campaignId: 1,
-    adGroupId: 1
-}, { name: "keyword_suggestion_main" });
 
 searchTermReportSchema.index({
     configId: 1,
