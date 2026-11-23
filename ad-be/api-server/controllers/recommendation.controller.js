@@ -43,6 +43,7 @@ const { retryWithBackoff } = require("../helper/retryHelper");
 const { cron_logs } = require("../../winston/cronAutomation/logger");
 const { recommendation_logs } = require("../../winston/recommendation/logger");
 const { sanitizeTagIds, attachTags, mapTagIdsToConfig, resolveOrganizationId } = require("../helpers/recommendationTags.helper");
+const { parseRecommendationListQuery, filterSortPaginateRecommendations } = require("../helpers/recommendationListFilter.helper");
 
 const { getProfile, getAccessToken, getActivePlanProfiles, getRuleDate, getRuleSettings, getMarketplaceMinBid, removeCampaignIdFromQuery, safeJsonParse, isValidASIN } = require("../helper/common");
 const {
@@ -3760,8 +3761,9 @@ exports.getRecommendation = async (req, res) => {
     const configId = req?.config?.configId || req?.headers?.["x-config-id"] || req?.body?.configId;
     const profileId = req?.body?.profileId;
     const adType = req?.adType;
-    const page = Math.max(1, Number(req?.body?.page) || 1);
-    const limit = req?.body?.limit ? Math.max(1, Math.min(100, Number(req?.body?.limit))) : null;
+    // Server-side filters (Affected Parameter, Action, Tags) + pagination; the optional
+    // fromDate/toDate override is applied while computing the counts.
+    const listQuery = parseRecommendationListQuery(req?.body);
 
     try {
         getRecommendationDateOverride(req?.body);
@@ -3775,9 +3777,8 @@ exports.getRecommendation = async (req, res) => {
 
         const computed = await computeRecommendationCountsForRequest(req);
 
-        const filtered = (computed || []).filter((item) => item.count > 0);
-        const total = filtered.length;
-        const paged = limit ? filtered.slice((page - 1) * limit, page * limit) : filtered;
+        const { items: paged, total, totalUnfiltered, page, limit, totalPages, hasMore } =
+            filterSortPaginateRecommendations(computed, listQuery);
 
         const finalResponse = await attachTags(paged.map((item) => ({
             _id: item.rule._id,
@@ -3797,9 +3798,12 @@ exports.getRecommendation = async (req, res) => {
             data: finalResponse,
             pagination: {
                 page,
-                limit: limit || total,
+                limit,
                 total,
-                hasMore: limit ? (page * limit) < total : false,
+                totalPages,
+                hasMore,
+                // Rules with recommendations before the filters (empty state: "no matches" vs "none yet")
+                totalUnfiltered,
             },
         });
     } catch (error) {

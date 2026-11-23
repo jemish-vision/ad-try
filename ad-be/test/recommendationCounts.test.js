@@ -109,7 +109,8 @@ function fixture({ campaigns = [{ campaignId: 1, status: 'ENABLED' }], adGroups 
             return { find: find('status', statuses), exists: async () => false, bulkWrite: async (ops) => { writes.push(ops); return { modifiedCount: 0 }; } };
         if (name === '../services/mockTestingData.service') {
             const source = fs.readFileSync(path.join(__dirname, '../api-server/services/mockTestingData.service.js'), 'utf8');
-            const mock = { exports: {}, moment };
+            // require: the demo listing filters/paginates with helpers/recommendationListFilter.helper
+            const mock = { exports: {}, moment, require: (m) => require(m.replace(/^\.\.\/helpers\//, '../api-server/helpers/')) };
             vm.runInNewContext(source.slice(source.indexOf('exports.getRecommendations ='), source.indexOf('exports.getRecommendationsHub')), mock);
             return mock.exports;
         }
@@ -124,6 +125,7 @@ function fixture({ campaigns = [{ campaignId: 1, status: 'ENABLED' }], adGroups 
                 getCampaignBudgetHistoryDays: async () => new Map(),
                 getLatestCampaignBudgetEvents: async () => new Map(),
             };
+        if (name === '../helpers/recommendationListFilter.helper') return require('../api-server/helpers/recommendationListFilter.helper');
         if (name === '../helpers/recommendationTags.helper') return { sanitizeTagIds: async () => [], attachTags: async (rules) => (rules || []).map((r) => ({ ...r, tags: [] })), mapTagIdsToConfig: async () => [] };
         if (name.includes('logger'))
             return { recommendation_logs: () => { } };

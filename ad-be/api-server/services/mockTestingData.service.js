@@ -6699,19 +6699,29 @@ exports.getRecommendations = async (req, res) => {
     },
   ];
 
+  // Same filters + paging as the real list
+  const { parseRecommendationListQuery, filterSortPaginateRecommendations } = require("../helpers/recommendationListFilter.helper");
+  const listed = filterSortPaginateRecommendations(
+    recommendations.map((item, i) => ({ rule: { ...item, createdAt: moment().subtract(i, "days").toDate() }, count: item.count, newCount: item.newCount })),
+    parseRecommendationListQuery(req.body)
+  );
+
   return res.status(200).send({
     isSuccess: true,
     message: "Recommendation data fetched successfully.",
-    data: recommendations.map(item => ({
-      ...item,
+    data: listed.items.map(({ rule }) => ({
+      ...rule,
+      tags: [],
       ...(req.body?.fromDate && req.body?.toDate
         ? { fromDate: req.body.fromDate, toDate: req.body.toDate } : {}),
     })),
     pagination: {
-      page: 1,
-      limit: 10,
-      total: recommendations.length,
-      hasMore: false,
+      page: listed.page,
+      limit: listed.limit,
+      total: listed.total,
+      totalPages: listed.totalPages,
+      hasMore: listed.hasMore,
+      totalUnfiltered: listed.totalUnfiltered,
     },
   });
 };

@@ -130,6 +130,50 @@ const getActionColors = (actionName, isDark = false) => {
   };
 };
 
+const LIST_PAGE_SIZES = [10, 25, 50];
+
+/** Pager for the recommendations list (same look as the data grids' pagination bar). */
+function RecommendationPagination({ page, perPage, total, totalPages, onPageChange, onPerPageChange, disabled }) {
+  const { t } = useTranslation();
+  const start = total === 0 ? 0 : (page - 1) * perPage + 1;
+  const end = Math.min(page * perPage, total);
+  return (
+    <div className="iq-pagination" id="recommendation-list-pagination" style={{ marginTop: 8 }}>
+      <div className="iq-pagination-left">
+        <span>{t("Rows per page:")}</span>
+        <select value={perPage} disabled={disabled} onChange={(e) => onPerPageChange(Number(e.target.value))}>
+          {LIST_PAGE_SIZES.map((n) => (
+            <option key={n} value={n}>{n}</option>
+          ))}
+        </select>
+        <span className="iq-showing-records-text" style={{ color: "#94a3b8", fontSize: 12 }}>
+          {t("Showing")} {start}–{end} {t("of")}{" "}
+          <strong style={{ color: "var(--text-primary, #1A9FD4)" }}>{total.toLocaleString()}</strong>
+        </span>
+      </div>
+      <div className="iq-pagination-right">
+        <span className="iq-pag-info">{t("Page")}</span>
+        <span className="iq-pag-page-badge">{page}</span>
+        <span className="iq-pag-info">{t("of")} <strong>{totalPages}</strong></span>
+        <div className="iq-pag-controls">
+          <button className="iq-pag-btn" disabled={disabled || page <= 1} onClick={() => onPageChange(1)} title={t("First page")}>
+            <i className="fa-solid fa-angles-left" />
+          </button>
+          <button className="iq-pag-btn" disabled={disabled || page <= 1} onClick={() => onPageChange(page - 1)} title={t("Previous page")}>
+            <i className="fa-solid fa-angle-left" />
+          </button>
+          <button className="iq-pag-btn" disabled={disabled || page >= totalPages} onClick={() => onPageChange(page + 1)} title={t("Next page")}>
+            <i className="fa-solid fa-angle-right" />
+          </button>
+          <button className="iq-pag-btn" disabled={disabled || page >= totalPages} onClick={() => onPageChange(totalPages)} title={t("Last page")}>
+            <i className="fa-solid fa-angles-right" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RecommendationItem({ id, recommendation, onClick, onEdit, onDelete, isDark, isMobile, isLoading, isAnyLoading, isInsideGroup = false }) {
   const { t } = useTranslation();
   const [hovered, setHovered] = useState(false);
@@ -636,6 +680,17 @@ function Recommendation() {
     [appliedGridNames, appliedActions, appliedTagIds, tagOptions, t]
   );
 
+  // Server-side pagination. Filters (incl. tags and date range) are sent with every page request;
+  // changing any of them goes back to page 1, paging keeps them.
+  const [listPage, setListPage] = useState(1);
+  const [listPerPage, setListPerPage] = useState(LIST_PAGE_SIZES[0]);
+  const [listPagination, setListPagination] = useState({ total: 0, totalPages: 1, totalUnfiltered: 0 });
+  const listFilterKey = JSON.stringify([
+    selectedCampaign?.profileSendID, selectedCampaign?.selectedAdType, datePayload,
+    appliedGridNames, appliedActions, appliedTagIds, listPerPage,
+  ]);
+  const lastListFilterKeyRef = useRef(listFilterKey);
+
   const handleFilterOptionClick = (option) => {
     setTempGridNames([...appliedGridNames]);
     setTempActions([...appliedActions]);
@@ -692,10 +747,23 @@ function Recommendation() {
       const res = await ApiGetRecommendation({
         profileId: selectedCampaign.profileSendID,
         ...datePayload,
+        page: listPage,
+        limit: listPerPage,
+        gridName: appliedGridNames,
+        actionName: appliedActions,
+        tagIds: appliedTagIds,
       });
       if (!isCurrentRequest()) return;
       if (res?.isSuccess) {
         setRecommendations(res.data || []);
+        const pg = res.pagination || {};
+        setListPagination({
+          total: pg.total ?? (res.data || []).length,
+          totalPages: pg.totalPages || 1,
+          totalUnfiltered: pg.totalUnfiltered ?? pg.total ?? (res.data || []).length,
+        });
+        // The server moves a page past the end to the last page (e.g. after a delete)
+        if (pg.page && pg.page !== listPage) setListPage(pg.page);
         ApiGetRecommendationTags({ profileId: selectedCampaign.profileSendID }).then((tagRes) => {
           if (isCurrentRequest() && tagRes?.isSuccess) {
             const tags = tagRes.data || [];
@@ -717,7 +785,7 @@ function Recommendation() {
         dispatch(handleLoader(false));
       }
     }
-  }, [selectedCampaign?.profileSendID, selectedCampaign?.selectedAdType, datePayload, requestScope, dispatch, t]);
+  }, [selectedCampaign?.profileSendID, selectedCampaign?.selectedAdType, datePayload, requestScope, dispatch, t, listPage, listPerPage, appliedGridNames, appliedActions, appliedTagIds]);
 
   useEffect(() => {
     setRecommendations([]);
@@ -730,10 +798,17 @@ function Recommendation() {
   }, [selectedCampaign?.profileSendID, selectedCampaign?.selectedAdType]);
 
   useEffect(() => {
-    if (activeTab === 0) {
-      fetchRecommendations();
+    if (activeTab !== 0) return;
+    if (lastListFilterKeyRef.current !== listFilterKey) {
+      lastListFilterKeyRef.current = listFilterKey;
+      if (listPage !== 1) {
+        setListPage(1); // fetch runs again with page 1
+        return;
+      }
     }
-  }, [fetchRecommendations, activeTab]);
+    fetchRecommendations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchRecommendations, activeTab, listFilterKey]);
 
 
 
@@ -798,6 +873,7 @@ function Recommendation() {
       if (res?.isSuccess) {
         Toast.success(res?.message || "Recommendation deleted successfully");
         setRecommendations(prev => prev.filter(r => r._id !== deleteTarget._id));
+        fetchRecommendations();
         setDeleteTarget(null);
         selectedCampaign?.setRefreshSideBar?.((selectedCampaign?.refreshSideBar ?? 0) + 1);
       } else {
@@ -813,29 +889,8 @@ function Recommendation() {
 
   const isFirstLoad = loading && recommendations.length === 0;
 
-  // Sort and filter recommendations by createdAt (newest first), Affected Parameter, and Action
-  const sortedRecommendations = useMemo(() => {
-    const filtered = recommendations.filter((rec) => {
-      if (appliedGridNames.length > 0 && !appliedGridNames.includes(rec.gridName)) {
-        return false;
-      }
-      if (appliedActions.length > 0) {
-        const validActs = Array.isArray(rec.actions)
-          ? rec.actions.filter((a) => a && a.actionName && String(a.actionName).toLowerCase() !== "none")
-          : [];
-        const matchesNone = appliedActions.includes("None") && validActs.length === 0;
-        const matchesAction = validActs.some((a) => appliedActions.includes(a.actionName));
-        if (!matchesNone && !matchesAction) return false;
-      }
-      if (appliedTagIds.length > 0) {
-        const recTagIds = (rec.tags || []).map((tg) => String(tg._id));
-        if (!recTagIds.some((id) => appliedTagIds.includes(id))) return false;
-      }
-      return true;
-    });
-
-    return [...filtered].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }, [recommendations, appliedGridNames, appliedActions, appliedTagIds]);
+  // Filtered, sorted (newest first) and paginated by the server.
+  const sortedRecommendations = recommendations;
 
   // With a tag filter, show the list grouped by tag (a recommendation with two selected tags is
   // listed under both).
@@ -1162,6 +1217,19 @@ function Recommendation() {
                     );
                   })}
                 </div>
+              )}
+
+              {/* ── Pagination (server-side; filters stay applied) ── */}
+              {listPagination.total > 0 && (
+                <RecommendationPagination
+                  page={listPage}
+                  perPage={listPerPage}
+                  total={listPagination.total}
+                  totalPages={listPagination.totalPages}
+                  disabled={loading}
+                  onPageChange={(p) => setListPage(Math.min(Math.max(1, p), listPagination.totalPages))}
+                  onPerPageChange={(n) => setListPerPage(n)}
+                />
               )}
             </div>
           </div>
