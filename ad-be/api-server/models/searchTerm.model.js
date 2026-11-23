@@ -142,6 +142,15 @@ searchTermReportSchema.index({
 searchTermReportSchema.index({
     configId: 1,
     profileId: 1,
+    sales: 1,
+    reportDate: -1,
+    keywordType: 1,
+    searchTerm: 1
+}, { name: "sales_keywordType_covering" });
+
+searchTermReportSchema.index({
+    configId: 1,
+    profileId: 1,
     searchTerm: 1
 }, { name: "searchTerm_lookup" });
 

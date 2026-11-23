@@ -1,3 +1,4 @@
+const { runHistoricalSellerReport, aggregateSellerReportStatus, saveHistoricalSellerHistory, sellerReportStreamHandler } = require("../services/historicalSellerReport.service");
 
 const mongoose = require("mongoose");
 const moment = require("moment-timezone");
@@ -110,6 +111,7 @@ exports.cronGenerateInvetoryReport = async (customParam1 = null, customParam2 = 
             const checkSPConfig = await getSPAccessToken(profile.configId, profile.profileId);
 
             if (!checkSPConfig) {
+                if (!recurring && cronjobid) await saveHistoricalSellerHistory(cronJobHistorySchema, cronjobid, ["ERROR"]);
                 return cron_logs({
                     message: `Account disconnected ${profile.profileId}`,
                     log_type: "info",
@@ -159,6 +161,7 @@ exports.cronGenerateInvetoryReport = async (customParam1 = null, customParam2 = 
             log_type: "info",
         });
     } catch (error) {
+        if (customParam1?.cronjobid && !customParam1?.recurring) await saveHistoricalSellerHistory(cronJobHistorySchema, customParam1.cronjobid, ["ERROR"]);
         return cron_logs({
             message: `Inventory cron err: ${error}`,
             log_type: "error",
@@ -359,6 +362,7 @@ exports.cronGenerateSalesReport = async (customStartDate = null, customEndDate =
                 if (global.updateTaskProgress) global.updateTaskProgress("Sales Report");
                 const token = await getSPAccessToken(profile?.configId, profile?.profileId);
                 if (!token) {
+                    if (pastSyncObj?.reportPhase) await saveHistoricalSellerHistory(cronJobHistorySchema, cronjobid, ["ERROR"]);
                     return cron_logs({ message: `Account disconnected in report for profile ${profile.name}` });
                 }
 
@@ -388,15 +392,21 @@ exports.cronGenerateSalesReport = async (customStartDate = null, customEndDate =
                     }
                 }
                 let allCompleted = true;
+                const phaseResults = [];
                 for (const date of datesToSync) {
-                    const reportResponse = await generateSalesReportForDate(profile, date, token, recurring);
+                    const reportResponse = await generateSalesReportForDate(profile, date, token, recurring, pastSyncObj?.reportPhase);
                     cron_logs({
                         message: `Sales Report: Profile: ${profile.name}, Date: ${date} - ${reportResponse}`
                         , log_type: "info"
                     });
+                    phaseResults.push(reportResponse);
                     if (reportResponse !== "COMPLETED") {
                         allCompleted = false;
                     }
+                }
+                if (pastSyncObj?.reportPhase) {
+                    await saveHistoricalSellerHistory(cronJobHistorySchema, cronjobid, phaseResults);
+                    return;
                 }
                 if (recurring && getCronData?._id) {
                     await cronJobHistorySchema.findByIdAndUpdate(
@@ -412,6 +422,7 @@ exports.cronGenerateSalesReport = async (customStartDate = null, customEndDate =
                     );
                 }
             } catch (profileErr) {
+                if (pastSyncObj?.reportPhase) await saveHistoricalSellerHistory(cronJobHistorySchema, cronjobid, ["ERROR"]);
                 cron_logs({
                     message: `Error syncing sales report for profile ${profile?.name || profile?.profileId}: ${profileErr.stack || profileErr.message}`,
                     log_type: "error",
@@ -424,14 +435,58 @@ exports.cronGenerateSalesReport = async (customStartDate = null, customEndDate =
         cron_logs({ message: "Business Sales cron completed", log_type: "info" });
 
     } catch (e) {
+        if (customStartDate?.reportPhase && customStartDate.cronjobid) await saveHistoricalSellerHistory(cronJobHistorySchema, customStartDate.cronjobid, ["ERROR"]);
         cron_logs({ message: `Business Sales cron error ${e}`, log_type: "error" });
     }
 };
 
-async function generateSalesReportForDate(profile, date, token, recurring = true) {
-    let existing = null;
+async function generateSalesReportForDate(profile, date, token, recurring = true, reportPhase = null, phaseReport = null) {
+    if (reportPhase) {
+        const marketPlaceConfig = await marketPlaceConfigSchema.findOne({ marketPlaceId: profile?.marketplaceStringId }).lean();
+        return runHistoricalSellerReport({
+            phase: reportPhase,
+            identity: { configId: profile.configId, profileId: profile.profileId, startDate: date, endDate: date, adProduct: "BUSINESS_SALES", reportTypeId: "BUSINESS_SALES" },
+            createRequest: async () => {
+        const createResp = await retryWithBackoff(() => amazonAxios({
+            method: "POST",
+            url: `${marketPlaceConfig.endPoint}/reports/2021-06-30/reports`,
+            headers: {
+                "x-amz-access-token": token?.spAccessToken,
+                "Content-Type": "application/json",
+            },
+            data: {
+                reportType: "GET_SALES_AND_TRAFFIC_REPORT",
+                marketplaceIds: [profile?.marketplaceStringId],
+                dataStartTime: `${date}T00:00:00Z`,
+                dataEndTime: `${date}T23:59:59Z`,
+                reportOptions: {
+                    dateGranularity: "DAY",
+                    asinGranularity: "CHILD"
+                }
+            },
+            meta: { configId: profile?.configId, tokenKey: "spAccessToken", sp: true, profileId: profile?.profileId }
+        }));
 
-    if (recurring) {
+        if (!createResp?.data?.reportId) throw new Error("Amazon report request did not return an ID");
+        return reportsSchema.create({
+            profileId: profile.profileId,
+            configId: profile.configId,
+            reportId: createResp?.data?.reportId,
+            startDate: date,
+            endDate: date,
+            adProduct: "BUSINESS_SALES",
+            reportTypeId: "BUSINESS_SALES",
+            status: "PENDING"
+        });
+
+            },
+            processReport: saved => generateSalesReportForDate(profile, date, token, false, null, saved),
+        });
+    }
+
+    let existing = phaseReport;
+
+    if (!phaseReport && recurring) {
         const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
         existing = await reportsSchema.findOne({
             profileId: profile.profileId,
@@ -444,7 +499,7 @@ async function generateSalesReportForDate(profile, date, token, recurring = true
             createdAt: { $gte: twentyFourHoursAgo },
         }).sort({ createdAt: -1 }).lean();
     }
-    else {
+    else if (!phaseReport) {
         existing = await reportsSchema.findOne({
             profileId: profile.profileId,
             configId: profile.configId,
@@ -556,7 +611,7 @@ async function generateSalesReportForDate(profile, date, token, recurring = true
     await downloadFile(docRes?.data?.url, zipPath);
     await unzipReport(zipPath, extractionPath);
 
-    await processDailyOrderSalesStream(extractionPath, { profileId: profile?.profileId, configId: profile?.configId, date });
+    await processDailyOrderSalesStream(extractionPath, { profileId: profile?.profileId, configId: profile?.configId, date, strict: Boolean(phaseReport) });
     await processReportFileStream(businessProductSalesSchema, extractionPath, { profileId: profile?.profileId, configId: profile?.configId, date });
 
     await reportsSchema.updateOne(
@@ -570,8 +625,8 @@ async function generateSalesReportForDate(profile, date, token, recurring = true
     return "COMPLETED";
 }
 
-const processDailyOrderSalesStream = async (filePath, { profileId, configId, date }) => {
-    return new Promise((resolve) => {
+const processDailyOrderSalesStream = async (filePath, { profileId, configId, date, strict = false }) => {
+    return new Promise((resolve, reject) => {
         const pipeline = chain([
             fs.createReadStream(filePath),
             parser(),
@@ -606,6 +661,7 @@ const processDailyOrderSalesStream = async (filePath, { profileId, configId, dat
                     );
                 }
             } catch (err) {
+                if (strict) { pipeline.destroy(); reject(err); return; }
                 cron_logs({ message: `Error updating dailyOrderSales: ${err.message}`, log_type: "error" });
             } finally {
                 pipeline.resume();
@@ -621,7 +677,7 @@ const processDailyOrderSalesStream = async (filePath, { profileId, configId, dat
         pipeline.on("error", (err) => {
             pipeline.removeAllListeners();
             pipeline.destroy();
-            resolve();
+            if (strict) reject(err); else resolve();
         });
     });
 };
@@ -647,7 +703,7 @@ const processReportFileStream = async (
 
         let bulkOps = [];
 
-        pipeline.on("data", async ({ value }) => {
+        pipeline.on("data", sellerReportStreamHandler(pipeline, reject, async ({ value }) => {
 
             pipeline.pause();
 
@@ -678,15 +734,15 @@ const processReportFileStream = async (
             } else {
                 pipeline.resume();
             }
-        });
+        }));
 
-        pipeline.on("end", async () => {
+        pipeline.on("end", sellerReportStreamHandler(pipeline, reject, async () => {
             await parallelBulkWrite(schema, bulkOps);
             pipeline.removeAllListeners();
             pipeline.destroy();
             bulkOps = null;
             resolve();
-        });
+        }));
 
         pipeline.on("error", err => {
             pipeline.removeAllListeners();

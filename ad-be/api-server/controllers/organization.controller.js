@@ -14,7 +14,6 @@ const reportDetailsSchema = require("../models/reportDetails.model");
 const { ROLES } = require("../constants/roles");
 const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
-const { ensureDbConnected } = require("../../shared/connection");
 const moment = require("moment-timezone");
 const { getDatesBetween } = require("../helper/common");
 
@@ -28,7 +27,7 @@ const { cronListKeywordsFromAmazon, cronGenerateKeywordReport } = require("./key
 const { historicalReportFilter } = require("../helper/historicalSyncReports");
 const { cronGenerateOrderReport, cronGenerateRefundReport, cronGenerateOrderListing, SyncProductListing } = require("./order.controller");
 const { cronGenerateTransactionsReport } = require("./transactions.controller");
-const { cronGenerateSalesReport, cronGenerateInvetoryReport, cronDetectDeadInventory } = require("./inventory.controller");
+const { cronGenerateSalesReport, cronGenerateInvetoryReport } = require("./inventory.controller");
 const { cronListCouponFromAmazon } = require("./coupon.controller");
 const { cronSyncDealPerformance } = require("./deals.controller");
 const { cronGenerateReimbursementReport, cronGenerateShipmentQueueReport } = require("./reconciliationReimbursement.controller");
@@ -41,198 +40,136 @@ const sellerConfigSchema = require("../models/sellerConfig.model");
 const { writeAuditEvent } = require("../helpers/auditHelper");
 const { write_logs } = require("../../winston/utility/logger");
 
-const splitSyncDateRange = (startDate, endDate, maxDays = 31) => {
-  const start = moment.utc(startDate, "YYYY-MM-DD", true);
-  const end = moment.utc(endDate, "YYYY-MM-DD", true);
-  if (!start.isValid() || !end.isValid() || start.isAfter(end)) {
-    throw new Error(`Invalid profile sync date range: ${startDate} to ${endDate}`);
-  }
+const { historicalDateRange, splitSyncDateRange, brandAnalyticsWeeks, runHistoricalSyncQueue } = require("../services/historicalSyncQueue.service");
 
-  const ranges = [];
-  let cursor = start.clone();
-  while (cursor.isSameOrBefore(end, "day")) {
-    const proposedEnd = cursor.clone().add(maxDays - 1, "days");
-    const chunkEnd = proposedEnd.isAfter(end, "day") ? end.clone() : proposedEnd;
-    ranges.push({ startDate: cursor.format("YYYY-MM-DD"), endDate: chunkEnd.format("YYYY-MM-DD") });
-    cursor = chunkEnd.clone().add(1, "day");
-  }
-  return ranges;
-};
+const asyncReportCrons = new Set([
+  CRON_JOBS.CAMPAIGN_REPORT, CRON_JOBS.AD_GROUP_REPORT, CRON_JOBS.TARGETING_REPORT,
+  CRON_JOBS.SEARCH_TERM_REPORT, CRON_JOBS.PLACEMENT_REPORT, CRON_JOBS.KEYWORD_REPORT,
+  CRON_JOBS.PRODUCT_ADS_REPORT, CRON_JOBS.ORDER_LISTING, CRON_JOBS.SYNC_ORDER,
+  CRON_JOBS.REFUND_REPORT, CRON_JOBS.SALES_REPORT, CRON_JOBS.SYNC_COUPONS,
+  CRON_JOBS.SYNC_DEALS_DASHBOARD, CRON_JOBS.REIMBURSEMENT_REPORT, CRON_JOBS.BRAND_ANALYTICS_REPORT,
+]);
+
+const snapshotCrons = new Set([
+  CRON_JOBS.PRODUCTS_LISTING, CRON_JOBS.SYNC_INVENTORY,
+  CRON_JOBS.SHIPMENT_QUEUE_REPORT, CRON_JOBS.APLUS_CONTENT_SYNC,
+]);
 
 const runReportCronByName = async (reportName, pastSyncObj) => {
-  let attempt = 0;
-  // Defaults matter: Number(undefined) is NaN and `attempt < NaN` is false, which used to skip the
-  // whole run while the sync request was still marked COMPLETED. RETRY_DELAY_MS is the correctly
-  // spelled name; RETRY_DELAT_MS is still read for backwards compatibility.
-  const envInt = (v, fallback) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : fallback);
-  let maxRetries = envInt(process.env.MAX_AUTO_CRON_LIMIT, 3);
-  let retryDelayMs = envInt(process.env.RETRY_DELAY_MS ?? process.env.RETRY_DELAT_MS, 60000);
-  let historyDate = moment().format("YYYY-MM-DD");
-  if (pastSyncObj && pastSyncObj.profileId) {
-    const profile = await profileSchema.findOne({ profileId: Number(pastSyncObj.profileId), ...(pastSyncObj.configId && { configId: pastSyncObj.configId }) }).lean();
-    if (profile && profile.timezone) {
-      historyDate = moment().tz(profile.timezone).format("YYYY-MM-DD");
-    }
-  }
-
-  let cronJobRecord = await cronJobHistorySchema.findOneAndUpdate(
-    {
-      configId: pastSyncObj.configId,
-      profileId: pastSyncObj.profileId,
-      cronName: reportName,
-      historyDate: historyDate,
-    },
-    {
-      // A new sync attempt starts PENDING even if an earlier run today already marked this
-      // row FAILED; otherwise the status check below would stop after the first pass.
-      $set: { status: "PENDING", error: null },
-      $setOnInsert: {
-        configId: pastSyncObj.configId,
-        profileId: pastSyncObj.profileId,
-        cronName: reportName,
-        historyDate: historyDate,
-      }
-    },
-    { new: true, upsert: true }
-  ).lean();
-
-  if (pastSyncObj) {
-    pastSyncObj.cronjobid = cronJobRecord._id;
-    pastSyncObj.recurring = false;
-  }
-
-  while (attempt < maxRetries) {
-    try {
-      attempt++;
-      console.log("reportName: ", reportName)
-      switch (reportName) {
-        case CRON_JOBS.CAMPAIGN_LISTING:
-          if (typeof cronListCampaignsFromAmazon === "function") await cronListCampaignsFromAmazon(pastSyncObj);
-          break;
-        case CRON_JOBS.CAMPAIGN_REPORT:
-          if (typeof cronGenerateCampaignReport === "function") await cronGenerateCampaignReport(false, false, pastSyncObj);
-          break;
-        case CRON_JOBS.AD_GROUPS_LISTING:
-          if (typeof cronListAdGroupsFromAmazon === "function") await cronListAdGroupsFromAmazon(pastSyncObj);
-          break;
-        case CRON_JOBS.AD_GROUP_REPORT:
-          if (typeof cronGenerateAdGroupReport === "function") await cronGenerateAdGroupReport(false, false, pastSyncObj);
-          break;
-        case CRON_JOBS.TARGETING_LISTING:
-          if (typeof cronListTargetingFromAmazon === "function") await cronListTargetingFromAmazon(pastSyncObj);
-          break;
-        case CRON_JOBS.TARGETING_REPORT:
-          if (typeof cronGenerateTargetingReport === "function") await cronGenerateTargetingReport(false, false, pastSyncObj);
-          break;
-        case CRON_JOBS.SEARCH_TERM_REPORT:
-          if (typeof cronGenerateSearchTermReport === "function") await cronGenerateSearchTermReport(false, false, pastSyncObj);
-          break;
-        case CRON_JOBS.PLACEMENT_REPORT:
-          if (typeof cronGeneratePlacementReport === "function") await cronGeneratePlacementReport(false, false, pastSyncObj);
-          break;
-        case CRON_JOBS.KEYWORD_LISTING:
-          if (typeof cronListKeywordsFromAmazon === "function") await cronListKeywordsFromAmazon(pastSyncObj);
-          break;
-        case CRON_JOBS.KEYWORD_REPORT:
-          if (typeof cronGenerateKeywordReport === "function") await cronGenerateKeywordReport(false, pastSyncObj);
-          break;
-        case CRON_JOBS.PRODUCT_ADS_LISTING:
-          if (typeof cronListProductAdsFromAmazon === "function") await cronListProductAdsFromAmazon(pastSyncObj);
-          break;
-        case CRON_JOBS.PRODUCT_ADS_REPORT:
-          if (typeof cronGenerateAdProductReport === "function") await cronGenerateAdProductReport(false, false, pastSyncObj);
-          break;
-        case CRON_JOBS.PRODUCTS_LISTING:
-          if (typeof SyncProductListing === "function") await SyncProductListing(pastSyncObj);
-          break;
-        case CRON_JOBS.PRODUCTS_META_LISTING:
-          if (typeof cronListProductFromAmazon === "function") await cronListProductFromAmazon(pastSyncObj);
-          break;
-        case CRON_JOBS.ORDER_LISTING:
-          if (typeof cronGenerateOrderListing === "function") await cronGenerateOrderListing(pastSyncObj);
-          break;
-        case CRON_JOBS.SYNC_ORDER:
-          if (typeof cronGenerateOrderReport === "function") await cronGenerateOrderReport(pastSyncObj);
-          break;
-        case CRON_JOBS.TRANSACTION_REPORT:
-          if (typeof cronGenerateTransactionsReport === "function") await cronGenerateTransactionsReport(pastSyncObj);
-          break;
-        case CRON_JOBS.REFUND_REPORT:
-          if (typeof cronGenerateRefundReport === "function") await cronGenerateRefundReport(pastSyncObj);
-          break;
-        case CRON_JOBS.SALES_REPORT:
-          if (typeof cronGenerateSalesReport === "function") await cronGenerateSalesReport(pastSyncObj);
-          break;
-        case CRON_JOBS.SYNC_INVENTORY:
-          if (typeof cronGenerateInvetoryReport === "function") await cronGenerateInvetoryReport(pastSyncObj);
-          break;
-        case CRON_JOBS.SYNC_COUPONS:
-          if (typeof cronListCouponFromAmazon === "function") await cronListCouponFromAmazon(pastSyncObj);
-          break;
-        case CRON_JOBS.SYNC_DEALS_DASHBOARD:
-          if (typeof cronSyncDealPerformance === "function") await cronSyncDealPerformance(pastSyncObj);
-          break;
-        case CRON_JOBS.REIMBURSEMENT_REPORT:
-          if (typeof cronGenerateReimbursementReport === "function") await cronGenerateReimbursementReport(pastSyncObj);
-          break;
-        case CRON_JOBS.SHIPMENT_QUEUE_REPORT:
-          if (typeof cronGenerateShipmentQueueReport === "function") await cronGenerateShipmentQueueReport(pastSyncObj);
-          break;
-        case CRON_JOBS.BRAND_ANALYTICS_REPORT:
-          if (typeof cronBrandAnalytics === "function") await cronBrandAnalytics(pastSyncObj);
-          break;
-        case CRON_JOBS.APLUS_CONTENT_SYNC:
-          if (typeof cronFetchAPlusContentFromAmazon === "function") await cronFetchAPlusContentFromAmazon(pastSyncObj);
-          break;
-        default:
-          await cronJobHistorySchema.findByIdAndUpdate(
-            { _id: cronJobRecord._id },
-            { status: "FAILED" },
-            { new: true },
-          );
-          cron_logs({ message: `[runReportCronByName] No handler matched for report: ${reportName}`, log_type: "warn" });
-          break;
-      }
-
-      const updatedRecord = await cronJobHistorySchema.findById(cronJobRecord._id).lean();
-
-      if (updatedRecord && updatedRecord.status === "COMPLETED") {
-        cron_logs({ message: `[runReportCronByName] ${reportName} completed successfully.`, log_type: "info" });
-        return true;
-      }
-      else if (updatedRecord?.status === "FAILED") {
-        cron_logs({ message: `[runReportCronByName] ${reportName} FAILED for profile ${pastSyncObj?.profileId}: ${updatedRecord.error || "no reason recorded"}`, log_type: "warn" });
-        return false;
-      }
-
-      if (attempt < maxRetries) {
-        cron_logs({
-          message: `[runReportCronByName] ${reportName} status is not COMPLETED. Retrying in ${retryDelayMs / 1000} seconds...`,
-          log_type: "info"
-        });
-        await new Promise((res) => setTimeout(res, retryDelayMs));
-      } else {
-        throw new Error(`${reportName} did not reach COMPLETED status within max retries.`);
-      }
-
-    } catch (err) {
-      cron_logs({
-        message: `Error in runReportCronByName (${reportName}), Attempt ${attempt}/${maxRetries}: ${err.message || err}`,
-        log_type: "error"
-      });
-
-      if (attempt < maxRetries) {
-        cron_logs({
-          message: `Network/error issue in ${reportName}. Retrying restart after ${retryDelayMs / 1000} seconds...`,
-          log_type: "info"
-        });
-        await new Promise((res) => setTimeout(res, retryDelayMs));
-      } else {
-        throw err;
-      }
-    }
+  switch (reportName) {
+    case CRON_JOBS.CAMPAIGN_LISTING:
+      if (typeof cronListCampaignsFromAmazon === "function") await cronListCampaignsFromAmazon(pastSyncObj);
+      break;
+    case CRON_JOBS.CAMPAIGN_REPORT:
+      if (typeof cronGenerateCampaignReport === "function") await cronGenerateCampaignReport(false, false, pastSyncObj);
+      break;
+    case CRON_JOBS.AD_GROUPS_LISTING:
+      if (typeof cronListAdGroupsFromAmazon === "function") await cronListAdGroupsFromAmazon(pastSyncObj);
+      break;
+    case CRON_JOBS.AD_GROUP_REPORT:
+      if (typeof cronGenerateAdGroupReport === "function") await cronGenerateAdGroupReport(false, false, pastSyncObj);
+      break;
+    case CRON_JOBS.TARGETING_LISTING:
+      if (typeof cronListTargetingFromAmazon === "function") await cronListTargetingFromAmazon(pastSyncObj);
+      break;
+    case CRON_JOBS.TARGETING_REPORT:
+      if (typeof cronGenerateTargetingReport === "function") await cronGenerateTargetingReport(false, false, pastSyncObj);
+      break;
+    case CRON_JOBS.SEARCH_TERM_REPORT:
+      if (typeof cronGenerateSearchTermReport === "function") await cronGenerateSearchTermReport(false, false, pastSyncObj);
+      break;
+    case CRON_JOBS.PLACEMENT_REPORT:
+      if (typeof cronGeneratePlacementReport === "function") await cronGeneratePlacementReport(false, false, pastSyncObj);
+      break;
+    case CRON_JOBS.KEYWORD_LISTING:
+      if (typeof cronListKeywordsFromAmazon === "function") await cronListKeywordsFromAmazon(pastSyncObj);
+      break;
+    case CRON_JOBS.KEYWORD_REPORT:
+      if (typeof cronGenerateKeywordReport === "function") await cronGenerateKeywordReport(false, pastSyncObj);
+      break;
+    case CRON_JOBS.PRODUCT_ADS_LISTING:
+      if (typeof cronListProductAdsFromAmazon === "function") await cronListProductAdsFromAmazon(pastSyncObj);
+      break;
+    case CRON_JOBS.PRODUCT_ADS_REPORT:
+      if (typeof cronGenerateAdProductReport === "function") await cronGenerateAdProductReport(false, false, pastSyncObj);
+      break;
+    case CRON_JOBS.PRODUCTS_LISTING:
+      if (typeof SyncProductListing === "function") await SyncProductListing(pastSyncObj);
+      break;
+    case CRON_JOBS.PRODUCTS_META_LISTING:
+      if (typeof cronListProductFromAmazon === "function") await cronListProductFromAmazon(pastSyncObj);
+      break;
+    case CRON_JOBS.ORDER_LISTING:
+      if (typeof cronGenerateOrderListing === "function") await cronGenerateOrderListing(pastSyncObj);
+      break;
+    case CRON_JOBS.SYNC_ORDER:
+      if (typeof cronGenerateOrderReport === "function") await cronGenerateOrderReport(pastSyncObj);
+      break;
+    case CRON_JOBS.TRANSACTION_REPORT:
+      if (typeof cronGenerateTransactionsReport === "function") await cronGenerateTransactionsReport(pastSyncObj);
+      break;
+    case CRON_JOBS.REFUND_REPORT:
+      if (typeof cronGenerateRefundReport === "function") await cronGenerateRefundReport(pastSyncObj);
+      break;
+    case CRON_JOBS.SALES_REPORT:
+      if (typeof cronGenerateSalesReport === "function") await cronGenerateSalesReport(pastSyncObj);
+      break;
+    case CRON_JOBS.SYNC_INVENTORY:
+      if (typeof cronGenerateInvetoryReport === "function") await cronGenerateInvetoryReport(pastSyncObj);
+      break;
+    case CRON_JOBS.SYNC_COUPONS:
+      if (typeof cronListCouponFromAmazon === "function") await cronListCouponFromAmazon(pastSyncObj);
+      break;
+    case CRON_JOBS.SYNC_DEALS_DASHBOARD:
+      if (typeof cronSyncDealPerformance === "function") await cronSyncDealPerformance(pastSyncObj);
+      break;
+    case CRON_JOBS.REIMBURSEMENT_REPORT:
+      if (typeof cronGenerateReimbursementReport === "function") await cronGenerateReimbursementReport(pastSyncObj);
+      break;
+    case CRON_JOBS.SHIPMENT_QUEUE_REPORT:
+      if (typeof cronGenerateShipmentQueueReport === "function") await cronGenerateShipmentQueueReport(pastSyncObj);
+      break;
+    case CRON_JOBS.BRAND_ANALYTICS_REPORT:
+      if (typeof cronBrandAnalytics === "function") await cronBrandAnalytics(pastSyncObj);
+      break;
+    case CRON_JOBS.APLUS_CONTENT_SYNC:
+      if (typeof cronFetchAPlusContentFromAmazon === "function") await cronFetchAPlusContentFromAmazon(pastSyncObj);
+      break;
+    default:
+      throw new Error("No historical cron handler found for " + reportName);
   }
 };
+
+const queueHistoryScope = job => ({
+  configId: job.configId,
+  profileId: job.profileId,
+  cronName: job.reportName,
+  startDate: job.startDate,
+  endDate: job.endDate,
+  "details.historicalSyncRequestId": job.syncRequestId,
+  "details.historicalSyncRequestVersion": job.requestVersion,
+});
+
+async function runHistoricalCronChunk(job, reportPhase) {
+  const scope = queueHistoryScope(job);
+  let history = await cronJobHistorySchema.findOne(scope).sort({ _id: -1 }).lean();
+  if (history?.status === "COMPLETED") return history;
+  if (!history) {
+    const { configId, profileId, reportName, startDate, endDate, historyDate, syncRequestId, requestVersion } = job;
+    history = await cronJobHistorySchema.create({
+      configId, profileId, cronName: reportName, startDate, endDate, historyDate, status: "PENDING",
+      details: { historicalSyncRequestId: syncRequestId, historicalSyncRequestVersion: requestVersion },
+    });
+  } else {
+    await cronJobHistorySchema.updateOne({ _id: history._id }, { $set: { status: "PENDING", error: null } });
+  }
+  job.historyId = history._id;
+  await runReportCronByName(job.reportName, {
+    configId: job.configId, profileId: job.profileId, startDate: job.startDate, endDate: job.endDate,
+    dates: getDatesBetween(job.startDate, job.endDate), recurring: false, cronjobid: history._id, reportPhase,
+  });
+  return cronJobHistorySchema.findById(history._id).lean();
+}
 
 exports.getUserOrganizations = async (req, res) => {
   try {
@@ -720,6 +657,100 @@ exports.getAllOrganizationsForSuperAdmin = async (req, res) => {
   }
 };
 
+async function executeHistoricalSyncBatch(syncRecords, req, operationIdFor) {
+  const jobs = [];
+  const errors = new Map();
+  for (const rec of syncRecords) {
+    const requestId = String(rec._id);
+    try {
+      const groupReports = await reportDetailsSchema.find({ groupId: rec.groupId, ...historicalReportFilter }).lean();
+      if (!groupReports.length) throw new Error(`No historical reports configured for ${rec.groupId}`);
+      const { configId, profileId } = rec;
+      const profile = await profileSchema.findOne({ configId, profileId }).lean();
+      if (!profile) throw new Error("Profile no longer exists for this configuration");
+      const now = moment().tz(profile.timezone || "UTC");
+      const requestVersion = new Date(rec.syncRequestTime || rec.createdAt || 0).toISOString();
+      const days = Number(rec.selectedSyncDays);
+      const saved = rec.historicalSyncPeriod;
+      const period = saved?.requestVersion === requestVersion && saved.days === days
+        ? saved
+        : { ...historicalDateRange(days, now), requestVersion, days };
+      await synchronizeDetailsSchema.findByIdAndUpdate(rec._id, {
+        $set: { historicalSyncPeriod: period },
+      });
+      const syncFlag = rec.type === "seller" ? "isSpSyncEnabled" : "isAdsSyncEnabled";
+      await profileSchema.updateOne({ configId, profileId }, { $set: { isActive: true, [syncFlag]: true } });
+      await Promise.all([clearProfileCache(String(configId), profileId), clearActivePlanProfilesCache(profileId)]);
+
+      const ranges = splitSyncDateRange(period.startDate, period.endDate);
+      for (const reportName of new Set(groupReports.map(report => report.name))) {
+        let reportRanges = ranges;
+        if (reportName === CRON_JOBS.BRAND_ANALYTICS_REPORT) {
+          reportRanges = brandAnalyticsWeeks(period.startDate, period.endDate);
+        } else if (snapshotCrons.has(reportName)) {
+          reportRanges = [{ startDate: period.startDate, endDate: period.endDate }];
+        }
+        for (const range of reportRanges) {
+          jobs.push({
+            ...range, configId, profileId, reportName, requestVersion, syncRequestId: requestId,
+            historyDate: now.format("YYYY-MM-DD"), isReport: asyncReportCrons.has(reportName),
+          });
+        }
+      }
+    } catch (error) {
+      errors.set(requestId, [error.message]);
+    }
+  }
+
+  const results = await runHistoricalSyncQueue(jobs, {
+    execute: runHistoricalCronChunk,
+    fail: async (job, error) => {
+      if (job.historyId) {
+        await cronJobHistorySchema.updateOne(
+          { _id: job.historyId, status: { $ne: "COMPLETED" } },
+          { $set: { status: "FAILED", error } },
+        );
+      }
+    },
+    onError: (job, error) => {
+      cron_logs({ message: `[ExecuteProfileSyncCron] ${job.reportName} ${job.startDate} to ${job.endDate}: ${error.message}`, log_type: "error" });
+    },
+  });
+  const jobCounts = new Map();
+  for (const { job, status, error } of results) {
+    const id = job.syncRequestId;
+    jobCounts.set(id, (jobCounts.get(id) || 0) + 1);
+    if (status === "COMPLETED") continue;
+    if (!errors.has(id)) errors.set(id, []);
+    errors.get(id).push(`${job.reportName} ${job.startDate} to ${job.endDate}: ${error}`);
+  }
+
+  for (const rec of syncRecords) {
+    try {
+      const id = String(rec._id);
+      const failures = errors.get(id);
+      const status = failures ? "FAILED" : "COMPLETED";
+      await synchronizeDetailsSchema.findByIdAndUpdate(rec._id, { $set: { requestStatus: status } });
+      if (failures) {
+        cron_logs({ message: `[ExecuteProfileSyncCron] Sync ${id}: ${failures.join("; ")}`, log_type: "error" });
+      }
+      await writeAuditEvent({
+        req, event: failures ? "HISTORICAL_SYNC_FAILED" : "HISTORICAL_SYNC_COMPLETED",
+        message: failures ? "Historical sync failed" : "Historical sync completed",
+        ...(failures && { outcome: "FAILED" }),
+        configId: rec.configId, profileId: rec.profileId, resourceType: "SYNC_REQUEST", resourceId: rec._id,
+        operationId: operationIdFor(rec), metadata: {
+          type: rec.type, groupId: rec.groupId, reportCount: jobCounts.get(id) || 0,
+          ...(failures && { reason: "IMPORT_EXECUTION_FAILED" }),
+        },
+      });
+    } catch (error) {
+      cron_logs({ message: `[ExecuteProfileSyncCron] Failed to finalize sync ${rec._id}: ${error.message}`, log_type: "error" });
+    }
+  }
+  cron_logs({ message: `[ExecuteProfileSyncCron] Sync batch completed for ${syncRecords.length} record(s)`, log_type: "info" });
+}
+
 exports.executeProfileSyncCron = async (req, res) => {
   try {
     const { syncIds } = req.body;
@@ -756,83 +787,8 @@ exports.executeProfileSyncCron = async (req, res) => {
         operationId: operationIdFor(rec), metadata: { type: rec.type, groupId: rec.groupId, selectedSyncDays: rec.selectedSyncDays } });
     }
 
-    // Trigger report crons in background based on profileId, selectedSyncDays, and mapped reports for each group
-    (async () => {
-      cron_logs({ message: `[ExecuteProfileSyncCron] Sync started for ${syncRecords.length} record(s) [body] ${JSON.stringify(req?.body)}`, log_type: "info" });
-      for (const rec of syncRecords) {
-        try {
-          const groupReports = await reportDetailsSchema
-            .find({ groupId: rec.groupId, ...historicalReportFilter })
-            .lean();
-          if (!groupReports.length) throw new Error(`No historical reports configured for ${rec.groupId}`);
-
-          if (rec.profileId) {
-            // Import handlers require the approved connection to be enabled.
-            // Recurring group jobs independently require a COMPLETED request.
-            const syncFlag = rec.type === "seller" ? "isSpSyncEnabled" : "isAdsSyncEnabled";
-            await profileSchema.updateOne(
-              { profileId: rec.profileId, ...(rec.configId && { configId: rec.configId }) },
-              { $set: { isActive: true, [syncFlag]: true } }
-            );
-            await Promise.all([
-              clearProfileCache(rec.configId?.toString(), rec.profileId),
-              clearActivePlanProfilesCache(rec.profileId),
-            ]);
-          }
-          const days = Number(rec.selectedSyncDays);
-          const startDate = moment().subtract(days, "days").format("YYYY-MM-DD");
-          const endDate = moment().format("YYYY-MM-DD");
-          const dateRanges = splitSyncDateRange(startDate, endDate);
-
-          const pastSyncObj = {
-            configId: rec.configId,
-            profileId: rec.profileId,
-            startDate,
-            endDate,
-          };
-
-          cron_logs({ message: `[ExecuteProfileSyncCron] Processing Group: ${rec.groupId}, Profile: ${rec.profileId}, Days: ${days} (${startDate} to ${endDate}) [body] ${JSON.stringify(req?.body)}`, log_type: "info" });
-
-          const failedReports = [];
-          for (const r of groupReports) {
-            let reportFailed = false;
-            for (const range of dateRanges) {
-              try {
-                const chunkSyncObj = {
-                  ...pastSyncObj,
-                  ...range,
-                  dates: getDatesBetween(range.startDate, range.endDate),
-                };
-                cron_logs({ message: `[ExecuteProfileSyncCron] Running report: ${r.name} for Profile: ${rec.profileId}, range ${range.startDate} to ${range.endDate} [body] ${JSON.stringify(req?.body)}`, log_type: "info" });
-                if (!await runReportCronByName(r.name, chunkSyncObj)) reportFailed = true;
-              } catch (reportError) {
-                reportFailed = true;
-                cron_logs({ message: `[ExecuteProfileSyncCron] ${r.name}: ${reportError.message}`, log_type: "error" });
-              }
-            }
-            if (reportFailed) failedReports.push(r.name);
-          }
-          if (failedReports.length) throw new Error(`Reports failed: ${failedReports.join(", ")}`);
-
-          await synchronizeDetailsSchema.findByIdAndUpdate(rec._id, {
-            $set: { requestStatus: "COMPLETED", updatedAt: new Date() }
-          });
-          await writeAuditEvent({ req, event: "HISTORICAL_SYNC_COMPLETED", message: "Historical sync completed",
-            configId: rec.configId, profileId: rec.profileId, resourceType: "SYNC_REQUEST", resourceId: rec._id,
-            operationId: operationIdFor(rec), metadata: { type: rec.type, groupId: rec.groupId, reportCount: groupReports.length } });
-        } catch (recErr) {
-          cron_logs({ message: `[ExecuteProfileSyncCron] Error for record ${rec._id}: ${recErr.message} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
-          await synchronizeDetailsSchema.findByIdAndUpdate(rec._id, {
-            $set: { requestStatus: "FAILED", updatedAt: new Date() }
-          });
-          await writeAuditEvent({ req, event: "HISTORICAL_SYNC_FAILED", message: "Historical sync failed", outcome: "FAILED",
-            configId: rec.configId, profileId: rec.profileId, resourceType: "SYNC_REQUEST", resourceId: rec._id,
-            operationId: operationIdFor(rec), metadata: { type: rec.type, groupId: rec.groupId, reason: "IMPORT_EXECUTION_FAILED" } });
-        }
-      }
-      cron_logs({ message: `[ExecuteProfileSyncCron] Sync batch completed for ${syncRecords.length} record(s) [body] ${JSON.stringify(req?.body)}`, log_type: "info" });
-    })().catch((err) => {
-      cron_logs({ message: `[ExecuteProfileSyncCron] Background sync execution error: ${err.message} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    void executeHistoricalSyncBatch(syncRecords, req, operationIdFor).catch(error => {
+      cron_logs({ message: `[ExecuteProfileSyncCron] Background sync execution error: ${error.message}`, log_type: "error" });
     });
 
     return res.status(200).send({

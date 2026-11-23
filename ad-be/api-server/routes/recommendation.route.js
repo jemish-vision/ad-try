@@ -3,7 +3,7 @@ const { SYSTEM_PAGES, PAGE_ACTIONS } = require("../constants/permissions");
 const express = require("express");
 const router = express.Router();
 const { verifyToken } = require("../middleware/user.auth");
-const { runRecommendationSnapshot, getRules, getRuleById, updateRules, addRules, statusChange, deleteRule, getRecommendation, getRecommendationData, deleteRecommendation, applyRuleRecommendation, cronRecommendationSnapshot, getTotalRecommendationCount, exportRecommandationRule, importRecommandationRule, bulkUpdateRuleDateFilter, copyRulesToProfiles } = require("../controllers/recommendation.controller");
+const { runRecommendationSnapshot, getRules, getRuleById, updateRules, addRules, statusChange, deleteRule, getRecommendation, getRecommendationData, deleteRecommendation, applyRuleRecommendation, cronRecommendationSnapshot, getTotalRecommendationCount, exportRecommandationRule, importRecommandationRule, bulkUpdateRuleDateFilter, copyRulesToProfiles, reorderRecommendations } = require("../controllers/recommendation.controller");
 const { AdTypeModels } = require("../middleware/adTypeModel.middleware");
 const { withAllAdTypesItemList } = require("../helper/allAdTypeHandler");
 const { uploadExcelFile } = require("../helper/excelFileUpload");
@@ -46,6 +46,7 @@ router.post("/exportRecommandationRule", verifyToken, validateRoutePermission(SY
 router.post("/importRecommandationRule", uploadExcelFile, verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.CREATE), importRecommandationRule);
 
 router.post("/getRecommendation", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, getRecommendation);
+router.post("/reorderRecommendations", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.UPDATE), reorderRecommendations);
 router.post("/getTotalRecommendationCount", verifyToken, AdTypeModels, getTotalRecommendationCount);
 router.post("/getRecommendationData/:ruleId", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, allRecommendationData);
 router.post("/deleteRecommendation/:ruleId", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.REMOVE), AdTypeModels, deleteRecommendation);

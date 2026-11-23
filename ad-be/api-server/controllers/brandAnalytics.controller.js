@@ -1,4 +1,7 @@
+const { settleTerminalReportStatus } = require("../helpers/spReportStatus.helper");
+const { runHistoricalSellerReport, aggregateSellerReportStatus, saveHistoricalSellerHistory } = require("../services/historicalSellerReport.service");
 const mongoose = require("mongoose");
+const crypto = require("node:crypto");
 const moment = require("moment-timezone");
 const fs = require("fs");
 const path = require("path");
@@ -29,6 +32,37 @@ const { retryWithBackoff } = require("../helper/retryHelper");
 
 const escapeRegex = (string) => {
     return string.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+};
+
+const getBrandAsinChunks = async (profile, pastSyncObj) => {
+    const collect = async () => {
+        const asins = await productListingSchema.find({ configId: profile.configId, profileId: profile.profileId }).distinct("asin");
+        const sorted = [...new Set(asins || [])].sort();
+        const chunks = [];
+        for (let i = 0; i < sorted.length; i += 15) chunks.push(sorted.slice(i, i + 15));
+        return chunks;
+    };
+    if (!pastSyncObj?.reportPhase) return collect();
+    if (!pastSyncObj.cronjobid) throw new Error("Historical Brand report requires a history ID");
+    const scope = { _id: pastSyncObj.cronjobid, configId: profile.configId, profileId: profile.profileId,
+        startDate: pastSyncObj.startDate, endDate: pastSyncObj.endDate };
+    const existing = await cronJobHistorySchema.findOne(scope).select("details").lean();
+    if (Array.isArray(existing?.details?.brandAsinChunks)) return existing.details.brandAsinChunks;
+    if (pastSyncObj.reportPhase === "poll") throw new Error("Brand report submission snapshot is missing");
+    const chunks = await collect();
+    const claimed = await cronJobHistorySchema.findOneAndUpdate(
+        { ...scope, "details.brandAsinChunks": { $exists: false } },
+        { $set: { "details.brandAsinChunks": chunks } }, { new: true }
+    ).lean();
+    if (Array.isArray(claimed?.details?.brandAsinChunks)) return claimed.details.brandAsinChunks;
+    const winner = await cronJobHistorySchema.findOne(scope).select("details").lean();
+    if (!Array.isArray(winner?.details?.brandAsinChunks)) throw new Error("Unable to persist Brand report submission snapshot");
+    return winner.details.brandAsinChunks;
+};
+
+const selectBrandReportPeriod = async (scope, requestedPeriod) => {
+    if (requestedPeriod === "WEEK") return "WEEK";
+    return await brandAnalyticsSchema.exists({ ...scope, reportPeriod: "MONTH" }) ? "MONTH" : "WEEK";
 };
 
 exports.cronBrandAnalytics = async (customStartDate = null, customEndDate = null) => {
@@ -83,6 +117,7 @@ exports.cronBrandAnalytics = async (customStartDate = null, customEndDate = null
             try {
                 const checkSPConfig = await getSPAccessToken(profile.configId, profile.profileId);
                 if (!checkSPConfig) {
+                    if (pastSyncObj?.reportPhase) await saveHistoricalSellerHistory(cronJobHistorySchema, cronjobid, ["ERROR"]);
                     cron_logs({ message: `Account disconnected ${profile.profileId} for cronBrandAnalytics`, log_type: "info" });
                     continue;
                 }
@@ -102,30 +137,23 @@ exports.cronBrandAnalytics = async (customStartDate = null, customEndDate = null
                     );
                 }
 
-                // Get all unique ASINs from productlisting schema for this profile
-                const asins = await productListingSchema.find({ profileId: profile.profileId }).distinct("asin");
-                if (!asins || asins.length === 0) {
+                const chunks = await getBrandAsinChunks(profile, pastSyncObj);
+                if (chunks.length === 0) {
+                    if (pastSyncObj?.reportPhase) await saveHistoricalSellerHistory(cronJobHistorySchema, cronjobid, ["COMPLETED"]);
                     cron_logs({ message: `No unique ASINs found for profile ${profile.profileId} - ${profile.name}`, log_type: "info" });
                     continue;
-                }
-
-                cron_logs({ message: `For profile ${profile.name}, ${asins.length} unique ASINs found`, log_type: "info" });
-
-                // Chunk ASINs into groups of 15 (due to SP-API 200-char limit)
-                const ASIN_LIMIT = 15;
-                const chunks = [];
-                for (let i = 0; i < asins.length; i += ASIN_LIMIT) {
-                    chunks.push(asins.slice(i, i + ASIN_LIMIT));
                 }
 
                 cron_logs({ message: `For profile ${profile.name}, there are ${chunks.length} chunks of 15 ASINs`, log_type: "info" });
 
                 const marketPlaceConfig = await marketPlaceConfigSchema.findOne({ marketPlaceId: profile.marketplaceStringId });
                 if (!marketPlaceConfig) {
+                    if (pastSyncObj?.reportPhase) await saveHistoricalSellerHistory(cronJobHistorySchema, cronjobid, ["ERROR"]);
                     cron_logs({ message: `Marketplace config not found for ID: ${profile.marketplaceStringId}`, log_type: "error" });
                     continue;
                 }
 
+                const phaseResults = [];
                 if (startDateParam && endDateParam) {
                     const startDate = startDateParam;
                     const endDate = endDateParam;
@@ -135,7 +163,7 @@ exports.cronBrandAnalytics = async (customStartDate = null, customEndDate = null
                         log_type: "info",
                     });
 
-                    await this.storeMonthlyBrandAnalysisData({ profile, checkSPConfig, marketPlaceConfig, chunks, startDate, endDate });
+                    phaseResults.push(await this.storeMonthlyBrandAnalysisData({ profile, checkSPConfig, marketPlaceConfig, chunks, startDate, endDate, reportPhase: pastSyncObj?.reportPhase, reportPeriod: pastSyncObj?.reportPhase ? "WEEK" : "MONTH" }));
                 } else {
                     for (let monthOffset = 1; monthOffset >= 1; monthOffset--) {
                         const startDate = moment().tz(profile?.timezone).subtract(monthOffset, "months").startOf("month").format("YYYY-MM-DD");
@@ -146,10 +174,14 @@ exports.cronBrandAnalytics = async (customStartDate = null, customEndDate = null
                             log_type: "info",
                         });
 
-                        await this.storeMonthlyBrandAnalysisData({ profile, checkSPConfig, marketPlaceConfig, chunks, startDate, endDate });
+                        phaseResults.push(await this.storeMonthlyBrandAnalysisData({ profile, checkSPConfig, marketPlaceConfig, chunks, startDate, endDate, reportPhase: pastSyncObj?.reportPhase, reportPeriod: pastSyncObj?.reportPhase ? "WEEK" : "MONTH" }));
                     }
                 }
 
+                if (pastSyncObj?.reportPhase) {
+                    await saveHistoricalSellerHistory(cronJobHistorySchema, cronjobid, phaseResults);
+                    continue;
+                }
                 if (recurring && getCronData?._id) {
                     await cronJobHistorySchema.findByIdAndUpdate(
                         getCronData._id,
@@ -169,6 +201,7 @@ exports.cronBrandAnalytics = async (customStartDate = null, customEndDate = null
                     log_type: "info",
                 });
             } catch (err) {
+                if (pastSyncObj?.reportPhase) await saveHistoricalSellerHistory(cronJobHistorySchema, cronjobid, ["ERROR"]);
                 cron_logs({
                     message: `Error in profile loop for configId: ${profile.configId}, profileId: ${profile.profileId}. Error: ${err.message}`,
                     log_type: "error",
@@ -181,6 +214,7 @@ exports.cronBrandAnalytics = async (customStartDate = null, customEndDate = null
             log_type: "info",
         });
     } catch (error) {
+        if (customStartDate?.reportPhase && customStartDate.cronjobid) await saveHistoricalSellerHistory(cronJobHistorySchema, customStartDate.cronjobid, ["ERROR"]);
         return cron_logs({
             message: `Brand Analytics cron err: ${error.message}`,
             log_type: "error",
@@ -188,14 +222,60 @@ exports.cronBrandAnalytics = async (customStartDate = null, customEndDate = null
     }
 };
 
-exports.storeMonthlyBrandAnalysisData = async ({ profile, checkSPConfig, marketPlaceConfig, chunks, startDate, endDate }) => {
+exports.storeMonthlyBrandAnalysisData = async ({ profile, checkSPConfig, marketPlaceConfig, chunks, startDate, endDate, reportPhase = null, phaseReport = null, reportPeriod = "MONTH", selectedChunkIndex = null }) => {
+    const phaseResults = [];
+    if (reportPhase && reportPeriod === "WEEK" && (moment(startDate).day() !== 0 || moment(endDate).day() !== 6 || moment(endDate).diff(moment(startDate), "days") !== 6)) return "ERROR";
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
         const chunk = chunks[chunkIndex];
         const chunkAsinsStr = chunk.join(" ");
-        const reportTypeId = `GET_BRAND_ANALYTICS_MONTH_chunk_${chunkIndex}`;
+        const effectiveChunkIndex = selectedChunkIndex ?? chunkIndex;
+        const batchHash = crypto.createHash("sha256").update([...chunk].sort().join("\0")).digest("hex").slice(0, 16);
+        const reportTypeId = `GET_BRAND_ANALYTICS_${reportPeriod}_chunk_${effectiveChunkIndex}${reportPhase || phaseReport ? `_${batchHash}` : ""}`;
+
+        if (reportPhase) {
+            const result = await runHistoricalSellerReport({
+                phase: reportPhase,
+                identity: { configId: profile.configId, profileId: profile.profileId, startDate, endDate, reportTypeId, reportName: "Brand Analytics Report" },
+                createRequest: async () => {
+                    const createResp = await retryWithBackoff(() => amazonAxios({
+                        method: "POST",
+                        url: `${marketPlaceConfig.endPoint}/reports/2021-06-30/reports`,
+                        headers: {
+                            "x-amz-access-token": checkSPConfig.spAccessToken,
+                            "Content-Type": "application/json",
+                        },
+                        data: {
+                            reportType: "GET_BRAND_ANALYTICS_SEARCH_QUERY_PERFORMANCE_REPORT",
+                            marketplaceIds: [profile.marketplaceStringId],
+                            dataStartTime: `${startDate}T00:00:00Z`,
+                            dataEndTime: `${endDate}T23:59:59Z`,
+                            reportOptions: { reportPeriod, asin: chunkAsinsStr },
+                        },
+                        meta: { configId: profile?.configId, tokenKey: "spAccessToken", sp: true, profileId: profile?.profileId, isBackgroundWorker: true }
+                    }));
+
+                    if (!createResp?.data?.reportId) throw new Error("Amazon report request did not return an ID");
+                    return reportsSchema.create({
+                        profileId: profile.profileId,
+                        configId: profile.configId,
+                        reportId: createResp?.data?.reportId,
+                        startDate,
+                        endDate,
+                        adProduct: "BRAND_ANALYTICS",
+                        reportTypeId,
+                        reportName: "Brand Analytics Report",
+                        status: "PENDING",
+                    });
+                },
+                processReport: saved => exports.storeMonthlyBrandAnalysisData({ profile, checkSPConfig, marketPlaceConfig,
+                    chunks: [chunk], startDate, endDate, phaseReport: saved, reportPeriod, selectedChunkIndex: effectiveChunkIndex }),
+            });
+            phaseResults.push(result);
+            continue;
+        }
 
         // Check if entry exists in reportsSchema
-        let existing = await reportsSchema.findOne({
+        let existing = phaseReport || await reportsSchema.findOne({
             profileId: profile.profileId,
             configId: profile.configId,
             startDate,
@@ -270,7 +350,7 @@ exports.storeMonthlyBrandAnalysisData = async ({ profile, checkSPConfig, marketP
         }
 
         // 2. Process pending reports (poll until terminal state: DONE/FAILED)
-        if (existing && existing.status === "PENDING") {
+        if (existing && (phaseReport || existing.status === "PENDING")) {
             let isFinished = false;
             while (!isFinished) {
                 cron_logs({
@@ -313,7 +393,7 @@ exports.storeMonthlyBrandAnalysisData = async ({ profile, checkSPConfig, marketP
                                 log_type: "error",
                             });
                         } finally {
-                            await wait(2000);
+                            if (!phaseReport) await wait(2000);
                         }
 
                         if (docRes?.data?.url) {
@@ -337,6 +417,7 @@ exports.storeMonthlyBrandAnalysisData = async ({ profile, checkSPConfig, marketP
                             const periodMeta = {
                                 year: moment(startDate).tz(profile?.timezone).year(),
                                 month: moment(startDate).tz(profile?.timezone).format("MMMM"),
+                                ...(reportPeriod === "WEEK" && { week: moment(startDate).week() }),
                             };
 
                             const bulkOps = items.map((item) => ({
@@ -351,7 +432,7 @@ exports.storeMonthlyBrandAnalysisData = async ({ profile, checkSPConfig, marketP
                                     },
                                     update: {
                                         $set: {
-                                            reportPeriod: "MONTH",
+                                            reportPeriod,
                                             periodMeta,
                                             searchQueryData: {
                                                 searchQuery: item.searchQueryData?.searchQuery,
@@ -405,9 +486,11 @@ exports.storeMonthlyBrandAnalysisData = async ({ profile, checkSPConfig, marketP
                             });
                         }
 
+                        if (phaseReport) return docRes?.data?.url ? "COMPLETED" : "ERROR";
                         isFinished = true;
 
                     } else if (processingStatus === "FATAL" || processingStatus === "CANCELLED") {
+                        if (phaseReport) return settleTerminalReportStatus(reportsSchema, existing, processingStatus);
                         await reportsSchema.updateOne(
                             { _id: existing._id },
                             { $set: { status: "FAILED" } }
@@ -422,6 +505,7 @@ exports.storeMonthlyBrandAnalysisData = async ({ profile, checkSPConfig, marketP
                             message: `Report ID: ${existing.reportId} status is ${processingStatus}. Waiting 30 seconds before checking again...`,
                             log_type: "info",
                         });
+                        if (phaseReport) return "PENDING";
                         await wait(30000);
                     }
 
@@ -430,6 +514,7 @@ exports.storeMonthlyBrandAnalysisData = async ({ profile, checkSPConfig, marketP
                         message: `Error processing status for report ID: ${existing.reportId}. Error: ${err.message}. Retrying in 30 seconds...`,
                         log_type: "error",
                     });
+                    if (phaseReport) return "ERROR";
                     await wait(30000);
                 }
             }
@@ -440,6 +525,7 @@ exports.storeMonthlyBrandAnalysisData = async ({ profile, checkSPConfig, marketP
             log_type: "info",
         });
     }
+    if (reportPhase) return aggregateSellerReportStatus(phaseResults);
 };
 
 exports.getBrandAnalyticsFilters = async (req, res) => {
@@ -447,7 +533,7 @@ exports.getBrandAnalyticsFilters = async (req, res) => {
     try {
 
         const { configId } = req?.config;
-        let { profileId, asin, year, month } = req.body;
+        let { profileId, asin, year, month, reportPeriod } = req.body;
 
         if (!configId || !profileId) {
             return res.status(400).json({ isSuccess: false, message: "configId and profileId are required" });
@@ -456,6 +542,9 @@ exports.getBrandAnalyticsFilters = async (req, res) => {
         if (!year) {
             year = new Date().getFullYear().toString();
         }
+        const periodScope = { configId: new mongoose.Types.ObjectId(configId), profileId: Number(profileId),
+            ...(asin && { asin }), "periodMeta.year": Number(year), ...(month && { "periodMeta.month": month }) };
+        const selectedPeriod = await selectBrandReportPeriod(periodScope, reportPeriod);
 
         // 1. Products (distinct ASINs with title if available)
         const products = await productListingSchema.aggregate([
@@ -467,7 +556,7 @@ exports.getBrandAnalyticsFilters = async (req, res) => {
 
         // 2. Search Queries (distinct)
         let searchQueries = await brandAnalyticsSchema.aggregate([
-            { $match: { configId: new mongoose.Types.ObjectId(configId), profileId: Number(profileId), ...(asin && { asin }), "periodMeta.year": year, ...(month && { "periodMeta.month": month }) } },
+            { $match: { ...periodScope, reportPeriod: selectedPeriod } },
             {
                 $group: {
                     _id: "$searchQueryData.searchQuery",
@@ -484,7 +573,7 @@ exports.getBrandAnalyticsFilters = async (req, res) => {
 
         // 3. Reporting Periods (distinct)
         let reportingPeriods = await brandAnalyticsSchema.aggregate([
-            { $match: { configId: new mongoose.Types.ObjectId(configId), profileId: Number(profileId), "periodMeta.year": year } },
+            { $match: { configId: new mongoose.Types.ObjectId(configId), profileId: Number(profileId), "periodMeta.year": Number(year) } },
             { $group: { _id: "$reportPeriod" } },
             {
                 $addFields: {
@@ -518,7 +607,7 @@ exports.getBrandAnalyticsFilters = async (req, res) => {
 
         // 5. Months (distinct)
         let months = await brandAnalyticsSchema.aggregate([
-            { $match: { configId: new mongoose.Types.ObjectId(configId), profileId: Number(profileId), "periodMeta.year": year } },
+            { $match: { configId: new mongoose.Types.ObjectId(configId), profileId: Number(profileId), "periodMeta.year": Number(year), reportPeriod: selectedPeriod } },
             { $group: { _id: "$periodMeta.month" } },
             {
                 $addFields: {
@@ -550,7 +639,7 @@ exports.getBrandAnalyticsFilters = async (req, res) => {
 
         return res.status(200).json({
             isSuccess: true,
-            data: { products, searchQueries, reportingPeriods, years, months },
+            data: { products, searchQueries, reportingPeriods, years, months, selectedReportPeriod: selectedPeriod },
         });
     } catch (error) {
         write_logs({ message: `[getBrandAnalyticsFilters Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
@@ -574,10 +663,10 @@ exports.getAllBrandAnalytics = async (req, res) => {
         };
 
         if (asin) matchStage.asin = asin;
-        if (reportPeriod) matchStage.reportPeriod = reportPeriod;
         if (year) matchStage["periodMeta.year"] = Number(year);
         if (month) matchStage["periodMeta.month"] = month;
         if (searchQuery) matchStage["searchQueryData.searchQuery"] = searchQuery;
+        matchStage.reportPeriod = await selectBrandReportPeriod(matchStage, reportPeriod);
 
         const skip = (Number(page) - 1) * Number(limit);
         const lim = Number(limit);
@@ -771,6 +860,7 @@ exports.getAllBrandAnalytics = async (req, res) => {
         return res.status(200).json({
             isSuccess: true,
             data: {
+                reportPeriod: matchStage.reportPeriod,
                 funnelData: result?.funnelData ?? { total: {}, brandSpecific: {} },
                 gridData: gridData.data,
                 pagination: {

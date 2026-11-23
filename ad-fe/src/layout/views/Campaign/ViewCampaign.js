@@ -1133,7 +1133,7 @@ function ViewCampaign(props) {
             } else {
               setSearchTermData(res.getSearchTermData);
             }
-            setSearchTermTotalRecords(res.totalSearchTermData);
+            setSearchTermTotalRecords(res?.totalSearchTermData ?? res?.totalSearchTerm ?? res?.totalRecords ?? 0);
           }
         })
         .catch(() => { })
@@ -1239,7 +1239,8 @@ function ViewCampaign(props) {
 
   useEffect(() => {
     if (viewPress && profileId?.value && effectiveCampaignId && fromDateStr && activeAccordionKeys.includes("3")) {
-      getSearchTermData();
+      setSearchTermCurrentPage(1);
+      getSearchTermData(1, searchTermRowsPerPage);
     }
   }, [viewPress, activeAccordionKeys, fromDateStr, toDateStr, profileId?.value, selectedAdType, searchTermStatus, effectiveCampaignId]);
 
@@ -1640,7 +1641,8 @@ function ViewCampaign(props) {
                     tableId="searchterm-view-table"
                     loading={searchTermLoading}
                     isLoading={searchTermLoading}
-                    rowData={tableData}
+                    rowData={tableData?.filter((r) => !r?.isTotalRow) || []}
+                    pinnedBottomRowData={tableData?.some((r) => r?.isTotalRow) ? [tableData.find((r) => r?.isTotalRow)] : []}
                     columnDefs={searchTermColumns}
                     totalRecords={searchTermTotalRecords || 0}
                     perPage={searchTermRowsPerPage}
@@ -1651,7 +1653,8 @@ function ViewCampaign(props) {
                     }}
                     onPerPageChange={(newPerPage) => {
                       setSearchTermRowsPerPage(newPerPage);
-                      getSearchTermData(searchTermCurrentPage, newPerPage);
+                      setSearchTermCurrentPage(1);
+                      getSearchTermData(1, newPerPage);
                     }}
                     onSortChanged={handleSearchTermSortChanged}
                     paginationOptions={paginationRowsPerPageOptions}

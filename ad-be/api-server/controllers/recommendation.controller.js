@@ -33,6 +33,7 @@ const deletePatternWithLog = async (...args) => {
 };
 const searchTermSchema = require("../models/searchTerm.model");
 const recommendationSnapshotSchema = require("../models/recommendation.model");
+const recommendationOrderSchema = require("../models/recommendationOrder.model");
 const recommendationRuleSchema = require("../models/recomandationRules.model");
 const recommandationStatusSchema = require("../models/recommandationStatus.model");
 const recommandationCampaignByRuleSchema = require("../models/recommandationCampaignByRule.model");
@@ -1794,10 +1795,10 @@ exports.getRules = async (req, res) => {
             profileId,
         };
 
-        // Filter by tags: rules having any of the selected tags
+        // Filter by tags: rules having all of the selected tags (AND match)
         if (Array.isArray(tagIds) && tagIds.length > 0) {
             const validTagIds = tagIds.filter((id) => mongoose.Types.ObjectId.isValid(id)).map((id) => new mongoose.Types.ObjectId(String(id)));
-            if (validTagIds.length) matchQuery.tagIds = { $in: validTagIds };
+            if (validTagIds.length) matchQuery.tagIds = { $all: validTagIds };
         }
 
         if (Array.isArray(gridName) && gridName.length > 0) {
@@ -3777,8 +3778,25 @@ exports.getRecommendation = async (req, res) => {
 
         const computed = await computeRecommendationCountsForRequest(req);
 
+        // Fetch custom order for this user and profile
+        let orderMap = null;
+        const userId = req.user?.id || req.user?._id;
+        if (userId && mongoose.Types.ObjectId.isValid(userId) && profileId) {
+            try {
+                const orderDoc = await recommendationOrderSchema.findOne({
+                    userId: new mongoose.Types.ObjectId(userId),
+                    profileId: String(profileId),
+                }).lean();
+                if (orderDoc?.ruleIds?.length) {
+                    orderMap = new Map(orderDoc.ruleIds.map((id, idx) => [String(id), idx]));
+                }
+            } catch (err) {
+                recommendation_logs({ message: `[getRecommendation Order Fetch Error] ${err?.message || err}`, log_type: "error" });
+            }
+        }
+
         const { items: paged, total, totalUnfiltered, page, limit, totalPages, hasMore } =
-            filterSortPaginateRecommendations(computed, listQuery);
+            filterSortPaginateRecommendations(computed, listQuery, orderMap);
 
         const finalResponse = await attachTags(paged.map((item) => ({
             _id: item.rule._id,
@@ -3815,6 +3833,99 @@ exports.getRecommendation = async (req, res) => {
             isSuccess: false,
             message: "Something went wrong, please try again!",
             error: "An internal server error occurred",
+        });
+    }
+};
+
+exports.reorderRecommendations = async (req, res) => {
+    try {
+        const userId = req.user?.id || req.user?._id;
+        const profileId = req.body?.profileId;
+        const incomingRuleIds = req.body?.ruleIds;
+
+        if (!userId) {
+            return res.status(203).send({ isSuccess: false, message: "User is required." });
+        }
+        if (!profileId) {
+            return res.status(203).send({ isSuccess: false, message: "profileId is required." });
+        }
+        if (!Array.isArray(incomingRuleIds)) {
+            return res.status(203).send({ isSuccess: false, message: "ruleIds array is required." });
+        }
+
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(200).send({
+                isSuccess: true,
+                message: "Recommendation order saved successfully.",
+                data: incomingRuleIds,
+            });
+        }
+
+        const validRuleIds = incomingRuleIds
+            .map((id) => String(id))
+            .filter((id) => mongoose.Types.ObjectId.isValid(id))
+            .map((id) => new mongoose.Types.ObjectId(id));
+
+        const userObjectId = new mongoose.Types.ObjectId(userId);
+        const existing = await recommendationOrderSchema.findOne({
+            userId: userObjectId,
+            profileId: String(profileId),
+        }).lean();
+
+        let finalRuleIds;
+        if (!existing?.ruleIds?.length) {
+            finalRuleIds = validRuleIds;
+        } else {
+            const existingStr = existing.ruleIds.map((id) => String(id));
+            const incomingStr = validRuleIds.map((id) => String(id));
+            const incomingSet = new Set(incomingStr);
+
+            let incomingIdx = 0;
+            const updated = [];
+            for (const id of existingStr) {
+                if (incomingSet.has(id)) {
+                    if (incomingIdx < incomingStr.length) {
+                        updated.push(incomingStr[incomingIdx++]);
+                    }
+                } else {
+                    updated.push(id);
+                }
+            }
+            while (incomingIdx < incomingStr.length) {
+                updated.push(incomingStr[incomingIdx++]);
+            }
+            finalRuleIds = updated
+                .filter((id) => mongoose.Types.ObjectId.isValid(id))
+                .map((id) => new mongoose.Types.ObjectId(id));
+        }
+
+        await recommendationOrderSchema.findOneAndUpdate(
+            {
+                userId: userObjectId,
+                profileId: String(profileId),
+            },
+            {
+                $set: {
+                    ruleIds: finalRuleIds,
+                },
+            },
+            { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+
+        return res.status(200).send({
+            isSuccess: true,
+            message: "Recommendation order saved successfully.",
+            data: finalRuleIds,
+        });
+    } catch (error) {
+        recommendation_logs({
+            message: `[reorderRecommendations Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`,
+            log_type: "error",
+        });
+        return res.status(203).send({
+            isSuccess: false,
+            message: "Failed to save recommendation order.",
+            error: error?.message,
         });
     }
 };

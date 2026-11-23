@@ -86,7 +86,7 @@ function SearchTerm() {
   const [productPage, setProductPage] = useState(1);
   const [productPerPage, setProductPerPage] = useState(10);
   const [tableData, setTableData] = useState([]);
-  const [searchTermData, setSearchTermData] = useState([]);
+  const [searchTermData, setSearchTermData] = useState({});
   const [date, setDate] = useState([]);
   const [viewMode, setViewMode] = useState("campaign");
   const [hoveredTab, setHoveredTab] = useState(null);
@@ -149,6 +149,29 @@ function SearchTerm() {
     const start = (stPage - 1) * stPerPage;
     return productSearchTerms.slice(start, start + stPerPage);
   }, [productSearchTerms, stPage, stPerPage, viewMode]);
+
+  useEffect(() => {
+    if (viewMode === "product") {
+      const maxPage = Math.ceil(productSearchTerms.length / stPerPage) || 1;
+      if (stPage > maxPage) {
+        setStPage(1);
+      }
+    }
+  }, [productSearchTerms.length, stPerPage, stPage, viewMode]);
+
+  const totalCampaignRecords = searchTermData?.totalSearchTerm ?? searchTermData?.totalRecords ?? 0;
+  const totalProductRecords = searchTermData?.totalRecords ?? searchTermData?.totalProducts ?? searchTermData?.totalSearchTerm ?? 0;
+
+  const pinnedBottomRowData = useMemo(() => {
+    if (viewMode !== "campaign") return [];
+    if (tableData?.some(r => r?.isTotalRow)) {
+      return [tableData.find(r => r?.isTotalRow)];
+    }
+    if (searchTermData?.totalRow) {
+      return [{ ...searchTermData.totalRow, searchTerm: t("Total", "Total"), isTotalRow: true }];
+    }
+    return [];
+  }, [viewMode, tableData, searchTermData, t]);
 
   // Context for profile and global date range
   let { profileId, selectedAdType, selectedDate, setSelectedDate, loginUser } = useContext(ProfileContext);
@@ -788,7 +811,8 @@ function SearchTerm() {
           } else {
             setTableData(e?.products || []);
           }
-          setSearchTermData(e);
+          setSearchTermData(e || {});
+          setCustomFilterFlag(false);
         } else {
           Toast.error(e?.message);
         }
@@ -890,10 +914,11 @@ function SearchTerm() {
         ApiListing({ pageNo: 1, perPage: campaignPerPage });
       } else {
         setProductPage(1);
+        setStPage(1);
         ApiListing({ pageNo: 1, perPage: productPerPage });
       }
     }
-  }, [isFilterReady, profileId?.value, selectedAdType, date, gridFilter, appliedFilters, debouncedSearchName]);
+  }, [isFilterReady, profileId?.value, selectedAdType, date, gridFilter, appliedFilters, debouncedSearchName, viewMode]);
 
   useEffect(() => {
     const fetchCustomColumns = async () => {
@@ -989,7 +1014,10 @@ function SearchTerm() {
     const sortModel = e.columns;
     if (!sortModel || sortModel.length === 0) return;
     const { colId, sortDef: { direction: sort } } = sortModel?.reverse()?.[0];
-    ApiListing({ fieldName: colId, ...(sort && { sortType: sort === "asc" ? "ASC" : "DESC" }) });
+    const newSortType = sort === "asc" ? "ASC" : "DESC";
+    setfieldName(colId);
+    setConditionObj(prev => ({ ...prev, sortType: newSortType }));
+    ApiListing({ fieldName: colId, sortType: newSortType, pageNo: viewMode === "campaign" ? campaignPage : productPage });
   };
 
   useEffect(() => {
@@ -1939,6 +1967,9 @@ function SearchTerm() {
                     if (viewMode !== tab.key) {
                       setTableData([]);
                       setIsTableLoading(true);
+                      setCampaignPage(1);
+                      setProductPage(1);
+                      setStPage(1);
                       setViewMode(tab.key);
                       setSearchName("");
                       setSearchTermSearch("");
@@ -2035,7 +2066,7 @@ function SearchTerm() {
                   {viewMode === "product" && (
                     <div id="search-term-product-view-sidebar" className="product-sidebar-container border-end">
                       <div className="text-gray-500 font-bold mb-3 mt-2 px-1 flex-shrink-0" style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                        {t("Products")} ({searchTermData?.totalRecords ?? 0})
+                        {t("Products")} ({totalProductRecords})
                       </div>
                       <div className="product-sidebar-list flex-grow-1" style={{ paddingRight: "10px" }}>
                         {tableData.map((prod) => {
@@ -2109,9 +2140,9 @@ function SearchTerm() {
 
                           <div className="flex items-center justify-between mt-1">
                             <span style={{ fontSize: "10.5px", color: "#94a3b8" }}>
-                              {searchTermData?.totalRecords > 0 ? (
+                              {totalProductRecords > 0 ? (
                                 <>
-                                  {(productPage - 1) * productPerPage + 1}–{Math.min(productPage * productPerPage, searchTermData.totalRecords)} of <strong>{searchTermData.totalRecords}</strong>
+                                  {(productPage - 1) * productPerPage + 1}–{Math.min(productPage * productPerPage, totalProductRecords)} of <strong>{totalProductRecords}</strong>
                                 </>
                               ) : "0 of 0"}
                             </span>
@@ -2135,11 +2166,11 @@ function SearchTerm() {
                               >
                                 <i className="fa-solid fa-angle-left" style={{ fontSize: "9px" }} />
                               </ShadcnButton>
-                              <span className="px-1 font-bold text-dark" style={{ fontSize: "10.5px" }}>{productPage} / {Math.ceil((searchTermData?.totalRecords ?? 0) / productPerPage) || 1}</span>
+                              <span className="px-1 font-bold text-dark" style={{ fontSize: "10.5px" }}>{productPage} / {Math.ceil(totalProductRecords / productPerPage) || 1}</span>
                               <ShadcnButton
                                 className="btn btn-sm btn-outline-secondary p-1 flex items-center justify-center"
                                 style={{ width: "24px", height: "24px" }}
-                                disabled={productPage >= (Math.ceil((searchTermData?.totalRecords ?? 0) / productPerPage) || 1)}
+                                disabled={productPage >= (Math.ceil(totalProductRecords / productPerPage) || 1)}
                                 onClick={() => handlePageChange(productPage + 1)}
                                 title={t("Next page")}
                               >
@@ -2148,8 +2179,8 @@ function SearchTerm() {
                               <ShadcnButton
                                 className="btn btn-sm btn-outline-secondary p-1 flex items-center justify-center"
                                 style={{ width: "24px", height: "24px" }}
-                                disabled={productPage >= (Math.ceil((searchTermData?.totalRecords ?? 0) / productPerPage) || 1)}
-                                onClick={() => handlePageChange(Math.ceil((searchTermData?.totalRecords ?? 0) / productPerPage) || 1)}
+                                disabled={productPage >= (Math.ceil(totalProductRecords / productPerPage) || 1)}
+                                onClick={() => handlePageChange(Math.ceil(totalProductRecords / productPerPage) || 1)}
                                 title={t("Last page")}
                               >
                                 <i className="fa-solid fa-angles-right" style={{ fontSize: "9px" }} />
@@ -2205,14 +2236,14 @@ function SearchTerm() {
                         height={viewMode === "campaign" ? "calc(100vh - 380px)" : "calc(100vh - 440px)"}
                         loading={!profileId?.value || !selectedAdType || !isFilterReady || isTableLoading}
                         onRefresh={refreshGrid}
-                        pinnedBottomRowData={viewMode === "campaign" && tableData?.some(r => r?.isTotalRow) ? [tableData.find(r => r?.isTotalRow)] : []}
-                        rowData={viewMode === "campaign" ? tableData : displayedSearchTerms}
+                        pinnedBottomRowData={pinnedBottomRowData}
+                        rowData={viewMode === "campaign" ? tableData?.filter(r => !r?.isTotalRow) : displayedSearchTerms}
                         columnDefs={columns}
                         customSaveColumnName="SearchTerm"
                         isCustomSaveColumns={true}
-                        totalRecords={viewMode === "campaign" ? (searchTermData?.totalRecords ?? 0) : productSearchTerms.length}
+                        totalRecords={viewMode === "campaign" ? totalCampaignRecords : productSearchTerms.length}
                         perPage={viewMode === "campaign" ? campaignPerPage : stPerPage}
-                        currentPage={viewMode === "campaign" ? (customFilterFlag ? 1 : campaignPage) : stPage}
+                        currentPage={viewMode === "campaign" ? campaignPage : stPage}
                         onPageChange={viewMode === "campaign" ? handlePageChange : (page) => setStPage(page)}
                         onPerPageChange={viewMode === "campaign" ? handlePerRowsChange : (size) => { setStPerPage(size); setStPage(1); }}
                         onSortChanged={handleSortChanged}

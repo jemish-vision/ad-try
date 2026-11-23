@@ -1,3 +1,4 @@
+const { runHistoricalAdsReportPhase } = require("../services/historicalAdsReportPhase.service");
 const { getConditionRows, captureManualSelection, prepareSnapshotBulkUpdates } = require("../helpers/ruleConditionSnapshotHelper");
 const { validateCampaignAssignment } = require("../helper/ruleCampaignAssignment");
 
@@ -79,6 +80,17 @@ const { getRunManifest } = require("../services/reportStaging.service");
 const { linkReportHistory, finalizeReportHistory } = require("../services/reportHistoryCompletion.service");
 
 exports.cronGenerateSearchTermReport = async (generateWeeklyReport = false, generateBiWeeklyReport = false, pastSyncObj = null) => {
+  const historicalScope = pastSyncObj || (typeof generateBiWeeklyReport === "object" ? generateBiWeeklyReport : null);
+  if (historicalScope?.reportPhase) {
+    return runHistoricalAdsReportPhase(historicalScope, {
+      group: "TARGETING", reportName: "SEARCHTERM", getAllowedSyncProfiles, getAccessToken,
+      types: [
+        { reportTypeId: "spSearchTerm", entity: "searchTerm", run: (profile, credentials, phase) => spGenerateReport(profile.profileId, historicalScope.startDate, historicalScope.endDate, credentials, profile.configId, profile.timezone, profile.currencyCode, false, phase) },
+        { reportTypeId: "sbSearchTerm", entity: "sbSearchTerm", run: (profile, credentials, phase) => sbGenerateReport(profile.profileId, historicalScope.startDate, historicalScope.endDate, credentials, profile.configId, profile.timezone, profile.currencyCode, false, phase) }
+      ],
+    });
+  }
+
     try {
         if (typeof generateBiWeeklyReport === "object" && generateBiWeeklyReport !== null) {
             pastSyncObj = generateBiWeeklyReport;
@@ -278,13 +290,21 @@ async function spGenerateReport(
     configId,
     timezone,
     currencyCode,
-    recurring = false
+    recurring = false,
+  historicalPhase = null
 ) {
+  const phaseRetry = task => historicalPhase ? task() : retryWithBackoff(task);
+  if (historicalPhase?.phase === "poll" && !historicalPhase.report) return "ERROR";
+
     try {
         const getAccount = await getProfile(configId, profileId);
 
         let existing;
-        if (!recurring) {
+  if (historicalPhase?.phase === "submit") {
+    existing = null;
+  } else if (historicalPhase?.report) {
+    existing = historicalPhase.report;
+  } else if (!recurring) {
             existing = await reportsSchema.findOne({
                 startDate,
                 endDate,
@@ -310,13 +330,17 @@ async function spGenerateReport(
             }).sort({ createdAt: -1 }).lean();
         }
 
-        if (!existing) {
+        if (historicalPhase?.phase === "poll" && !existing) return "ERROR";
+  if (historicalPhase && existing?.status === "COMPLETED") return "COMPLETED";
+  if (historicalPhase && existing && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) return existing.status;
+
+  if (!existing) {
             let createResp;
             try {
                 const isVendor = getAccount?.type?.toLowerCase() === "vendor";
                 const purchasesCol = isVendor ? "purchases14d" : "purchases7d";
                 const salesCol = isVendor ? "sales14d" : "sales7d";
-                createResp = await retryWithBackoff(() => amazonAxios({
+                createResp = await phaseRetry(() => amazonAxios({
                     method: "POST",
                     url: `${getAccount.amazonUrl}/reporting/reports`,
                     headers: {
@@ -369,15 +393,17 @@ async function spGenerateReport(
                 return "ERROR";
             }
 
+            if (historicalPhase && !createResp?.data?.reportId) return "ERROR";
+
             await reportsSchema.create({
                 profileId,
                 configId,
                 reportId: createResp?.data?.reportId,
-                startDate: createResp?.data?.startDate,
-                endDate: createResp?.data?.endDate,
+                startDate: historicalPhase ? startDate : createResp?.data?.startDate,
+                endDate: historicalPhase ? endDate : createResp?.data?.endDate,
                 status: createResp?.data?.status,
                 adProduct: createResp?.data?.configuration?.adProduct,
-                reportTypeId: createResp?.data?.configuration?.reportTypeId,
+                reportTypeId: historicalPhase ? "spSearchTerm" : createResp?.data?.configuration?.reportTypeId,
                 reportName: "SEARCHTERM",
             });
 
@@ -388,7 +414,7 @@ async function spGenerateReport(
             const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
             const lastActivity = new Date(existing.updatedAt || existing.createdAt);
             if (lastActivity < twoHoursAgo) {
-                await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+                await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: historicalPhase ? "PENDING" : "FAILED" } });
                 existing = null;
             } else {
                 processStagedReportBatches(["searchTerm"]).catch(() => {});
@@ -397,7 +423,7 @@ async function spGenerateReport(
         }
 
         // 2️⃣ Poll status
-        const statusResp = await retryWithBackoff(() => amazonAxios({
+        const statusResp = await phaseRetry(() => amazonAxios({
             method: "GET",
             url: `${getAccount.amazonUrl}/reporting/reports/${existing.reportId}`,
             headers: {
@@ -407,6 +433,8 @@ async function spGenerateReport(
             },
             meta: { configId: configId, tokenKey: "adsAccessToken" }
         }));
+
+        if (historicalPhase) historicalPhase.onProviderStatus?.(statusResp.data.status);
 
         if (statusResp.data.status !== "COMPLETED") {
             return statusResp.data.status;
@@ -443,13 +471,21 @@ async function sbGenerateReport(
     configId,
     timezone,
     currencyCode,
-    recurring = false
+    recurring = false,
+  historicalPhase = null
 ) {
+  const phaseRetry = task => historicalPhase ? task() : retryWithBackoff(task);
+  if (historicalPhase?.phase === "poll" && !historicalPhase.report) return "ERROR";
+
     try {
         const getAccount = await getProfile(configId, profileId);
 
         let existing;
-        if (!recurring) {
+  if (historicalPhase?.phase === "submit") {
+    existing = null;
+  } else if (historicalPhase?.report) {
+    existing = historicalPhase.report;
+  } else if (!recurring) {
             existing = await reportsSchema.findOne({
                 startDate,
                 endDate,
@@ -475,10 +511,14 @@ async function sbGenerateReport(
             }).sort({ createdAt: -1 }).lean();
         }
 
-        if (!existing) {
+        if (historicalPhase?.phase === "poll" && !existing) return "ERROR";
+  if (historicalPhase && existing?.status === "COMPLETED") return "COMPLETED";
+  if (historicalPhase && existing && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) return existing.status;
+
+  if (!existing) {
             let createResp;
             try {
-                createResp = await retryWithBackoff(() => amazonAxios({
+                createResp = await phaseRetry(() => amazonAxios({
                     method: "POST",
                     url: `${getAccount.amazonUrl}/reporting/reports`,
                     headers: {
@@ -528,15 +568,17 @@ async function sbGenerateReport(
                 return "ERROR";
             }
 
+            if (historicalPhase && !createResp?.data?.reportId) return "ERROR";
+
             await reportsSchema.create({
                 profileId,
                 configId,
                 reportId: createResp?.data?.reportId,
-                startDate: createResp?.data?.startDate,
-                endDate: createResp?.data?.endDate,
+                startDate: historicalPhase ? startDate : createResp?.data?.startDate,
+                endDate: historicalPhase ? endDate : createResp?.data?.endDate,
                 status: createResp?.data?.status,
                 adProduct: createResp?.data?.configuration?.adProduct,
-                reportTypeId: createResp?.data?.configuration?.reportTypeId,
+                reportTypeId: historicalPhase ? "sbSearchTerm" : createResp?.data?.configuration?.reportTypeId,
                 reportName: "SEARCHTERM",
             });
 
@@ -547,7 +589,7 @@ async function sbGenerateReport(
             const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
             const lastActivity = new Date(existing.updatedAt || existing.createdAt);
             if (lastActivity < twoHoursAgo) {
-                await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+                await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: historicalPhase ? "PENDING" : "FAILED" } });
                 existing = null;
             } else {
                 processStagedReportBatches(["sbSearchTerm"]).catch(() => {});
@@ -556,7 +598,7 @@ async function sbGenerateReport(
         }
 
         // 2️⃣ Poll status
-        const statusResp = await retryWithBackoff(() => amazonAxios({
+        const statusResp = await phaseRetry(() => amazonAxios({
             method: "GET",
             url: `${getAccount.amazonUrl}/reporting/reports/${existing.reportId}`,
             headers: {
@@ -566,6 +608,8 @@ async function sbGenerateReport(
             },
             meta: { configId: configId, tokenKey: "adsAccessToken" }
         }));
+
+        if (historicalPhase) historicalPhase.onProviderStatus?.(statusResp.data.status);
 
         if (statusResp.data.status !== "COMPLETED") {
             return statusResp.data.status;
@@ -1070,16 +1114,20 @@ exports.getSearchTermDetailsData = async (req, res) => {
     if (isMock) return require("../services/mockTestingData.service").getSearchTermDetailsData(req, res);
     try {
         const id = Number(req.params.id);
-        const configId = req.body.configId || req.query.configId || req?.config?.configId || req?.headers?.["x-config-id"];
+        const configId = req.body?.configId || req.query?.configId || req?.config?.configId || req?.headers?.["x-config-id"];
         const { adTypeSearchTermSchema } = req.models || { adTypeSearchTermSchema: searchTermSchema };
         const targetSchema = adTypeSearchTermSchema || searchTermSchema;
 
         let { searchTermPageNo, searchTermPerPage, fromDate, toDate, profileId, status, fieldName, sortType } = req.body;
 
-        const profile = await profileSchema.findOne({ profileId: Number(profileId), ...(configId && { configId }) }).lean();
+        if (!profileId) {
+            return res
+                .status(203)
+                .send({ message: "Profile id required!", isSuccess: false });
+        }
 
-        searchTermPageNo = searchTermPageNo ? searchTermPageNo : 1;
-        searchTermPerPage = searchTermPerPage ? searchTermPerPage : 10;
+        searchTermPageNo = searchTermPageNo ? Number(searchTermPageNo) : 1;
+        searchTermPerPage = searchTermPerPage ? Number(searchTermPerPage) : 10;
         const skip = (searchTermPageNo - 1) * searchTermPerPage;
 
         let sortingField = fieldName ? fieldName : "productName";
@@ -1096,15 +1144,13 @@ exports.getSearchTermDetailsData = async (req, res) => {
         if (status) {
             filter.status = status;
         }
-        if (!profileId) {
-            return res
-                .status(203)
-                .send({ message: "Profile id required!", isSuccess: false });
-        }
 
-        const getSearchTermData = await targetSchema.aggregate([
+        const sortStage = sortingField === "productName"
+            ? { searchTerm: sortingOrder }
+            : { [sortingField]: sortingOrder };
+
+        const [facetResult] = await targetSchema.aggregate([
             { $match: filter },
-
             {
                 $group: {
                     _id: {
@@ -1123,9 +1169,9 @@ exports.getSearchTermDetailsData = async (req, res) => {
                     totalCpc: { $sum: "$cpc" },
                 }
             },
-
             {
                 $project: {
+                    _id: 0,
                     adGroupId: "$_id.adGroupId",
                     campaignId: "$_id.campaignId",
                     searchTerm: "$_id.searchTerm",
@@ -1174,112 +1220,121 @@ exports.getSearchTermDetailsData = async (req, res) => {
                 }
             },
             {
-                $lookup: {
-                    from: "products",
-                    localField: "searchTerm",
-                    foreignField: "asin",
-                    as: "productDetails"
-                }
-            },
-            {
-                $unwind: {
-                    path: "$productDetails",
-                    preserveNullAndEmptyArrays: true
-                }
-            },
-            {
-                $project: {
-                    searchTerm: 1,
-                    title: 1,
-                    status: 1,
-                    totalSpend: 1,
-                    totalSales: 1,
-                    totalImpressions: 1,
-                    totalOrders: 1,
-                    totalClicks: 1,
-                    totalCpc: 1,
-                    totalCtr: 1,
-                    totalCvr: 1,
-                    totalAcos: 1,
-                    totalRoas: 1,
-                    productName: { $ifNull: ["$productDetails.title", "$searchTerm"] },
-                    imageUrl: "$productDetails.mainImage.link"
-                }
-            },
-            {
-                $sort: { [sortingField]: sortingOrder }
-            },
-            {
-                $skip: skip
-            },
-            {
-                $limit: searchTermPerPage
-            }
-        ]);
-
-        const totalQuery = await targetSchema.aggregate([
-            { $match: filter },
-            {
-                $group: {
-                    _id: null,
-                    totalSpend: { $sum: "$spend" },
-                    totalSales: { $sum: "$sales" },
-                    totalImpressions: { $sum: "$impressions" },
-                    totalClicks: { $sum: "$clicks" },
-                    totalOrders: { $sum: "$orders" },
-                    totalCpc: { $sum: "$cpc" },
-                }
-            },
-            {
-                $project: {
-                    _id: 0,
-                    productName: "Total",
-                    totalSpend: "$totalSpend",
-                    totalSales: "$totalSales",
-                    totalImpressions: "$totalImpressions",
-                    totalClicks: "$totalClicks",
-                    totalOrders: "$totalOrders",
-                    totalCpc: "$totalCpc",
-                    totalCtr: {
-                        $cond: [
-                            { $gt: ["$totalImpressions", 0] },
-                            { $round: [{ $multiply: [{ $divide: ["$totalClicks", "$totalImpressions"] }, 100] }, 2] },
-                            0
-                        ]
-                    },
-                    totalCvr: {
-                        $cond: [
-                            { $gt: ["$totalClicks", 0] },
-                            { $round: [{ $multiply: [{ $divide: ["$totalOrders", "$totalClicks"] }, 100] }, 2] },
-                            0
-                        ]
-                    },
-                    totalAcos: {
-                        $cond: [
-                            { $gt: ["$totalSales", 0] },
-                            { $round: [{ $multiply: [{ $divide: ["$totalSpend", "$totalSales"] }, 100] }, 2] },
-                            0
-                        ]
-                    },
-                    totalRoas: {
-                        $cond: [
-                            { $gt: ["$totalSpend", 0] },
-                            { $round: [{ $divide: ["$totalSales", "$totalSpend"] }, 2] },
-                            0
-                        ]
-                    }
+                $facet: {
+                    data: [
+                        { $sort: sortStage },
+                        { $skip: skip },
+                        { $limit: searchTermPerPage }
+                    ],
+                    totalCount: [
+                        { $count: "count" }
+                    ],
+                    totalRow: [
+                        {
+                            $group: {
+                                _id: null,
+                                totalSpend: { $sum: "$totalSpend" },
+                                totalSales: { $sum: "$totalSales" },
+                                totalImpressions: { $sum: "$totalImpressions" },
+                                totalClicks: { $sum: "$totalClicks" },
+                                totalOrders: { $sum: "$totalOrders" },
+                                totalCpc: { $sum: "$totalCpc" },
+                            }
+                        },
+                        {
+                            $project: {
+                                _id: 0,
+                                productName: "Total",
+                                totalSpend: "$totalSpend",
+                                totalSales: "$totalSales",
+                                totalImpressions: "$totalImpressions",
+                                totalClicks: "$totalClicks",
+                                totalOrders: "$totalOrders",
+                                totalCpc: "$totalCpc",
+                                totalCtr: {
+                                    $cond: [
+                                        { $gt: ["$totalImpressions", 0] },
+                                        { $round: [{ $multiply: [{ $divide: ["$totalClicks", "$totalImpressions"] }, 100] }, 2] },
+                                        0
+                                    ]
+                                },
+                                totalCvr: {
+                                    $cond: [
+                                        { $gt: ["$totalClicks", 0] },
+                                        { $round: [{ $multiply: [{ $divide: ["$totalOrders", "$totalClicks"] }, 100] }, 2] },
+                                        0
+                                    ]
+                                },
+                                totalAcos: {
+                                    $cond: [
+                                        { $gt: ["$totalSales", 0] },
+                                        { $round: [{ $multiply: [{ $divide: ["$totalSpend", "$totalSales"] }, 100] }, 2] },
+                                        0
+                                    ]
+                                },
+                                totalRoas: {
+                                    $cond: [
+                                        { $gt: ["$totalSpend", 0] },
+                                        { $round: [{ $divide: ["$totalSales", "$totalSpend"] }, 2] },
+                                        0
+                                    ]
+                                }
+                            }
+                        }
+                    ]
                 }
             }
-        ]);
+        ]).allowDiskUse(true);
 
-        const totalRow = totalQuery[0] || {};
-        const totalCount = await targetSchema.distinct("searchTerm", filter).then(r => r.length);
+        const rawData = facetResult?.data || [];
+        const totalCount = facetResult?.totalCount?.[0]?.count || 0;
+        const totalRow = facetResult?.totalRow?.[0] || {
+            productName: "Total",
+            totalSpend: 0,
+            totalSales: 0,
+            totalImpressions: 0,
+            totalClicks: 0,
+            totalOrders: 0,
+            totalCpc: 0,
+            totalCtr: 0,
+            totalCvr: 0,
+            totalAcos: 0,
+            totalRoas: 0
+        };
+
+        // Lookup product details only for the paginated page search terms
+        const pageSearchTerms = rawData.map(i => i.searchTerm).filter(Boolean);
+        const productMap = new Map();
+        if (pageSearchTerms.length > 0) {
+            const productDocs = await mongoose.connection.collection("products").find(
+                {
+                    ...(configId && mongoose.Types.ObjectId.isValid(configId) && { configId: new mongoose.Types.ObjectId(configId) }),
+                    profileId: Number(profileId),
+                    asin: { $in: pageSearchTerms }
+                },
+                { projection: { _id: 0, asin: 1, title: 1, "mainImage.link": 1 } }
+            ).toArray();
+            for (const p of productDocs) {
+                if (!productMap.has(p.asin)) productMap.set(p.asin, p);
+            }
+        }
+
+        const getSearchTermData = rawData.map(item => {
+            const prod = productMap.get(item.searchTerm);
+            return {
+                ...item,
+                productName: prod?.title || item.searchTerm,
+                imageUrl: prod?.mainImage?.link || undefined
+            };
+        });
 
         return res.status(200).send({
             isSuccess: true,
             totalRow,
             getSearchTermData,
             totalSearchTermData: totalCount,
+            totalRecords: totalCount,
+            data: getSearchTermData,
             searchTermCurrentPageNo: searchTermPageNo,
             searchTermCurrentPerPage: searchTermPerPage
         });
@@ -1328,9 +1383,11 @@ exports.getAllSearchTerms = async (req, res) => {
 
         const typedConfigId = (configId && mongoose.Types.ObjectId.isValid(configId)) ? new mongoose.Types.ObjectId(configId) : configId;
         const numericProfileId = Number(profileId);
-        const profile = await getProfile(configId, profileId);
+        const [profile, lastSearchTermDoc] = await Promise.all([
+            getProfile(configId, profileId),
+            adTypeSearchTermSchema.findOne({ configId: typedConfigId, profileId: numericProfileId }, { reportDate: 1 }).sort({ reportDate: -1 }).lean()
+        ]);
         const timezone = profile.timezone;
-        const lastSearchTermDoc = await adTypeSearchTermSchema.findOne({ configId: typedConfigId, profileId: numericProfileId }, { reportDate: 1 }).sort({ reportDate: -1 }).lean();
         const lastDate = lastSearchTermDoc?.reportDate ?? (toDate || moment().tz(timezone).format("YYYY-MM-DD"));
         const reportDate = {
             $gte: fromDate || moment().tz(timezone).format("YYYY-MM-DD"),
@@ -1649,7 +1706,9 @@ exports.getAllSearchTerms = async (req, res) => {
             targetingData = await adTypeTargetingSchema.find({
                 configId: typedConfigId,
                 profileId: numericProfileId,
-                reportDate: lastDate,
+                campaignId: { $in: uniqueCampaignIds },
+                adGroupId: { $in: uniqueAdGroupIds },
+                ...(lastDate ? { reportDate: lastDate } : {}),
                 targeting: { $in: pageSearchTerms }
             }, {
                 campaignId: 1,
@@ -1745,15 +1804,29 @@ exports.getSearchTermsProductView = async (req, res) => {
         }
 
         const numericProfileId = Number(profileId);
-        const profile = await getProfile(configId, profileId);
+        const [profile, lastSearchTermDoc] = await Promise.all([
+            getProfile(configId, profileId),
+            adTypeSearchTermSchema.findOne({ configId: typedConfigId, profileId: numericProfileId }, { reportDate: 1 }).sort({ reportDate: -1 }).lean()
+        ]);
         const timezone = profile.timezone;
-        const lastSearchTermDoc = await adTypeSearchTermSchema.findOne({ configId: typedConfigId, profileId: numericProfileId }, { reportDate: 1 }).sort({ reportDate: -1 }).lean();
         const lastDate = lastSearchTermDoc?.reportDate ?? (toDate || moment().tz(timezone).format("YYYY-MM-DD"));
         const endDate = toDate || moment().tz(timezone).format("YYYY-MM-DD");
         const reportDate = {
             $gte: fromDate || moment().tz(timezone).format("YYYY-MM-DD"),
             $lte: endDate,
         };
+
+        // Pre-fetch campaign details for this profile on lastDate (typically 80-130 docs, takes ~5ms)
+        const adTypeCampaignCollection = AD_TYPE_COLLECTIONS?.[adType]?.["campaign"] || "campaigns";
+        const campaignDocs = await mongoose.connection.collection(adTypeCampaignCollection).find(
+            { configId: typedConfigId, profileId: numericProfileId, reportDate: lastDate },
+            { projection: { campaignId: 1, name: 1, status: 1 } }
+        ).toArray();
+
+        const campaignMap = new Map();
+        for (const c of campaignDocs) {
+            campaignMap.set(c.campaignId, c);
+        }
 
         let campaignIdFilter = null;
         if (campaignId) {
@@ -1779,8 +1852,24 @@ exports.getSearchTermsProductView = async (req, res) => {
 
         const normalize = (s) => (s || "").trim().toLowerCase();
 
+        // If searchName is provided, pre-match ASINs by product name to avoid unbounded lookups
+        let searchNameMatchingAsins = null;
+        if (searchName) {
+            const words = searchName.trim().split(/[\s\-|&\(\),\/\\—\–\+]+/).filter(Boolean);
+            if (words.length > 0) {
+                const regexes = words.map(w => new RegExp(RegExp.escape(w), "i"));
+                try {
+                    const matchedListings = await mongoose.connection.collection("productlistings").find(
+                        { profileId: numericProfileId, $or: regexes.map(r => ({ itemName: r })) },
+                        { projection: { _id: 0, asin: 1 } }
+                    ).limit(500).toArray();
+                    searchNameMatchingAsins = matchedListings.map(l => l.asin).filter(Boolean);
+                } catch (_) {}
+            }
+        }
+
         // ──────────────────────────────────────────────────
-        // STEP 1: Base search term aggregation (same as getAllSearchTerms)
+        // STEP 1: Base search term aggregation
         // ──────────────────────────────────────────────────
         const commonPipeline = [
             {
@@ -1816,7 +1905,7 @@ exports.getSearchTermsProductView = async (req, res) => {
             },
 
             // ──────────────────────────────────────────────────
-            // STEP 1.5: Group by AdGroup to reduce lookups by 100x
+            // STEP 2: Group by AdGroup to reduce lookups by 100x
             // ──────────────────────────────────────────────────
             {
                 $group: {
@@ -1843,22 +1932,6 @@ exports.getSearchTermsProductView = async (req, res) => {
                     }
                 }
             },
-            // ──────────────────────────────────────────────────
-            // STEP 2: Lookup campaign info (Once per AdGroup)
-            // ──────────────────────────────────────────────────
-            {
-                $lookup: {
-                    from: AD_TYPE_COLLECTIONS?.[adType]?.["campaign"],
-                    localField: "_id.campaignId",
-                    foreignField: "campaignId",
-                    pipeline: [
-                        { $match: { configId: typedConfigId, profileId: numericProfileId, reportDate: lastDate } },
-                        { $project: { _id: 0, campaignId: 1, name: 1, status: 1 } }
-                    ],
-                    as: "campaign"
-                }
-            },
-            { $unwind: { path: "$campaign", preserveNullAndEmptyArrays: true } },
 
             // ──────────────────────────────────────────────────
             // STEP 3: Lookup product_ads → get distinct ASINs (Once per AdGroup)
@@ -1903,11 +1976,9 @@ exports.getSearchTermsProductView = async (req, res) => {
                 $project: {
                     asin: "$productAds.asins",
                     sku: "$productAds.sku",
-                    campaignId: "$campaign.campaignId",
-                    campaignName: "$campaign.name",
-                    campaignStatus: "$campaign.status",
+                    campaignId: "$_id.campaignId",
                     adGroupId: "$_id.adGroupId",
-                    adGroupName: { $ifNull: ["$searchTerms.adGroupName", "$campaign.name"] },
+                    adGroupName: "$searchTerms.adGroupName",
                     searchTerm: "$searchTerms.searchTerm",
                     keywordId: "$searchTerms.keywordId",
                     targeting: "$searchTerms.targeting",
@@ -1978,8 +2049,6 @@ exports.getSearchTermsProductView = async (req, res) => {
                 $group: {
                     _id: { asin: "$asin", campaignId: "$campaignId" },
                     sku: { $first: "$sku" },
-                    campaignName: { $first: "$campaignName" },
-                    campaignStatus: { $first: "$campaignStatus" },
                     totalImpressions: { $sum: "$impressions" },
                     totalClicks: { $sum: "$clicks" },
                     totalOrders: { $sum: "$orders" },
@@ -2044,8 +2113,6 @@ exports.getSearchTermsProductView = async (req, res) => {
                     campaigns: {
                         $push: {
                             campaignId: "$_id.campaignId",
-                            campaignName: "$campaignName",
-                            campaignStatus: "$campaignStatus",
                             totalImpressions: "$totalImpressions",
                             totalClicks: "$totalClicks",
                             totalOrders: "$totalOrders",
@@ -2083,46 +2150,13 @@ exports.getSearchTermsProductView = async (req, res) => {
             },
 
             // ──────────────────────────────────────────────────
-            // STEP 7: Lookup product details from productlistings
-            // ──────────────────────────────────────────────────
-            {
-                $lookup: {
-                    from: "productlistings",
-                    let: { asinVal: "$_id" },
-                    pipeline: [
-                        {
-                            $match: {
-                                profileId: numericProfileId,
-                                $expr: { $eq: ["$asin", "$$asinVal"] }
-                            }
-                        },
-                        {
-                            $project: {
-                                _id: 0,
-                                itemName: 1,
-                                imageURL: 1,
-                                sellingPrice: 1,
-                                asin: 1,
-                                sku: 1
-                            }
-                        },
-                        { $limit: 1 }
-                    ],
-                    as: "productInfo"
-                }
-            },
-            { $unwind: { path: "$productInfo", preserveNullAndEmptyArrays: true } },
-
-            // ──────────────────────────────────────────────────
-            // STEP 8: Final projection
+            // STEP 8: Final projection (lightweight, productlistings looked up after pagination)
             // ──────────────────────────────────────────────────
             {
                 $project: {
                     _id: 0,
                     asin: "$_id",
-                    sku: { $ifNull: ["$productInfo.sku", "$sku"] },
-                    productName: { $ifNull: ["$productInfo.itemName", ""] },
-                    imageUrl: { $ifNull: ["$productInfo.imageURL", ""] },
+                    sku: "$sku",
                     totalImpressions: 1,
                     totalClicks: 1,
                     totalOrders: 1,
@@ -2143,14 +2177,15 @@ exports.getSearchTermsProductView = async (req, res) => {
                 const andConditions = words.map(word => {
                     const escapedWord = RegExp.escape(word);
                     const regex = new RegExp(escapedWord, "i");
-                    return {
-                        $or: [
-                            { productName: { $regex: regex } },
-                            { asin: { $regex: regex } },
-                            { sku: { $regex: regex } },
-                            { "campaigns.searchTerms.searchTerm": { $regex: regex } }
-                        ]
-                    };
+                    const orClauses = [
+                        { asin: { $regex: regex } },
+                        { sku: { $regex: regex } },
+                        { "campaigns.searchTerms.searchTerm": { $regex: regex } }
+                    ];
+                    if (searchNameMatchingAsins && searchNameMatchingAsins.length > 0) {
+                        orClauses.push({ asin: { $in: searchNameMatchingAsins } });
+                    }
+                    return { $or: orClauses };
                 });
                 commonPipeline.push({ $match: { $and: andConditions } });
             }
@@ -2193,8 +2228,56 @@ exports.getSearchTermsProductView = async (req, res) => {
         const products = result[0]?.data || [];
         const totalRecords = result[0]?.totalRecords[0]?.count || 0;
 
+        // Enrich product details (itemName, imageURL) only for the paginated products
+        const pageAsins = products.map(p => p.asin).filter(Boolean);
+        if (pageAsins.length > 0) {
+            try {
+                const listings = await mongoose.connection.collection("productlistings").find(
+                    { profileId: numericProfileId, asin: { $in: pageAsins } },
+                    { projection: { _id: 0, itemName: 1, imageURL: 1, sellingPrice: 1, asin: 1, sku: 1 } }
+                ).toArray();
+                const listingMap = new Map();
+                for (const l of listings) {
+                    if (!listingMap.has(l.asin)) listingMap.set(l.asin, l);
+                }
+                for (const prod of products) {
+                    const info = listingMap.get(prod.asin);
+                    if (info) {
+                        if (!prod.sku && info.sku) prod.sku = info.sku;
+                        prod.productName = info.itemName || "";
+                        prod.imageUrl = info.imageURL || "";
+                    } else {
+                        prod.productName = prod.productName || "";
+                        prod.imageUrl = prod.imageUrl || "";
+                    }
+                }
+            } catch (_) {
+                for (const prod of products) {
+                    prod.productName = prod.productName || "";
+                    prod.imageUrl = prod.imageUrl || "";
+                }
+            }
+        } else {
+            for (const prod of products) {
+                prod.productName = prod.productName || "";
+                prod.imageUrl = prod.imageUrl || "";
+            }
+        }
+
+        // Attach campaignName & campaignStatus from in-memory map
+        products.forEach(product => {
+            (product.campaigns || []).forEach(camp => {
+                const c = campaignMap.get(camp.campaignId);
+                camp.campaignName = c?.name || "";
+                camp.campaignStatus = c?.status || "";
+                (camp.searchTerms || []).forEach(st => {
+                    if (!st.adGroupName) st.adGroupName = camp.campaignName;
+                });
+            });
+        });
+
         // ──────────────────────────────────────────────────
-        // STEP 10: existTargeting enrichment (same pattern as getAllSearchTerms)
+        // STEP 10: existTargeting enrichment (fast targeted lookup)
         // ──────────────────────────────────────────────────
         const allSearchTermRows = [];
         products.forEach(product => {
@@ -2214,37 +2297,47 @@ exports.getSearchTermsProductView = async (req, res) => {
         const uniqueAdGroupIds = [...new Set(allSearchTermRows.map(r => r.adGroupId))];
 
         let targetingMap = new Map();
-        if (uniqueTerms.length) {
-
+        if (uniqueTerms.length && uniqueCampaignIds.length) {
             const extractAsin = (val) => {
                 if (!val) return null;
                 const match = val.match(/([A-Z0-9]{10})/i);
                 return match ? match[1].toLowerCase() : null;
             };
 
-            const targetingList = await adTypeTargetingSchema
-                .find({
-                    configId: typedConfigId,
-                    profileId: numericProfileId,
-                    reportDate: lastDate,
-                    campaignId: { $in: uniqueCampaignIds },
-                    adGroupId: { $in: uniqueAdGroupIds },
-                    targeting: { $in: uniqueTerms }
-                })
-                .select("targeting matchType status keywordType campaignId adGroupId")
-                .lean();
+            const asinTerms = uniqueTerms.filter(t => /^[a-z0-9]{10}$/i.test(t));
+            const targetingPromises = [
+                adTypeTargetingSchema
+                    .find({
+                        configId: typedConfigId,
+                        profileId: numericProfileId,
+                        reportDate: lastDate,
+                        campaignId: { $in: uniqueCampaignIds },
+                        adGroupId: { $in: uniqueAdGroupIds },
+                        targeting: { $in: uniqueTerms }
+                    })
+                    .select("targeting matchType status keywordType campaignId adGroupId")
+                    .lean()
+            ];
 
-            const targetingProductList = await adTypeTargetingSchema
-                .find({
-                    configId: typedConfigId,
-                    profileId: numericProfileId,
-                    reportDate: lastDate,
-                    campaignId: { $in: uniqueCampaignIds },
-                    adGroupId: { $in: uniqueAdGroupIds },
-                    keywordType: "TARGETING_EXPRESSION"
-                })
-                .select("targeting matchType status keywordType campaignId adGroupId")
-                .lean();
+            if (asinTerms.length > 0) {
+                const asinRegexes = asinTerms.map(a => new RegExp(RegExp.escape(a), "i"));
+                targetingPromises.push(
+                    adTypeTargetingSchema
+                        .find({
+                            configId: typedConfigId,
+                            profileId: numericProfileId,
+                            reportDate: lastDate,
+                            campaignId: { $in: uniqueCampaignIds },
+                            adGroupId: { $in: uniqueAdGroupIds },
+                            keywordType: "TARGETING_EXPRESSION",
+                            $or: asinRegexes.map(r => ({ targeting: r }))
+                        })
+                        .select("targeting matchType status keywordType campaignId adGroupId")
+                        .lean()
+                );
+            }
+
+            const [targetingList = [], targetingProductList = []] = await Promise.all(targetingPromises);
 
             targetingList.forEach(t => {
                 const key = `${normalize(t.targeting)}_${t.campaignId}_${t.adGroupId}`;
@@ -2273,6 +2366,9 @@ exports.getSearchTermsProductView = async (req, res) => {
         return res.status(200).send({
             isSuccess: true,
             products,
+            getSearchTerm: products,
+            totalProducts: totalRecords,
+            totalSearchTerm: totalRecords,
             currentPageNo: pageNo,
             totalRecords,
             totalPages: Math.ceil(totalRecords / perPage),

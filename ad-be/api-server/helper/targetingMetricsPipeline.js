@@ -20,6 +20,26 @@ const buildTargetingMetricsPipeline = query => {
         { $match: query },
         { $sort: { reportDate: 1 } },
         {
+            $project: {
+                campaignId: 1,
+                adGroupId: 1,
+                profileId: 1,
+                targeting: 1,
+                targetId: 1,
+                keywordType: 1,
+                matchType: 1,
+                reportDate: 1,
+                impressions: 1,
+                clicks: 1,
+                orders: 1,
+                spend: 1,
+                sales: 1,
+                topOfSearchImpressionShare: 1,
+                keywordBid: 1,
+                status: 1,
+            }
+        },
+        {
             $group: {
                 _id: {
                     campaignId: '$campaignId', adGroupId: '$adGroupId', profileId: '$profileId',

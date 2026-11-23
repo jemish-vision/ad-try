@@ -50,9 +50,9 @@ describe("recommendations list: server-side filters + pagination", () => {
     assert.equal(budgetOrNone.total, 13);
   });
 
-  test("tag filter matches any selected tag", () => {
+  test("tag filter matches all selected tags (AND logic)", () => {
     assert.equal(run({ tagIds: [T1], limit: 50 }).total, 11); // 10 + r25
-    assert.equal(run({ tagIds: [T1, T2], limit: 50 }).total, 21);
+    assert.equal(run({ tagIds: [T1, T2], limit: 50 }).total, 1); // only r25 has both T1 and T2
     assert.equal(run({ tagIds: [T2], gridName: "Campaign", limit: 50 }).total, 0);
     assert.equal(run({ tagIds: [T2], gridName: "Campaign", limit: 50 }).totalUnfiltered, 24);
   });
@@ -68,5 +68,17 @@ describe("recommendations list: server-side filters + pagination", () => {
     assert.deepEqual(q, { gridNames: ["Campaign"], actions: ["None"], tagIds: [T1], page: 2, limit: 100 });
     assert.equal(run({}).items.length, 24);
     assert.equal(parseRecommendationListQuery({ page: -3 }).page, 1);
+  });
+
+  test("custom orderMap prioritizes specified order; unmapped rules fall back to newest-first", () => {
+    const orderMap = new Map([
+      ["r05", 0],
+      ["r02", 1],
+    ]);
+    const res = filterSortPaginateRecommendations(data, parseRecommendationListQuery({ limit: 5 }), orderMap);
+    assert.equal(res.items[0].rule._id, "r05");
+    assert.equal(res.items[1].rule._id, "r02");
+    // r25 is the newest of unmapped rules
+    assert.equal(res.items[2].rule._id, "r25");
   });
 });

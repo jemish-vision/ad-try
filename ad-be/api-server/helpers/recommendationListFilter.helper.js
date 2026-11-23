@@ -5,7 +5,7 @@
  * Filters (all optional, combined with AND; values within one filter are OR):
  *   gridNames  — Affected Parameter, e.g. ["Campaign", "Targeting"]
  *   actions    — action names, e.g. ["IncreaseBid"]; "None" = rules without an action (out of budget)
- *   tagIds     — rules having ANY of these tags
+ *   tagIds     — rules having ALL of these tags
  */
 const MAX_LIMIT = 100;
 
@@ -41,7 +41,7 @@ function matchesFilters(rule, { gridNames = [], actions = [], tagIds = [] }) {
   }
   if (tagIds.length) {
     const ruleTags = (rule?.tagIds || []).map(String);
-    if (!ruleTags.some((id) => tagIds.includes(id))) return false;
+    if (!tagIds.every((id) => ruleTags.includes(id))) return false;
   }
   return true;
 }
@@ -53,14 +53,28 @@ const createdTime = (rule) => {
 
 /**
  * @returns {{ items, total, totalUnfiltered, page, limit, totalPages, hasMore }}
- *   Only rules with recommendations (count > 0) are listed. Newest configuration first.
+ *   Only rules with recommendations (count > 0) are listed.
+ *   Custom orderMap (rule._id -> index) takes priority; rules not in orderMap sort newest first.
  *   A page past the end is moved to the last page (e.g. after a filter shrinks the list).
  */
-function filterSortPaginateRecommendations(computed, query) {
+function filterSortPaginateRecommendations(computed, query, orderMap = null) {
   const withData = (computed || []).filter((item) => item?.rule && item.count > 0);
   const filtered = withData
     .filter((item) => matchesFilters(item.rule, query))
-    .sort((a, b) => createdTime(b.rule) - createdTime(a.rule) || String(b.rule._id).localeCompare(String(a.rule._id)));
+    .sort((a, b) => {
+      if (orderMap && orderMap.size > 0) {
+        const aId = String(a.rule?._id);
+        const bId = String(b.rule?._id);
+        const hasA = orderMap.has(aId);
+        const hasB = orderMap.has(bId);
+        if (hasA && hasB) {
+          return orderMap.get(aId) - orderMap.get(bId);
+        }
+        if (hasA) return -1;
+        if (hasB) return 1;
+      }
+      return createdTime(b.rule) - createdTime(a.rule) || String(b.rule._id).localeCompare(String(a.rule._id));
+    });
 
   const total = filtered.length;
   const limit = query.limit || total || 1;

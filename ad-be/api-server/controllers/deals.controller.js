@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const { retryWithBackoff } = require("../helper/retryHelper");
+const { runHistoricalSellerReport, aggregateSellerReportStatus } = require("../services/historicalSellerReport.service");
 
 const moment = require("moment-timezone");
 const path = require("path");
@@ -30,6 +31,8 @@ const amazonAxios = require("../helper/amazonAxios");
 const { write_logs } = require("../../winston/utility/logger");
 
 exports.cronSyncDealPerformance = async (customStartDate = null, customEndDate = null) => {
+    const reportPhase = customStartDate?.reportPhase;
+    const phaseResults = [];
     cron_logs({
         message: `India Time = ${moment().tz("Asia/Kolkata").format("HH:mm")} cronSyncDealPerformance`,
         log_type: "info",
@@ -69,6 +72,7 @@ exports.cronSyncDealPerformance = async (customStartDate = null, customEndDate =
                     { new: true }
                 );
             }
+            if (reportPhase) return "ERROR";
             return cron_logs({
                 message: `Cron Deals sync stopped: No active profiles found with matching permissions for configId: ${targetConfigId || 'any'}, profileId: ${targetProfileId || 'any'}.`,
                 log_type: "warn"
@@ -78,7 +82,7 @@ exports.cronSyncDealPerformance = async (customStartDate = null, customEndDate =
         for (const profile of profiles) {
             try {
                 const token = await getSPAccessToken(profile.configId, profile.profileId);
-                if (!token) continue;
+                if (!token) { if (reportPhase) phaseResults.push("ERROR"); continue; }
 
                 const now = moment().tz(profile.timezone);
                 const currentDate = now.format("YYYY-MM-DD");
@@ -108,11 +112,12 @@ exports.cronSyncDealPerformance = async (customStartDate = null, customEndDate =
                     endDate = now.clone().add(60, "days").format("YYYY-MM-DD");
                 }
 
-                const syncStatus = await syncDealsReport(profile, token, startDate, endDate, recurring);
+                const syncStatus = await syncDealsReport(profile, token, startDate, endDate, recurring, { phase: reportPhase });
+                if (reportPhase) phaseResults.push(syncStatus);
 
                 if (recurring && cronData?._id && syncStatus !== "FAILED") {
                     await cronJobHistorySchema.findByIdAndUpdate(cronData._id, { status: "COMPLETED" });
-                } else if (!recurring && cronjobid && syncStatus === "COMPLETED") {
+                } else if (!reportPhase && !recurring && cronjobid && syncStatus === "COMPLETED") {
                     await cronJobHistorySchema.findByIdAndUpdate(
                         cronjobid,
                         { status: "COMPLETED" },
@@ -120,26 +125,46 @@ exports.cronSyncDealPerformance = async (customStartDate = null, customEndDate =
                     );
                 }
             } catch (err) {
+                if (reportPhase) phaseResults.push("ERROR");
                 cron_logs({ message: `Err for profile ${profile.profileId}: ${err}`, log_type: "error" });
             }
         }
 
+        if (reportPhase) {
+            const result = aggregateSellerReportStatus(phaseResults);
+            if (cronjobid) await cronJobHistorySchema.findByIdAndUpdate(cronjobid, { status: result === "ERROR" ? "FAILED" : result });
+            return result;
+        }
         return cron_logs({ message: "Deals Dashboard sync completed.", log_type: "info" });
     } catch (error) {
+        if (reportPhase) {
+            if (customStartDate?.cronjobid) await cronJobHistorySchema.findByIdAndUpdate(customStartDate.cronjobid, { status: "FAILED" });
+            return "ERROR";
+        }
         return cron_logs({ message: `Deals Dashboard cron err: ${error}`, log_type: "error" });
     }
 };
 
 
-const syncDealsReport = async (profile, token, startDate, endDate, recurring = true) => {
+const syncDealsReport = async (profile, token, startDate, endDate, recurring = true, options = {}) => {
     const marketPlaceConfig = await marketPlaceConfigSchema.findOne({ marketPlaceId: profile.marketplaceStringId }).lean();
     if (!marketPlaceConfig) return "FAILED";
 
     const reportTypeId = "GET_PROMOTION_PERFORMANCE_REPORT";
+    if (options.phase) {
+        return runHistoricalSellerReport({
+            phase: options.phase,
+            identity: { configId: profile.configId, profileId: profile.profileId, reportName: "Deals Performance", reportTypeId, startDate, endDate },
+            createRequest: () => syncDealsReport(profile, token, startDate, endDate, false, { createOnly: true }),
+            processReport: report => syncDealsReport(profile, token, startDate, endDate, false, { report }),
+        });
+    }
 
     // Check for existing pending report
-    let existing = null;
-    if (recurring) {
+    let existing = options.report || null;
+    if (options.report || options.createOnly) {
+        // Explicit phases consume the locked exact report or create under the request lease.
+    } else if (recurring) {
         const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
         existing = await reportsSchema.findOne({
             profileId: profile.profileId,
@@ -192,7 +217,7 @@ const syncDealsReport = async (profile, token, startDate, endDate, recurring = t
         reportId = createResp.data.reportId;
         cron_logs({ message: `Report requested successfully. ReportId: ${reportId}`, log_type: "info" });
 
-        await reportsSchema.create({
+        const createdReport = await reportsSchema.create({
             profileId: profile.profileId,
             configId: profile.configId,
             reportId: reportId,
@@ -203,7 +228,7 @@ const syncDealsReport = async (profile, token, startDate, endDate, recurring = t
             status: "PENDING"
         });
 
-        return "PENDING";
+        return options.createOnly ? createdReport : "PENDING";
     }
 
     // Polling Status
@@ -217,10 +242,14 @@ const syncDealsReport = async (profile, token, startDate, endDate, recurring = t
         meta: { configId: profile?.configId, profileId: profile?.profileId, tokenKey: "spAccessToken", sp: true }
     }));
 
-    if (statusRes?.data?.processingStatus === "FATAL") {
+    if (statusRes?.data?.processingStatus === "FATAL" || (options.report && ["FAILED", "ERROR"].includes(statusRes?.data?.processingStatus))) {
         await reportsSchema.updateOne({ reportId }, { $set: { status: "FATAL" } });
         cron_logs({ message: `Report FATAL: ${reportId}`, log_type: "error" });
         return "FAILED";
+    }
+    if (options.report && statusRes?.data?.processingStatus === "CANCELLED") {
+        await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "CANCELLED" } });
+        return "COMPLETED";
     }
 
     if (statusRes?.data?.processingStatus !== "DONE") {

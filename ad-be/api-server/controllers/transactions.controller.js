@@ -58,6 +58,11 @@ exports.cronGenerateTransactionsReport = async (customStartDate = null, customEn
                 const checkSPConfig = await getSPAccessToken(profile.configId, profile.profileId);
 
                 if (!checkSPConfig) {
+                    if (cronjobid) {
+                        await cronJobHistorySchema.findByIdAndUpdate(cronjobid, {
+                            status: "FAILED", error: "Seller account credentials are unavailable",
+                        });
+                    }
                     return cron_logs({
                         message: `Account disconnected ${profile.configId}`,
                         log_type: "info",
@@ -68,6 +73,7 @@ exports.cronGenerateTransactionsReport = async (customStartDate = null, customEn
                 const endDate = endDateParam || moment().tz(profile.timezone).subtract(1, "days").format("YYYY-MM-DD");
 
                 const dateRange = generateDateRange(startDate, endDate, profile?.timezone);
+                let failureCount = 0;
 
                 for (const currentDate of dateRange) {
                     let getCronData;
@@ -93,17 +99,17 @@ exports.cronGenerateTransactionsReport = async (customStartDate = null, customEn
                             { new: true }
                         );
                     }
-                    else if (!recurring && cronjobid) {
-                        await cronJobHistorySchema.findByIdAndUpdate(
-                            cronjobid,
-                            { status: result !== "ERROR" ? "COMPLETED" : "FAILED" },
-                            { new: true },
-                        );
-                    }
+                    if (result === "ERROR") failureCount++;
 
                     cron_logs({
                         message: `Date ${currentDate} → ${result} for configId: ${profile.configId}`,
                         log_type: "info",
+                    });
+                }
+                if (!recurring && cronjobid) {
+                    await cronJobHistorySchema.findByIdAndUpdate(cronjobid, {
+                        status: failureCount ? "FAILED" : "COMPLETED",
+                        error: failureCount ? `${failureCount} of ${dateRange.length} financial event dates failed` : null,
                     });
                 }
             })

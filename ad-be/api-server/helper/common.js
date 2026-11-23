@@ -1163,7 +1163,7 @@ const getDatesBetween = (startDate, endDate) => {
 
   while (current <= end) {
     dates.push(current.toISOString().split("T")[0]); // YYYY-MM-DD
-    current.setDate(current.getDate() + 1);
+    current.setUTCDate(current.getUTCDate() + 1);
   }
 
   return dates;

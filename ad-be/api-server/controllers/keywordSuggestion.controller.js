@@ -42,22 +42,63 @@ exports.getKeywordSuggestions = async (req, res) => {
         const past7Days = moment().subtract(7, 'days').format("YYYY-MM-DD");
 
         const campaignModel = adTypeCampaignSchema || campaignSchema;
-        const hasActiveCampaigns = await campaignModel.exists({
-            configId: typedConfigId,
-            profileId: numericProfileId,
-            status: "ENABLED",
-            reportDate: { $gte: moment().subtract(2, "days").format("YYYY-MM-DD") }
-        });
+        const searchTermBlockModel = mongoose.models.SearchTermBlock || require("../models/searchTermBlocked.model");
+
+        // Run campaign active check and blocked items lookup in parallel
+        const [hasActiveCampaigns, blockedItems] = await Promise.all([
+            campaignModel.exists({
+                configId: typedConfigId,
+                profileId: numericProfileId,
+                status: "ENABLED",
+                reportDate: { $gte: moment().subtract(2, "days").format("YYYY-MM-DD") }
+            }),
+            searchTermBlockModel.find({
+                configId: typedConfigId,
+                profileId: numericProfileId
+            }).select("campaignId adGroupId searchTerm").lean()
+        ]);
 
         const activeLookupDate = hasActiveCampaigns
             ? past30Days
             : moment().subtract(180, 'days').format("YYYY-MM-DD");
 
+        // Step 1: Pre-discover search terms that generated revenue (sales > 0) in the active window.
+        // In search terms, 98%+ of records have 0 sales.
+        // Querying distinct candidates first eliminates scanning/grouping 100k+ non-converting docs.
+        const candidateTermsQuery = {
+            configId: typedConfigId,
+            profileId: numericProfileId,
+            reportDate: { $gte: activeLookupDate },
+            sales: { $gt: 0 },
+            ...(campaignType === "MANUAL"
+                ? { keywordType: { $in: ["EXACT", "PHRASE", "BROAD", "TARGETING_EXPRESSION"] } }
+                : campaignType === "AUTO"
+                ? { keywordType: { $nin: ["EXACT", "PHRASE", "BROAD", "TARGETING_EXPRESSION"] } }
+                : {})
+        };
+
+        if (searchName) {
+            candidateTermsQuery.searchTerm = isExactSearchMatch
+                ? searchName
+                : { $regex: new RegExp(searchName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), "i") };
+        }
+
+        const candidateTerms = await adTypeSearchTermSchema.distinct("searchTerm", candidateTermsQuery);
+
+        if (!candidateTerms || candidateTerms.length === 0) {
+            return res.status(200).send({
+                isSuccess: true,
+                totalRows: 0,
+                result: [],
+            });
+        }
+
         // 1. Initial Match (Past 30 Days or 180 Days if paused)
         let matchQuery = {
             configId: typedConfigId,
             profileId: numericProfileId,
-            reportDate: { $gte: activeLookupDate }
+            reportDate: { $gte: activeLookupDate },
+            searchTerm: { $in: candidateTerms }
         };
 
         // Filter by Manual or Auto campaign type
@@ -119,6 +160,22 @@ exports.getKeywordSuggestions = async (req, res) => {
         const pipeline = [
             { $match: matchQuery },
             {
+                $project: {
+                    searchTerm: 1,
+                    campaignId: 1,
+                    adGroupId: 1,
+                    targeting: 1,
+                    campaignName: 1,
+                    adGroupName: 1,
+                    keywordType: 1,
+                    spend: 1,
+                    sales: 1,
+                    clicks: 1,
+                    impressions: 1,
+                    reportDate: 1,
+                }
+            },
+            {
                 $group: {
                     _id: {
                         searchTerm: "$searchTerm",
@@ -150,51 +207,23 @@ exports.getKeywordSuggestions = async (req, res) => {
                     impr7d: { $sum: { $cond: [{ $gte: ["$reportDate", past7Days] }, "$impressions", 0] } },
                 }
             },
-            // Early Pre-filter: Only keep revenue generating search terms with clicks > 0 and sales > 0
-            // This discards 95-99% of candidates BEFORE doing heavy lookups!
+            // Pre-filter: Only keep revenue generating search terms with clicks > 0 and sales > 0
             { $match: { clicks30d: { $gt: 0 }, sales30d: { $gt: 0 } } }
         ];
 
-        // Check if blocked items exist for this profile upfront (99% of accounts have 0 blocks)
-        const searchTermBlockModel = mongoose.models.SearchTermBlock || require("../models/searchTermBlocked.model");
-        const blockedItems = await searchTermBlockModel.find({
-            configId: typedConfigId,
-            profileId: numericProfileId
-        }).select("campaignId adGroupId searchTerm").lean();
-
+        // Filter blocked items directly without slow in-pipeline correlated $lookup
         if (blockedItems && blockedItems.length > 0) {
-            pipeline.push(
-                {
-                    $lookup: {
-                        from: "searchtermblocks",
-                        let: { st: "$_id.searchTerm", cid: "$_id.campaignId", aid: "$_id.adGroupId" },
-                        pipeline: [
-                            {
-                                $match: {
-                                    $expr: {
-                                        $and: [
-                                            { $eq: ["$configId", typedConfigId] },
-                                            { $eq: ["$profileId", numericProfileId] },
-                                            { $eq: ["$campaignId", "$$cid"] },
-                                            { $eq: ["$adGroupId", "$$aid"] },
-                                            { $eq: ["$searchTerm", "$$st"] },
-                                        ]
-                                    }
-                                }
-                            },
-                            { $limit: 1 },
-                            { $project: { _id: 1 } }
-                        ],
-                        as: "blockedData"
-                    }
-                },
-                { $match: { blockedData: { $size: 0 } } }
-            );
+            const norConditions = blockedItems.map((b) => ({
+                "_id.searchTerm": b.searchTerm,
+                "_id.campaignId": b.campaignId,
+                "_id.adGroupId": b.adGroupId,
+            }));
+            pipeline.push({ $match: { $nor: norConditions } });
         }
 
         const hasKeywordExistsFilter = Boolean(fieldFilters && fieldFilters.keywordExistsInAccount && fieldFilters.keywordExistsInAccount.value !== "");
 
-        // If user specifically filtered by keywordExistsInAccount, we must do the lookup in pipeline
+        // If user specifically filtered by keywordExistsInAccount, perform lookup in pipeline
         if (hasKeywordExistsFilter) {
             pipeline.push(
                 {
@@ -210,12 +239,12 @@ exports.getKeywordSuggestions = async (req, res) => {
                                             { $eq: ["$profileId", numericProfileId] },
                                             { $eq: ["$targeting", "$$st"] },
                                             { $eq: ["$status", "ENABLED"] },
-                                            { $eq: ["$reportDate", currentDate] },
                                             { $eq: ["$keywordType", "$$type"] }
                                         ]
                                     }
                                 }
                             },
+                            { $sort: { reportDate: -1 } },
                             { $limit: 1 },
                             { $project: { _id: 1 } }
                         ],
@@ -237,60 +266,62 @@ exports.getKeywordSuggestions = async (req, res) => {
             }
         }
 
-        // Project metrics
-        pipeline.push(
-            {
-                $project: {
-                    _id: 0,
-                    id: "$docId",
-                    searchTerm: "$_id.searchTerm",
-                    campaignId: "$_id.campaignId",
-                    adGroupId: "$_id.adGroupId",
-                    targeting: 1,
-                    campaignName: 1,
-                    adGroupName: 1,
-                    keywordType: 1,
-                    ...(hasKeywordExistsFilter ? { keywordExistsInAccount: 1 } : {}),
+        // Sort by 30-day sales before facet pagination
+        pipeline.push({ $sort: { sales30d: -1 } });
 
-                    reason: "revenue generating",
-
-                    days30: {
-                        spend: { $round: ["$spend30d", 2] },
-                        sales: { $round: ["$sales30d", 2] },
-                        clicks: "$clicks30d",
-                        impressions: "$impr30d",
-                        cpc: { $round: [{ $cond: [{ $gt: ["$clicks30d", 0] }, { $divide: ["$spend30d", "$clicks30d"] }, 0] }, 2] },
-                        acos: { $round: [{ $cond: [{ $gt: ["$sales30d", 0] }, { $multiply: [{ $divide: ["$spend30d", "$sales30d"] }, 100] }, 0] }, 2] },
-                        roas: { $round: [{ $cond: [{ $gt: ["$spend30d", 0] }, { $divide: ["$sales30d", "$spend30d"] }, 0] }, 2] },
-                    },
-                    days14: {
-                        spend: { $round: ["$spend14d", 2] },
-                        sales: { $round: ["$sales14d", 2] },
-                        clicks: "$clicks14d",
-                        impressions: "$impr14d",
-                        cpc: { $round: [{ $cond: [{ $gt: ["$clicks14d", 0] }, { $divide: ["$spend14d", "$clicks14d"] }, 0] }, 2] },
-                        acos: { $round: [{ $cond: [{ $gt: ["$sales14d", 0] }, { $multiply: [{ $divide: ["$spend14d", "$sales14d"] }, 100] }, 0] }, 2] },
-                        roas: { $round: [{ $cond: [{ $gt: ["$spend14d", 0] }, { $divide: ["$sales14d", "$spend14d"] }, 0] }, 2] },
-                    },
-                    days7: {
-                        spend: { $round: ["$spend7d", 2] },
-                        sales: { $round: ["$sales7d", 2] },
-                        clicks: "$clicks7d",
-                        impressions: "$impr7d",
-                        cpc: { $round: [{ $cond: [{ $gt: ["$clicks7d", 0] }, { $divide: ["$spend7d", "$clicks7d"] }, 0] }, 2] },
-                        acos: { $round: [{ $cond: [{ $gt: ["$sales7d", 0] }, { $multiply: [{ $divide: ["$spend7d", "$sales7d"] }, 100] }, 0] }, 2] },
-                        roas: { $round: [{ $cond: [{ $gt: ["$spend7d", 0] }, { $divide: ["$sales7d", "$spend7d"] }, 0] }, 2] },
-                    }
-                }
-            },
-            { $sort: { "days30.sales": -1 } }
-        );
-
+        // Facet pagination: compute full mathematical projections ONLY on the paginated slice
         const facetPipeline = [
             {
                 $facet: {
-                    metadata: [{ $count: "total" }, { $addFields: { page: _pageNo, limit: _perPage } }],
-                    data: [{ $skip: (_pageNo - 1) * _perPage }, { $limit: _perPage }],
+                    metadata: [{ $count: "total" }],
+                    data: [
+                        { $skip: (_pageNo - 1) * _perPage },
+                        { $limit: _perPage },
+                        {
+                            $project: {
+                                _id: 0,
+                                id: "$docId",
+                                searchTerm: "$_id.searchTerm",
+                                campaignId: "$_id.campaignId",
+                                adGroupId: "$_id.adGroupId",
+                                targeting: 1,
+                                campaignName: 1,
+                                adGroupName: 1,
+                                keywordType: 1,
+                                ...(hasKeywordExistsFilter ? { keywordExistsInAccount: 1 } : {}),
+
+                                reason: "revenue generating",
+
+                                days30: {
+                                    spend: { $round: ["$spend30d", 2] },
+                                    sales: { $round: ["$sales30d", 2] },
+                                    clicks: "$clicks30d",
+                                    impressions: "$impr30d",
+                                    cpc: { $round: [{ $cond: [{ $gt: ["$clicks30d", 0] }, { $divide: ["$spend30d", "$clicks30d"] }, 0] }, 2] },
+                                    acos: { $round: [{ $cond: [{ $gt: ["$sales30d", 0] }, { $multiply: [{ $divide: ["$spend30d", "$sales30d"] }, 100] }, 0] }, 2] },
+                                    roas: { $round: [{ $cond: [{ $gt: ["$spend30d", 0] }, { $divide: ["$sales30d", "$spend30d"] }, 0] }, 2] },
+                                },
+                                days14: {
+                                    spend: { $round: ["$spend14d", 2] },
+                                    sales: { $round: ["$sales14d", 2] },
+                                    clicks: "$clicks14d",
+                                    impressions: "$impr14d",
+                                    cpc: { $round: [{ $cond: [{ $gt: ["$clicks14d", 0] }, { $divide: ["$spend14d", "$clicks14d"] }, 0] }, 2] },
+                                    acos: { $round: [{ $cond: [{ $gt: ["$sales14d", 0] }, { $multiply: [{ $divide: ["$spend14d", "$sales14d"] }, 100] }, 0] }, 2] },
+                                    roas: { $round: [{ $cond: [{ $gt: ["$spend14d", 0] }, { $divide: ["$sales14d", "$spend14d"] }, 0] }, 2] },
+                                },
+                                days7: {
+                                    spend: { $round: ["$spend7d", 2] },
+                                    sales: { $round: ["$sales7d", 2] },
+                                    clicks: "$clicks7d",
+                                    impressions: "$impr7d",
+                                    cpc: { $round: [{ $cond: [{ $gt: ["$clicks7d", 0] }, { $divide: ["$spend7d", "$clicks7d"] }, 0] }, 2] },
+                                    acos: { $round: [{ $cond: [{ $gt: ["$sales7d", 0] }, { $multiply: [{ $divide: ["$spend7d", "$sales7d"] }, 100] }, 0] }, 2] },
+                                    roas: { $round: [{ $cond: [{ $gt: ["$spend7d", 0] }, { $divide: ["$sales7d", "$spend7d"] }, 0] }, 2] },
+                                }
+                            }
+                        }
+                    ],
                 },
             },
             {
@@ -311,11 +342,20 @@ exports.getKeywordSuggestions = async (req, res) => {
         if (!hasKeywordExistsFilter && data.length > 0) {
             const targetingModel = adTypeTargetingSchema || (AD_TYPE_COLLECTIONS?.[adType]?.targetingSchema) || mongoose.models.targeting || require("../models/targeting.model");
             const pageTerms = [...new Set(data.map(d => d.searchTerm).filter(Boolean))];
+
+            // Resolve latest available targeting reportDate so enrichment works even if today's sync is in-flight
+            const latestTargetingDoc = await targetingModel.findOne({
+                configId: typedConfigId,
+                profileId: numericProfileId,
+                status: "ENABLED"
+            }).sort({ reportDate: -1 }).select("reportDate").lean();
+            const targetReportDate = latestTargetingDoc?.reportDate || currentDate;
+
             const existingKeywords = await targetingModel.find({
                 configId: typedConfigId,
                 profileId: numericProfileId,
                 status: "ENABLED",
-                reportDate: currentDate,
+                reportDate: targetReportDate,
                 targeting: { $in: pageTerms }
             }, { targeting: 1, keywordType: 1 }).lean();
 
@@ -363,7 +403,8 @@ exports.getKeywordUniqueFilterValues = async (req, res) => {
         let matchQuery = {
             configId: typedConfigId,
             profileId: numericProfileId,
-            reportDate: { $gte: past30Days }
+            reportDate: { $gte: past30Days },
+            sales: { $gt: 0 }
         };
 
         if (campaignType === "MANUAL") {

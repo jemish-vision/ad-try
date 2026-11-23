@@ -38,6 +38,12 @@ const synchronizeDetailsSchema = new mongoose.Schema(
             type: Date,
             default: Date.now,
         },
+        historicalSyncPeriod: {
+            startDate: String,
+            endDate: String,
+            requestVersion: String,
+            days: Number,
+        },
         type: {
             type: String,
             enum: ["ads", "seller"],

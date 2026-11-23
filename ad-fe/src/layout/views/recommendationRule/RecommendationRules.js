@@ -8,7 +8,7 @@ import { Switch } from "../../../components/ui/switch";
 import AddRule from "./AddRule";
 import { TagList } from "../../../components/recommendation-tags/RecommendationTags";
 import RecommendationCampaignModal from "./RecommendationCampaignModal";
-import { ApiDeleteRule, ApiGetRules, ApiStatusChange, ApiExportRecommandationRule, ApiImportRecommandationRule, ApiUpdateRules, ApiBulkUpdateRuleDateFilter, ApiCopyRulesToProfiles } from "../../../api-wrapper/recommendation/ApiRecommendation";
+import { ApiDeleteRule, ApiGetRules, ApiStatusChange, ApiExportRecommandationRule, ApiImportRecommandationRule, ApiUpdateRules, ApiBulkUpdateRuleDateFilter, ApiCopyRulesToProfiles, ApiGetRecommendationTags } from "../../../api-wrapper/recommendation/ApiRecommendation";
 import { ApiSelectAccount } from "../../../api-wrapper/campaign/ApiCampaign";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { MultiSelect } from "../../../components/ui/popover-multi-select";
@@ -86,7 +86,7 @@ const PLACEMENT_LABEL = {
     "Product Page": "Product Page",
 };
 
-function RecomandationRules({ hideFilter = false } = {}) {
+function RecomandationRules({ hideFilter = false, tagOptions: propTagOptions } = {}) {
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
     const [disablePinning, setDisablePinning] = useState(window.innerWidth < 1100);
     const [isDark, setIsDark] = useState(document.documentElement.getAttribute("data-theme") === "dark");
@@ -773,22 +773,52 @@ function RecomandationRules({ hideFilter = false } = {}) {
 
     const [statusChange, setStatusChange] = useState(null);
 
-    // Filter states (Affected Parameter & Action)
+    // Filter states (Affected Parameter, Action & Tags)
     const [showFilterModal, setShowFilterModal] = useState(false);
     const [selectedFilterOption, setSelectedFilterOption] = useState(null);
     const [appliedGridNames, setAppliedGridNames] = useState([]);
     const [appliedActions, setAppliedActions] = useState([]);
+    const [appliedTagIds, setAppliedTagIds] = useState([]);
+    const [tagOptions, setTagOptions] = useState(propTagOptions || []);
     const [tempGridNames, setTempGridNames] = useState([]);
     const [tempActions, setTempActions] = useState([]);
+    const [tempTagIds, setTempTagIds] = useState([]);
+
+    useEffect(() => {
+        if (Array.isArray(propTagOptions) && propTagOptions.length > 0) {
+            setTagOptions(propTagOptions);
+        }
+    }, [propTagOptions]);
+
+    const fetchTags = () => {
+        if (!selectedCampagin?.profileSendID) return;
+        ApiGetRecommendationTags({ profileId: selectedCampagin?.profileSendID })
+            .then((res) => {
+                if (res?.isSuccess && Array.isArray(res?.data)) {
+                    setTagOptions(res.data);
+                    setAppliedTagIds((prev) => {
+                        if (!prev || !prev.length) return prev;
+                        const filtered = prev.filter((id) => res.data.some((tg) => String(tg._id) === id));
+                        return filtered.length === prev.length ? prev : filtered;
+                    });
+                }
+            })
+            .catch(() => {});
+    };
+
+    useEffect(() => {
+        fetchTags();
+    }, [selectedCampagin?.profileSendID]);
 
     const appliedFilters = useMemo(
-        () => buildRecommendationAppliedFilters(appliedGridNames, appliedActions, t),
-        [appliedGridNames, appliedActions, t]
+        () => buildRecommendationAppliedFilters(appliedGridNames, appliedActions, t, appliedTagIds, tagOptions),
+        [appliedGridNames, appliedActions, appliedTagIds, tagOptions, t]
     );
 
     const handleFilterOptionClick = (option) => {
         setTempGridNames([...appliedGridNames]);
         setTempActions([...appliedActions]);
+        setTempTagIds([...appliedTagIds]);
         setSelectedFilterOption(option);
         setShowFilterModal(true);
     };
@@ -796,40 +826,49 @@ function RecomandationRules({ hideFilter = false } = {}) {
     const handleApplyFilter = () => {
         let nextGridNames = appliedGridNames;
         let nextActions = appliedActions;
+        let nextTagIds = appliedTagIds;
         if (selectedFilterOption?.value === "AffectedParameter") {
             nextGridNames = [...tempGridNames];
             setAppliedGridNames(nextGridNames);
         } else if (selectedFilterOption?.value === "Action") {
             nextActions = [...tempActions];
             setAppliedActions(nextActions);
+        } else if (selectedFilterOption?.value === "Tags") {
+            nextTagIds = [...tempTagIds];
+            setAppliedTagIds(nextTagIds);
         }
         setShowFilterModal(false);
         const nextArg = { pageNo: 1, perPage };
         setArg(nextArg);
-        getRule(nextArg, { gridName: nextGridNames, actionName: nextActions });
+        getRule(nextArg, { gridName: nextGridNames, actionName: nextActions, tagIds: nextTagIds });
     };
 
     const handleRemoveFilter = (filterId) => {
         let nextGridNames = appliedGridNames;
         let nextActions = appliedActions;
+        let nextTagIds = appliedTagIds;
         if (filterId === "AffectedParameter") {
             nextGridNames = [];
             setAppliedGridNames([]);
         } else if (filterId === "Action") {
             nextActions = [];
             setAppliedActions([]);
+        } else if (filterId === "Tags") {
+            nextTagIds = [];
+            setAppliedTagIds([]);
         }
         const nextArg = { pageNo: 1, perPage };
         setArg(nextArg);
-        getRule(nextArg, { gridName: nextGridNames, actionName: nextActions });
+        getRule(nextArg, { gridName: nextGridNames, actionName: nextActions, tagIds: nextTagIds });
     };
 
     const handleClearAllFilters = () => {
         setAppliedGridNames([]);
         setAppliedActions([]);
+        setAppliedTagIds([]);
         const nextArg = { pageNo: 1, perPage };
         setArg(nextArg);
-        getRule(nextArg, { gridName: [], actionName: [] });
+        getRule(nextArg, { gridName: [], actionName: [], tagIds: [] });
     };
 
     const handleEditFilter = (filter) => {
@@ -887,6 +926,7 @@ function RecomandationRules({ hideFilter = false } = {}) {
             const safeQueryArg = (queryArg && typeof queryArg === "object" && "pageNo" in queryArg) ? queryArg : arg;
             const gridNameFilter = filterOverrides.gridName ?? appliedGridNames;
             const actionNameFilter = filterOverrides.actionName ?? appliedActions;
+            const tagIdsFilter = filterOverrides.tagIds ?? appliedTagIds;
             let data = {
                 profileId: selectedCampagin?.profileSendID,
                 fieldName: "createdAt",
@@ -894,6 +934,7 @@ function RecomandationRules({ hideFilter = false } = {}) {
                 ...safeQueryArg,
                 ...(Array.isArray(gridNameFilter) && gridNameFilter.length > 0 ? { gridName: gridNameFilter } : {}),
                 ...(Array.isArray(actionNameFilter) && actionNameFilter.length > 0 ? { actionName: actionNameFilter } : {}),
+                ...(Array.isArray(tagIdsFilter) && tagIdsFilter.length > 0 ? { tagIds: tagIdsFilter } : {}),
             };
             ApiGetRules(data)
                 .then((res) => {
@@ -1159,7 +1200,10 @@ function RecomandationRules({ hideFilter = false } = {}) {
                     <div className="max-h-[80vh] overflow-y-auto flex-1 !p-0 modal-body">
                         <AddRule
                             setaddModalFlag={setaddModalFlag}
-                            getRule={getRule}
+                            getRule={() => {
+                                getRule();
+                                fetchTags();
+                            }}
                             setEditId={setEditId}
                             editId={editId}
                             editData={editData}
@@ -1299,6 +1343,9 @@ function RecomandationRules({ hideFilter = false } = {}) {
                 setSelectedGridNames={setTempGridNames}
                 selectedActions={tempActions}
                 setSelectedActions={setTempActions}
+                tagOptions={tagOptions}
+                selectedTagIds={tempTagIds}
+                setSelectedTagIds={setTempTagIds}
                 onApply={handleApplyFilter}
                 isDark={isDark}
             />

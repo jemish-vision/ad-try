@@ -85,11 +85,16 @@ const allTargetingChart = withAllAdTypesChart(getTargetingChartData, {
   sumFields: ["impressions", "clicks", "orders", "spend", "sales"],
   excludeSD: false,
   mergeExtra: (bodies) => {
+    let total = 0;
     const ids = [];
     for (const b of bodies) {
-      if (Array.isArray(b.filteredTargetingIds)) ids.push(...b.filteredTargetingIds);
+      if (typeof b.totalFilteredTargetings === "number") total += b.totalFilteredTargetings;
+      if (Array.isArray(b.filteredTargetingIds) && b.filteredTargetingIds.length > 0) ids.push(...b.filteredTargetingIds);
     }
-    return { filteredTargetingIds: ids, totalFilteredTargetings: ids.length };
+    return {
+      ...(ids.length > 0 ? { filteredTargetingIds: ids } : {}),
+      totalFilteredTargetings: total || ids.length
+    };
   },
 });
 

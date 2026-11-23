@@ -47,7 +47,7 @@ const REPORT_GROUPS = {
 const finalizeReportHistory = async (historyId, extraDetails = {}) => {
   if (!historyId) return false;
   const history = await cronJobHistorySchema.findById(historyId).lean();
-  if (!history || history.status === "FAILED") return false;
+  if (!history || history.status === "FAILED" || history.details?.historicalSyncRequestId) return false;
   const linked = await reportsSchema.find({ cronHistoryId: historyId })
     .select("reportName reportTypeId status").lean();
   if (!linked.length) return false;
@@ -88,6 +88,11 @@ const linkReportHistory = async ({ historyId, configId, profileId, reportName, s
   const history = await cronJobHistorySchema.findById(historyId).lean();
   // Dedicated cron history link
   if (!history || !group.cronNames.includes(history.cronName)) return;
+  if (history.details?.historicalSyncRequestId) {
+    // Historical phases verify each exact report identity independently. A reused
+    // report can still belong to another cron's completion tracking.
+    return;
+  }
   await reportsSchema.updateMany({
     configId, profileId, reportName, startDate, endDate,
     reportTypeId: { $in: group.types },

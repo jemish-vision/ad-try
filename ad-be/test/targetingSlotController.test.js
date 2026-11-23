@@ -15,7 +15,7 @@ function harness(options={}) {
  const query = value => ({lean:async()=>value, sort(){return this;}});
  const model={findOne:()=>query(null),find:()=>query([]),findOneAndUpdate:(q,u)=>{calls.history.push({q,u});if(u?.$set?.status)calls.statuses.push(u.$set.status);return query({_id:'history'});},findByIdAndUpdate:()=>query({}),bulkWrite:async ops=>calls.bulk.push(...ops),updateMany:async()=>({}),updateOne:async()=>({})};
  const sandbox={exports:{},moment,settleTargetingItems,process:{env:{AUTOMATION_EXECUTION_MODE:'queue'}},global:{},console,
- cron_logs:()=>{},write_logs:()=>{},getActiveSlot:slots=>slots[0],getAccessToken:async()=>options.noToken?null:{adsAccessToken:'mock'},ruleLimit:fn=>fn(),
+ cron_logs:()=>{},write_logs:()=>{},getActiveSlot:slots=>slots[0],getAccessToken:async()=>options.noToken?null:{adsAccessToken:'mock'},ruleLimit:fn=>fn(),hasRuleExecutedInSlotOrHour:()=>false,markRuleExecutedInSlotAndHour:()=>{},
  targetingRuleSchema:{...model,find:()=>query(options.rules||[structuredClone(baseRule)])},targetingRuleHistorySchema:model,ruleRunHistorySchema:{...model,find:()=>query([])},cronJobHistorySchema:model,
  affectedCampaignByRuleSchema:{...model,findOne:()=>query(options.existingActive||null)},campaignProductEligibleStatusByRuleSchema:model,
  targetingSchema:model,sbTargetingSchema:model,sdTargetingSchema:model,campaignSchema:model,sbCampaignSchema:model,sdCampaignSchema:model,adGroupsSchema:model,sbAdGroupsSchema:model,sdAdGroupsSchema:model,

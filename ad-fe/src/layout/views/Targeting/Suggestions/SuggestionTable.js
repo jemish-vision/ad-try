@@ -237,19 +237,23 @@ const SuggestionTable = React.forwardRef(({ tabType, isActive = true }, ref) => 
 
   useEffect(() => {
     if (isFilterReady && isActive) {
-      fetchData(arg);
+      const resetArg = { pageNo: 1, perPage };
+      setArg(resetArg);
+      fetchData(resetArg);
     }
   }, [isFilterReady, isActive, selectedAdType, tabType, searchName, conditionObj, selectedDate]);
 
   const handlePageChange = (page) => {
     const newArg = { ...arg, pageNo: page };
     setArg(newArg);
+    fetchData(newArg);
   };
 
   const handlePerRowsChange = (newPerPage) => {
     setPerPage(newPerPage);
     const newArg = { ...arg, pageNo: 1, perPage: newPerPage };
     setArg(newArg);
+    fetchData(newArg);
   };
 
   // Group columns helper

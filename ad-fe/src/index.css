@@ -1947,7 +1947,7 @@ html[data-theme="dark"] .rs-input:focus {
   background: transparent !important;
   border-radius: 12px !important;
   overflow: hidden !important;
-  --ag-header-foreground-color: #ffffff !important;
+  --ag-header-foreground-color: #1248A3 !important;
 }
 
 .glass-grid-container .iq-ag-table .ag-root-wrapper {
@@ -1994,10 +1994,32 @@ html[data-theme="dark"] .rs-input:focus {
 
 .glass-grid-container .iq-ag-table .ag-header-cell-menu-button {
   opacity: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 22px !important;
+  height: 22px !important;
+  border-radius: 4px !important;
 }
 
-.glass-grid-container .iq-ag-table .ag-header-cell-menu-button .ag-icon {
-  color: rgba(35, 116, 242, 0.55) !important;
+.glass-grid-container .iq-ag-table .ag-header-cell-menu-button:hover {
+  background-color: rgba(35, 116, 242, 0.12) !important;
+}
+
+.glass-grid-container .iq-ag-table .ag-header-cell-menu-button .ag-icon,
+.glass-grid-container .iq-ag-table .ag-header-cell-menu-button i,
+.glass-grid-container .iq-ag-table .ag-header-cell-menu-button .custom-header-menu-icon {
+  color: #1248A3 !important;
+  opacity: 0.85 !important;
+  font-size: 13px !important;
+  line-height: 1 !important;
+}
+
+.glass-grid-container .iq-ag-table .ag-header-cell-menu-button:hover .ag-icon,
+.glass-grid-container .iq-ag-table .ag-header-cell-menu-button:hover i,
+.glass-grid-container .iq-ag-table .ag-header-cell-menu-button:hover .custom-header-menu-icon {
+  color: #1A9FD4 !important;
+  opacity: 1 !important;
 }
 
 [data-theme="dark"] .glass-grid-container .iq-ag-table .ag-header-cell,
@@ -2015,8 +2037,22 @@ html[data-theme="dark"] .rs-input:focus {
   text-transform: uppercase !important;
 }
 
-[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-header-cell-menu-button .ag-icon {
-  color: rgba(255, 255, 255, 0.40) !important;
+[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-header-cell-menu-button:hover {
+  background-color: rgba(255, 255, 255, 0.10) !important;
+}
+
+[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-header-cell-menu-button .ag-icon,
+[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-header-cell-menu-button i,
+[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-header-cell-menu-button .custom-header-menu-icon {
+  color: #94A3B8 !important;
+  opacity: 0.85 !important;
+}
+
+[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-header-cell-menu-button:hover .ag-icon,
+[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-header-cell-menu-button:hover i,
+[data-theme="dark"] .glass-grid-container .iq-ag-table .ag-header-cell-menu-button:hover .custom-header-menu-icon {
+  color: #38bdf8 !important;
+  opacity: 1 !important;
 }
 
 .glass-grid-container .iq-ag-table .ag-row {
@@ -4502,9 +4538,37 @@ html[data-theme="dark"] .rs-picker-input-group {
   line-height: 1 !important;
 }
 
-.ag-header-cell-menu-button .custom-header-menu-icon {
-  color: inherit !important;
+.ag-header-cell-menu-button .custom-header-menu-icon,
+.ag-header-cell-menu-button i.custom-header-menu-icon,
+.ag-header-cell-menu-button i.fa-ellipsis-vertical,
+.ag-header-cell-menu-button .ag-icon {
+  color: #1248A3 !important;
+  opacity: 0.85 !important;
   font-size: 13px !important;
+}
+
+.ag-header-cell-menu-button:hover .custom-header-menu-icon,
+.ag-header-cell-menu-button:hover i.custom-header-menu-icon,
+.ag-header-cell-menu-button:hover i.fa-ellipsis-vertical,
+.ag-header-cell-menu-button:hover .ag-icon {
+  color: #1A9FD4 !important;
+  opacity: 1 !important;
+}
+
+[data-theme="dark"] .ag-header-cell-menu-button .custom-header-menu-icon,
+[data-theme="dark"] .ag-header-cell-menu-button i.custom-header-menu-icon,
+[data-theme="dark"] .ag-header-cell-menu-button i.fa-ellipsis-vertical,
+[data-theme="dark"] .ag-header-cell-menu-button .ag-icon {
+  color: #94A3B8 !important;
+  opacity: 0.85 !important;
+}
+
+[data-theme="dark"] .ag-header-cell-menu-button:hover .custom-header-menu-icon,
+[data-theme="dark"] .ag-header-cell-menu-button:hover i.custom-header-menu-icon,
+[data-theme="dark"] .ag-header-cell-menu-button:hover i.fa-ellipsis-vertical,
+[data-theme="dark"] .ag-header-cell-menu-button:hover .ag-icon {
+  color: #38bdf8 !important;
+  opacity: 1 !important;
 }
 
 .ag-theme-alpine .ag-menu-option:hover .ag-menu-option-icon,

@@ -22,8 +22,9 @@ function buildTargetingMetadataPipeline(query) {
     const metricsPipeline = buildTargetingMetricsPipeline(query);
     const group = { ...metricsPipeline.find(stage => stage.$group).$group };
     delete group.dailyMetrics;
+    const stagesBeforeGroup = metricsPipeline.slice(0, metricsPipeline.findIndex(stage => stage.$group));
     return [
-        metricsPipeline[0], metricsPipeline[1], { $group: group },
+        ...stagesBeforeGroup, { $group: group },
         { $set: {
             targetId: { $ifNull: ['$realTargetId', '$fallbackTargetId'] },
             '_id.targetId': { $ifNull: ['$realTargetId', '$fallbackTargetId'] },

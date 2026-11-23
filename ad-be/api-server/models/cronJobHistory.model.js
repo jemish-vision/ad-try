@@ -108,6 +108,15 @@ cronJobHistorySchema.index({ configId: 1, profileId: 1, cronName: 1, status: 1, 
 // `error` get a generic message instead of an empty field.
 const UNSPECIFIED_FAILURE = "Failed without a recorded reason (see cron logs for this cronName/profile/time).";
 
+cronJobHistorySchema.pre("findOneAndUpdate", function () {
+  const filter = this.getFilter();
+  if (this.getOptions().upsert && filter.cronName && filter.historyDate && !filter._id) {
+    // Daily cron upserts use the calendar date. Historical chunks on that date
+    // have their own identity and must keep their independent outcome.
+    this.where({ "details.historicalSyncRequestId": { $exists: false } });
+  }
+});
+
 const ensureFailureReason = function () {
   const update = this.getUpdate && this.getUpdate();
   if (!update || Array.isArray(update)) return;

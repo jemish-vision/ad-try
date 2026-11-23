@@ -1,3 +1,4 @@
+const { runHistoricalAdsReportPhase } = require("../services/historicalAdsReportPhase.service");
 
 const moment = require("moment-timezone");
 const fs = require("fs");
@@ -420,6 +421,16 @@ exports.generateReport = async (req, res) => {
 };
 
 exports.cronGenerateKeywordReport = async (generateWeeklyReport = false, pastSyncObj = null) => {
+  const historicalScope = pastSyncObj;
+  if (historicalScope?.reportPhase) {
+    return runHistoricalAdsReportPhase(historicalScope, {
+      group: "TARGETING", reportName: "KEYWORDS", getAllowedSyncProfiles, getAccessToken,
+      types: [
+        { reportTypeId: "spTargeting", entity: null, run: (profile, credentials, phase) => spGenerateReport(profile.profileId, profile.timezone, historicalScope.startDate, historicalScope.endDate, credentials, profile.configId, false, phase) }
+      ],
+    });
+  }
+
   cron_logs({
     message: `India Time = ${moment()
       .tz("Asia/Kolkata")
@@ -578,10 +589,16 @@ async function spGenerateReport(
   endDate,
   checkConfigAds,
   configId,
-  recurring = false
+  recurring = false,
+  historicalPhase = null
 ) {
+  const phaseRetry = task => historicalPhase ? task() : retryWithBackoff(task);
+  if (historicalPhase?.phase === "poll" && !historicalPhase.report) return "ERROR";
+
   return new Promise(async (resolve, reject) => {
-    const getAccount = await getProfile(configId, profileId);
+    let getAccount;
+    try { getAccount = await getProfile(configId, profileId); }
+    catch (error) { if (historicalPhase) return resolve("ERROR"); throw error; }
     const bodyData = {
       name: "",
       startDate,
@@ -629,7 +646,11 @@ async function spGenerateReport(
     };
     try {
       let getReportData;
-      if (!recurring) {
+      if (historicalPhase?.phase === "submit") {
+        getReportData = null;
+      } else if (historicalPhase?.report) {
+        getReportData = historicalPhase.report;
+      } else if (!recurring) {
         getReportData = await reportsSchema.findOne({
           startDate,
           endDate,
@@ -651,6 +672,8 @@ async function spGenerateReport(
           createdAt: { $gte: twentyFourHoursAgo },
         }).sort({ createdAt: -1 }).lean();
       }
+      if (historicalPhase?.phase === "poll" && !getReportData) return resolve("ERROR");
+      if (historicalPhase && getReportData?.status === "COMPLETED") return resolve("COMPLETED");
       if (getReportData) {
         let lastUpdateTime = moment(getReportData.updatedAt)
           .tz(timezone)
@@ -667,7 +690,7 @@ async function spGenerateReport(
           (timeDifferenceMinutes >= 10 || timeDifferenceMinutes < 0)
         ) {
           try {
-            const response = await retryWithBackoff(() => amazonAxios(reportPOSTOptions));
+            const response = await phaseRetry(() => amazonAxios(reportPOSTOptions));
             if (response.status === 200) {
               const body = response.data;
               await reportsSchema.findByIdAndUpdate(getReportData._id, {
@@ -721,7 +744,8 @@ async function spGenerateReport(
             input.pipe(unzip).pipe(output);
           };
           try {
-            const response = await retryWithBackoff(() => amazonAxios(reportIdOptions));
+            const response = await phaseRetry(() => amazonAxios(reportIdOptions));
+            if (historicalPhase) historicalPhase.onProviderStatus?.(response.data?.status);
             if (response.status === 200) {
               const body = response.data;
               if (body.status !== "COMPLETED") {
@@ -731,11 +755,12 @@ async function spGenerateReport(
                 await reportsSchema.updateOne(
                   {
                     profileId,
+                    ...(historicalPhase && { configId, startDate, endDate }),
                     reportId: getReportData.reportId,
                   },
                   {
                     $set: {
-                      status: body.status,
+                      status: historicalPhase ? "IMPORTING" : body.status,
                     },
                   }
                 );
@@ -744,7 +769,7 @@ async function spGenerateReport(
 
                 const file = fs.createWriteStream(zipFilePath);
                 try {
-                  const fileResponse = await retryWithBackoff(() => amazonAxios({
+                  const fileResponse = await phaseRetry(() => amazonAxios({
                     method: 'get',
                     url: body.url,
                     responseType: 'stream'
@@ -765,16 +790,19 @@ async function spGenerateReport(
                       zipFilePath,
                       extractionPath,
                       async (unzipError) => {
+                        try {
                         if (unzipError) {
                           cron_logs({
                             message: `Config ID: ${configId}, Profile ID: ${profileId} SP Report zip err: ${unzipError}`,
                             log_type: "error",
                           });
                           resolve("ERROR");
+                          if (historicalPhase) return;
                         }
-                        const data = safeJsonParse(fs.readFileSync(extractionPath, "utf8")) ?? [];
+                        const data = safeJsonParse(fs.readFileSync(extractionPath, "utf8"));
+                        if (historicalPhase && !Array.isArray(data)) return resolve("ERROR");
                         await Promise.all(
-                          data.map(async (item) => {
+                          (data ?? []).map(async (item) => {
                             await keywordSchema.updateOne(
                               {
                                 configId,
@@ -814,6 +842,7 @@ async function spGenerateReport(
                           })
                         );
 
+                        if (historicalPhase) await reportsSchema.updateOne({ _id: getReportData._id }, { $set: { status: "COMPLETED", completedAt: new Date() } });
                         if (recurring && currentTime != "23:10") {
                           await spGenerateReport(
                             profileId,
@@ -826,6 +855,10 @@ async function spGenerateReport(
                         }
 
                         resolve(body.status);
+                        } catch (importError) {
+                          if (historicalPhase) { resolve("ERROR"); return; }
+                          throw importError;
+                        }
                       }
                     );
                   });
@@ -857,7 +890,7 @@ async function spGenerateReport(
       }
       else {
         try {
-          const response = await retryWithBackoff(() => amazonAxios(reportPOSTOptions));
+          const response = await phaseRetry(() => amazonAxios(reportPOSTOptions));
           if (response.status == 200) {
             const body = response.data;
             let create = {

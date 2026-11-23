@@ -6,6 +6,7 @@ const moment = require('moment');
 const jobs = require('../../worker-service/cronJobs.enum');
 const { ROLES } = require('../../api-server/constants/roles');
 const { historicalReportFilter } = require('../../api-server/helper/historicalSyncReports');
+const queue = require('../../api-server/services/historicalSyncQueue.service');
 
 const read = name => fs.readFileSync(require.resolve(`../../api-server/${name}`), 'utf8');
 const config = read('controllers/config.controller');
@@ -167,33 +168,93 @@ test('connecting Seller can resume an approved profile but does not enable a new
     assert.deepEqual(writes, [true]);
 });
 
-test('the report dispatcher only succeeds on a completed report history record', async () => {
-    const start = organization.indexOf('const runReportCronByName =');
-    const source = organization.slice(start, organization.indexOf('\nexports.', start));
-    let status;
-    const dispatched = [];
-    const run = vm.runInNewContext(`${source}\nrunReportCronByName`, {
-        process: { env: { MAX_AUTO_CRON_LIMIT: 1 } }, moment: () => moment('2026-11-16'),
-        profileSchema: { findOne: () => ({ lean: async () => null }) },
-        cronJobHistorySchema: {
-            findOneAndUpdate: () => ({ lean: async () => ({ _id: 'history' }) }),
-            findById: () => ({ lean: async () => ({ status }) }),
-            findByIdAndUpdate: async () => { status = 'FAILED'; }
+test('historical windows have at most 30 inclusive days and no gaps across a leap year', () => {
+    for (const [days, sizes] of [[1, [1]], [30, [30]], [60, [30, 30]], [90, [30, 30, 30]], [65, [30, 30, 5]], [180, [30, 30, 30, 30, 30, 30]]]) {
+        const period = queue.historicalDateRange(days, moment('2024-03-02'));
+        const chunks = queue.splitSyncDateRange(period.startDate, period.endDate);
+        assert.equal(chunks[0].startDate, period.startDate);
+        assert.equal(chunks.at(-1).endDate, '2024-03-01');
+        assert.deepEqual(chunks.map(c => moment.utc(c.endDate).diff(moment.utc(c.startDate), 'days') + 1), sizes);
+        chunks.slice(1).forEach((chunk, index) => {
+            assert.equal(chunk.startDate, moment.utc(chunks[index].endDate).add(1, 'day').format('YYYY-MM-DD'));
+        });
+    }
+    assert.throws(() => queue.historicalDateRange(0), /positive integer/);
+    assert.throws(() => queue.splitSyncDateRange('2026-02-30', '2026-03-01'), /Invalid/);
+    assert.deepEqual(queue.brandAnalyticsWeeks('2026-11-03', '2026-11-16'), [
+        { startDate: '2026-11-01', endDate: '2026-11-07' },
+        { startDate: '2026-11-08', endDate: '2026-11-14' },
+    ]);
+});
+
+test('queue submits every report before polling, retries failures, and leaves timed-out reports resumable', async () => {
+    const calls = [];
+    const failures = [];
+    const attempts = new Map();
+    let clock = 0;
+    const jobs = ['slow', 'broken', 'ready', 'inline', 'retry'].map(id => ({ id, isReport: id !== 'inline' }));
+    const result = await queue.runHistoricalSyncQueue(jobs, {
+        maxAttempts: 2, retryDelay: 10, timeout: 21, now: () => clock,
+        wait: async ms => { clock += ms; },
+        fail: async ({ id }, error) => failures.push([id, error]),
+        execute: async ({ id }, phase) => {
+            calls.push([id, phase, clock]);
+            if (id === 'inline' || (id === 'ready' && phase === 'poll')) return { status: 'COMPLETED' };
+            if (id === 'broken') throw new Error('Provider request failed');
+            if (id === 'retry') {
+                const count = (attempts.get(id) || 0) + 1;
+                attempts.set(id, count);
+                return { status: count > 1 ? 'COMPLETED' : 'FAILED' };
+            }
+            return { status: 'PENDING' };
         },
-        cron_logs: () => {}, CRON_JOBS: jobs,
-        cronGenerateCampaignReport: async (_weekly, _biweekly, scope) => {
-            dispatched.push([scope.recurring, scope.cronjobid]);
-        }
     });
-    const scope = () => ({ configId, profileId: 7 });
-    status = 'COMPLETED';
-    assert.equal(await run(jobs.CAMPAIGN_REPORT, scope()), true);
-    status = 'FAILED';
-    assert.equal(await run(jobs.CAMPAIGN_REPORT, scope()), false);
-    status = 'PENDING';
-    await assert.rejects(run(jobs.CAMPAIGN_REPORT, scope()), /did not reach COMPLETED/);
-    assert.equal(await run('Unknown report', scope()), false);
-    assert.deepEqual(dispatched, [[false, 'history'], [false, 'history'], [false, 'history']]);
+    assert.deepEqual(calls.slice(0, 7), [
+        ['slow', 'submit', 0], ['broken', 'submit', 0], ['ready', 'submit', 0],
+        ['inline', undefined, 0], ['retry', 'submit', 0], ['slow', 'poll', 0], ['ready', 'poll', 0],
+    ]);
+    assert.equal(calls.filter(([id, phase]) => id === 'slow' && phase === 'submit').length, 1);
+    assert.equal(calls.filter(([id, phase]) => id === 'broken' && phase === 'submit').length, 2);
+    assert.deepEqual(result.map(item => item.status), ['FAILED', 'FAILED', 'COMPLETED', 'COMPLETED', 'COMPLETED']);
+    assert.match(failures[0][1], /timed out.*resumed/);
+    assert.deepEqual(failures[1], ['broken', 'Provider request failed']);
+});
+
+test('historical dispatch keeps separate window histories and skips completed chunks on replay', async () => {
+    const start = organization.indexOf('const runReportCronByName');
+    const end = organization.indexOf('\nexports.getUserOrganizations', start);
+    const history = new Map();
+    const key = data => [data.configId, data.profileId, data.cronName, data.startDate, data.endDate,
+        data['details.historicalSyncRequestId'] ?? data.details?.historicalSyncRequestId,
+        data['details.historicalSyncRequestVersion'] ?? data.details?.historicalSyncRequestVersion].join(':');
+    const calls = [];
+    const run = vm.runInNewContext(organization.slice(start, end) + '\nrunHistoricalCronChunk', {
+        CRON_JOBS: jobs,
+        getDatesBetween: () => [],
+        cronJobHistorySchema: {
+            findOne: query => ({ sort: () => ({ lean: async () => history.get(key(query)) }) }),
+            create: async data => {
+                const row = { ...data, _id: history.size + 1 };
+                history.set(key(data), row);
+                return row;
+            },
+            findById: id => ({ lean: async () => Array.from(history.values()).find(row => row._id === id) }),
+            updateOne: async ({ _id }, { $set }) => Object.assign(Array.from(history.values()).find(row => row._id === _id), $set),
+        },
+        cronGenerateCampaignReport: async (_weekly, _biweekly, scope) => {
+            calls.push([scope.cronjobid, scope.reportPhase]);
+            if (scope.reportPhase === 'poll') Array.from(history.values()).find(row => row._id === scope.cronjobid).status = 'COMPLETED';
+        },
+    });
+    const base = { configId, profileId: 7, reportName: jobs.CAMPAIGN_REPORT, syncRequestId: 'request',
+        requestVersion: '2026-11-15T08:00:00.000Z', historyDate: '2026-11-16' };
+    const first = { ...base, startDate: '2026-09-17', endDate: '2026-10-16' };
+    const second = { ...base, startDate: '2026-10-17', endDate: '2026-11-15' };
+    assert.equal((await run(first, 'submit')).status, 'PENDING');
+    assert.equal((await run(second, 'submit')).status, 'PENDING');
+    assert.equal((await run(first, 'poll')).status, 'COMPLETED');
+    assert.equal((await run(first, 'submit')).status, 'COMPLETED');
+    assert.deepEqual(calls, [[1, 'submit'], [2, 'submit'], [1, 'poll']]);
 });
 
 test('admin claims each request once, imports both account types and leaves failed groups retryable', async () => {
@@ -208,7 +269,15 @@ test('admin claims each request once, imports both account types and leaves fail
     const flags = new Map();
     let finish;
     const finished = new Promise(resolve => { finish = resolve; });
-    const execute = loadExport(organization, 'executeProfileSyncCron', {
+    const batchStart = organization.indexOf('async function executeHistoricalSyncBatch(');
+    const batchEnd = organization.indexOf('\nexports.updateOrganizationBySuperAdmin', batchStart);
+    const firstStart = organization.indexOf('const asyncReportCrons');
+    const firstEnd = organization.indexOf('\nconst runReportCronByName', firstStart);
+    const execute = vm.runInNewContext(organization.slice(firstStart, firstEnd) + '\n' +
+        organization.slice(batchStart, batchEnd) + '\nexports.executeProfileSyncCron', {
+        exports: {}, CRON_JOBS: jobs,
+        ...queue,
+        runHistoricalSyncQueue: (work, options) => queue.runHistoricalSyncQueue(work, { ...options, maxAttempts: 1 }),
         mongoose: objectIds,
         writeAuditEvent: async event => auditEvents.push(event),
         synchronizeDetailsSchema: {
@@ -218,20 +287,24 @@ test('admin claims each request once, imports both account types and leaves fail
             } }),
             findByIdAndUpdate: async (id, update) => Object.assign(rows.find(r => r._id === id), update.$set)
         },
-        profileSchema: { updateOne: async (scope, update) => flags.set(scope.profileId, update.$set) },
+        profileSchema: {
+            findOne: () => ({ lean: async () => ({ timezone: 'UTC' }) }),
+            updateOne: async (scope, update) => flags.set(scope.profileId, update.$set)
+        },
         clearProfileCache: () => {}, clearActivePlanProfilesCache: () => {}, write_logs: () => {},
-        moment: () => moment('2026-11-16'), getDatesBetween: () => [],
+        moment: () => require('moment-timezone').utc('2026-11-16'),
         historicalReportFilter, reportDetailsSchema: { find: filter => {
             assert.deepEqual(filter.name.$nin, [jobs.BEST_PERFORMER_REPORT, jobs.KEYWORD_ANALYSIS_REPORT]);
             return { lean: async () => filter.groupId === 'EMPTY' ? [] : filter.groupId === 'CAMPAIGNS'
                 ? [{ name: jobs.CAMPAIGN_REPORT }] : [{ name: jobs.ORDER_LISTING }, { name: jobs.SALES_REPORT }] };
         } },
-        runReportCronByName: async (name, settings) => {
+        runHistoricalCronChunk: async (settings, phase) => {
+            const name = settings.reportName;
             const profile = rows.find(row => row.profileId === settings.profileId);
             assert.equal(profile.requestStatus, 'IN_PROGRESS');
             assert.equal(flags.get(settings.profileId)[profile.type === 'ads' ? 'isAdsSyncEnabled' : 'isSpSyncEnabled'], true);
-            dispatches.push([name, settings.startDate, settings.endDate]);
-            return name !== jobs.ORDER_LISTING;
+            dispatches.push([name, settings.startDate, settings.endDate, phase]);
+            return { status: name === jobs.ORDER_LISTING ? 'FAILED' : 'COMPLETED' };
         },
         cron_logs: ({ message }) => { if (message.includes('Sync batch completed')) finish(); }
     });
@@ -248,11 +321,15 @@ test('admin claims each request once, imports both account types and leaves fail
     assert.equal(auditEvents[3].operationId, auditEvents[0].operationId);
     assert.ok(auditEvents[3].operationId.endsWith(ids[0]));
     assert.notEqual(auditEvents[0].operationId, auditEvents[1].operationId);
-    assert.deepEqual(dispatches, [
-        [jobs.CAMPAIGN_REPORT, '2026-08-18', '2026-11-16'],
-        [jobs.ORDER_LISTING, '2026-05-20', '2026-11-16'],
-        [jobs.SALES_REPORT, '2026-05-20', '2026-11-16']
+    assert.equal(dispatches.length, 15);
+    assert.deepEqual(dispatches.slice(0, 3), [
+        [jobs.CAMPAIGN_REPORT, '2026-08-18', '2026-09-16', 'submit'],
+        [jobs.CAMPAIGN_REPORT, '2026-09-17', '2026-10-16', 'submit'],
+        [jobs.CAMPAIGN_REPORT, '2026-10-17', '2026-11-15', 'submit'],
     ]);
+    assert.equal(dispatches[3][0], jobs.ORDER_LISTING);
+    assert.equal(dispatches.at(-1)[0], jobs.SALES_REPORT);
+    assert.equal(dispatches.at(-1)[2], '2026-11-15');
     const replay = reply();
     await execute({ body: { syncIds: [ids[0]] } }, replay);
     assert.equal(replay.code, 404);

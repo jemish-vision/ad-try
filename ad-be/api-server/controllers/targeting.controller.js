@@ -1,3 +1,4 @@
+const { runHistoricalAdsReportPhase } = require("../services/historicalAdsReportPhase.service");
 const { buildTargetingMetricsPipeline, resolveSPAutoTargetBids } = require("../helper/targetingMetricsPipeline");
 const { applyBidHistoryAcos } = require("../helper/historyBidAcos");
 const { buildFilteredTargetingPipeline, canFilterWithoutCampaignJoin, buildArchivedCampaignPipeline } = require("../helper/filteredTargetingPipeline");
@@ -135,6 +136,18 @@ const sendMinBidClampedNotification = async ({
 };
 
 exports.cronGenerateTargetingReport = async (generateWeeklyReport = false, generateBiWeeklyReport = false, pastSyncObj = null) => {
+  const historicalScope = pastSyncObj || (typeof generateBiWeeklyReport === "object" ? generateBiWeeklyReport : null);
+  if (historicalScope?.reportPhase) {
+    return runHistoricalAdsReportPhase(historicalScope, {
+      group: "TARGETING", reportName: "Targeting Report", getAllowedSyncProfiles, getAccessToken,
+      types: [
+        { reportTypeId: "spTargeting", entity: "targeting", run: (profile, credentials, phase) => spGenerateReport(profile.profileId, historicalScope.startDate, historicalScope.endDate, credentials, profile.configId, profile.timezone, false, historicalScope.reportRequestedAfter || null, phase) },
+        { reportTypeId: "sbTargeting", entity: "sbTargeting", run: (profile, credentials, phase) => sbGenerateReport(profile.profileId, historicalScope.startDate, historicalScope.endDate, credentials, profile.configId, profile.timezone, false, historicalScope.reportRequestedAfter || null, phase) },
+        { reportTypeId: "sdTargeting", entity: "sdTargeting", run: (profile, credentials, phase) => sdGenerateReport(profile.profileId, historicalScope.startDate, historicalScope.endDate, credentials, profile.configId, profile.timezone, false, historicalScope.reportRequestedAfter || null, phase) }
+      ],
+    });
+  }
+
     try {
         if (typeof generateBiWeeklyReport === "object" && generateBiWeeklyReport !== null) {
             pastSyncObj = generateBiWeeklyReport;
@@ -337,13 +350,21 @@ async function spGenerateReport(
     configId,
     timezone,
     recurring = false,
-    requestedAfter = null
+    requestedAfter = null,
+  historicalPhase = null
 ) {
+  const phaseRetry = task => historicalPhase ? task() : retryWithBackoff(task);
+  if (historicalPhase?.phase === "poll" && !historicalPhase.report) return "ERROR";
+
     try {
         const getAccount = await getProfile(configId, profileId);
 
         let existing;
-        if (!recurring) {
+  if (historicalPhase?.phase === "submit") {
+    existing = null;
+  } else if (historicalPhase?.report) {
+    existing = historicalPhase.report;
+  } else if (!recurring) {
             existing = await reportsSchema.findOne({
                 startDate,
                 endDate,
@@ -372,7 +393,7 @@ async function spGenerateReport(
                 const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
                 const lastActivity = new Date(existing.updatedAt || existing.createdAt);
                 if (lastActivity < twoHoursAgo) {
-                    await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+                    await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: historicalPhase ? "PENDING" : "FAILED" } });
                     existing = null;
                 } else {
                     processStagedReportBatches(["targeting"]).catch(() => { });
@@ -392,11 +413,15 @@ async function spGenerateReport(
             }).sort({ createdAt: -1 }).lean();
         }
 
-        if (!existing) {
+        if (historicalPhase?.phase === "poll" && !existing) return "ERROR";
+  if (historicalPhase && existing?.status === "COMPLETED") return "COMPLETED";
+  if (historicalPhase && existing && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) return existing.status;
+
+  if (!existing) {
             const isVendor = getAccount?.type?.toLowerCase() === "vendor";
             const purchasesCol = isVendor ? "purchases14d" : "purchases7d";
             const salesCol = isVendor ? "sales14d" : "sales7d";
-            const createResp = await retryWithBackoff(() => amazonAxios({
+            const createResp = await phaseRetry(() => amazonAxios({
                 method: "POST",
                 url: `${getAccount.amazonUrl}/reporting/reports`,
                 headers: {
@@ -443,15 +468,17 @@ async function spGenerateReport(
                 meta: { configId, tokenKey: "adsAccessToken" },
             }));
 
+            if (historicalPhase && !createResp?.data?.reportId) return "ERROR";
+
             await reportsSchema.create({
                 profileId,
                 configId,
                 reportId: createResp?.data?.reportId,
-                startDate: createResp?.data?.startDate,
-                endDate: createResp?.data?.endDate,
+                startDate: historicalPhase ? startDate : createResp?.data?.startDate,
+                endDate: historicalPhase ? endDate : createResp?.data?.endDate,
                 status: createResp?.data?.status,
                 adProduct: createResp?.data?.configuration?.adProduct,
-                reportTypeId: createResp?.data?.configuration?.reportTypeId,
+                reportTypeId: historicalPhase ? "spTargeting" : createResp?.data?.configuration?.reportTypeId,
                 reportName: "Targeting Report",
             });
 
@@ -459,7 +486,7 @@ async function spGenerateReport(
         }
 
         // 2️⃣ Poll status
-        const statusResp = await retryWithBackoff(() => amazonAxios({
+        const statusResp = await phaseRetry(() => amazonAxios({
             method: "GET",
             url: `${getAccount.amazonUrl}/reporting/reports/${existing.reportId}`,
             headers: {
@@ -469,6 +496,8 @@ async function spGenerateReport(
             },
             meta: { configId: configId, tokenKey: "adsAccessToken" }
         }));
+
+        if (historicalPhase) historicalPhase.onProviderStatus?.(statusResp.data.status);
 
         if (statusResp.data.status !== "COMPLETED") {
             return statusResp.data.status;
@@ -533,13 +562,21 @@ async function sbGenerateReport(
     configId,
     timezone,
     recurring = false,
-    requestedAfter = null
+    requestedAfter = null,
+  historicalPhase = null
 ) {
+  const phaseRetry = task => historicalPhase ? task() : retryWithBackoff(task);
+  if (historicalPhase?.phase === "poll" && !historicalPhase.report) return "ERROR";
+
 
     const getAccount = await getProfile(configId, profileId);
 
     let existing;
-    if (!recurring) {
+  if (historicalPhase?.phase === "submit") {
+    existing = null;
+  } else if (historicalPhase?.report) {
+    existing = historicalPhase.report;
+  } else if (!recurring) {
         existing = await reportsSchema.findOne({
             startDate,
             endDate,
@@ -568,7 +605,7 @@ async function sbGenerateReport(
             const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
             const lastActivity = new Date(existing.updatedAt || existing.createdAt);
             if (lastActivity < twoHoursAgo) {
-                await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+                await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: historicalPhase ? "PENDING" : "FAILED" } });
                 existing = null;
             } else {
                 processStagedReportBatches(["sbTargeting"]).catch(() => { });
@@ -588,10 +625,14 @@ async function sbGenerateReport(
         }).sort({ createdAt: -1 }).lean();
     }
 
-    if (!existing) {
+    if (historicalPhase?.phase === "poll" && !existing) return "ERROR";
+  if (historicalPhase && existing?.status === "COMPLETED") return "COMPLETED";
+  if (historicalPhase && existing && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) return existing.status;
+
+  if (!existing) {
         let createResp;
         try {
-            createResp = await retryWithBackoff(() => amazonAxios({
+            createResp = await phaseRetry(() => amazonAxios({
                 method: "POST",
                 url: `${getAccount.amazonUrl}/reporting/reports`,
                 headers: {
@@ -644,15 +685,17 @@ async function sbGenerateReport(
             return "ERROR";
         }
 
+        if (historicalPhase && !createResp?.data?.reportId) return "ERROR";
+
         await reportsSchema.create({
             profileId,
             configId,
             reportId: createResp?.data?.reportId,
-            startDate: createResp?.data?.startDate,
-            endDate: createResp?.data?.endDate,
+            startDate: historicalPhase ? startDate : createResp?.data?.startDate,
+            endDate: historicalPhase ? endDate : createResp?.data?.endDate,
             status: createResp?.data?.status,
             adProduct: createResp?.data?.configuration?.adProduct,
-            reportTypeId: createResp?.data?.configuration?.reportTypeId,
+            reportTypeId: historicalPhase ? "sbTargeting" : createResp?.data?.configuration?.reportTypeId,
             reportName: "Targeting Report",
         });
 
@@ -660,7 +703,7 @@ async function sbGenerateReport(
     }
 
     // 2️⃣ Poll status
-    const statusResp = await retryWithBackoff(() => amazonAxios({
+    const statusResp = await phaseRetry(() => amazonAxios({
         method: "GET",
         url: `${getAccount.amazonUrl}/reporting/reports/${existing.reportId}`,
         headers: {
@@ -670,6 +713,8 @@ async function sbGenerateReport(
         },
         meta: { configId: configId, tokenKey: "adsAccessToken" }
     }));
+
+    if (historicalPhase) historicalPhase.onProviderStatus?.(statusResp.data.status);
 
     if (statusResp.data.status !== "COMPLETED") {
         return statusResp.data.status;
@@ -727,13 +772,21 @@ async function sdGenerateReport(
     configId,
     timezone,
     recurring = false,
-    requestedAfter = null
+    requestedAfter = null,
+  historicalPhase = null
 ) {
+  const phaseRetry = task => historicalPhase ? task() : retryWithBackoff(task);
+  if (historicalPhase?.phase === "poll" && !historicalPhase.report) return "ERROR";
+
     try {
         const getAccount = await getProfile(configId, profileId);
 
         let existing;
-        if (!recurring) {
+  if (historicalPhase?.phase === "submit") {
+    existing = null;
+  } else if (historicalPhase?.report) {
+    existing = historicalPhase.report;
+  } else if (!recurring) {
             existing = await reportsSchema.findOne({
                 startDate,
                 endDate,
@@ -762,7 +815,7 @@ async function sdGenerateReport(
                 const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
                 const lastActivity = new Date(existing.updatedAt || existing.createdAt);
                 if (lastActivity < twoHoursAgo) {
-                    await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+                    await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: historicalPhase ? "PENDING" : "FAILED" } });
                     existing = null;
                 } else {
                     processStagedReportBatches(["sdTargeting"]).catch(() => { });
@@ -782,8 +835,12 @@ async function sdGenerateReport(
             }).sort({ createdAt: -1 }).lean();
         }
 
-        if (!existing) {
-            const createResp = await retryWithBackoff(() => amazonAxios({
+        if (historicalPhase?.phase === "poll" && !existing) return "ERROR";
+  if (historicalPhase && existing?.status === "COMPLETED") return "COMPLETED";
+  if (historicalPhase && existing && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) return existing.status;
+
+  if (!existing) {
+            const createResp = await phaseRetry(() => amazonAxios({
                 method: "POST",
                 url: `${getAccount.amazonUrl}/reporting/reports`,
                 headers: {
@@ -822,15 +879,17 @@ async function sdGenerateReport(
                 meta: { configId, tokenKey: "adsAccessToken" },
             }));
 
+            if (historicalPhase && !createResp?.data?.reportId) return "ERROR";
+
             await reportsSchema.create({
                 profileId,
                 configId,
                 reportId: createResp?.data?.reportId,
-                startDate: createResp?.data?.startDate,
-                endDate: createResp?.data?.endDate,
+                startDate: historicalPhase ? startDate : createResp?.data?.startDate,
+                endDate: historicalPhase ? endDate : createResp?.data?.endDate,
                 status: createResp?.data?.status,
                 adProduct: createResp?.data?.configuration?.adProduct,
-                reportTypeId: createResp?.data?.configuration?.reportTypeId,
+                reportTypeId: historicalPhase ? "sdTargeting" : createResp?.data?.configuration?.reportTypeId,
                 reportName: "Targeting Report",
             });
 
@@ -838,7 +897,7 @@ async function sdGenerateReport(
         }
 
         // 2️⃣ Poll status
-        const statusResp = await retryWithBackoff(() => amazonAxios({
+        const statusResp = await phaseRetry(() => amazonAxios({
             method: "GET",
             url: `${getAccount.amazonUrl}/reporting/reports/${existing.reportId}`,
             headers: {
@@ -848,6 +907,8 @@ async function sdGenerateReport(
             },
             meta: { configId: configId, tokenKey: "adsAccessToken" }
         }));
+
+        if (historicalPhase) historicalPhase.onProviderStatus?.(statusResp.data.status);
 
         if (statusResp.data.status !== "COMPLETED") {
             return statusResp.data.status;
@@ -1037,7 +1098,9 @@ exports.getTargeting = async (req, res) => {
         const queryStr = Query ? (typeof Query === "string" ? Query : JSON.stringify(Query)) : "";
         const isJoinedFilter = (fieldName && joinedFields.includes(fieldName)) || (queryStr && joinedFields.some(f => queryStr.includes(f)));
         const isJoinedSort = (fieldName && joinedFields.includes(fieldName)) || Boolean(groupByAdGroup);
+        const isKeywordBidFilterOrSort = fieldName === "keywordBid" || (queryStr && queryStr.includes("keywordBid"));
         const needsEarlyLookup = Boolean(isJoinedFilter || isJoinedSort);
+        const needsEarlyAutoBid = Boolean(needsEarlyLookup || isKeywordBidFilterOrSort);
 
         const page = Math.max(1, Number(pageNo) || 1);
         const limitCount = Math.max(1, Number(perPage) || 10);
@@ -1069,6 +1132,7 @@ exports.getTargeting = async (req, res) => {
                     let: {
                         cId: "$_id.campaignId",
                         pId: "$_id.profileId",
+                        ...(resolvedConfigId ? { cfg: resolvedConfigId } : {}),
                         end: lastDate
                     },
                     pipeline: [
@@ -1076,6 +1140,7 @@ exports.getTargeting = async (req, res) => {
                             $match: {
                                 $expr: {
                                     $and: [
+                                        ...(resolvedConfigId ? [{ $eq: ["$configId", "$$cfg"] }] : []),
                                         { $eq: ["$campaignId", "$$cId"] },
                                         { $eq: ["$profileId", "$$pId"] },
                                         { $eq: ["$reportDate", "$$end"] }
@@ -1107,6 +1172,7 @@ exports.getTargeting = async (req, res) => {
                     let: {
                         agId: "$_id.adGroupId",
                         pId: "$_id.profileId",
+                        ...(resolvedConfigId ? { cfg: resolvedConfigId } : {}),
                         end: lastDate
                     },
                     pipeline: [
@@ -1114,6 +1180,7 @@ exports.getTargeting = async (req, res) => {
                             $match: {
                                 $expr: {
                                     $and: [
+                                        ...(resolvedConfigId ? [{ $eq: ["$configId", "$$cfg"] }] : []),
                                         { $eq: ["$adGroupId", "$$agId"] },
                                         { $eq: ["$profileId", "$$pId"] },
                                         { $eq: ["$reportDate", "$$end"] }
@@ -1134,13 +1201,15 @@ exports.getTargeting = async (req, res) => {
                 $lookup: {
                     from: "campaignbidthresholds",
                     let: {
-                        cId: "$campaign.campaignId"
+                        cId: "$campaign.campaignId",
+                        ...(resolvedConfigId ? { cfg: resolvedConfigId } : {})
                     },
                     pipeline: [
                         {
                             $match: {
                                 $expr: {
                                     $and: [
+                                        ...(resolvedConfigId ? [{ $eq: ["$configId", "$$cfg"] }] : []),
                                         {
                                             $eq: ["$campaignId", "$$cId"]
                                         }
@@ -1239,7 +1308,7 @@ exports.getTargeting = async (req, res) => {
 
         const baseGroupPipeline = [
             ...buildTargetingMetricsPipeline(query),
-            ...(adType === "SP" ? resolveSPAutoTargetBids(AD_TYPE_COLLECTIONS.SP.adGroup, resolvedConfigId) : []),
+            ...(adType === "SP" && needsEarlyAutoBid ? resolveSPAutoTargetBids(AD_TYPE_COLLECTIONS.SP.adGroup, resolvedConfigId) : []),
             {
                 $addFields: {
                     acos: {
@@ -1392,6 +1461,7 @@ exports.getTargeting = async (req, res) => {
                             { $sort: sortStage },
                             { $skip: skipCount },
                             { $limit: limitCount },
+                            ...(adType === "SP" && !needsEarlyAutoBid ? resolveSPAutoTargetBids(AD_TYPE_COLLECTIONS.SP.adGroup, resolvedConfigId) : []),
                             ...lookupStages,
                         ],
                     }
@@ -1533,6 +1603,7 @@ exports.getTargeting = async (req, res) => {
 };
 
 exports.targetingPipeline = (query, lastDate, adType = "SP") => {
+    const targetConfigId = query?.configId;
     const commonPipeline = [
         { $match: query },
         { $sort: { reportDate: 1 } },
@@ -1633,6 +1704,7 @@ exports.targetingPipeline = (query, lastDate, adType = "SP") => {
                 let: {
                     cId: "$_id.campaignId",
                     pId: "$_id.profileId",
+                    ...(targetConfigId ? { cfg: targetConfigId } : {}),
                     end: lastDate
                 },
                 pipeline: [
@@ -1640,6 +1712,7 @@ exports.targetingPipeline = (query, lastDate, adType = "SP") => {
                         $match: {
                             $expr: {
                                 $and: [
+                                    ...(targetConfigId ? [{ $eq: ["$configId", "$$cfg"] }] : []),
                                     { $eq: ["$campaignId", "$$cId"] },
                                     { $eq: ["$profileId", "$$pId"] },
                                     { $eq: ["$reportDate", "$$end"] }
@@ -1671,6 +1744,7 @@ exports.targetingPipeline = (query, lastDate, adType = "SP") => {
                 let: {
                     agId: "$_id.adGroupId",
                     pId: "$_id.profileId",
+                    ...(targetConfigId ? { cfg: targetConfigId } : {}),
                     end: lastDate
                 },
                 pipeline: [
@@ -1678,6 +1752,7 @@ exports.targetingPipeline = (query, lastDate, adType = "SP") => {
                         $match: {
                             $expr: {
                                 $and: [
+                                    ...(targetConfigId ? [{ $eq: ["$configId", "$$cfg"] }] : []),
                                     { $eq: ["$adGroupId", "$$agId"] },
                                     { $eq: ["$profileId", "$$pId"] },
                                     { $eq: ["$reportDate", "$$end"] }
@@ -1698,13 +1773,15 @@ exports.targetingPipeline = (query, lastDate, adType = "SP") => {
             $lookup: {
                 from: "campaignbidthresholds",
                 let: {
-                    cId: "$campaign.campaignId"
+                    cId: "$campaign.campaignId",
+                    ...(targetConfigId ? { cfg: targetConfigId } : {})
                 },
                 pipeline: [
                     {
                         $match: {
                             $expr: {
                                 $and: [
+                                    ...(targetConfigId ? [{ $eq: ["$configId", "$$cfg"] }] : []),
                                     {
                                         $eq: ["$campaignId", "$$cId"]
                                     }
@@ -7756,34 +7833,29 @@ exports.getTargetingChartData = async (req, res) => {
             fromDate,
             toDate,
             profileId,
+            campaignId,
+            adGroupId,
+            gridFilter,
+            searchName,
+            fieldName,
+            fieldOperator,
+            fieldValue,
+            conditions,
+            extraFieldOperator,
+            extraFieldValue,
+            filteredTargetingIds,
+            query: Query,
+            isExactSearchMatch = false,
+            targetingType,
+            targetingStatus,
+            status,
+            includeTargetingIds = false,
         } = req.body;
 
         if (!profileId) {
             return res.status(203).send({ isSuccess: false, message: "Profile id required." });
         }
 
-        // STEP 1: Get filtered targeting IDs
-        const filterResult = await this.getFilteredTargetingIds(req, this.targetingPipeline);
-
-        if (!filterResult.success) {
-            return res.status(203).send({
-                isSuccess: false,
-                message: filterResult.message || "Failed to filter targetings",
-                error: filterResult.error
-            });
-        }
-
-        const targetingIds = filterResult.targetingIds;
-
-        if (targetingIds.length === 0) {
-            return res.status(200).send({
-                isSuccess: true,
-                data: [],
-                message: "No targetings found matching the filters"
-            });
-        }
-
-        // STEP 2: Get chart data using targeting IDs
         const profile = await getProfile(configId, profileId);
         const resolvedConfigId = profile?.configId ? new ObjectId(profile.configId) : (configId && ObjectId.isValid(configId) ? new ObjectId(configId) : configId);
         const numericProfileId = Number(profileId) || profileId;
@@ -7791,14 +7863,125 @@ exports.getTargetingChartData = async (req, res) => {
         const fromDateValue = fromDate || moment().tz(timezone).format("YYYY-MM-DD");
         const toDateValue = toDate || moment().tz(timezone).format("YYYY-MM-DD");
 
-        // Simple pipeline - just match targeting IDs and group by date
+        // Detect if any complex/aggregated metric or join filters are needed
+        const complexFields = ["impressions", "clicks", "orders", "spend", "sales", "acos", "roas", "cpc", "ctr", "cvr", "conversionRate", "campaignName", "campaignStatus", "adGroupName", "adGroupStatus", "budget", "daysSinceCreation", "bidThreshold"];
+        const queryStr = Query ? (typeof Query === "string" ? Query : JSON.stringify(Query)) : "";
+        const parsedQuery = Query ? (typeof Query === "string" ? sanitizeQueryObject(safeJsonParse(Query)) : Query) : null;
+        const isComplexFieldFilter = (fieldName && complexFields.includes(fieldName)) || (queryStr && complexFields.some(f => queryStr.includes(f)));
+
+        let isComplexGridFilter = false;
+        let parsedGridFilter = null;
+        if (gridFilter) {
+            const filterDoc = await filterSchema.findOne({ _id: new ObjectId(gridFilter) }).lean();
+            if (filterDoc?.filter) {
+                parsedGridFilter = sanitizeQueryObject(safeJsonParse(filterDoc.filter));
+                const gridStr = JSON.stringify(parsedGridFilter);
+                if (complexFields.some(f => gridStr.includes(f))) {
+                    isComplexGridFilter = true;
+                }
+            }
+        }
+
+        const needsFullTargetingFilter = Boolean(isComplexFieldFilter || isComplexGridFilter);
+
+        let targetingIds = null;
+        if (needsFullTargetingFilter) {
+            // Complex path: Use getFilteredTargetingIds to resolve target IDs matching metrics/joins
+            const filterResult = await this.getFilteredTargetingIds(req, this.targetingPipeline);
+            if (!filterResult.success) {
+                return res.status(203).send({
+                    isSuccess: false,
+                    message: filterResult.message || "Failed to filter targetings",
+                    error: filterResult.error
+                });
+            }
+            targetingIds = filterResult.targetingIds;
+            if (!targetingIds || targetingIds.length === 0) {
+                return res.status(200).send({
+                    isSuccess: true,
+                    data: [],
+                    totalFilteredTargetings: 0,
+                    message: "No targetings found matching the filters"
+                });
+            }
+        }
+
+        // Build chart match query
+        let matchQuery = {
+            configId: resolvedConfigId,
+            profileId: numericProfileId,
+            reportDate: { $gte: fromDateValue, $lte: toDateValue }
+        };
+
+        if (targetingIds) {
+            matchQuery.targetId = { $in: targetingIds };
+        } else {
+            // Direct collection-level match query (no complex grouping needed)
+            let campaignIdFilter = null;
+            if (campaignId) {
+                if (Array.isArray(campaignId) && campaignId.length > 0) {
+                    campaignIdFilter = campaignId.length === 1 ? (Number(campaignId[0]) || campaignId[0]) : { $in: campaignId.map(id => Number(id) || id) };
+                } else if (!Array.isArray(campaignId) && campaignId !== "" && campaignId !== null && campaignId !== undefined) {
+                    campaignIdFilter = Number(campaignId) || campaignId;
+                }
+            }
+            if (campaignIdFilter) matchQuery.campaignId = campaignIdFilter;
+
+            let adGroupIdFilter = null;
+            if (adGroupId) {
+                if (Array.isArray(adGroupId) && adGroupId.length > 0) {
+                    adGroupIdFilter = adGroupId.length === 1 ? (Number(adGroupId[0]) || adGroupId[0]) : { $in: adGroupId.map(id => Number(id) || id) };
+                } else if (!Array.isArray(adGroupId) && adGroupId !== "" && adGroupId !== null && adGroupId !== undefined) {
+                    adGroupIdFilter = Number(adGroupId) || adGroupId;
+                }
+            }
+            if (adGroupIdFilter) matchQuery.adGroupId = adGroupIdFilter;
+
+            if (filteredTargetingIds?.length > 0) {
+                matchQuery.targetId = { $in: filteredTargetingIds };
+            }
+
+            if (searchName) {
+                matchQuery.targeting = isExactSearchMatch
+                    ? searchName
+                    : { $regex: new RegExp(RegExp.escape(`${searchName}`.trim()), "i") };
+            }
+
+            const effectiveStatus = targetingStatus || status || parsedQuery?.status;
+            if (effectiveStatus) {
+                if (typeof effectiveStatus === "object") {
+                    matchQuery.status = effectiveStatus;
+                } else if (effectiveStatus === "NOT_ARCHIVED") {
+                    matchQuery.status = { $ne: "ARCHIVED" };
+                } else {
+                    matchQuery.status = effectiveStatus;
+                }
+            }
+
+            const targetTypes = targetingType || parsedQuery?.keywordType;
+            if (targetTypes) {
+                if (Array.isArray(targetTypes) && targetTypes.length > 0) {
+                    matchQuery.keywordType = { $in: targetTypes };
+                } else if (typeof targetTypes === "string" || typeof targetTypes === "object") {
+                    matchQuery.keywordType = targetTypes;
+                }
+            }
+
+            if (parsedGridFilter) {
+                Object.assign(matchQuery, parsedGridFilter);
+            }
+        }
+
         const chartPipeline = [
+            { $match: matchQuery },
             {
-                $match: {
-                    configId: resolvedConfigId,
-                    profileId: numericProfileId,
-                    targetId: { $in: targetingIds },
-                    reportDate: { $gte: fromDateValue, $lte: toDateValue }
+                $project: {
+                    reportDate: 1,
+                    impressions: 1,
+                    clicks: 1,
+                    orders: 1,
+                    spend: 1,
+                    sales: 1
                 }
             },
             {
@@ -7832,12 +8015,18 @@ exports.getTargetingChartData = async (req, res) => {
 
         const result = await adTypeTargetingSchema.aggregate(chartPipeline).allowDiskUse(true);
 
-        return res.status(200).send({
+        const totalFiltered = targetingIds ? targetingIds.length : result.length;
+        const responseData = {
             isSuccess: true,
             data: result,
-            filteredTargetingIds: targetingIds,
-            totalFilteredTargetings: targetingIds.length
-        });
+            totalFilteredTargetings: totalFiltered,
+        };
+
+        if (includeTargetingIds && targetingIds) {
+            responseData.filteredTargetingIds = targetingIds;
+        }
+
+        return res.status(200).send(responseData);
 
     } catch (error) {
         write_logs({ message: `[getTargetingChartData Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });

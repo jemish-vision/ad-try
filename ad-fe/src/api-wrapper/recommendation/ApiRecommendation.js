@@ -42,6 +42,11 @@ const ApiGetRecommendation = (data) => {
         .then(res => res.data).catch(res => res.data)
 }
 
+const ApiReorderRecommendations = (data) => {
+    return axios.post(`${api}reorderRecommendations`, data, { headers, skipLoader: true })
+        .then(res => res.data).catch(res => res.data)
+}
+
 const ApiGetTotalRecommendationCount = (data) => {
     return axios.post(`${api}getTotalRecommendationCount`, data, { headers: { ...headers, 'x-skip-loader': true }, skipLoader: true })
         .then(res => res.data).catch(res => res.data)
@@ -125,6 +130,7 @@ export {
     ApiDeleteRule,
 
     ApiGetRecommendation,
+    ApiReorderRecommendations,
     ApiGetTotalRecommendationCount,
     ApiGetRecommendationData,
     ApiDeleteRecommendation,

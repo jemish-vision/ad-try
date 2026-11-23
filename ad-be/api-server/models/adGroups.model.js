@@ -132,6 +132,11 @@ adGroupSchema.index({
   reportDate: 1,
 });
 
+adGroupSchema.index(
+  { profileId: 1, reportDate: 1, status: 1, adGroupId: 1, name: 1 },
+  { name: "profile_reportDate_status_covered" }
+);
+
 // 🔵 Auto-calc before SAVE
 adGroupSchema.pre("save", function (next) {
   const m = calcMetrics(this);

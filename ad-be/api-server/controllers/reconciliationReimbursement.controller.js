@@ -1,3 +1,4 @@
+const { runHistoricalSellerReport, aggregateSellerReportStatus, saveHistoricalSellerHistory, sellerReportStreamHandler } = require("../services/historicalSellerReport.service");
 const moment = require("moment");
 const { retryWithBackoff } = require("../helper/retryHelper");
 
@@ -113,6 +114,7 @@ exports.cronGenerateReimbursementReport = async (customStartDate = null, customE
                 const checkSPConfig = await getSPAccessToken(profile.configId, profile.profileId);
 
                 if (!checkSPConfig) {
+                    if (pastSyncObj?.reportPhase) await saveHistoricalSellerHistory(cronJobHistorySchema, cronjobid, ["ERROR"]);
                     return cron_logs({
                         message: `Account disconnected ${profile.configId}`,
                         log_type: "info",
@@ -151,9 +153,13 @@ exports.cronGenerateReimbursementReport = async (customStartDate = null, customE
                     startDate,
                     endDate,
                     checkSPConfig,
-                    recurring
+                    recurring, pastSyncObj?.reportPhase
                 );
 
+                if (pastSyncObj?.reportPhase) {
+                    await saveHistoricalSellerHistory(cronJobHistorySchema, cronjobid, [reportSpResponse]);
+                    return;
+                }
                 if (recurring && getCronData?._id && reportSpResponse !== "ERROR") {
                     await cronJobHistorySchema.findByIdAndUpdate(
                         getCronData._id,
@@ -184,6 +190,7 @@ exports.cronGenerateReimbursementReport = async (customStartDate = null, customE
         });
 
     } catch (error) {
+        if (customStartDate?.reportPhase && customStartDate.cronjobid) await saveHistoricalSellerHistory(cronJobHistorySchema, customStartDate.cronjobid, ["ERROR"]);
 
         return cron_logs({
             message: `Reimbursement report err: ${error}`,
@@ -192,9 +199,47 @@ exports.cronGenerateReimbursementReport = async (customStartDate = null, customE
     }
 };
 
-async function generateReimbursementSPReport(profile, startDate, endDate, token, recurring = true) {
-    let existing = null;
-    if (recurring) {
+async function generateReimbursementSPReport(profile, startDate, endDate, token, recurring = true, reportPhase = null, phaseReport = null) {
+    if (reportPhase) {
+        const marketPlaceConfig = await marketPlaceConfigSchema.findOne({ marketPlaceId: profile?.marketplaceStringId }).lean();
+        return runHistoricalSellerReport({
+            phase: reportPhase,
+            identity: { configId: profile.configId, profileId: profile.profileId, startDate: startDate, endDate: endDate, reportTypeId: "REIMBURSEMENT" },
+            createRequest: async () => {
+        const createResp = await retryWithBackoff(() => amazonAxios({
+            method: "POST",
+            url: `${marketPlaceConfig.endPoint}/reports/2021-06-30/reports`,
+            headers: {
+                "x-amz-access-token": token?.spAccessToken,
+                "Content-Type": "application/json",
+            },
+            data: {
+                reportType: "GET_FBA_REIMBURSEMENTS_DATA",
+                marketplaceIds: [profile.marketplaceStringId],
+                dataStartTime: `${startDate}T00:00:00Z`,
+                dataEndTime: `${endDate}T23:59:59Z`,
+            },
+            meta: { configId: profile.configId, tokenKey: "spAccessToken", sp: true, profileId: profile?.profileId }
+        }));
+
+        if (!createResp?.data?.reportId) throw new Error("Amazon report request did not return an ID");
+        return reportsSchema.create({
+            profileId: profile.profileId,
+            configId: profile.configId,
+            reportId: createResp?.data?.reportId,
+            startDate: startDate,
+            endDate: endDate,
+            reportTypeId: "REIMBURSEMENT",
+            status: "PENDING"
+        });
+
+            },
+            processReport: saved => generateReimbursementSPReport(profile, startDate, endDate, token, false, null, saved),
+        });
+    }
+
+    let existing = phaseReport;
+    if (!phaseReport && recurring) {
         const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
         existing = await reportsSchema.findOne({
             profileId: profile.profileId,
@@ -204,7 +249,7 @@ async function generateReimbursementSPReport(profile, startDate, endDate, token,
             createdAt: { $gte: twentyFourHoursAgo },
         }).sort({ createdAt: -1 }).lean();
     }
-    else {
+    else if (!phaseReport) {
         existing = await reportsSchema.findOne({
             profileId: profile.profileId,
             configId: profile.configId,
@@ -300,7 +345,7 @@ const processReimbursementReportStream = async (schema, filePath, { profileId, c
 
         let bulkOps = [];
 
-        pipeline.on("data", async (row) => {
+        pipeline.on("data", sellerReportStreamHandler(pipeline, reject, async (row) => {
             pipeline.pause();
 
             const reimbursementType = mapReimbursementType(row["reason"]);
@@ -348,14 +393,14 @@ const processReimbursementReportStream = async (schema, filePath, { profileId, c
             }
 
             pipeline.resume();
-        });
+        }));
 
-        pipeline.on("end", async () => {
+        pipeline.on("end", sellerReportStreamHandler(pipeline, reject, async () => {
             if (bulkOps.length) {
                 await parallelBulkWrite(schema, bulkOps);
             }
             resolve();
-        });
+        }));
 
         pipeline.on("error", reject);
     });
@@ -413,6 +458,7 @@ exports.cronGenerateShipmentQueueReport = async (customStartDate = null) => {
                 if (global.updateTaskProgress) global.updateTaskProgress("Shipment Queue Report");
                 const checkSPConfig = await getSPAccessToken(profile.configId, profile.profileId);
                 if (!checkSPConfig) {
+                    if (!recurring && cronjobid) await saveHistoricalSellerHistory(cronJobHistorySchema, cronjobid, ["ERROR"]);
                     return cron_logs({
                         message: `Account disconnected ${profile.configId}`,
                         log_type: "info",
@@ -436,8 +482,8 @@ exports.cronGenerateShipmentQueueReport = async (customStartDate = null) => {
                     ).lean();
                 }
 
-                await generateShipmentQueueReport(profile, checkSPConfig);
-                await generateShipmentInboundReport(profile, checkSPConfig);
+                await generateShipmentQueueReport(profile, checkSPConfig, !recurring && Boolean(cronjobid));
+                await generateShipmentInboundReport(profile, checkSPConfig, !recurring && Boolean(cronjobid));
 
                 if (recurring && getCronData?._id) {
                     await cronJobHistorySchema.findByIdAndUpdate(
@@ -463,6 +509,7 @@ exports.cronGenerateShipmentQueueReport = async (customStartDate = null) => {
         });
 
     } catch (error) {
+        if (customStartDate?.cronjobid && !customStartDate?.recurring) await saveHistoricalSellerHistory(cronJobHistorySchema, customStartDate.cronjobid, ["ERROR"]);
         return cron_logs({
             message: `Shipment queue err: ${error}`,
             log_type: "error",
@@ -470,7 +517,7 @@ exports.cronGenerateShipmentQueueReport = async (customStartDate = null) => {
     }
 };
 
-async function generateShipmentQueueReport(profile, token) {
+async function generateShipmentQueueReport(profile, token, strict = false) {
 
     const marketPlaceConfig = await marketPlaceConfigSchema.findOne({ marketPlaceId: profile?.marketplaceStringId }).lean();
 
@@ -623,6 +670,7 @@ async function generateShipmentQueueReport(profile, token) {
                 await parallelBulkWrite(shipmentQueueItemSchema, itemBulkOps);
             }
         } catch (itemErr) {
+            if (strict) throw itemErr;
             cron_logs({
                 message: `[Shipment Queue] Skipped items for shipment ${shipment?.ShipmentId || 'unknown'}: ${itemErr.message}`,
                 log_type: "warn"
@@ -633,7 +681,7 @@ async function generateShipmentQueueReport(profile, token) {
     return true;
 }
 
-async function generateShipmentInboundReport(profile, token) {
+async function generateShipmentInboundReport(profile, token, strict = false) {
 
     const marketPlaceConfig = await marketPlaceConfigSchema.findOne({ marketPlaceId: profile?.marketplaceStringId }).lean();
 
@@ -761,6 +809,7 @@ async function generateShipmentInboundReport(profile, token) {
                         }
                     });
                 } catch (shipErr) {
+            if (strict) throw shipErr;
                     cron_logs({
                         message: `[Inbound Plan] Skipped shipment ${shipmentRef?.shipmentId} in plan ${plan.inboundPlanId}: ${shipErr.message}`,
                         log_type: "warn"
@@ -768,6 +817,7 @@ async function generateShipmentInboundReport(profile, token) {
                 }
             }
         } catch (planErr) {
+            if (strict) throw planErr;
             cron_logs({
                 message: `[Inbound Plan] Skipped plan ${plan?.inboundPlanId}: ${planErr.message}`,
                 log_type: "warn"

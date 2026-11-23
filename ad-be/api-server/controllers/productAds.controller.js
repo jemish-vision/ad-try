@@ -1,3 +1,4 @@
+const { runHistoricalAdsReportPhase } = require("../services/historicalAdsReportPhase.service");
 
 const moment = require("moment-timezone");
 const { retryWithBackoff } = require("../helper/retryHelper");
@@ -1008,6 +1009,17 @@ exports.generateReport = async (req, res) => {
 
 // Generate Report
 exports.cronGenerateAdProductReport = async (generateWeeklyReport = false, generateBiWeeklyReport = false, pastSyncObj = null) => {
+  const historicalScope = pastSyncObj || (typeof generateBiWeeklyReport === "object" ? generateBiWeeklyReport : null);
+  if (historicalScope?.reportPhase) {
+    return runHistoricalAdsReportPhase(historicalScope, {
+      group: "CAMPAIGNS", reportName: "PRODUCT_ADS", getAllowedSyncProfiles, getAccessToken,
+      types: [
+        { reportTypeId: "spAdvertisedProduct", entity: "productAd", run: (profile, credentials, phase) => spGenerateReport(profile.profileId, profile.timezone, historicalScope.startDate, historicalScope.endDate, credentials, profile.configId, false, false, phase) },
+        { reportTypeId: "sdAdvertisedProduct", entity: "sdProductAd", run: (profile, credentials, phase) => sdGenerateReport(profile.profileId, profile.timezone, historicalScope.startDate, historicalScope.endDate, credentials, profile.configId, false, phase) }
+      ],
+    });
+  }
+
   try {
     if (typeof generateBiWeeklyReport === "object" && generateBiWeeklyReport !== null) {
       pastSyncObj = generateBiWeeklyReport;
@@ -1331,12 +1343,20 @@ async function spGenerateReport(
   checkConfigAds,
   configId,
   recurring = false,
-  forceRefresh = false
+  forceRefresh = false,
+  historicalPhase = null
 ) {
+  const phaseRetry = task => historicalPhase ? task() : retryWithBackoff(task);
+  if (historicalPhase?.phase === "poll" && !historicalPhase.report) return "ERROR";
+
   const getAccount = await getProfile(configId, profileId);
 
   let existing;
-  if (!recurring && !forceRefresh) {
+  if (historicalPhase?.phase === "submit") {
+    existing = null;
+  } else if (historicalPhase?.report) {
+    existing = historicalPhase.report;
+  } else if (!recurring && !forceRefresh) {
     existing = await reportsSchema.findOne({
       startDate,
       endDate,
@@ -1351,7 +1371,7 @@ async function spGenerateReport(
       const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
       const lastActivity = new Date(existing.updatedAt || existing.createdAt);
       if (lastActivity < twoHoursAgo) {
-        await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+        await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: historicalPhase ? "PENDING" : "FAILED" } });
         existing = null;
       } else {
         processStagedReportBatches(["productAd"]).catch(() => {});
@@ -1371,6 +1391,10 @@ async function spGenerateReport(
     }).sort({ createdAt: -1 }).lean();
   }
 
+  if (historicalPhase?.phase === "poll" && !existing) return "ERROR";
+  if (historicalPhase && existing?.status === "COMPLETED") return "COMPLETED";
+  if (historicalPhase && existing && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) return existing.status;
+
   if (!existing) {
     let createResp;
     try {
@@ -1378,7 +1402,7 @@ async function spGenerateReport(
       const purchasesCol = isVendor ? "purchases14d" : "purchases7d";
       const salesCol = isVendor ? "sales14d" : "sales7d";
 
-      createResp = await retryWithBackoff(() => amazonAxios({
+      createResp = await phaseRetry(() => amazonAxios({
         method: "POST",
         url: `${getAccount.amazonUrl}/reporting/reports`,
         headers: {
@@ -1425,15 +1449,17 @@ async function spGenerateReport(
       return "ERROR";
     }
 
+    if (historicalPhase && !createResp?.data?.reportId) return "ERROR";
+
     await reportsSchema.create({
       profileId,
       configId,
       reportId: createResp?.data?.reportId,
-      startDate: createResp?.data?.startDate,
-      endDate: createResp?.data?.endDate,
+      startDate: historicalPhase ? startDate : createResp?.data?.startDate,
+      endDate: historicalPhase ? endDate : createResp?.data?.endDate,
       status: createResp?.data?.status,
       adProduct: createResp?.data?.configuration?.adProduct,
-      reportTypeId: createResp?.data?.configuration?.reportTypeId,
+      reportTypeId: historicalPhase ? "spAdvertisedProduct" : createResp?.data?.configuration?.reportTypeId,
       reportName: "PRODUCT_ADS",
     });
 
@@ -1441,7 +1467,7 @@ async function spGenerateReport(
   }
 
   // 2️⃣ Poll status
-  const statusResp = await retryWithBackoff(() => amazonAxios({
+  const statusResp = await phaseRetry(() => amazonAxios({
     method: "GET",
     url: `${getAccount.amazonUrl}/reporting/reports/${existing.reportId}`,
     headers: {
@@ -1451,6 +1477,8 @@ async function spGenerateReport(
     },
     meta: { configId: configId, tokenKey: "adsAccessToken", profileId: profileId }
   }));
+
+  if (historicalPhase) historicalPhase.onProviderStatus?.(statusResp.data.status);
 
   if (statusResp.data.status !== "COMPLETED") {
     return statusResp.data.status;
@@ -1501,7 +1529,7 @@ async function spGenerateReport(
     });
     await reportsSchema.updateOne(
       { _id: existing._id },
-      { $set: { status: "FAILED", errorMessage: `Staging failed: ${parseErr.message}` } }
+      { $set: { status: historicalPhase ? "PENDING" : "FAILED", errorMessage: `Staging failed: ${parseErr.message}` } }
     );
     throw parseErr;
   }
@@ -1537,12 +1565,20 @@ async function sdGenerateReport(
   endDate,
   checkConfigAds,
   configId,
-  recurring = false
+  recurring = false,
+  historicalPhase = null
 ) {
+  const phaseRetry = task => historicalPhase ? task() : retryWithBackoff(task);
+  if (historicalPhase?.phase === "poll" && !historicalPhase.report) return "ERROR";
+
   const getAccount = await getProfile(configId, profileId);
 
   let existing;
-  if (!recurring) {
+  if (historicalPhase?.phase === "submit") {
+    existing = null;
+  } else if (historicalPhase?.report) {
+    existing = historicalPhase.report;
+  } else if (!recurring) {
     existing = await reportsSchema.findOne({
       startDate,
       endDate,
@@ -1566,10 +1602,14 @@ async function sdGenerateReport(
     }).sort({ createdAt: -1 }).lean();
   }
 
+  if (historicalPhase?.phase === "poll" && !existing) return "ERROR";
+  if (historicalPhase && existing?.status === "COMPLETED") return "COMPLETED";
+  if (historicalPhase && existing && ["STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"].includes(existing.status)) return existing.status;
+
   if (!existing) {
     let createResp;
     try {
-      createResp = await retryWithBackoff(() => amazonAxios({
+      createResp = await phaseRetry(() => amazonAxios({
         method: "POST",
         url: `${getAccount.amazonUrl}/reporting/reports`,
         headers: {
@@ -1613,15 +1653,17 @@ async function sdGenerateReport(
       return "ERROR";
     }
 
+    if (historicalPhase && !createResp?.data?.reportId) return "ERROR";
+
     await reportsSchema.create({
       profileId,
       configId,
       reportId: createResp?.data?.reportId,
-      startDate: createResp?.data?.startDate,
-      endDate: createResp?.data?.endDate,
+      startDate: historicalPhase ? startDate : createResp?.data?.startDate,
+      endDate: historicalPhase ? endDate : createResp?.data?.endDate,
       status: createResp?.data?.status,
       adProduct: createResp?.data?.configuration?.adProduct,
-      reportTypeId: createResp?.data?.configuration?.reportTypeId,
+      reportTypeId: historicalPhase ? "sdAdvertisedProduct" : createResp?.data?.configuration?.reportTypeId,
       reportName: "PRODUCT_ADS",
     });
 
@@ -1629,7 +1671,7 @@ async function sdGenerateReport(
   }
 
   // 2️⃣ Poll status
-  const statusResp = await retryWithBackoff(() => amazonAxios({
+  const statusResp = await phaseRetry(() => amazonAxios({
     method: "GET",
     url: `${getAccount.amazonUrl}/reporting/reports/${existing.reportId}`,
     headers: {
@@ -1639,6 +1681,8 @@ async function sdGenerateReport(
     },
     meta: { configId: configId, tokenKey: "adsAccessToken", profileId: profileId }
   }));
+
+  if (historicalPhase) historicalPhase.onProviderStatus?.(statusResp.data.status);
 
   if (statusResp.data.status !== "COMPLETED") {
     return statusResp.data.status;

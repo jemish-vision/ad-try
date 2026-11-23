@@ -1,5 +1,6 @@
 const moment = require("moment");
 const { retryWithBackoff } = require("../helper/retryHelper");
+const { runHistoricalSellerReport, aggregateSellerReportStatus } = require("../services/historicalSellerReport.service");
 
 const fs = require("fs");
 const path = require("path");
@@ -59,6 +60,8 @@ const calculateCouponPerformance = (coupon) => {
 };
 
 exports.cronListCouponFromAmazon = async (customStartDate = null, customEndDate = null) => {
+    const reportPhase = customStartDate?.reportPhase;
+    const phaseResults = [];
     cron_logs({
         message: `India Time = ${moment().tz("Asia/Kolkata").format("HH:mm")} cronListCouponFromAmazon`,
         log_type: "info",
@@ -98,6 +101,7 @@ exports.cronListCouponFromAmazon = async (customStartDate = null, customEndDate 
                     { new: true }
                 );
             }
+            if (reportPhase) return "ERROR";
             return cron_logs({
                 message: `Cron Coupon Listing stopped: No active profiles found with matching permissions for configId: ${targetConfigId || 'any'}, profileId: ${targetProfileId || 'any'}.`,
                 log_type: "warn"
@@ -109,6 +113,7 @@ exports.cronListCouponFromAmazon = async (customStartDate = null, customEndDate 
                 const checkSPConfig = await getSPAccessToken(profile.configId, profile.profileId);
 
                 if (!checkSPConfig) {
+                    if (reportPhase) phaseResults.push("ERROR");
                     return cron_logs({
                         message: `Account disconnected ${profile.configId}`,
                         log_type: "info",
@@ -146,8 +151,10 @@ exports.cronListCouponFromAmazon = async (customStartDate = null, customEndDate 
                     startDate,
                     endDate,
                     checkSPConfig,
-                    recurring
+                    recurring,
+                    { phase: reportPhase }
                 );
+                if (reportPhase) phaseResults.push(reportSpResponse);
                 if (recurring && getCronData?._id && reportSpResponse !== "ERROR") {
 
                     await cronJobHistorySchema.findByIdAndUpdate(
@@ -157,7 +164,7 @@ exports.cronListCouponFromAmazon = async (customStartDate = null, customEndDate 
                     );
                 }
 
-                else if (!recurring && cronjobid && reportSpResponse == "COMPLETED") {
+                else if (!reportPhase && !recurring && cronjobid && reportSpResponse == "COMPLETED") {
                     await cronJobHistorySchema.findByIdAndUpdate(
                         cronjobid,
                         { status: "COMPLETED" },
@@ -167,14 +174,27 @@ exports.cronListCouponFromAmazon = async (customStartDate = null, customEndDate 
             })
         );
 
-        await Promise.all(promises);
+        if (reportPhase) {
+            await Promise.all(promises.map(promise => promise.catch(() => { phaseResults.push("ERROR"); })));
+        } else {
+            await Promise.all(promises);
+        }
 
+        if (reportPhase) {
+            const result = aggregateSellerReportStatus(phaseResults);
+            if (cronjobid) await cronJobHistorySchema.findByIdAndUpdate(cronjobid, { status: result === "ERROR" ? "FAILED" : result });
+            return result;
+        }
         return cron_logs({
             message: "Coupon reports generated successfully.",
             log_type: "info",
         });
     }
     catch (error) {
+        if (reportPhase) {
+            if (customStartDate?.cronjobid) await cronJobHistorySchema.findByIdAndUpdate(customStartDate.cronjobid, { status: "FAILED" });
+            return "ERROR";
+        }
         return cron_logs({
             message: `Coupon reports err: ${error}`,
             log_type: "error",
@@ -182,9 +202,19 @@ exports.cronListCouponFromAmazon = async (customStartDate = null, customEndDate 
     }
 };
 
-async function generateSPReport(profile, startDate, endDate, token, recurring = true) {
-    let existing = null;
-    if (recurring) {
+async function generateSPReport(profile, startDate, endDate, token, recurring = true, options = {}) {
+    if (options.phase) {
+        return runHistoricalSellerReport({
+            phase: options.phase,
+            identity: { configId: profile.configId, profileId: profile.profileId, reportTypeId: "COUPON", startDate, endDate },
+            createRequest: () => generateSPReport(profile, startDate, endDate, token, false, { createOnly: true }),
+            processReport: report => generateSPReport(profile, startDate, endDate, token, false, { report }),
+        });
+    }
+    let existing = options.report || null;
+    if (options.report || options.createOnly) {
+        // Explicit phases consume the locked exact report or create under the request lease.
+    } else if (recurring) {
         const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
         existing = await reportsSchema.findOne({
             profileId: profile.profileId,
@@ -229,7 +259,8 @@ async function generateSPReport(profile, startDate, endDate, token, recurring = 
             meta: { configId: profile.configId, tokenKey: "spAccessToken", sp: true, profileId: profile?.profileId }
         }));
 
-        await reportsSchema.create({
+        if (options.createOnly && !createResp?.data?.reportId) return null;
+        const createdReport = await reportsSchema.create({
             profileId: profile.profileId,
             configId: profile.configId,
             reportId: createResp?.data?.reportId,
@@ -239,7 +270,7 @@ async function generateSPReport(profile, startDate, endDate, token, recurring = 
             status: "PENDING"
         });
 
-        return "PENDING";
+        return options.createOnly ? createdReport : "PENDING";
     }
 
     // ✅ CHECK STATUS
@@ -253,6 +284,11 @@ async function generateSPReport(profile, startDate, endDate, token, recurring = 
         meta: { configId: profile.configId, tokenKey: "spAccessToken", sp: true, profileId: profile?.profileId }
     }));
 
+    if (options.report && ["FATAL", "FAILED", "ERROR", "CANCELLED"].includes(statusRes?.data?.processingStatus)) {
+        const cancelled = statusRes.data.processingStatus === "CANCELLED";
+        await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: cancelled ? "CANCELLED" : "FAILED" } });
+        return cancelled ? "COMPLETED" : "ERROR";
+    }
     if (statusRes?.data?.processingStatus !== "DONE") {
         return "PENDING";
     }

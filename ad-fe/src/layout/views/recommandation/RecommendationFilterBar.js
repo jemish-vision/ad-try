@@ -462,7 +462,6 @@ export function RecommendationFilterModal({
                       <span>{tag.name}</span>
                     </span>
                   }
-                  badge={tag.ruleCount ? t("{{count}} recommendations", { count: tag.ruleCount }) : null}
                   P={P}
                 />
               );

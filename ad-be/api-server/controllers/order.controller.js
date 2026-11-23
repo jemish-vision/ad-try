@@ -1,3 +1,5 @@
+const { settleTerminalReportStatus } = require("../helpers/spReportStatus.helper");
+const { runHistoricalSellerReport, aggregateSellerReportStatus, saveHistoricalSellerHistory, sellerReportStreamHandler } = require("../services/historicalSellerReport.service");
 
 const moment = require("moment-timezone");
 const { retryWithBackoff } = require("../helper/retryHelper");
@@ -152,9 +154,14 @@ exports.cronGenerateOrderReport = async (customStartDate = null, customEndDate =
                     endDate,
                     checkSPConfig,
                     recurring,
-                    "GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL"
+                    "GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL",
+                    pastSyncObj?.reportPhase
                 );
 
+                if (pastSyncObj?.reportPhase) {
+                    await saveHistoricalSellerHistory(cronJobHistorySchema, cronjobid, [reportSpResponse]);
+                    return;
+                }
                 if (recurring && getCronData?._id && reportSpResponse != "ERROR") {
                     await cronJobHistorySchema.findByIdAndUpdate(
                         getCronData._id,
@@ -171,6 +178,7 @@ exports.cronGenerateOrderReport = async (customStartDate = null, customEndDate =
                 }
             }
             else {
+                if (pastSyncObj?.reportPhase) await saveHistoricalSellerHistory(cronJobHistorySchema, cronjobid, ["ERROR"]);
                 return cron_logs({
                     message: `Account disconnected in report ${profile.configId}, Config: ${checkSPConfig}`,
                     log_type: "info",
@@ -184,6 +192,7 @@ exports.cronGenerateOrderReport = async (customStartDate = null, customEndDate =
         });
     }
     catch (error) {
+        if (customStartDate?.reportPhase && customStartDate.cronjobid) await saveHistoricalSellerHistory(cronJobHistorySchema, customStartDate.cronjobid, ["ERROR"]);
         return cron_logs({
             message: `Order report err: ${error}`,
             log_type: "error",
@@ -198,10 +207,13 @@ const generateSPReport = async (
     endDate,
     checkSPConfig,
     recurring = true,
-    reportTypeId = "GET_FLAT_FILE_ALL_ORDERS_DATA_BY_LAST_UPDATE_GENERAL"
+    reportTypeId = "GET_FLAT_FILE_ALL_ORDERS_DATA_BY_LAST_UPDATE_GENERAL",
+    reportPhase = null,
+    phaseReport = null
 ) => {
     return new Promise(async (resolve, reject) => {
 
+        try {
         const getAccount = await getProfile(configId, profileId);
         const marketPlaceConfig = await marketPlaceConfigSchema.findOne({ marketPlaceId: getAccount.marketplaceStringId }).lean();
         const tz = getAccount?.timezone || "Asia/Kolkata";
@@ -227,9 +239,21 @@ const generateSPReport = async (
             meta: { configId: configId, tokenKey: "spAccessToken", sp: true, profileId: profileId }
         };
 
-        try {
-            let getReportData = null;
-            if (recurring) {
+            if (reportPhase) {
+                const identity = { configId, profileId, startDate: moment(startDate).tz(tz).format("YYYY-MM-DD"),
+                    endDate: moment(endDate).tz(tz).format("YYYY-MM-DD"), reportTypeId, reportName: "Order Report" };
+                return resolve(await runHistoricalSellerReport({
+                    phase: reportPhase, identity,
+                    createRequest: async () => {
+                        const response = await retryWithBackoff(() => amazonAxios(reportPOSTOptions));
+                        if (!response?.data?.reportId) throw new Error("Amazon report request did not return an ID");
+                        return reportsSchema.create({ ...identity, adProduct: "Seller Report", reportId: response.data.reportId, status: "PENDING" });
+                    },
+                    processReport: saved => generateSPReport(configId, profileId, startDate, endDate, checkSPConfig, false, reportTypeId, null, saved),
+                }));
+            }
+            let getReportData = phaseReport;
+            if (!phaseReport && recurring) {
                 const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
                 getReportData = await reportsSchema.findOne({
                     profileId,
@@ -239,7 +263,7 @@ const generateSPReport = async (
                     status: "PENDING",
                     createdAt: { $gte: twentyFourHoursAgo },
                 }).sort({ createdAt: -1 }).lean();
-            } else {
+            } else if (!phaseReport) {
                 getReportData = await reportsSchema.findOne({
                     startDate: moment(startDate).tz(getAccount.timezone).format("YYYY-MM-DD"),
                     endDate: moment(endDate).tz(getAccount.timezone).format("YYYY-MM-DD"),
@@ -575,6 +599,10 @@ const generateSPReport = async (
                         }
                         else {
                             const pStatus = response.data?.processingStatus;
+                            if (phaseReport) {
+                                const terminal = await settleTerminalReportStatus(reportsSchema, getReportData, pStatus);
+                                if (terminal) return resolve(terminal);
+                            }
                             if (["CANCELLED", "FATAL", "CANCELLED_BY_SYSTEM"].includes(pStatus)) {
                                 await reportsSchema.findByIdAndUpdate(
                                     { _id: getReportData._id },
@@ -666,6 +694,7 @@ exports.cronGenerateRefundReport = async (customStartDate = null, customEndDate 
                     const checkSPConfig = await getSPAccessToken(profile.configId, profile.profileId);
 
                     if (!checkSPConfig) {
+                    if (pastSyncObj?.reportPhase) await saveHistoricalSellerHistory(cronJobHistorySchema, cronjobid, ["ERROR"]);
                         return cron_logs({
                             message: `Account disconnected ${profile.configId}`,
                             log_type: "info",
@@ -703,7 +732,7 @@ exports.cronGenerateRefundReport = async (customStartDate = null, customEndDate 
                         startDate,
                         endDate,
                         checkSPConfig,
-                        recurring
+                        recurring, pastSyncObj?.reportPhase
                     );
 
                     cron_logs({
@@ -716,7 +745,7 @@ exports.cronGenerateRefundReport = async (customStartDate = null, customEndDate 
                         startDate,
                         endDate,
                         checkSPConfig,
-                        recurring
+                        recurring, pastSyncObj?.reportPhase
                     );
 
                     cron_logs({
@@ -724,6 +753,10 @@ exports.cronGenerateRefundReport = async (customStartDate = null, customEndDate 
                         log_type: "info",
                     })
 
+                    if (pastSyncObj?.reportPhase) {
+                        await saveHistoricalSellerHistory(cronJobHistorySchema, cronjobid, [reportSpResponse, reportFBASpResponse]);
+                        return;
+                    }
                     if (recurring && getCronData?._id && reportSpResponse == "COMPLETED" && reportFBASpResponse == "COMPLETED") {
                         await cronJobHistorySchema.findByIdAndUpdate(
                             getCronData._id,
@@ -739,6 +772,7 @@ exports.cronGenerateRefundReport = async (customStartDate = null, customEndDate 
                         );
                     }
                 } catch (profileErr) {
+                    if (pastSyncObj?.reportPhase) await saveHistoricalSellerHistory(cronJobHistorySchema, cronjobid, ["ERROR"]);
                     cron_logs({
                         message: `Error syncing refund report for profile ${profile?.profileId} (config: ${profile?.configId}): ${profileErr.stack || profileErr.message}`,
                         log_type: "error",
@@ -755,6 +789,7 @@ exports.cronGenerateRefundReport = async (customStartDate = null, customEndDate 
         });
 
     } catch (error) {
+        if (customStartDate?.reportPhase && customStartDate.cronjobid) await saveHistoricalSellerHistory(cronJobHistorySchema, customStartDate.cronjobid, ["ERROR"]);
 
         return cron_logs({
             message: `Refund report err: ${error}`,
@@ -763,10 +798,48 @@ exports.cronGenerateRefundReport = async (customStartDate = null, customEndDate 
     }
 };
 
-async function generateReturnsSPReport(profile, startDate, endDate, token, recurring = true) {
-    let existing = null;
+async function generateReturnsSPReport(profile, startDate, endDate, token, recurring = true, reportPhase = null, phaseReport = null) {
+    if (reportPhase) {
+        const marketPlaceConfig = await marketPlaceConfigSchema.findOne({ marketPlaceId: profile?.marketplaceStringId }).lean();
+        return runHistoricalSellerReport({
+            phase: reportPhase,
+            identity: { configId: profile.configId, profileId: profile.profileId, startDate: startDate, endDate: endDate, reportTypeId: "MFN_RETURNS" },
+            createRequest: async () => {
+        const createResp = await retryWithBackoff(() => amazonAxios({
+            method: "POST",
+            url: `${marketPlaceConfig.endPoint}/reports/2021-06-30/reports`,
+            headers: {
+                "x-amz-access-token": token?.spAccessToken,
+                "Content-Type": "application/json",
+            },
+            data: {
+                reportType: "GET_XML_RETURNS_DATA_BY_RETURN_DATE",
+                marketplaceIds: [profile.marketplaceStringId],
+                dataStartTime: `${startDate}T00:00:00Z`,
+                dataEndTime: `${endDate}T23:59:59Z`,
+            },
+            meta: { configId: profile.configId, tokenKey: "spAccessToken", sp: true, profileId: profile?.profileId }
+        }));
 
-    if (recurring) {
+        if (!createResp?.data?.reportId) throw new Error("Amazon report request did not return an ID");
+        return reportsSchema.create({
+            profileId: profile.profileId,
+            configId: profile.configId,
+            reportId: createResp?.data?.reportId,
+            startDate: startDate,
+            endDate: endDate,
+            reportTypeId: "MFN_RETURNS",
+            status: "PENDING"
+        });
+
+            },
+            processReport: saved => generateReturnsSPReport(profile, startDate, endDate, token, false, null, saved),
+        });
+    }
+
+    let existing = phaseReport;
+
+    if (!phaseReport && recurring) {
         const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
         existing = await reportsSchema.findOne({
             profileId: profile.profileId,
@@ -776,7 +849,7 @@ async function generateReturnsSPReport(profile, startDate, endDate, token, recur
             createdAt: { $gte: twentyFourHoursAgo },
         }).sort({ createdAt: -1 }).lean();
     }
-    else {
+    else if (!phaseReport) {
         existing = await reportsSchema.findOne({
             profileId: profile.profileId,
             configId: profile.configId,
@@ -835,6 +908,10 @@ async function generateReturnsSPReport(profile, startDate, endDate, token, recur
         meta: { configId: profile.configId, tokenKey: "spAccessToken", sp: true, profileId: profile?.profileId }
     }));
 
+    if (phaseReport) {
+        const terminal = await settleTerminalReportStatus(reportsSchema, existing, statusRes?.data?.processingStatus);
+        if (terminal) return terminal;
+    }
     if (statusRes?.data?.processingStatus !== "DONE") {
         if (statusRes?.data?.processingStatus !== "CANCELLED") return statusRes?.data?.processingStatus;
         return "PENDING";
@@ -889,7 +966,7 @@ const processReturnsReportStream = async (schema, filePath, { profileId, configI
 
         let bulkOps = [];
 
-        pipeline.on("data", async ({ value }) => {
+        pipeline.on("data", sellerReportStreamHandler(pipeline, reject, async ({ value }) => {
             pipeline.pause();
 
             const item = value?.item_details || {};
@@ -959,22 +1036,60 @@ const processReturnsReportStream = async (schema, filePath, { profileId, configI
             }
 
             pipeline.resume();
-        });
+        }));
 
-        pipeline.on("end", async () => {
+        pipeline.on("end", sellerReportStreamHandler(pipeline, reject, async () => {
             if (bulkOps.length) {
                 await parallelBulkWrite(schema, bulkOps);
             }
             resolve();
-        });
+        }));
 
         pipeline.on("error", reject);
     });
 };
 
-async function generateFBAReturnsSPReport(profile, startDate, endDate, token, recurring) {
-    let existing = null;
-    if (recurring) {
+async function generateFBAReturnsSPReport(profile, startDate, endDate, token, recurring, reportPhase = null, phaseReport = null) {
+    if (reportPhase) {
+        const marketPlaceConfig = await marketPlaceConfigSchema.findOne({ marketPlaceId: profile?.marketplaceStringId }).lean();
+        return runHistoricalSellerReport({
+            phase: reportPhase,
+            identity: { configId: profile.configId, profileId: profile.profileId, startDate: startDate, endDate: endDate, reportTypeId: "FBA_RETURNS" },
+            createRequest: async () => {
+        const createResp = await retryWithBackoff(() => amazonAxios({
+            method: "POST",
+            url: `${marketPlaceConfig.endPoint}/reports/2021-06-30/reports`,
+            headers: {
+                "x-amz-access-token": token?.spAccessToken,
+                "Content-Type": "application/json",
+            },
+            data: {
+                reportType: "GET_FBA_FULFILLMENT_CUSTOMER_RETURNS_DATA",
+                marketplaceIds: [profile.marketplaceStringId],
+                dataStartTime: `${startDate}T00:00:00Z`,
+                dataEndTime: `${endDate}T23:59:59Z`,
+            },
+            meta: { configId: profile.configId, tokenKey: "spAccessToken", sp: true, profileId: profile?.profileId }
+        }));
+
+        if (!createResp?.data?.reportId) throw new Error("Amazon report request did not return an ID");
+        return reportsSchema.create({
+            profileId: profile.profileId,
+            configId: profile.configId,
+            reportId: createResp?.data?.reportId,
+            startDate: startDate,
+            endDate: endDate,
+            reportTypeId: "FBA_RETURNS",
+            status: "PENDING"
+        });
+
+            },
+            processReport: saved => generateFBAReturnsSPReport(profile, startDate, endDate, token, false, null, saved),
+        });
+    }
+
+    let existing = phaseReport;
+    if (!phaseReport && recurring) {
         const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
         existing = await reportsSchema.findOne({
             profileId: profile.profileId,
@@ -984,7 +1099,7 @@ async function generateFBAReturnsSPReport(profile, startDate, endDate, token, re
             createdAt: { $gte: twentyFourHoursAgo },
         }).sort({ createdAt: -1 }).lean();
     }
-    else {
+    else if (!phaseReport) {
         existing = await reportsSchema.findOne({
             profileId: profile.profileId,
             configId: profile.configId,
@@ -1043,6 +1158,10 @@ async function generateFBAReturnsSPReport(profile, startDate, endDate, token, re
         meta: { configId: profile.configId, tokenKey: "spAccessToken", sp: true, profileId: profile?.profileId }
     }));
 
+    if (phaseReport) {
+        const terminal = await settleTerminalReportStatus(reportsSchema, existing, statusRes?.data?.processingStatus);
+        if (terminal) return terminal;
+    }
     if (statusRes?.data?.processingStatus !== "DONE") {
         if (statusRes?.data?.processingStatus !== "CANCELLED") return statusRes?.data?.processingStatus;
         return "PENDING";
@@ -1129,7 +1248,7 @@ const processFBAReturnsReportStream = async (schema, filePath, { profileId, conf
 
         let bulkOps = [];
 
-        pipeline.on("data", async (value) => {
+        pipeline.on("data", sellerReportStreamHandler(pipeline, reject, async (value) => {
             pipeline.pause();
 
             const orderPipeline = [
@@ -1201,14 +1320,14 @@ const processFBAReturnsReportStream = async (schema, filePath, { profileId, conf
             }
 
             pipeline.resume();
-        });
+        }));
 
-        pipeline.on("end", async () => {
+        pipeline.on("end", sellerReportStreamHandler(pipeline, reject, async () => {
             if (bulkOps.length) {
                 await parallelBulkWrite(schema, bulkOps);
             }
             resolve();
-        });
+        }));
 
         pipeline.on("error", reject);
     });
@@ -4495,6 +4614,7 @@ exports.cronGenerateOrderListing = async (customStartDate = null, customEndDate 
                     if (global.updateTaskProgress) global.updateTaskProgress("OrderListing");
                     const checkSPConfig = await getSPAccessToken(profile.configId, profile.profileId);
                     if (!checkSPConfig) {
+                    if (pastSyncObj?.reportPhase) await saveHistoricalSellerHistory(cronJobHistorySchema, cronjobid, ["ERROR"]);
                         return cron_logs({
                             message: `Account disconnected in order listing ${profile.configId}`,
                             log_type: "info",
@@ -4510,9 +4630,14 @@ exports.cronGenerateOrderListing = async (customStartDate = null, customEndDate 
                         endDate,
                         checkSPConfig,
                         recurring,
-                        "GET_FLAT_FILE_ALL_ORDERS_DATA_BY_LAST_UPDATE_GENERAL"
+                        "GET_FLAT_FILE_ALL_ORDERS_DATA_BY_LAST_UPDATE_GENERAL",
+                        pastSyncObj?.reportPhase
                     );
 
+                    if (pastSyncObj?.reportPhase) {
+                        await saveHistoricalSellerHistory(cronJobHistorySchema, cronjobid, [reportSpResponse]);
+                        return;
+                    }
                     if (recurring && reportSpResponse != "ERROR") {
                         const now = moment().tz(profile.timezone);
                         const currentDate = now.format("YYYY-MM-DD");
@@ -4545,6 +4670,7 @@ exports.cronGenerateOrderListing = async (customStartDate = null, customEndDate 
                         log_type: "info",
                     });
                 } catch (profileErr) {
+                    if (pastSyncObj?.reportPhase) await saveHistoricalSellerHistory(cronJobHistorySchema, cronjobid, ["ERROR"]);
                     cron_logs({
                         message: `Error syncing order listing for profile ${profile.profileId} (config: ${profile.configId}): ${profileErr.stack || profileErr.message}`,
                         log_type: "error",
@@ -4560,6 +4686,7 @@ exports.cronGenerateOrderListing = async (customStartDate = null, customEndDate 
             log_type: "info",
         });
     } catch (error) {
+        if (customStartDate?.reportPhase && customStartDate.cronjobid) await saveHistoricalSellerHistory(cronJobHistorySchema, customStartDate.cronjobid, ["ERROR"]);
         return cron_logs({
             message: `Order listing err: ${error}`,
             log_type: "error",

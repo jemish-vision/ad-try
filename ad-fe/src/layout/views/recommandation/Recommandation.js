@@ -9,7 +9,25 @@ import {
   ApiGetRecommendation,
   ApiGetRecommendationData,
   ApiDeleteRecommendation,
+  ApiReorderRecommendations,
 } from "../../../api-wrapper/recommendation/ApiRecommendation";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
+import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import { CSS } from "@dnd-kit/utilities";
 import { Toast, useDispatch, handleLoader } from "../../../helper/links/Link";
 import RecommendationModal from "./RecommendationModal";
 import { ShadcnDateRangePicker as DateRangePicker } from "../../../components/ui/date-range-picker";
@@ -23,7 +41,7 @@ import { ApiGetRecommendationTags } from "../../../api-wrapper/recommendation/Ap
 import RecommendationRules from "../recommendationRule/RecommendationRules";
 import { PermissionCheck } from "../../../helper/permission/PermissionCheck";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Sparkles, Sliders, RefreshCw, Tag as TagIcon, ChevronDown } from "lucide-react";
+import { Sparkles, Sliders, RefreshCw, Tag as TagIcon, ChevronDown, GripVertical } from "lucide-react";
 import TagManagement from "./TagManagement";
 import { FiInfo } from "react-icons/fi";
 import {
@@ -174,10 +192,22 @@ function RecommendationPagination({ page, perPage, total, totalPages, onPageChan
   );
 }
 
-function RecommendationItem({ id, recommendation, onClick, onEdit, onDelete, isDark, isMobile, isLoading, isAnyLoading, isInsideGroup = false }) {
+function RecommendationItem({ id, recommendation, onClick, onEdit, onDelete, isDark, isMobile, isLoading, isAnyLoading, isInsideGroup = false, canReorder = true }) {
   const { t } = useTranslation();
   const [hovered, setHovered] = useState(false);
   const actions = getActionDetails(recommendation.actions, recommendation.gridName);
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: recommendation._id,
+    disabled: !canReorder || isAnyLoading || isLoading,
+  });
 
   const hasOob = Array.isArray(recommendation?.conditions) && recommendation.conditions.some(c =>
     String(c?.conditionType || "").toLowerCase().replace(/[\s_]+/g, "") === "outofbudget"
@@ -185,8 +215,13 @@ function RecommendationItem({ id, recommendation, onClick, onEdit, onDelete, isD
 
   return (
     <div
+      ref={setNodeRef}
       id={id}
       style={{
+        transform: CSS.Translate.toString(transform),
+        transition,
+        zIndex: isDragging ? 50 : 1,
+        opacity: isDragging ? 0.5 : (isAnyLoading && !isLoading ? 0.6 : 1),
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
@@ -199,14 +234,14 @@ function RecommendationItem({ id, recommendation, onClick, onEdit, onDelete, isD
               ? (isInsideGroup ? "1px solid rgba(255, 255, 255, 0.06)" : "1px solid rgba(255, 255, 255, 0.08)")
               : (isInsideGroup ? "1px solid rgba(0, 0, 0, 0.06)" : "1px solid #e2e8f0")),
         cursor: isLoading ? "wait" : (isAnyLoading ? "not-allowed" : "pointer"),
-        transition: "all 0.2s ease-in-out",
         backgroundColor: isDark
           ? (isLoading ? "rgba(14, 165, 233, 0.08)" : (hovered ? "#1e293b" : (isInsideGroup ? "#0f172a" : "#0f172a")))
           : (isLoading ? "rgba(14, 165, 233, 0.04)" : (hovered ? "#ffffff" : (isInsideGroup ? "#ffffff" : "#ffffff"))),
-        boxShadow: isLoading
-          ? (isDark ? "0 0 16px rgba(56, 189, 248, 0.25)" : "0 0 16px rgba(14, 165, 233, 0.18)")
-          : (hovered ? (isDark ? "0 4px 12px rgba(0, 0, 0, 0.3)" : "0 4px 12px rgba(0, 0, 0, 0.05)") : "0 2px 4px rgba(0, 0, 0, 0.02)"),
-        opacity: isAnyLoading && !isLoading ? 0.6 : 1,
+        boxShadow: isDragging
+          ? (isDark ? "0 8px 24px rgba(0, 0, 0, 0.45)" : "0 8px 24px rgba(0, 0, 0, 0.12)")
+          : (isLoading
+              ? (isDark ? "0 0 16px rgba(56, 189, 248, 0.25)" : "0 0 16px rgba(14, 165, 233, 0.18)")
+              : (hovered ? (isDark ? "0 4px 12px rgba(0, 0, 0, 0.3)" : "0 4px 12px rgba(0, 0, 0, 0.05)") : "0 2px 4px rgba(0, 0, 0, 0.02)")),
         position: "relative",
       }}
       onMouseEnter={() => !isAnyLoading && setHovered(true)}
@@ -221,6 +256,24 @@ function RecommendationItem({ id, recommendation, onClick, onEdit, onDelete, isD
             opacity: 0.9,
           }}
         />
+      )}
+      {canReorder && (
+        <div
+          {...attributes}
+          {...listeners}
+          onClick={(e) => e.stopPropagation()}
+          title={t("Drag to reorder")}
+          className="drag-handle flex items-center justify-center cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+          style={{
+            marginRight: isMobile ? 8 : 12,
+            padding: "6px 2px",
+            borderRadius: 6,
+            touchAction: "none",
+            flexShrink: 0,
+          }}
+        >
+          <GripVertical size={16} />
+        </div>
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
@@ -444,7 +497,8 @@ function SkeletonItem({ isDark }) {
 function TagGroupHeader({ group, isDark, isMobile, isCollapsed, onToggle }) {
   const { t } = useTranslation();
   const [hovered, setHovered] = useState(false);
-  const tagColor = group.tag?.color || "#2563EB";
+  const primaryTag = group.tags?.[0] || group.tag;
+  const tagColor = primaryTag?.color || "#2563EB";
   const styles = getTagStyles(tagColor, isDark);
   const totalCount = group.items.length;
   const totalOpportunities = useMemo(
@@ -455,6 +509,8 @@ function TagGroupHeader({ group, isDark, isMobile, isCollapsed, onToggle }) {
     () => group.items.reduce((sum, item) => sum + (Number(item.newCount) || 0), 0),
     [group.items]
   );
+
+  const tagsList = group.tags && group.tags.length > 0 ? group.tags : (group.tag ? [group.tag] : []);
 
   return (
     <div
@@ -471,23 +527,29 @@ function TagGroupHeader({ group, isDark, isMobile, isCollapsed, onToggle }) {
       }}
       title={isCollapsed ? t("Click to expand") : t("Click to collapse")}
     >
-      {/* Left: Color Accent + Tag Badge + Name + Count Pill */}
+      {/* Left: Color Accent + Tag Badge(s) + Count Pill */}
       <div className="flex items-center gap-2.5 flex-wrap min-w-0">
         <span
           className="w-1.5 h-5 rounded-full shrink-0"
           style={{ backgroundColor: styles.dot }}
         />
-        <div
-          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[13px] font-semibold border shadow-sm shrink-0"
-          style={{
-            color: styles.text,
-            backgroundColor: styles.bg,
-            borderColor: styles.border,
-          }}
-        >
-          <TagIcon className="w-3.5 h-3.5 shrink-0" style={{ color: styles.dot }} />
-          <span className="truncate max-w-[160px] sm:max-w-[240px]">{group.tag.name}</span>
-        </div>
+        {tagsList.map((tg) => {
+          const tStyle = getTagStyles(tg?.color || "#2563EB", isDark);
+          return (
+            <div
+              key={tg._id}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[13px] font-semibold border shadow-sm shrink-0"
+              style={{
+                color: tStyle.text,
+                backgroundColor: tStyle.bg,
+                borderColor: tStyle.border,
+              }}
+            >
+              <TagIcon className="w-3.5 h-3.5 shrink-0" style={{ color: tStyle.dot }} />
+              <span className="truncate max-w-[160px] sm:max-w-[240px]">{tg.name}</span>
+            </div>
+          );
+        })}
 
         <span
           className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[12px] font-medium"
@@ -779,10 +841,10 @@ function Recommendation() {
     }
   }, [selectedCampaign?.profileSendID, selectedCampaign?.selectedAdType, datePayload, requestScope, dispatch, t, listPage, listPerPage, appliedGridNames, appliedActions, appliedTagIds]);
 
-  // Tag options for the organization (read-only in Recommendations tab).
-  // Fetched on profile or tab change; drops selected tags if deleted on server.
+  // Tag options for the organization.
+  // Fetched on profile change; drops selected tags if deleted on server.
   useEffect(() => {
-    if (!selectedCampaign?.profileSendID || activeTab !== 0) return;
+    if (!selectedCampaign?.profileSendID) return;
     let cancelled = false;
     ApiGetRecommendationTags({ profileId: selectedCampaign.profileSendID }).then((tagRes) => {
       if (!cancelled && tagRes?.isSuccess) {
@@ -798,7 +860,7 @@ function Recommendation() {
     return () => {
       cancelled = true;
     };
-  }, [selectedCampaign?.profileSendID, activeTab]);
+  }, [selectedCampaign?.profileSendID]);
 
   useEffect(() => {
     setRecommendations([]);
@@ -905,16 +967,21 @@ function Recommendation() {
   // Filtered, sorted (newest first) and paginated by the server.
   const sortedRecommendations = recommendations;
 
-  // With a tag filter, show the list grouped by tag (a recommendation with two selected tags is
-  // listed under both).
+  // With a tag filter, show recommendations matching the selected tags in one unified section
+  // containing all applied tag badges in the header (no duplication across tags).
   const tagGroups = useMemo(() => {
     if (!appliedTagIds.length) return null;
-    return appliedTagIds
-      .map((id) => ({
-        tag: tagOptions.find((tg) => String(tg._id) === id) || { _id: id, name: id },
-        items: sortedRecommendations.filter((rec) => (rec.tags || []).some((tg) => String(tg._id) === id)),
-      }))
-      .filter((g) => g.items.length > 0);
+    const selectedTags = appliedTagIds
+      .map((id) => tagOptions.find((tg) => String(tg._id) === id) || { _id: id, name: id });
+    if (!sortedRecommendations.length) return [];
+    return [
+      {
+        _id: appliedTagIds.join("-"),
+        tags: selectedTags,
+        tag: selectedTags[0],
+        items: sortedRecommendations,
+      },
+    ];
   }, [appliedTagIds, tagOptions, sortedRecommendations]);
 
   const [collapsedGroups, setCollapsedGroups] = useState({});
@@ -923,16 +990,16 @@ function Recommendation() {
     setCollapsedGroups({});
   }, [appliedTagIds]);
 
-  const toggleGroupCollapse = useCallback((tagId) => {
+  const toggleGroupCollapse = useCallback((groupId) => {
     setCollapsedGroups((prev) => ({
       ...prev,
-      [tagId]: !prev[tagId],
+      [groupId]: !prev[groupId],
     }));
   }, []);
 
   const allGroupsCollapsed = useMemo(() => {
     if (!tagGroups || tagGroups.length === 0) return false;
-    return tagGroups.every((g) => !!collapsedGroups[g.tag?._id]);
+    return tagGroups.every((g) => !!collapsedGroups[g._id || g.tag?._id]);
   }, [tagGroups, collapsedGroups]);
 
   const toggleAllGroups = useCallback(() => {
@@ -940,10 +1007,49 @@ function Recommendation() {
     const shouldCollapse = !allGroupsCollapsed;
     const next = {};
     tagGroups.forEach((g) => {
-      if (g.tag?._id) next[g.tag._id] = shouldCollapse;
+      const gId = g._id || g.tag?._id;
+      if (gId) next[gId] = shouldCollapse;
     });
     setCollapsedGroups(next);
   }, [tagGroups, allGroupsCollapsed]);
+
+  const canReorder = PermissionCheck(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.UPDATE);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = async (event) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id || !selectedCampaign?.profileSendID) return;
+
+    const oldIndex = recommendations.findIndex((r) => String(r._id) === String(active.id));
+    const newIndex = recommendations.findIndex((r) => String(r._id) === String(over.id));
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(recommendations, oldIndex, newIndex);
+    setRecommendations(reordered);
+
+    try {
+      const res = await ApiReorderRecommendations({
+        profileId: selectedCampaign.profileSendID,
+        ruleIds: reordered.map((r) => r._id),
+      });
+      if (!res?.isSuccess) {
+        Toast.error(res?.message || t("Failed to save recommendation order"));
+      }
+    } catch (err) {
+      console.error("Failed to save recommendation order:", err);
+      Toast.error(t("Failed to save recommendation order"));
+    }
+  };
 
   return (
     <div className="placement-tracking-container" id="recommandation-page">
@@ -1146,7 +1252,12 @@ function Recommendation() {
                   )}
                 </div>
               ) : (
-                <div>
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  modifiers={[restrictToVerticalAxis]}
+                  onDragEnd={handleDragEnd}
+                >
                   {tagGroups && tagGroups.length > 1 && (
                     <div className="flex items-center justify-between mb-3.5 px-1 text-[12.5px]">
                       <span className="font-medium text-slate-500 dark:text-slate-400">
@@ -1164,33 +1275,41 @@ function Recommendation() {
                   {(tagGroups || [{ tag: null, items: sortedRecommendations }]).map((group) => {
                     if (!group.tag) {
                       return (
-                        <div key="all">
-                          {group.items.map((recommendation, index) => (
-                            <RecommendationItem
-                              id={`recommendation-item-${index}`}
-                              key={`all-${recommendation._id}`}
-                              recommendation={recommendation}
-                              onClick={handleItemClick}
-                              onEdit={handleItemClick}
-                              onDelete={handleDeleteClick}
-                              isDark={isDark}
-                              isMobile={isMobile}
-                              isLoading={itemLoadingId === recommendation._id}
-                              isAnyLoading={!!itemLoadingId}
-                              isInsideGroup={false}
-                            />
-                          ))}
-                        </div>
+                        <SortableContext
+                          key="all"
+                          items={group.items.map((r) => r._id)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          <div>
+                            {group.items.map((recommendation, index) => (
+                              <RecommendationItem
+                                id={`recommendation-item-${index}`}
+                                key={`all-${recommendation._id}`}
+                                recommendation={recommendation}
+                                onClick={handleItemClick}
+                                onEdit={handleItemClick}
+                                onDelete={handleDeleteClick}
+                                isDark={isDark}
+                                isMobile={isMobile}
+                                isLoading={itemLoadingId === recommendation._id}
+                                isAnyLoading={!!itemLoadingId}
+                                isInsideGroup={false}
+                                canReorder={canReorder}
+                              />
+                            ))}
+                          </div>
+                        </SortableContext>
                       );
                     }
 
-                    const isCollapsed = !!collapsedGroups[group.tag._id];
+                    const groupId = group._id || group.tag?._id;
+                    const isCollapsed = !!collapsedGroups[groupId];
 
                     return (
                       <div
-                        key={group.tag._id}
+                        key={groupId}
                         className="tag-group-box rounded-2xl border mb-5 overflow-hidden transition-all duration-200"
-                        id={`recommendation-tag-group-${group.tag._id}`}
+                        id={`recommendation-tag-group-${groupId}`}
                         style={{
                           background: isDark ? "rgba(11, 18, 33, 0.75)" : "rgba(248, 250, 252, 0.95)",
                           borderColor: isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(226, 232, 240, 0.9)",
@@ -1205,31 +1324,37 @@ function Recommendation() {
                           isDark={isDark}
                           isMobile={isMobile}
                           isCollapsed={isCollapsed}
-                          onToggle={() => toggleGroupCollapse(group.tag._id)}
+                          onToggle={() => toggleGroupCollapse(groupId)}
                         />
                         {!isCollapsed && (
-                          <div className="p-3 sm:p-3.5 space-y-2.5">
-                            {group.items.map((recommendation, index) => (
-                              <RecommendationItem
-                                id={`recommendation-item-${group.tag._id}-${index}`}
-                                key={`${group.tag._id}-${recommendation._id}`}
-                                recommendation={recommendation}
-                                onClick={handleItemClick}
-                                onEdit={handleItemClick}
-                                onDelete={handleDeleteClick}
-                                isDark={isDark}
-                                isMobile={isMobile}
-                                isLoading={itemLoadingId === recommendation._id}
-                                isAnyLoading={!!itemLoadingId}
-                                isInsideGroup={true}
-                              />
-                            ))}
-                          </div>
+                          <SortableContext
+                            items={group.items.map((r) => r._id)}
+                            strategy={verticalListSortingStrategy}
+                          >
+                            <div className="p-3 sm:p-3.5 space-y-2.5">
+                              {group.items.map((recommendation, index) => (
+                                <RecommendationItem
+                                  id={`recommendation-item-${groupId}-${index}`}
+                                  key={`${groupId}-${recommendation._id}`}
+                                  recommendation={recommendation}
+                                  onClick={handleItemClick}
+                                  onEdit={handleItemClick}
+                                  onDelete={handleDeleteClick}
+                                  isDark={isDark}
+                                  isMobile={isMobile}
+                                  isLoading={itemLoadingId === recommendation._id}
+                                  isAnyLoading={!!itemLoadingId}
+                                  isInsideGroup={true}
+                                  canReorder={canReorder}
+                                />
+                              ))}
+                            </div>
+                          </SortableContext>
                         )}
                       </div>
                     );
                   })}
-                </div>
+                </DndContext>
               )}
 
               {/* ── Pagination (server-side; filters stay applied) ── */}
@@ -1251,7 +1376,7 @@ function Recommendation() {
         {/* ── Tab 1: Recommendation Configuration Content ── */}
         {activeTab === 1 && (
           <div className="recommendation-configuration-tab-content">
-            <RecommendationRules hideFilter={true} />
+            <RecommendationRules hideFilter={true} tagOptions={tagOptions} />
           </div>
         )}
 
