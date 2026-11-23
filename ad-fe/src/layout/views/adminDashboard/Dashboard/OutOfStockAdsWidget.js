@@ -27,7 +27,7 @@ export const campaignViewUrl = (c) => {
  * Dashboard: out-of-stock products that still have ads in running campaigns.
  * Data comes from the daily "Out Of Stock Ads" job; seller and vendor profiles only.
  */
-export default function OutOfStockAdsWidget({ profileId, currencyCode = "INR", marketplace = "IN" }) {
+export default function OutOfStockAdsWidget({ profileId, currencyCode, marketplace = "IN" }) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [res, setRes] = useState(null);

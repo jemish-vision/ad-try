@@ -8,6 +8,7 @@ import {
 import { useTranslation } from "react-i18next";
 import moment from "moment";
 import { X } from "lucide-react";
+import { getCurrencySymbol as moneySymbol } from "../../../utility/regionalNumberFormat";
 
 const MINUS_VALUES = ["DISCOUNT"];
 
@@ -73,7 +74,7 @@ const OrderItemRow = ({ item, currencyCode = "INR", idx, total }) => {
     const qty = item.quantityOrdered ?? 0;
     const unitPrice = item.product?.price ?? pd.sellingPrice ?? 0;
     const subtotal = qty * unitPrice;
-    const symbol = currencyCode === "INR" ? "₹" : "$";
+    const symbol = moneySymbol(currencyCode);
 
     const itemProceeds = item.proceeds;
 
@@ -175,7 +176,7 @@ const OrderDetailModal = ({ show, onHide, order }) => {
         isRefunded,
     } = order;
 
-    const symbol = currencyCode === "INR" ? "₹" : "$";
+    const symbol = moneySymbol(currencyCode);
     const isCOD = paymentMethod === "CashOnDelivery";
     const isAmazon = fulfillment?.fulfilledBy === "AMAZON";
 

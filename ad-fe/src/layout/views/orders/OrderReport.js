@@ -17,6 +17,7 @@ import AgTable from "../../../common/grid/AgTable";
 import { AppTooltip } from "../../../components/ui/AppTooltip";
 import { Search as SearchIcon, Info as InfoIcon, X as CloseIcon, List as ViewListIcon, Map as MapIcon, TrendingUp as TrendingUpIcon, ShoppingCart as ShoppingCartIcon, Wallet as AccountBalanceWalletIcon, LineChart as ShowChartIcon } from "lucide-react";
 import CurrencyCode from "../../../helper/currencyCode/CurrencyCode";
+import { formatFullRegionalCurrency as formatMoney } from "../../../utility/regionalNumberFormat";
 
 
 const P = {
@@ -388,7 +389,7 @@ const OrderReport = () => {
             <div className="flex items-center justify-between" style={{ fontSize: 11, color: P.neutral600 }}>
               <span style={{ color: "#64748b", fontWeight: 500 }}>{t("Base Price")}:</span>
               <span style={{ fontWeight: 600, color: isDark ? "#cbd5e1" : P.neutral800 }}>
-                ₹{(row.basePrice || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                {formatMoney(row.basePrice || 0, row.currency || row.currencyCode)}
               </span>
             </div>
             <div style={{

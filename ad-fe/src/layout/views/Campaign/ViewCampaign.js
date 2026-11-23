@@ -38,6 +38,7 @@ import Breadcrumb from "../../../common/components/Breadcrumb";
 import { FiClock, FiUser } from "react-icons/fi";
 import openCampaignViewInNewTab from "../../../utility/campaignNavigation";
 import { formatAmazonChangeType, isAdGroupLevelChange, getStatusBadgeProps } from "../../../utility/targetingUtils";
+import { getCurrencySymbol as moneySymbol, getActiveCurrencyCode as currencyCodeForSymbol } from "../../../utility/regionalNumberFormat";
 
 function ViewCampaign(props) {
   const { t } = useTranslation();
@@ -58,7 +59,7 @@ function ViewCampaign(props) {
   const [activeEventKey, setActiveEventKey] = useState("0");
   const [bidValue, setBidValue] = useState("");
   const [error, setError] = useState("");
-  const [currency, setCurrency] = useState("₹");
+  const [currency] = useState(() => moneySymbol(currencyCodeForSymbol()).trim());
   const [perPage, setPerPage] = useState(firstPageRows);
   const [historyData, setHistoryData] = useState();
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -1828,14 +1829,9 @@ function ViewCampaign(props) {
           </DialogHeader>
           <div className="py-4">
             <div className="flex items-center gap-2 mb-1">
-              <select
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value)}
-                className="border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300"
-              >
-                <option value="₹">₹ - Rupees</option>
-                <option value="$">$ - Dollars</option>
-              </select>
+              <span className="border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 rounded px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+                {currency}
+              </span>
               <input
                 type="number"
                 min="0"

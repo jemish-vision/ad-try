@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { formatFullRegionalCurrency as formatMoney } from "../../../utility/regionalNumberFormat";
 import { useTranslation } from "react-i18next";
 import Filter from "../../../helper/filter/Filter";
 import AgTable from "../../../common/grid/AgTable";
@@ -65,6 +66,8 @@ const OwnerDashboard = () => {
         ]);
         setSummaryStats({
           totalRevenue: allRes?.revenue ?? 0,
+          // Payments can be in several currencies (regional pricing): one total per currency
+          revenueByCurrency: Array.isArray(allRes?.revenueByCurrency) ? allRes.revenueByCurrency : [],
           totalCount: allRes?.totalRecords ?? 0,
           activeCount: activeRes?.totalRecords ?? 0,
           canceledCount: canceledRes?.totalRecords ?? 0,
@@ -141,7 +144,8 @@ const OwnerDashboard = () => {
     {
       headerName: t("Amount"), field: "price", title: t("Amount"),
       minWidth: 115, sortable: true, resizable: true, wrapText: true, autoHeight: true,
-      cellRenderer: (params) => params.value != null ? `₹${params.value}` : "-",
+      // Amount in the currency actually charged (older records without one: INR, as before)
+      cellRenderer: (params) => params.value != null ? formatMoney(params.value, params.data?.currency || "INR") : "-",
     },
     {
       headerName: t("Status"), field: "status", title: t("Status"),
@@ -187,7 +191,11 @@ const OwnerDashboard = () => {
     {
       icon: <TbCurrencyRupee size={23} />,
       label: "Total Revenue",
-      value: statsLoading ? "—" : `₹${Number(summaryStats.totalRevenue || 0).toLocaleString("en-IN")}`,
+      value: statsLoading
+        ? "—"
+        : summaryStats.revenueByCurrency?.length
+          ? summaryStats.revenueByCurrency.map((r) => formatMoney(r.amount, r.currency)).join(" · ")
+          : formatMoney(summaryStats.totalRevenue || 0, "INR"),
       sub: "All-time earnings",
       accent: "blue",
     },

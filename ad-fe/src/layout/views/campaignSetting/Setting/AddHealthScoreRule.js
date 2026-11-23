@@ -12,6 +12,7 @@ import { Button } from "../../../../components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue, SelectLabel } from "../../../../components/ui/select";
 import { RuleWizardChoosePath, RuleWizardTemplates } from "../../../../components/rule-wizard/RuleWizardSteps";
 import { getHealthScoreRuleTemplates } from "./healthScoreRuleTemplate";
+import { getCurrencySymbol as moneySymbol } from "../../../../utility/regionalNumberFormat";
 
 const defaultCondition = {
   queryOperator: "AND",
@@ -535,7 +536,7 @@ function AddHealthScoreRule({ setaddModalFlag, editId, getRule, editData }) {
                           {!isBetween && (
                             <div className="input-group">
                               {CURRENCY_TYPES.includes(element.conditionType) && (
-                                <span className="input-group-text">₹</span>
+                                <span className="input-group-text">{moneySymbol().trim()}</span>
                               )}
                               <Input
                                 type="number"
@@ -557,7 +558,7 @@ function AddHealthScoreRule({ setaddModalFlag, editId, getRule, editData }) {
                             <div className="flex gap-2">
                               <div className="input-group">
                                 {CURRENCY_TYPES.includes(element.conditionType) && (
-                                  <span className="input-group-text">₹</span>
+                                  <span className="input-group-text">{moneySymbol().trim()}</span>
                                 )}
                                 <Input
                                   type="number"
@@ -574,7 +575,7 @@ function AddHealthScoreRule({ setaddModalFlag, editId, getRule, editData }) {
                               </div>
                               <div className="input-group">
                                 {CURRENCY_TYPES.includes(element.conditionType) && (
-                                  <span className="input-group-text">₹</span>
+                                  <span className="input-group-text">{moneySymbol().trim()}</span>
                                 )}
                                 <Input
                                   type="number"

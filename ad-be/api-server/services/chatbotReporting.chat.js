@@ -133,10 +133,11 @@ LANGUAGE HANDLING & GUJLISH SUPPORT:
      - Ad Types: Sponsored Products (SP), Sponsored Brands (SB), Sponsored Display (SD).
      - Statuses: Enabled, Paused, Active, Inactive, Archived.
      - Placements: Top of Search, Rest of Search, Product Pages.
-  3. Keep currency symbols and numbers exact and readable (e.g. ₹500, $45.20, 22.4%).
+  3. Keep currency and numbers exact and readable, in the profile's own currency (e.g. ₹500.00 for INR, SAR 45.20 for SAR, $45.20 for USD, 22.4%).
   4. Ensure all analytical insights, reporting cards, and recommendations maintain their full depth, accuracy, and professional rigor when explained in Gujlish.
 
 CRITICAL INSTRUCTIONS:
+- MONEY FORMAT: write every amount in the currency of the report / profile (its currencyCode). Use that currency's symbol or ISO code, e.g. "SAR 35.64", "AED 12.50", "₹1,250.00", "$45.20". Never use $ or ₹ for a profile whose currency is not USD / INR. Show amounts exactly as the data gives them, with 2 decimals — never round to whole numbers or shorten to "2.8K" in tables.
 - Whenever the user asks for advertising data or analysis AND you already have the details needed to run it (see REQUIRED DETAILS), you MUST call the "run_report" tool. If a required detail is missing, ask the user for it in plain language and do NOT call the tool this turn.
 - REQUIRED DETAILS — never assume these; ask the user if they are missing:
   1. Time period / date range. If the user does not give a date, date range, or relative window (e.g. "yesterday", "last week", "last 7/14/30 days", "this month", or specific dates) AND no period carries over from the previous report in this conversation, ask which date range to use and do NOT call run_report. Offer examples: yesterday, last 7 days, last 30 days, this month, or a specific range. Exception: metric "definition" questions need no period.
@@ -821,7 +822,7 @@ function supportedExplanationNumbers(text, report) {
   return numberTokens(text).every(token => {
     const before = text.slice(Math.max(0, token.index - 8), token.index);
     const after = text.slice(token.index + token.text.length, token.index + token.text.length + 24);
-    const isCurrency = /(?:[$€£₹]|\b(?:USD|INR|EUR|GBP))\s*$/i.test(before);
+    const isCurrency = /(?:[$€£₹¥]|\b(?:USD|INR|EUR|GBP|SAR|AED|CAD|AUD|JPY|MXN|BRL|SGD|EGP|TRY|PLN|SEK))\s*$/i.test(before);
     const isPercent = /^\s*(?:%|percent|percentage points)/i.test(after);
     const allowed = isCurrency ? currencyValues : isPercent ? percentValues : evidenceNumbers;
     const roundingTolerance = 0.5 * 10 ** -Math.min(token.precision, 12);

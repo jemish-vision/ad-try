@@ -68,7 +68,7 @@ function TableCellWithDelta({
   isPercent = false,
   isAcos = false,
   isSpend = false,
-  currencyCode = "INR",
+  currencyCode,
   marketplace = "IN",
 }) {
   const isPositive = diff > 0;
@@ -126,7 +126,7 @@ function TableCellWithDelta({
 export default function AdTypeBreakdownWidget({
   profileId,
   date,
-  currencyCode = "INR",
+  currencyCode,
   marketplace = "IN",
 }) {
   const { t } = useTranslation();

@@ -24,12 +24,14 @@ import {
 import { ApiGetTimeBasedAnalytics } from "../../../../api-wrapper/dashboard/ApiDashboard";
 import {
   getCurrencySymbol,
+  getActiveCurrencyCode,
   isIndianMarketplace,
   formatFullRegionalNumber,
 } from "../../../../utility/regionalNumberFormat";
 
-// Compact currency formatting matching reference UI: e.g. ₹8.72L, ₹3.06L, ₹652
-function formatCompactCurrency(amount, currencyCode = "INR", marketplace = "IN", decimals = 2) {
+// Compact currency formatting (profile currency): e.g. ₹8.72L, SAR 3.06M, $652.40
+function formatCompactCurrency(amount, currencyCode, marketplace = "IN", decimals = 2) {
+  currencyCode = currencyCode || getActiveCurrencyCode();
   if (amount == null || isNaN(amount)) return "—";
   const num = Number(amount);
   const symbol = getCurrencySymbol(currencyCode);
@@ -45,7 +47,7 @@ function formatCompactCurrency(amount, currencyCode = "INR", marketplace = "IN",
     } else if (abs >= 1000) {
       str = `${(abs / 1000).toFixed(1).replace(/\.0$/, "")}K`;
     } else {
-      str = abs.toLocaleString("en-IN", { maximumFractionDigits: 0 });
+      str = abs.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
   } else {
     if (abs >= 1000000000) {
@@ -55,20 +57,19 @@ function formatCompactCurrency(amount, currencyCode = "INR", marketplace = "IN",
     } else if (abs >= 1000) {
       str = `${(abs / 1000).toFixed(1).replace(/\.0$/, "")}K`;
     } else {
-      str = abs.toLocaleString("en-US", { maximumFractionDigits: 0 });
+      str = abs.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
   }
 
   return `${num < 0 ? "-" : ""}${symbol}${str}`;
 }
 
-// AOV formatting: whole currency number, e.g. ₹652
-function formatAOV(aov, currencyCode = "INR", marketplace = "IN") {
+// AOV formatting: exact amount with 2 decimals in the profile currency, e.g. SAR 652.40
+function formatAOV(aov, currencyCode, marketplace = "IN") {
   if (aov == null || isNaN(aov) || aov <= 0) return "—";
   const symbol = getCurrencySymbol(currencyCode);
   const isIndia = isIndianMarketplace(marketplace, currencyCode);
-  const rounded = Math.round(Number(aov));
-  return `${symbol}${rounded.toLocaleString(isIndia ? "en-IN" : "en-US")}`;
+  return `${symbol}${Number(aov).toLocaleString(isIndia ? "en-IN" : "en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 // Hook to track active dark mode in real-time
@@ -464,7 +465,7 @@ export function OrdersByDayWidget({
   profileId,
   adType = "SP",
   date,
-  currencyCode = "INR",
+  currencyCode,
   marketplace = "IN",
 }) {
   const { t } = useTranslation();
@@ -801,7 +802,7 @@ export function PeakHoursWidget({
   profileId,
   adType = "SP",
   date,
-  currencyCode = "INR",
+  currencyCode,
   marketplace = "IN",
 }) {
   const { t } = useTranslation();

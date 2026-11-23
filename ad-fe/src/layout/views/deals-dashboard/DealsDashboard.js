@@ -461,7 +461,7 @@ const DealsDashboard = () => {
             width: 140,
             flex: 1,
             sortable: true,
-            cellRenderer: (params) => CurrencyCode(params.value || 0, currencyCode || "INR")
+            cellRenderer: (params) => CurrencyCode(params.value || 0, currencyCode)
         }
     ], [currencyCode, t]);
 
@@ -617,7 +617,7 @@ const DealsDashboard = () => {
                         </div>
                         <div className="stat-content">
                             <div className="stat-label">{t("Total Sales")}</div>
-                            <div className="stat-value">{CurrencyCode(stats.totalSales, currencyCode || "INR")}</div>
+                            <div className="stat-value">{CurrencyCode(stats.totalSales, currencyCode)}</div>
                         </div>
                     </div>
                     <div className="stat-card units">

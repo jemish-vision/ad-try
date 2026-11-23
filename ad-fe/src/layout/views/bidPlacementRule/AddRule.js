@@ -19,6 +19,7 @@ import { Switch } from '../../../components/ui/switch';
 import { Button as ShadcnButton } from '../../../components/ui/button';
 import { getBidPlacementRuleTemplates } from './bidPlacementRuleTemplate';
 import { RuleWizardChoosePath, RuleWizardTemplates } from '../../../components/rule-wizard/RuleWizardSteps';
+import { getCurrencySymbol as moneySymbol } from "../../../utility/regionalNumberFormat";
 
 const SLOT_STEP = {
   "1_HOUR": 1,
@@ -789,7 +790,7 @@ function AddRule({ setaddModalFlag, editId, setEditId, getRule, editData, adminR
 
                       <div className="w-full md:w-4/12 px-2 mb-3 md:mb-0">
                         <div className="flex items-stretch w-full rounded-md border border-slate-300 overflow-hidden focus-within:ring-1 focus-within:ring-[#1A9FD4] focus-within:border-[#1A9FD4]">
-                          {["Spend", "Sales", "CPC"].includes(condition.conditionType) && <span className="flex items-center px-3 bg-slate-50 border-r border-slate-300 text-slate-500 text-sm">₹</span>}
+                          {["Spend", "Sales", "CPC"].includes(condition.conditionType) && <span className="flex items-center px-3 bg-slate-50 border-r border-slate-300 text-slate-500 text-sm">{moneySymbol().trim()}</span>}
                           <Input
                             type="number"
                             name={`conditions.${index}.conditionValue`}

@@ -7,7 +7,7 @@ import {
 } from "recharts";
 import { Card } from "../../../../components/ui/card";
 import { AppTooltip } from "../../../../components/ui/AppTooltip";
-import { formatRegionalCurrency } from "../../../../utility/regionalNumberFormat";
+import { formatRegionalCurrency, formatFullRegionalCurrency } from "../../../../utility/regionalNumberFormat";
 import { useChartSettings } from "../../../../helper/hooks/useChartSettings";
 
 // Portal-based tooltip immune to AG-Grid CSS transform offsets
@@ -114,10 +114,20 @@ const fmtVal = (v, fmt, currencyCode, marketplace) => {
         const localeInfo = (!currencyCode || !marketplace) ? getActiveLocaleInfo() : {};
         const cur = currencyCode || localeInfo.currencyCode || "INR";
         const mp = marketplace || localeInfo.marketplace || "IN";
-        return formatRegionalCurrency(n, cur, mp, 1);
+        // Exact amount (2 decimals) in table cells, totals and tooltips — no rounding to "2.8k".
+        return formatFullRegionalCurrency(n, cur, mp, 2);
     }
     if (fmt === "percent") return `${n.toFixed(2)}%`;
     return n % 1 === 0 ? `${n}` : n.toFixed(2);
+};
+// Compact amount for bar/line data labels (space is tight)
+const fmtCompactVal = (v, fmt, currencyCode, marketplace) => {
+    if (v == null || v === "") return "";
+    if (fmt === "currency") {
+        const localeInfo = (!currencyCode || !marketplace) ? getActiveLocaleInfo() : {};
+        return formatRegionalCurrency(Number(v), currencyCode || localeInfo.currencyCode, marketplace || localeInfo.marketplace || "IN", 1);
+    }
+    return fmtVal(v, fmt, currencyCode, marketplace);
 };
 const fmtAxis = (v, fmt, currencyCode, marketplace) => {
     const n = Number(v);
@@ -728,7 +738,7 @@ const ChartInner = ({
                                 {showDataLabels && (
                                     <LabelList dataKey={m.key} position="top"
                                         style={{ fontSize: 9, fill: m.color, fontWeight: 700 }}
-                                        formatter={v => fmtVal(v, m.format)}
+                                        formatter={v => fmtCompactVal(v, m.format)}
                                     />
                                 )}
                             </Bar>
@@ -747,7 +757,7 @@ const ChartInner = ({
                             {showDataLabels && (
                                 <LabelList dataKey={m.key} position="top"
                                     style={{ fontSize: 9, fill: m.color, fontWeight: 700 }}
-                                    formatter={v => fmtVal(v, m.format)}
+                                    formatter={v => fmtCompactVal(v, m.format)}
                                 />
                             )}
                         </Line>

@@ -27,6 +27,7 @@ import {
   ApiSaveWarehouseLocation,
   ApiGetFcSkuMatrix,
 } from "../../../api-wrapper/inventoryManagement/ApiFcInventory";
+import { formatFullRegionalCurrency as formatMoney } from "../../../utility/regionalNumberFormat";
 
 // ─── Storage Fee Cutoff Helper ───────────────────────────────────────────────
 // Storage fee billing month based on 16th cutoff rule:
@@ -1032,7 +1033,7 @@ const WarehouseDetails = () => {
       width: 180,
       cellRenderer: (p) => (
         <span className="font-bold text-amber-600 dark:text-amber-400">
-          ₹{(p.value || 0).toFixed(2)}
+          {formatMoney(p.value || 0)}
         </span>
       ),
     },
@@ -1314,7 +1315,7 @@ const WarehouseDetails = () => {
             <div>
               <div className="text-xs text-slate-500 font-medium">Est. Monthly Storage Fee</div>
               <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                ₹{(cardsData?.estimatedMonthlyStorageFee || 0).toLocaleString()}
+                {formatMoney(cardsData?.estimatedMonthlyStorageFee || 0)}
               </div>
               <div className="text-xs text-slate-400 mt-0.5">
                 Vol: {cardsData?.totalVolumeCft || 0} Cu. Ft.

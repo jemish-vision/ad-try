@@ -1,4 +1,5 @@
 import { useHourlyChartSettings } from "../../../../helper/hooks/useHourlyChartSettings";
+import { getActiveCurrencyCode } from "../../../../utility/regionalNumberFormat";
 import moment from "moment-timezone";
 import {
     Dialog,
@@ -93,7 +94,8 @@ const PLACEMENT_TABS = [
 ];
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
-const formatCurrency = (val, currencyCode = "INR") => {
+const formatCurrency = (val, currencyCode) => {
+    currencyCode = currencyCode || getActiveCurrencyCode();
     try {
         return new Intl.NumberFormat(undefined, {
             style: "currency",
@@ -106,7 +108,7 @@ const formatCurrency = (val, currencyCode = "INR") => {
     }
 };
 
-const fmt = (val, metric, currencyCode = "INR") => {
+const fmt = (val, metric, currencyCode) => {
     if (val == null || isNaN(val)) return "—";
     if (["Spend", "Sales", "CPC"].includes(metric)) return formatCurrency(val, currencyCode);
     if (["CTR", "ACOS"].includes(metric)) return `${Number(val).toFixed(2)}%`;

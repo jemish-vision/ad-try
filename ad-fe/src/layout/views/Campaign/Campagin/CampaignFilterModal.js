@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../../../co
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../../components/ui/select';
 import { RadioGroup, RadioGroupItem } from "../../../../components/ui/radio-group";
 import { FiFilter, FiTrash2 } from 'react-icons/fi';
+import { getCurrencySymbol as moneySymbol } from "../../../../utility/regionalNumberFormat";
 
 // Campaign status options for radio selection
 const CAMPAIGN_STATUS_OPTIONS = [
@@ -243,7 +244,7 @@ const CampaignFilterModal = (props) => {
                             </div>
                             <div className="flex-[1.5] relative">
                                 {(selectedFilterOption?.value === "Spend" || selectedFilterOption?.value === "Sales" || selectedFilterOption?.value === "Bid" || selectedFilterOption?.value === "Budget") && (
-                                    <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400 dark:text-slate-500">₹</span>
+                                    <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400 dark:text-slate-500">{moneySymbol().trim()}</span>
                                 )}
                                 <input
                                     type="number"

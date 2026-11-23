@@ -10,6 +10,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "../../../components/ui/
 import { Dialog, DialogContent } from "../../../components/ui/dialog";
 import { Checkbox } from "../../../components/ui/checkbox";
 import { ApiGetProductTrend } from "../../../api-wrapper/productPerformance/ApiProductPerformance";
+import { formatFullRegionalCurrency as formatMoney } from "../../../utility/regionalNumberFormat";
 
 const METRICS = [
   { value: "sales", label: "Total Sales", type: "currency" },
@@ -41,7 +42,7 @@ const PRESETS = [
 const formatValue = (val, type) => {
   if (val === null || val === undefined || isNaN(val)) {
     if (type === "integer") return "0";
-    if (type === "currency") return "₹0";
+    if (type === "currency") return formatMoney(0);
     if (type === "percent") return "0.00%";
     if (type === "ratio") return "0.00x";
     return "0";
@@ -49,10 +50,7 @@ const formatValue = (val, type) => {
   const n = Number(val);
   switch (type) {
     case "currency":
-      return `₹${n.toLocaleString("en-IN", {
-        minimumFractionDigits: n % 1 === 0 ? 0 : 2,
-        maximumFractionDigits: 2,
-      })}`;
+      return formatMoney(n);
     case "percent":
       return `${n.toFixed(2)}%`;
     case "ratio":

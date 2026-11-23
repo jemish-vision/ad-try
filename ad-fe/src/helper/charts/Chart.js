@@ -9,6 +9,7 @@ import {
 import { useTranslation } from "react-i18next";
 import CurrencyFormat from "../currencyCode/CurrencyFormat";
 import CurrencyCode from "../currencyCode/CurrencyCode";
+import { formatRegionalCurrency, formatFullRegionalCurrency, getCurrencySymbol } from "../../utility/regionalNumberFormat";
 import { useChartSettings } from "../hooks/useChartSettings";
 
 /* ─────────────────────────────────────────────────────────────
@@ -77,7 +78,7 @@ const buildSumOfValues = (totalRow, activeMetrics, isTotalsLoading = false, t) =
                     ? `${totalRow[metric.key]}%`
                     : CurrencyFormat(totalRow[metric.key]);
         } else if (!isTotalsLoading && !hasValue) {
-            formattedValue = metric.format === "currency" ? "$" : metric.format === "percent" ? "0%" : "0";
+            formattedValue = metric.format === "currency" ? `${getCurrencySymbol().trim()} 0` : metric.format === "percent" ? "0%" : "0";
         }
 
         return {
@@ -117,24 +118,23 @@ const fmtDate = (s) => {
     const d = new Date(s);
     return d.toLocaleDateString("en-IN", { month: "short", day: "numeric" });
 };
+// Money uses the selected profile's currency (e.g. SAR), never a hard-coded ₹.
+// Table cells, totals and tooltips: exact value with 2 decimals. Axis ticks and data labels: compact.
 const fmtVal = (v, fmt) => {
     if (v == null || v === "") return "";
     const n = Number(v);
-    if (fmt === "currency") {
-        if (Math.abs(n) >= 100000) return `₹${(n / 100000).toFixed(1)}L`;
-        if (Math.abs(n) >= 1000) return `₹${(n / 1000).toFixed(1)}K`;
-        return `₹${n.toFixed(0)}`;
-    }
+    if (fmt === "currency") return formatFullRegionalCurrency(n);
     if (fmt === "percent") return `${n.toFixed(2)}%`;
     return n % 1 === 0 ? `${n}` : n.toFixed(2);
 };
+const fmtCompactVal = (v, fmt) => {
+    if (v == null || v === "") return "";
+    if (fmt === "currency") return formatRegionalCurrency(Number(v));
+    return fmtVal(v, fmt);
+};
 const fmtAxis = (v, fmt) => {
     const n = Number(v);
-    if (fmt === "currency") {
-        if (Math.abs(n) >= 100000) return `₹${(n / 100000).toFixed(0)}L`;
-        if (Math.abs(n) >= 1000) return `₹${(n / 1000).toFixed(0)}K`;
-        return `₹${n}`;
-    }
+    if (fmt === "currency") return formatRegionalCurrency(n, undefined, undefined, 1);
     if (fmt === "percent") return `${n}%`;
     return n;
 };
@@ -683,7 +683,7 @@ const ChartInner = ({ aggData, activeMetrics, axisMap, leftCount, rightCount, sh
                                 yAxisId={yId} radius={[4, 4, 0, 0]} maxBarSize={28}
                             >
                                 {showDataLabels && (
-                                    <LabelList dataKey={m.key} position="top" style={{ fontSize: 10.5, fill: m.color, fontWeight: 700 }} formatter={v => fmtVal(v, m.format)} />
+                                    <LabelList dataKey={m.key} position="top" style={{ fontSize: 10.5, fill: m.color, fontWeight: 700 }} formatter={v => fmtCompactVal(v, m.format)} />
                                 )}
                             </Bar>
                         );
@@ -696,7 +696,7 @@ const ChartInner = ({ aggData, activeMetrics, axisMap, leftCount, rightCount, sh
                             style={{ filter: `url(#cglow-${m.key})` }}
                         >
                             {showDataLabels && (
-                                <LabelList dataKey={m.key} position="top" style={{ fontSize: 10.5, fill: m.color, fontWeight: 700 }} formatter={v => fmtVal(v, m.format)} />
+                                <LabelList dataKey={m.key} position="top" style={{ fontSize: 10.5, fill: m.color, fontWeight: 700 }} formatter={v => fmtCompactVal(v, m.format)} />
                             )}
                         </Line>
                     );

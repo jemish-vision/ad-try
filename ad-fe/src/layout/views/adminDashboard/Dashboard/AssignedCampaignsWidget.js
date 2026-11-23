@@ -16,7 +16,7 @@ export default function AssignedCampaignsWidget({
   profileId,
   adType = "SP",
   date,
-  currencyCode = "INR",
+  currencyCode,
   marketplace = "IN",
 }) {
   const { t } = useTranslation();

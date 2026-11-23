@@ -11,6 +11,7 @@ import { ApiGetRuleSettings, ApiSaveRuleSettings } from "../../../api-wrapper/Ap
 import { Input } from "../../../components/ui/input";
 import { SYSTEM_PAGES, PAGE_ACTIONS } from "src/common/constants";
 import { PermissionCheck } from "../../../helper/permission/PermissionCheck";
+import { getCurrencySymbol as moneySymbol } from "../../../utility/regionalNumberFormat";
 
 function RuleSetting() {
   const { t } = useTranslation();
@@ -119,7 +120,7 @@ function RuleSetting() {
       .catch(() => Toast.error(t("Something went wrong")));
   };
 
-  const RuleField = ({ label, name, prefix = "₹", touched, errors, disabled }) => {
+  const RuleField = ({ label, name, prefix = moneySymbol().trim(), touched, errors, disabled }) => {
     const keys = name.split(".");
     const isTouched = touched?.[keys[0]]?.[keys[1]];
     const errorMsg = errors?.[keys[0]]?.[keys[1]];
@@ -266,7 +267,7 @@ function RuleSetting() {
                         <RangeHint
                           min={initialValues.budgetRuleSetting.minBudget}
                           max={initialValues.budgetRuleSetting.maxBudget}
-                          unit="₹"
+                          unit={moneySymbol().trim()}
                         />
                       </SectionCard>
                     </div>
@@ -300,7 +301,7 @@ function RuleSetting() {
                         <RangeHint
                           min={initialValues.placementRuleSetting.minBid}
                           max={initialValues.placementRuleSetting.maxBid}
-                          unit="₹"
+                          unit={moneySymbol().trim()}
                         />
                       </SectionCard>
                     </div>
@@ -334,7 +335,7 @@ function RuleSetting() {
                         <RangeHint
                           min={initialValues.targetingRuleSetting.minBid}
                           max={initialValues.targetingRuleSetting.maxBid}
-                          unit="₹"
+                          unit={moneySymbol().trim()}
                         />
                       </SectionCard>
                     </div>

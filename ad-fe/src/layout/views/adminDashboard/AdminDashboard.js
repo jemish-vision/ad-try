@@ -46,6 +46,7 @@ import { Card } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
 import { Input } from "../../../components/ui/input";
 import { AppTooltip } from "../../../components/ui/AppTooltip";
+import { getCurrencySymbol as moneySymbol } from "../../../utility/regionalNumberFormat";
 
 const ACTION_LABELS = {
   SCALE: { label: "⚡ SCALE", className: "scale" },
@@ -1161,7 +1162,7 @@ export default function AdminDashboard() {
             chartId="Dashboard"
             isChartLoading={isGraphLoading}
             chartData={graphData}
-            currencyCode={currencyCode || "INR"}
+            currencyCode={activeCurrencyCode}
             marketplace={activeCountryCode}
           />
         </div>
@@ -1172,7 +1173,7 @@ export default function AdminDashboard() {
             profileId={profileId?.value}
             adType={selectedAdType || "SP"}
             date={date}
-            currencyCode={currencyCode || "INR"}
+            currencyCode={activeCurrencyCode}
             marketplace={activeCountryCode}
           />
         </div>
@@ -1414,7 +1415,7 @@ export default function AdminDashboard() {
                 <span className="dfm-input-icon">
                   {filterModal.type === "percent"
                     ? <TbPercentage size={15} />
-                    : (currencyCode === "INR" ? "₹" : "$")}
+                    : moneySymbol(currencyCode).trim()}
                 </span>
                 <input
                   className="dfm-input"

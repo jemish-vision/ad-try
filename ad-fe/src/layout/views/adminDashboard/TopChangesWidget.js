@@ -7,6 +7,7 @@ import { Card } from '../../../components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from "../../../components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../../components/ui/tooltip';
 import './AdminDashboard.css';
+import { getCurrencySymbol as moneySymbol } from "../../../utility/regionalNumberFormat";
 
 const METRICS = [
     { value: 'sales', label: 'Ad Revenue' },
@@ -141,7 +142,7 @@ const TopChangesWidget = ({ id, title, apiEndpoint, profileId, fromDate, toDate 
 
         let prefix = value >= 0 ? '+' : '-';
         if (isCurrency) {
-            const symbol = currencyCode === 'INR' ? '₹' : (currencyCode === 'GBP' ? '£' : '$');
+            const symbol = moneySymbol(currencyCode);
             return `${prefix}${symbol}${valStr}`;
         }
         return `${prefix}${valStr}`;

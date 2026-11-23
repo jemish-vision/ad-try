@@ -15,6 +15,7 @@ import { AppTooltip } from "../../../../components/ui/AppTooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../components/ui/select";
 import { Input } from "../../../../components/ui/input";
 import { Button } from "../../../../components/ui/button";
+import { formatFullRegionalCurrency as formatMoney } from "../../../../utility/regionalNumberFormat";
 
 const WarehouseManagement = () => {
   const {
@@ -433,7 +434,7 @@ const WarehouseManagement = () => {
       width: 160,
       cellRenderer: (p) => (
         <span className="font-bold text-amber-600 dark:text-amber-400">
-          ₹{(p.value || 0).toFixed(2)}
+          {formatMoney(p.value || 0)}
         </span>
       ),
     },
@@ -572,7 +573,7 @@ const WarehouseManagement = () => {
           <div>
             <div className="text-xs text-gray-500 font-medium">Est. Monthly Storage Fee</div>
             <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-              ₹{(cardsData?.estimatedMonthlyStorageFee || 0).toLocaleString()}
+              {formatMoney(cardsData?.estimatedMonthlyStorageFee || 0)}
             </div>
             <div className="text-xs text-gray-400 mt-0.5">Vol: {cardsData?.totalVolumeCft || 0} Cu. Ft.</div>
           </div>

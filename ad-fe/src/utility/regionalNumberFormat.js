@@ -17,16 +17,38 @@ export const CURRENCY_SYMBOLS = {
   MXN: "MX$",
   BRL: "R$",
   SGD: "S$",
+  EGP: "EGP ",
+  TRY: "₺",
+  PLN: "zł ",
+  SEK: "kr ",
 };
 
-export function getCurrencySymbol(currencyCode = "INR") {
-  return CURRENCY_SYMBOLS[currencyCode] || "$";
+/** Currency of the selected profile (localStorage "profile"), e.g. "SAR". Falls back to INR. */
+export function getActiveCurrencyCode() {
+  try {
+    const raw = localStorage.getItem("profile");
+    const parsed = raw ? JSON.parse(raw) : null;
+    const code = parsed?.currencyCode || parsed?.profile?.currencyCode;
+    if (code && typeof code === "string") return code.toUpperCase();
+  } catch (e) { /* ignore */ }
+  return "INR";
 }
 
+/** Symbol for a currency; unknown codes show the code itself (e.g. "QAR "), never another currency's symbol. */
+export function getCurrencySymbol(currencyCode) {
+  const code = String(currencyCode || getActiveCurrencyCode()).toUpperCase();
+  return CURRENCY_SYMBOLS[code] || `${code} `;
+}
+
+/**
+ * Indian (lakh/crore) grouping? Decided by the currency when one is known — a SAR or USD amount is
+ * never grouped the Indian way, whatever the marketplace default is.
+ */
 export function isIndianMarketplace(marketplace = "", currencyCode = "") {
-  const mp = (marketplace || "").toUpperCase().trim();
   const cur = (currencyCode || "").toUpperCase().trim();
-  return mp === "IN" || mp === "INDIA" || cur === "INR";
+  if (cur) return cur === "INR";
+  const mp = (marketplace || "").toUpperCase().trim();
+  return mp === "IN" || mp === "INDIA";
 }
 
 /**
@@ -34,8 +56,9 @@ export function isIndianMarketplace(marketplace = "", currencyCode = "") {
  * For India: ₹1.24L, ₹3.50Cr, ₹45.2k, ₹850
  * For Global: $1.24M, $3.50B, $45.2k, $850
  */
-export function formatRegionalCurrency(amount, currencyCode = "INR", marketplace = "IN", decimals = 2) {
+export function formatRegionalCurrency(amount, currencyCode, marketplace = "IN", decimals = 2) {
   if (amount == null || isNaN(amount)) return "—";
+  currencyCode = currencyCode || getActiveCurrencyCode();
   const num = Number(amount);
   const isNegative = num < 0;
   const abs = Math.abs(num);
@@ -72,8 +95,9 @@ export function formatRegionalCurrency(amount, currencyCode = "INR", marketplace
  * Full currency formatting with regional thousand/lakh separators:
  * e.g. ₹ 1,23,456.78 (India) or $ 123,456.78 (US)
  */
-export function formatFullRegionalCurrency(amount, currencyCode = "INR", marketplace = "IN", decimals = 2) {
+export function formatFullRegionalCurrency(amount, currencyCode, marketplace = "IN", decimals = 2) {
   if (amount == null || isNaN(amount)) return "—";
+  currencyCode = currencyCode || getActiveCurrencyCode();
   const num = Number(amount);
   const symbol = getCurrencySymbol(currencyCode);
   const isIndia = isIndianMarketplace(marketplace, currencyCode);
