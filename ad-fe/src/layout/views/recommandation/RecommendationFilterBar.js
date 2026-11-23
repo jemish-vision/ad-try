@@ -12,6 +12,7 @@ import {
 import { FiFilter } from "react-icons/fi";
 import { MdFilterAlt } from "react-icons/md";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import { getTagStyles } from "../../../components/recommendation-tags/RecommendationTags";
 
 export const RECOMMENDATION_FILTER_OPTIONS = [
   { label: "Affected Parameter", value: "AffectedParameter", labelKey: "Affected Parameter" },
@@ -440,21 +441,32 @@ export function RecommendationFilterModal({
               {t("No tags yet. Add tags to a recommendation in the Recommendation Configuration tab.")}
             </p>
           ) : (
-            tagOptions.map((tag) => (
-              <CheckItem
-                key={tag._id}
-                checked={selectedTagIds.includes(String(tag._id))}
-                onChange={() => toggleMulti(String(tag._id), selectedTagIds, setSelectedTagIds)}
-                label={
-                  <span className="inline-flex items-center gap-2">
-                    <span style={{ width: 8, height: 8, borderRadius: 9999, background: tag.color || "#2563EB", display: "inline-block" }} />
-                    {tag.name}
-                  </span>
-                }
-                badge={tag.ruleCount ? t("{{count}} recommendations", { count: tag.ruleCount }) : null}
-                P={P}
-              />
-            ))
+            tagOptions.map((tag) => {
+              const tagStyle = getTagStyles(tag.color, isDark);
+              return (
+                <CheckItem
+                  key={tag._id}
+                  checked={selectedTagIds.includes(String(tag._id))}
+                  onChange={() => toggleMulti(String(tag._id), selectedTagIds, setSelectedTagIds)}
+                  label={
+                    <span className="inline-flex items-center gap-2">
+                      <span
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: 9999,
+                          backgroundColor: tagStyle.dot,
+                          display: "inline-block",
+                        }}
+                      />
+                      <span>{tag.name}</span>
+                    </span>
+                  }
+                  badge={tag.ruleCount ? t("{{count}} recommendations", { count: tag.ruleCount }) : null}
+                  P={P}
+                />
+              );
+            })
           )}
         </>
       );

@@ -107,6 +107,13 @@ function fixture({ campaigns = [{ campaignId: 1, status: 'ENABLED' }], adGroups 
             };
         if (name === '../models/recommandationStatus.model')
             return { find: find('status', statuses), exists: async () => false, bulkWrite: async (ops) => { writes.push(ops); return { modifiedCount: 0 }; } };
+        if (name === '../services/mockTestingData.service') {
+            const source = fs.readFileSync(path.join(__dirname, '../api-server/services/mockTestingData.service.js'), 'utf8');
+            const mock = { exports: {}, moment };
+            vm.runInNewContext(source.slice(source.indexOf('exports.getRecommendations ='), source.indexOf('exports.getRecommendationsHub')), mock);
+            return mock.exports;
+        }
+        if (name === '../helper/recommendationMerge') return require('../api-server/helper/recommendationMerge');
         if (name === '../helper/targetingMetricsPipeline') return require('../api-server/helper/targetingMetricsPipeline');
         if (name === '../helper/sanitizeQuery')
             return require('../api-server/helper/sanitizeQuery');
@@ -128,8 +135,9 @@ function fixture({ campaigns = [{ campaignId: 1, status: 'ENABLED' }], adGroups 
     vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../api-server/controllers/recommendation.controller.js'), 'utf8'), context);
     context.recommendationPipeline = context.exports.recommendationPipeline;
     const request = { config: { configId }, body: { profileId }, params: { ruleId: String(rules[0]._id) }, adType: 'SP', user: { id: '695666084b7687741f926dda' }, models };
-    const call = async (name = 'getTotalRecommendationCount', req = request) => { let body; await context.exports[name](req, { status() { return this; }, send(v) { body = v; } }); return body; };
-    return { call, queries, request, writes, pipelines, historyWrites, auditBatches, api: context.exports, get consumed() { return consumed; }, get closed() { return closed; }, get aggregateCount() { return aggregateCount; }, setRules: v => rules = v };
+    const callResponse = async (name = 'getTotalRecommendationCount', req = request) => { let body, statusCode; await context.exports[name](req, { status(code) { statusCode = code; return this; }, send(v) { body = v; } }); return { statusCode, body }; };
+    const call = async (name = 'getTotalRecommendationCount', req = request) => (await callResponse(name, req)).body;
+    return { call, callResponse, queries, request, writes, pipelines, historyWrites, auditBatches, api: context.exports, get consumed() { return consumed; }, get closed() { return closed; }, get aggregateCount() { return aggregateCount; }, setRules: v => rules = v };
 }
 test('repeated requests read Mongo again and immediately observe changed status', async () => {
     const campaigns = [{ campaignId: 1, status: 'ENABLED' }];
@@ -641,3 +649,160 @@ test('placement rule with out of budget condition filters to out of budget campa
     assert.equal(detailRes.data[0].acos, 50);
 });
 
+
+
+test('listing, card badges, and modal details use the same inclusive custom window', async () => {
+    const f = fixture();
+    Object.assign(f.request.body, { fromDate: '2026-09-01', toDate: '2026-09-30' });
+    const listing = await f.call('getRecommendation');
+    const badges = await f.call('getTotalRecommendationCount');
+    const detail = await f.call('getRecommendationData');
+    assert.equal(listing.data[0].fromDate, '2026-09-01');
+    assert.equal(listing.data[0].toDate, '2026-09-30');
+    assert.equal(listing.data[0].count, detail.totalAllRecords);
+    assert.equal(badges.rules[0].count, detail.totalAllRecords);
+    assert.equal(listing.data[0].newCount, detail.newCount);
+    assert.equal(detail.rule.fromDate, '2026-09-01');
+    assert.equal(detail.rule.toDate, '2026-09-30');
+    for (const pipeline of f.pipelines) {
+        assert.equal(pipeline[0].$match.reportDate.$gte, '2026-09-01');
+        assert.equal(pipeline[0].$match.reportDate.$lte, '2026-09-30');
+    }
+    for (const query of f.queries.filter(q => q.kind === 'status')) {
+        assert.equal(query.filter.reportDate.$gte, '2026-09-01');
+        assert.equal(query.filter.reportDate.$lte, '2026-09-30');
+    }
+});
+
+test('concurrent requests for different ranges never share a scoped count computation', async () => {
+    const f = fixture();
+    const requestFor = (fromDate, toDate) => ({ ...f.request, body: { ...f.request.body, fromDate, toDate } });
+    const [first, second] = await Promise.all([
+        f.call('getRecommendation', requestFor('2026-09-01', '2026-09-30')),
+        f.call('getRecommendation', requestFor('2026-10-01', '2026-10-31')),
+    ]);
+    assert.equal(first.data[0].fromDate, '2026-09-01');
+    assert.equal(second.data[0].fromDate, '2026-10-01');
+    assert.equal(first.data[0].toDate, '2026-09-30');
+    assert.equal(second.data[0].toDate, '2026-10-31');
+    assert.equal(f.aggregateCount, 2);
+});
+
+test('concurrent same-range listing and badge requests retain in-flight deduplication', async () => {
+    const f = fixture();
+    Object.assign(f.request.body, { fromDate: '2026-09-01', toDate: '2026-09-30' });
+    const [listing, badges] = await Promise.all([f.call('getRecommendation'), f.call('getTotalRecommendationCount')]);
+    assert.equal(listing.data[0].count, badges.rules[0].count);
+    assert.equal(f.aggregateCount, 1);
+});
+
+test('All ad types forwards the selected range to every partition before merging', async () => {
+    const f = fixture();
+    f.request.isAllAdTypes = true;
+    f.request.adTypes = ['SP', 'SB', 'SD'];
+    f.request.modelsByType = { SP: f.request.models, SB: f.request.models, SD: f.request.models };
+    Object.assign(f.request.body, { fromDate: '2026-09-01', toDate: '2026-09-30' });
+    const result = await f.call('getRecommendation');
+    assert.equal(result.data[0].fromDate, '2026-09-01');
+    assert.equal(result.data[0].toDate, '2026-09-30');
+    assert.equal(result.data[0].count, 3);
+    assert.equal(f.aggregateCount, 3);
+    assert.ok(f.pipelines.every(p => p[0].$match.reportDate.$gte === '2026-09-01'));
+});
+
+for (const reportDate of ['LAST_7_DAYS', 'LIFETIME']) {
+    test(`${reportDate} explicit date override applies to list, modal, and internal fetch`, async () => {
+        const f = fixture();
+        const rule = { _id: new mongoose.Types.ObjectId(f.request.params.ruleId), configId: new mongoose.Types.ObjectId(configId), profileId, gridName: 'Targeting', timezone: 'Asia/Kolkata', reportDate };
+        f.setRules([rule]);
+        Object.assign(f.request.body, { fromDate: '2024-02-29', toDate: '2024-02-29' });
+        const listing = await f.call('getRecommendation');
+        const detail = await f.call('getRecommendationData');
+        const internal = await f.api.fetchRecommendationData({ configId, profileId, ruleId: f.request.params.ruleId, models: f.request.models, adType: 'SP', fromDate: '2024-02-29', toDate: '2024-02-29' });
+        for (const result of [listing.data[0], detail.rule, internal]) {
+            assert.equal(result.fromDate, '2024-02-29');
+            assert.equal(result.toDate, '2024-02-29');
+        }
+        for (const pipeline of f.pipelines) {
+            assert.equal(pipeline[0].$match.reportDate.$gte, '2024-02-29');
+            assert.equal(pipeline[0].$match.reportDate.$lte, '2024-02-29');
+        }
+    });
+}
+
+test('without a selected range rule presets retain their existing default dates', async () => {
+    const f = fixture();
+    const listing = await f.call('getRecommendation');
+    const detail = await f.call('getRecommendationData');
+    assert.equal(listing.data[0].fromDate, '2026-10-09');
+    assert.equal(listing.data[0].toDate, '2026-10-16');
+    assert.equal(detail.rule.fromDate, '2026-10-09');
+    assert.equal(detail.rule.toDate, '2026-10-16');
+});
+
+for (const [name, input] of [
+    ['partial start', { fromDate: '2026-09-01' }],
+    ['partial end', { toDate: '2026-09-30' }],
+    ['reversed', { fromDate: '2026-10-01', toDate: '2026-09-30' }],
+    ['invalid calendar date', { fromDate: '2026-02-30', toDate: '2026-03-01' }],
+    ['timestamp instead of date', { fromDate: '2026-09-01T00:00:00Z', toDate: '2026-09-30' }],
+    ['empty', { fromDate: '', toDate: '' }],
+    ['null', { fromDate: null, toDate: null }],
+]) {
+    test(`${name} range returns HTTP400 consistently before database access`, async () => {
+        const f = fixture();
+        Object.assign(f.request.body, input);
+        for (const endpoint of ['getRecommendation', 'getTotalRecommendationCount', 'getRecommendationData']) {
+            const { statusCode, body } = await f.callResponse(endpoint);
+            assert.equal(statusCode, 400, endpoint);
+            assert.equal(body.isSuccess, false);
+            assert.match(body.message, /valid YYYY-MM-DD/);
+        }
+        assert.equal(f.queries.length, 0);
+        assert.equal(f.aggregateCount, 0);
+    });
+}
+
+test('pipeline dismissed/new lookup lower bound follows effective range, not saved preset', () => {
+    const f = fixture();
+    const rule = { _id: new mongoose.Types.ObjectId(), configId: new mongoose.Types.ObjectId(configId), profileId, gridName: 'Placement', reportDate: 'LAST_7_DAYS', timezone: 'Asia/Kolkata' };
+    const pipeline = f.api.recommendationPipeline({ configId, profileId, reportDate: { $gte: '2026-09-01', $lte: '2026-09-30' } }, '2026-09-30', rule, 'SP');
+    const seen = pipeline.find(stage => stage.$lookup?.as === 'existingRecommendation');
+    assert.ok(seen);
+    const bounds = seen.$lookup.pipeline[0].$match.$expr.$and;
+    assert.ok(bounds.some(expr => expr.$gte?.[0] === '$reportDate' && expr.$gte?.[1] === '2026-09-01'));
+    assert.ok(bounds.some(expr => expr.$lte?.[0] === '$reportDate' && expr.$lte?.[1] === '2026-09-30'));
+});
+
+
+test('mock listing echoes selected dates without changing its synthetic counts', async () => {
+    const f = fixture();
+    f.request.user.isMockUser = true;
+    Object.assign(f.request.body, { fromDate: '2026-09-01', toDate: '2026-09-30' });
+    const result = await f.call('getRecommendation');
+    assert.equal(result.data.length, 3);
+    assert.deepEqual(Array.from(result.data, r => r.count), [4, 3, 2]);
+    assert.ok(result.data.every(r => r.fromDate === '2026-09-01' && r.toDate === '2026-09-30'));
+    assert.equal(f.aggregateCount, 0);
+    assert.equal(f.queries.length, 0);
+});
+
+test('mock listing retains date defaults and validates ranges before its bypass', async () => {
+    const f = fixture();
+    f.request.isMockTestingUser = true;
+    const result = await f.call('getRecommendation');
+    assert.equal(result.data[0].fromDate, moment().subtract(14, 'days').format('YYYY-MM-DD'));
+    assert.equal(result.data[2].fromDate, moment().subtract(7, 'days').format('YYYY-MM-DD'));
+    f.request.body.fromDate = '2026-09-01';
+    const invalid = await f.callResponse('getRecommendation');
+    assert.equal(invalid.statusCode, 400);
+    assert.equal(invalid.body.isSuccess, false);
+});
+
+test('LIFETIME without override retains its unbounded performance query', async () => {
+    const f = fixture();
+    f.setRules([{ _id: new mongoose.Types.ObjectId(f.request.params.ruleId), configId: new mongoose.Types.ObjectId(configId), profileId, gridName: 'Targeting', timezone: 'Asia/Kolkata', reportDate: 'LIFETIME' }]);
+    await f.call('getRecommendation');
+    await f.call('getRecommendationData');
+    assert.ok(f.pipelines.every(p => p[0].$match.reportDate === undefined));
+});

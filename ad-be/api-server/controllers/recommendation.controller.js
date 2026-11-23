@@ -2189,7 +2189,7 @@ exports.importRecommandationRule = async (req, res) => {
 exports.recommendationPipeline = (query, lastDate, rule, adType = "SP", options = {}) => {
     const tz = rule?.timezone || "UTC";
     const currentDate = options?.currentDate || moment().tz(tz).format("YYYY-MM-DD");
-    const { fromDate } = getRuleDate(rule?.timezone, rule?.reportDate);
+    const fromDate = query?.reportDate?.$gte ?? getRuleDate(rule?.timezone, rule?.reportDate).fromDate;
     const ruleConfigId = (rule?.configId && mongoose.Types.ObjectId.isValid(rule.configId)) ? new mongoose.Types.ObjectId(rule.configId) : rule?.configId;
     const ruleId = (rule?._id && mongoose.Types.ObjectId.isValid(rule._id)) ? new mongoose.Types.ObjectId(rule._id) : rule?._id;
     const ruleProfileId = Number(rule?.profileId) || rule?.profileId;
@@ -3061,7 +3061,22 @@ exports.recommendationPipeline = (query, lastDate, rule, adType = "SP", options 
     return commonPipeline;
 };
 
-const computeRecommendationCounts = async ({ configId, profileId, adType, models }) => {
+// Page-level performance dates override rule presets without changing the rule.
+// Treat a partial or malformed range as an error rather than silently falling back.
+const getRecommendationDateOverride = (input = {}) => {
+    const { fromDate, toDate } = input;
+    if (fromDate === undefined && toDate === undefined) return null;
+    const validDate = value => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+        moment(value, "YYYY-MM-DD", true).isValid();
+    if (!validDate(fromDate) || !validDate(toDate) || fromDate > toDate) {
+        const error = new Error("fromDate and toDate must be valid YYYY-MM-DD dates, with fromDate on or before toDate.");
+        error.code = "INVALID_RECOMMENDATION_DATE_RANGE";
+        throw error;
+    }
+    return { fromDate, toDate };
+};
+
+const computeRecommendationCounts = async ({ configId, profileId, adType, models, dateRange }) => {
     const configObjectId = configId && mongoose.Types.ObjectId.isValid(configId) ? new mongoose.Types.ObjectId(configId) : configId;
     const numProfileId = Number(profileId) || profileId;
     const { adTypeCampaignSchema, adTypeAdGroupSchema, adTypePlacementSchema, adTypeTargetingSchema, adTypeSearchTermSchema, adTypeProductAdsSchema } = models;
@@ -3227,7 +3242,7 @@ const computeRecommendationCounts = async ({ configId, profileId, adType, models
     if (hasSearchTerm && adTypeSearchTermSchema) {
         try {
             const sampleRule = rules.find(r => r.gridName === "Search Term");
-            const today = moment.tz(sampleRule?.timezone || "America/Los_Angeles").format("YYYY-MM-DD");
+            const today = dateRange?.toDate || moment.tz(sampleRule?.timezone || "America/Los_Angeles").format("YYYY-MM-DD");
             let [enabledCampaigns, enabledAdGroups, enabledTargetings, appliedRecords, appliedHistory] = await Promise.all([
                 adTypeCampaignSchema ? adTypeCampaignSchema.find({ configId: configObjectId, profileId: numProfileId, reportDate: today, status: 'ENABLED' }, { campaignId: 1 }).lean() : [],
                 adTypeAdGroupSchema ? adTypeAdGroupSchema.find({ configId: configObjectId, profileId: numProfileId, reportDate: today, status: 'ENABLED' }, { adGroupId: 1 }).lean() : [],
@@ -3334,8 +3349,8 @@ const computeRecommendationCounts = async ({ configId, profileId, adType, models
                 if (!model) return null;
 
                 let matchQuery = { configId: rule.configId, profileId: rule.profileId };
-                let { fromDate, toDate } = getRuleDate(rule?.timezone, rule?.reportDate);
-                if (rule?.reportDate !== "LIFETIME") matchQuery.reportDate = { $gte: fromDate, $lte: toDate };
+                let { fromDate, toDate } = dateRange || getRuleDate(rule?.timezone, rule?.reportDate);
+                if (dateRange || rule?.reportDate !== "LIFETIME") matchQuery.reportDate = { $gte: fromDate, $lte: toDate };
                 else toDate = currentDate;
 
                 const notNewRecords = await recommandationStatusSchema.find({
@@ -3710,7 +3725,7 @@ const computeRecommendationCounts = async ({ configId, profileId, adType, models
 const inflightRecComputes = new Map();
 
 const computeRecommendationCountsWithDedupe = async (params) => {
-    const key = `${params.configId}_${params.profileId}_${params.adType}`;
+    const key = JSON.stringify([String(params.configId), String(params.profileId), params.adType, params.dateRange?.fromDate || null, params.dateRange?.toDate || null]);
     if (inflightRecComputes.has(key)) {
         return inflightRecComputes.get(key);
     }
@@ -3728,20 +3743,20 @@ const computeRecommendationCountsWithDedupe = async (params) => {
 const computeRecommendationCountsForRequest = async (req) => {
     const configId = req?.config?.configId || req?.headers?.["x-config-id"] || req?.body?.configId;
     const profileId = req?.body?.profileId;
+    const dateRange = getRecommendationDateOverride(req?.body);
     if (req?.isAllAdTypes && req?.modelsByType) {
         const types = (req.adTypes && req.adTypes.length) ? req.adTypes : ["SP", "SB", "SD"];
         const perType = await Promise.all(
             types.map((t) =>
-                computeRecommendationCountsWithDedupe({ configId, profileId, adType: t, models: req.modelsByType[t] })
+                computeRecommendationCountsWithDedupe({ configId, profileId, adType: t, models: req.modelsByType[t], dateRange })
             )
         );
         return mergeRecommendationCountsByRule(perType);
     }
-    return computeRecommendationCountsWithDedupe({ configId, profileId, adType: req?.adType, models: req.models });
+    return computeRecommendationCountsWithDedupe({ configId, profileId, adType: req?.adType, models: req.models, dateRange });
 };
 
 exports.getRecommendation = async (req, res) => {
-    if (req.user?.isMockUser || req.isMockTestingUser) return require("../services/mockTestingData.service").getRecommendations(req, res);
     const configId = req?.config?.configId || req?.headers?.["x-config-id"] || req?.body?.configId;
     const profileId = req?.body?.profileId;
     const adType = req?.adType;
@@ -3749,6 +3764,8 @@ exports.getRecommendation = async (req, res) => {
     const limit = req?.body?.limit ? Math.max(1, Math.min(100, Number(req?.body?.limit))) : null;
 
     try {
+        getRecommendationDateOverride(req?.body);
+        if (req.user?.isMockUser || req.isMockTestingUser) return require("../services/mockTestingData.service").getRecommendations(req, res);
         if (!profileId) {
             return res.status(203).send({
                 isSuccess: false,
@@ -3786,6 +3803,9 @@ exports.getRecommendation = async (req, res) => {
             },
         });
     } catch (error) {
+        if (error?.code === "INVALID_RECOMMENDATION_DATE_RANGE") {
+            return res.status(400).send({ isSuccess: false, message: error.message });
+        }
         recommendation_logs({ message: `[getRecommendation Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
         return res.status(203).send({
             isSuccess: false,
@@ -4152,14 +4172,12 @@ exports.getRecommendationData = async (req, res) => {
     const profileId = req?.body?.profileId;
     const ruleId = req?.params?.ruleId;
 
-    const customFromDate = req?.body?.fromDate;
-    const customToDate = req?.body?.toDate;
-
     const { adTypeCampaignSchema, adTypeAdGroupSchema, adTypePlacementSchema, adTypeTargetingSchema, adTypeSearchTermSchema, adTypeProductAdsSchema } = req.models;
 
     const adType = req?.adType;
 
     try {
+        const dateRange = getRecommendationDateOverride(req?.body);
         if (!ruleId) {
             return res.status(203).send({
                 isSuccess: false,
@@ -4191,19 +4209,9 @@ exports.getRecommendationData = async (req, res) => {
         /** Base Query */
         let query = { configId: rule.configId, profileId: rule.profileId };
 
-        let fromDate;
-        let toDate;
+        let { fromDate, toDate } = dateRange || getRuleDate(rule?.timezone, rule?.reportDate);
 
-        if (customFromDate && customToDate) {
-            fromDate = customFromDate;
-            toDate = customToDate;
-        } else {
-            const ruleDates = getRuleDate(rule?.timezone, rule?.reportDate);
-            fromDate = ruleDates?.fromDate;
-            toDate = ruleDates?.toDate;
-        }
-
-        if (rule?.reportDate !== "LIFETIME") query.reportDate = { $gte: fromDate, $lte: toDate };
+        if (dateRange || rule?.reportDate !== "LIFETIME") query.reportDate = { $gte: fromDate, $lte: toDate };
         else toDate = currentDate;
 
         const page = Number(req?.body?.page || req?.body?.pageNo || req?.query?.page);
@@ -4616,6 +4624,9 @@ exports.getRecommendationData = async (req, res) => {
             data,
         });
     } catch (error) {
+        if (error?.code === "INVALID_RECOMMENDATION_DATE_RANGE") {
+            return res.status(400).send({ isSuccess: false, message: error.message });
+        }
         recommendation_logs({ message: `[getRecommendationData Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
         return res.status(203).send({
             isSuccess: false,
@@ -4653,13 +4664,14 @@ exports.fetchRecommendationData = async ({ configId, profileId, ruleId, models, 
 
     const currentDate = moment.tz(rule.timezone).format("YYYY-MM-DD");
 
-    if (!fromDate || !toDate) {
+    const dateRange = getRecommendationDateOverride({ fromDate, toDate });
+    if (!dateRange) {
         const ruleDates = getRuleDate(rule.timezone, rule.reportDate);
         fromDate = ruleDates?.fromDate;
         toDate = ruleDates?.toDate;
     }
 
-    if (rule.reportDate !== "LIFETIME") {
+    if (dateRange || rule.reportDate !== "LIFETIME") {
         query.reportDate = { $gte: fromDate, $lte: toDate };
     } else {
         toDate = currentDate;
@@ -4779,6 +4791,9 @@ exports.getTotalRecommendationCount = async (req, res) => {
         });
 
     } catch (error) {
+        if (error?.code === "INVALID_RECOMMENDATION_DATE_RANGE") {
+            return res.status(400).send({ isSuccess: false, message: error.message });
+        }
         recommendation_logs({ message: `[getTotalRecommendationCount Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
         return res.status(203).send({
             isSuccess: false,

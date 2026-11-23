@@ -6702,7 +6702,11 @@ exports.getRecommendations = async (req, res) => {
   return res.status(200).send({
     isSuccess: true,
     message: "Recommendation data fetched successfully.",
-    data: recommendations,
+    data: recommendations.map(item => ({
+      ...item,
+      ...(req.body?.fromDate && req.body?.toDate
+        ? { fromDate: req.body.fromDate, toDate: req.body.toDate } : {}),
+    })),
     pagination: {
       page: 1,
       limit: 10,

@@ -11,6 +11,7 @@ import AgTable from "../../../common/grid/AgTable";
 import { StyledCheckbox } from "../../../common/grid/StyledCheckbox";
 import { ApiGetRecommendationData, ApiApplyRuleRecommendation } from "../../../api-wrapper/recommendation/ApiRecommendation";
 import { predefinedRanges } from "../../../common/helper/calendarValues/calendarValues";
+import { normalizeRecommendationDateRange } from "./recommendationDateRange.mjs";
 import CurrencyCode from "../../../helper/currencyCode/CurrencyCode";
 import { Toast } from "../../../helper/links/Link";
 import moment from "moment-timezone";
@@ -680,7 +681,7 @@ const RecommendationHeaderCheckbox = React.memo(({ getRowId, toggleAll, headerCh
     );
 });
 
-function RecommendationModal({ show, onHide, snapshot, profileId, adType, loading: externalLoading, refreshGrid }) {
+function RecommendationModal({ show, onHide, snapshot, profileId, adType, loading: externalLoading, refreshGrid, onDateRangeChange }) {
     const { t } = useTranslation();
     const navigate = useNavigate();
 
@@ -693,6 +694,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
     }, []);
 
     const [internalRule, setInternalRule] = useState(snapshot?.rule || {});
+    const [hasDateOverride, setHasDateOverride] = useState(Boolean(normalizeRecommendationDateRange(snapshot?.dateRangeOverride)));
     const rule = internalRule || snapshot?.rule || {};
     const actions = useMemo(
         () =>
@@ -703,7 +705,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
     );
     const gridName = rule?.gridName || "";
     const ruleConditions = useMemo(() => parseRuleConditions(rule), [rule]);
-    const lookbackLabel = rule?.reportDate
+    const lookbackLabel = hasDateOverride ? "Selected date range" : rule?.reportDate
         ? (DATE_FILTER_LABEL_MAP[rule.reportDate] || String(rule.reportDate).replace(/_/g, " "))
         : null;
     const gridRef = useRef(null);
@@ -711,9 +713,12 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
 
     // ─── Date range & pagination state ───
     const [dateRange, setDateRange] = useState([null, null]);
+    // A displayed rule window is not an explicit override (notably for LIFETIME).
+    const effectiveDateRangeRef = useRef(normalizeRecommendationDateRange(snapshot?.dateRangeOverride));
     const [campaignSearch, setCampaignSearch] = useState("");
     const [internalData, setInternalData] = useState(snapshot?.data || []);
     const [internalCount, setInternalCount] = useState(snapshot?.totalRecords ?? snapshot?.count ?? 0);
+    const [latestNewCount, setLatestNewCount] = useState(snapshot?.newCount ?? null);
     const [totalRecords, setTotalRecords] = useState(snapshot?.totalRecords ?? snapshot?.count ?? 0);
     const [currentPage, setCurrentPage] = useState(snapshot?.currentPage || 1);
     const [perPage, setPerPage] = useState(snapshot?.perPage || 25);
@@ -722,22 +727,31 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
     const [selectAllLoading, setSelectAllLoading] = useState(false);
     const allFetchedDataRef = useRef(null);
     const detailRequestRef = useRef(0);
+    const selectAllRequestRef = useRef(0);
     const detailQueryRef = useRef(null);
     const viewKey = JSON.stringify([show, snapshot?.rule?._id || snapshot?._id, profileId || snapshot?.profileId, adType]);
     const viewKeyRef = useRef(viewKey);
     viewKeyRef.current = viewKey;
+    useEffect(() => () => {
+        detailRequestRef.current += 1;
+        selectAllRequestRef.current += 1;
+    }, []);
 
     // Seed date range and data whenever the snapshot or show changes
     useEffect(() => {
         detailRequestRef.current += 1;
+        selectAllRequestRef.current += 1;
         detailQueryRef.current = null;
         setDateLoading(false);
         if (!show || !snapshot) {
             setInternalData([]);
             setInternalCount(0);
+            setLatestNewCount(null);
             setTotalRecords(0);
             setInternalRule(null);
             setDateRange([null, null]);
+            effectiveDateRangeRef.current = null;
+            setHasDateOverride(false);
             setLatestHistoryMap({});
             setSelectedRows([]);
             setOutsideHistoryScopes(["all", "recommendation", "dayparting", "other"]);
@@ -755,10 +769,16 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         setInternalRule(currentRule);
         const from = currentRule?.fromDate ? moment(currentRule.fromDate).toDate() : null;
         const to = currentRule?.toDate ? moment(currentRule.toDate).toDate() : null;
-        setDateRange([from, to]);
+        // The snapshot records the list range used by the initial detail request.
+        // Parent updates from this modal must not reseed rows from an older snapshot.
+        const override = normalizeRecommendationDateRange(snapshot.dateRangeOverride);
+        effectiveDateRangeRef.current = override;
+        setDateRange(override || (currentRule.reportDate === "LIFETIME" ? [null, null] : [from, to]));
+        setHasDateOverride(Boolean(override));
         setInternalData(snapshot?.data || []);
         const total = snapshot?.totalRecords ?? snapshot?.count ?? (snapshot?.data?.length || 0);
         setInternalCount(total);
+        setLatestNewCount(snapshot?.newCount ?? currentRule?.newCount ?? null);
         setTotalRecords(total);
         setCurrentPage(snapshot?.currentPage || 1);
     }, [show, snapshot?._id, snapshot?.rule?._id, snapshot?.data]);
@@ -790,11 +810,8 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
 
     const displayNewCount = useMemo(() => {
         const fromData = (transformedData || []).filter((item) => Boolean(item.isNew)).length;
-        if (fromData > 0) return fromData;
-        if (snapshot?.newCount != null && snapshot.newCount > 0) return snapshot.newCount;
-        if (internalRule?.newCount != null && internalRule.newCount > 0) return internalRule.newCount;
-        return 0;
-    }, [transformedData, snapshot?.newCount, internalRule?.newCount]);
+        return latestNewCount != null ? Number(latestNewCount) : fromData;
+    }, [transformedData, latestNewCount]);
 
     const [selectedRows, setSelectedRows] = useState([]);
     const [showReviewModal, setShowReviewModal] = useState(false);
@@ -817,6 +834,13 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         return isAllScope ? "all" : outsideHistoryScopes.filter((s) => s !== "all");
     }, [isAllScope, outsideHistoryScopes]);
     const [historyFilter, setHistoryFilter] = useState("all"); // "all" | "unchanged" | "before_days"
+    const selectionScope = JSON.stringify([viewKey, dateRange?.map(toYMD), historyFilter]);
+    const selectionScopeRef = useRef(selectionScope);
+    selectionScopeRef.current = selectionScope;
+    useEffect(() => {
+        selectAllRequestRef.current += 1;
+        setSelectAllLoading(false);
+    }, [selectionScope]);
     const [filterDays, setFilterDays] = useState(7);
     const selectedRowsRef = useRef([]);
 
@@ -1011,6 +1035,9 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
     const fetchData = useCallback(async (targetPage = 1, targetPerPage = perPage, targetDateRange = dateRange, targetFilter = historyFilter, keepRowsVisible = false) => {
         const ruleId = snapshot?.rule?._id || snapshot?._id || internalRule?._id;
         if (!ruleId) return;
+        // Refresh/pagination supersedes pending select-all even if dates stay equal.
+        selectAllRequestRef.current += 1;
+        setSelectAllLoading(false);
 
         const activeProfileId = profileId || snapshot?.profileId;
         const payload = {
@@ -1020,9 +1047,10 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
             filterType: targetFilter || "all",
         };
 
-        if (targetDateRange && targetDateRange[0] && targetDateRange[1]) {
-            payload.fromDate = toYMD(targetDateRange[0]);
-            payload.toDate = toYMD(targetDateRange[1]);
+        const requestDateRange = effectiveDateRangeRef.current;
+        if (requestDateRange?.[0] && requestDateRange?.[1]) {
+            payload.fromDate = toYMD(requestDateRange[0]);
+            payload.toDate = toYMD(requestDateRange[1]);
         }
 
         const request = ++detailRequestRef.current;
@@ -1036,10 +1064,15 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                 setInternalData(res.data || []);
                 const total = res?.totalRecords ?? res?.count ?? (res.data ? res.data.length : 0);
                 setInternalCount(total);
+                setLatestNewCount(res?.newCount ?? res?.rule?.newCount ?? null);
                 setTotalRecords(total);
                 setCurrentPage(res?.currentPage || targetPage);
                 setPerPage(res?.perPage || targetPerPage);
                 if (res?.rule) setInternalRule(res.rule);
+                if (!requestDateRange && res?.rule) {
+                    setDateRange(res.rule.reportDate === "LIFETIME" ? [null, null]
+                        : normalizeRecommendationDateRange([res.rule.fromDate, res.rule.toDate]) || [null, null]);
+                }
                 allFetchedDataRef.current = null;
             } else {
                 Toast.error(res?.message || t("Failed to load recommendation data"));
@@ -1060,12 +1093,24 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
     }, [fetchData, currentPage, perPage, dateRange, historyFilter]);
 
     const handleDateChange = useCallback(async (value) => {
-        setDateRange(value);
+        const nextRange = normalizeRecommendationDateRange(value);
+        if (value !== null && !nextRange) return;
+        // Set synchronously before fetchData; React state updates are asynchronous.
+        effectiveDateRangeRef.current = nextRange;
+        setDateRange(nextRange);
+        setHasDateOverride(Boolean(nextRange));
+        selectAllRequestRef.current += 1;
+        setSelectAllLoading(false);
         allFetchedDataRef.current = null;
-        if (!value || !value[0] || !value[1]) return;
         setSelectedRows([]);
-        fetchData(1, perPage, value, historyFilter);
-    }, [fetchData, perPage, historyFilter]);
+        setCurrentPage(1);
+        setInternalData([]);
+        setInternalCount(0);
+        setTotalRecords(0);
+        setLatestNewCount(0);
+        onDateRangeChange?.(nextRange);
+        fetchData(1, perPage, nextRange, historyFilter);
+    }, [fetchData, perPage, historyFilter, onDateRangeChange]);
 
     const handlePageChange = useCallback((newPage) => {
         setCurrentPage(newPage);
@@ -1133,7 +1178,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         setTimeout(refreshCheckboxCells, 0);
     }, [refreshCheckboxCells, getRowId]);
 
-    const totalCount = totalRecords || (snapshot?.totalRecords ?? snapshot?.count ?? (filteredData?.length || 0));
+    const totalCount = totalRecords ?? filteredData?.length ?? 0;
 
     const isAllTotalSelected = useMemo(() => {
         if (!totalCount || totalCount === 0 || selectedRows.length === 0) return false;
@@ -1177,14 +1222,22 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
             filterType: historyFilter || "all",
         };
 
-        if (dateRange && dateRange[0] && dateRange[1]) {
-            payload.fromDate = toYMD(dateRange[0]);
-            payload.toDate = toYMD(dateRange[1]);
+        const requestDateRange = effectiveDateRangeRef.current;
+        if (requestDateRange?.[0] && requestDateRange?.[1]) {
+            payload.fromDate = toYMD(requestDateRange[0]);
+            payload.toDate = toYMD(requestDateRange[1]);
         }
 
+        const selectionRequest = ++selectAllRequestRef.current;
+        const detailVersion = detailRequestRef.current;
+        const activeScope = selectionScopeRef.current;
+        const isCurrentSelection = () => selectionRequest === selectAllRequestRef.current
+            && detailVersion === detailRequestRef.current && activeScope === selectionScopeRef.current
+            && viewKeyRef.current === viewKey;
         setSelectAllLoading(true);
         try {
             const res = await ApiGetRecommendationData(ruleId, payload);
+            if (!isCurrentSelection()) return;
             if (res?.isSuccess && Array.isArray(res?.data)) {
                 let allList = (res.data || []).map((item, index) => ({
                     ...item,
@@ -1227,12 +1280,13 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                 Toast.error(res?.message || t("Failed to select all records"));
             }
         } catch (err) {
+            if (!isCurrentSelection()) return;
             console.error("Failed to fetch all recommendation records:", err);
             Toast.error(t("Failed to select all records"));
         } finally {
-            setSelectAllLoading(false);
+            if (isCurrentSelection()) setSelectAllLoading(false);
         }
-    }, [totalCount, isAllTotalSelected, transformedData, snapshot, internalRule, profileId, dateRange, gridName, actions, historyFilter, refreshCheckboxCells, t]);
+    }, [totalCount, isAllTotalSelected, transformedData, snapshot, internalRule, profileId, dateRange, gridName, actions, historyFilter, refreshCheckboxCells, viewKey, t]);
 
     const handleApplyDaysFilter = useCallback(() => {
         const minVal = historyFilter === "exact_days" ? 0 : 1;
@@ -1343,8 +1397,8 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                 e.preventDefault();
                 openCampaignViewInNewTab(data, campaignName, {
                     campaignId,
-                    fromDate: toYMD(dateRange?.[0]),
-                    toDate: toYMD(dateRange?.[1]),
+                    fromDate: rule?.reportDate === "LIFETIME" && !hasDateOverride ? undefined : toYMD(dateRange?.[0]),
+                    toDate: rule?.reportDate === "LIFETIME" && !hasDateOverride ? undefined : toYMD(dateRange?.[1]),
                 });
             };
 
@@ -1658,7 +1712,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                 </button>
             );
         },
-    }), [actions, navigate, onHide, t, adType, profileId, snapshot, dateRange]);
+    }), [actions, navigate, onHide, t, adType, profileId, snapshot, dateRange, rule?.reportDate, hasDateOverride]);
 
     const canUpdate = PermissionCheck(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.UPDATE);
 
@@ -1919,7 +1973,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                 {rule?.ruleName || "Recommendation"}
                             </div>
                             {/* Tags are read-only here; they are edited in Recommendation Configuration */}
-                            <TagList tags={rule?.tags} max={6} />
+                            <TagList tags={rule?.tags} max={6} isDark={isDark} />
                         </div>
 
                         {/* Row 2: Badges LEFT | Date picker RIGHT */}
@@ -1959,12 +2013,15 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                     <div className="w-4 h-4 border-2 border-slate-200 border-t-sky-500 dark:border-white/10 dark:border-t-[#38bdf8] rounded-full animate-spin" />
                                 )}
                                 <DateRangePicker
+                                    id="recommendation-modal-date-range"
+                                    ariaLabel={t("Recommendation detail date range")}
                                     className="w-full sm:w-[260px]"
                                     style={{ minWidth: 210, height: 34 }}
                                     ranges={predefinedRanges}
                                     value={dateRange}
                                     placeholder={t("Select Date")}
                                     onChange={handleDateChange}
+                                    persistGlobalDate={false}
                                     placement="bottomEnd"
                                     format="yyyy-MM-dd"
                                     cleanable={false}
@@ -1987,7 +2044,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                 {lookbackLabel && (
                                     <span
                                         className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20 shadow-sm"
-                                        title={t("Configured lookback period: {{val}}", { val: lookbackLabel })}
+                                        title={hasDateOverride ? t("Performance filtered by the selected date range") : t("Configured lookback period: {{val}}", { val: lookbackLabel })}
                                     >
                                         <FiCalendar size={11} className="text-indigo-500 flex-shrink-0" />
                                         <span>{t(lookbackLabel)}</span>

@@ -1,5 +1,5 @@
 import { SYSTEM_PAGES, PAGE_ACTIONS } from "src/common/constants";
-import { useEffect, useState, useContext, useCallback, useMemo } from "react";
+import { useEffect, useState, useContext, useCallback, useMemo, useRef } from "react";
 import Filter from "../../../helper/filter/Filter";
 import { ProfileContext } from "../../../helper/usecontext/useContext";
 import { AdTypeScopeNote } from "../../../helper/filter/AdTypeScopeNote";
@@ -12,10 +12,13 @@ import {
 } from "../../../api-wrapper/recommendation/ApiRecommendation";
 import { Toast, useDispatch, handleLoader } from "../../../helper/links/Link";
 import RecommendationModal from "./RecommendationModal";
+import { ShadcnDateRangePicker as DateRangePicker } from "../../../components/ui/date-range-picker";
+import { predefinedRanges } from "../../../common/helper/calendarValues/calendarValues";
+import { normalizeRecommendationDateRange, recommendationDateRangePayload } from "./recommendationDateRange.mjs";
 import { CustomModal } from "../../../helper/modal/CustomModal";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../components/ui/dialog";
 import AddRule from "../recommendationRule/AddRule";
-import { TagList } from "../../../components/recommendation-tags/RecommendationTags";
+import { TagList, getTagStyles } from "../../../components/recommendation-tags/RecommendationTags";
 import { ApiGetRecommendationTags } from "../../../api-wrapper/recommendation/ApiRecommendation";
 import RecommendationRules from "../recommendationRule/RecommendationRules";
 import { PermissionCheck } from "../../../helper/permission/PermissionCheck";
@@ -191,7 +194,7 @@ function RecommendationItem({ id, recommendation, onClick, onEdit, onDelete, isD
           }}>
             {recommendation.ruleName}
           </span>
-          <TagList tags={recommendation.tags} max={4} size="xs" />
+          <TagList tags={recommendation.tags} max={4} size="xs" isDark={isDark} />
         </div>
         {actions.length === 0 && (hasOob || !recommendation.actions?.length) && (
           <div style={{
@@ -398,6 +401,7 @@ function TagGroupHeader({ group, isDark, isMobile, isCollapsed, onToggle }) {
   const { t } = useTranslation();
   const [hovered, setHovered] = useState(false);
   const tagColor = group.tag?.color || "#2563EB";
+  const styles = getTagStyles(tagColor, isDark);
   const totalCount = group.items.length;
   const totalOpportunities = useMemo(
     () => group.items.reduce((sum, item) => sum + (Number(item.count) || 0), 0),
@@ -426,18 +430,18 @@ function TagGroupHeader({ group, isDark, isMobile, isCollapsed, onToggle }) {
       {/* Left: Color Accent + Tag Badge + Name + Count Pill */}
       <div className="flex items-center gap-2.5 flex-wrap min-w-0">
         <span
-          className="w-1.5 h-4.5 rounded-full shrink-0"
-          style={{ backgroundColor: tagColor }}
+          className="w-1.5 h-5 rounded-full shrink-0"
+          style={{ backgroundColor: styles.dot }}
         />
         <div
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[13px] font-semibold border shadow-sm shrink-0"
+          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[13px] font-semibold border shadow-sm shrink-0"
           style={{
-            color: tagColor,
-            backgroundColor: `${tagColor}1C`,
-            borderColor: `${tagColor}4D`,
+            color: styles.text,
+            backgroundColor: styles.bg,
+            borderColor: styles.border,
           }}
         >
-          <TagIcon className="w-3.5 h-3.5 shrink-0" style={{ color: tagColor }} />
+          <TagIcon className="w-3.5 h-3.5 shrink-0" style={{ color: styles.dot }} />
           <span className="truncate max-w-[160px] sm:max-w-[240px]">{group.tag.name}</span>
         </div>
 
@@ -585,6 +589,31 @@ function Recommendation() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [itemLoadingId, setItemLoadingId] = useState(null);
+  // Local performance override. An unset range preserves each rule's configured dates.
+  const [recommendationDateRange, setRecommendationDateRange] = useState(null);
+  const datePayload = useMemo(() => recommendationDateRangePayload(recommendationDateRange), [recommendationDateRange]);
+  const listRequestRef = useRef(0);
+  const initialDetailRequestRef = useRef(0);
+  const requestScope = JSON.stringify([selectedCampaign?.profileSendID, selectedCampaign?.selectedAdType, datePayload]);
+  const requestScopeRef = useRef(requestScope);
+  requestScopeRef.current = requestScope;
+  const handleRecommendationDateChange = useCallback((range) => {
+    const nextRange = normalizeRecommendationDateRange(range);
+    if (range !== null && !nextRange) return;
+    if (JSON.stringify(recommendationDateRangePayload(nextRange)) === JSON.stringify(datePayload)) return;
+    listRequestRef.current += 1;
+    initialDetailRequestRef.current += 1;
+    setItemLoadingId(null);
+    setModalLoading(false);
+    setRecommendations([]);
+    setRecommendationDateRange(nextRange);
+  }, [datePayload]);
+
+  useEffect(() => () => {
+    listRequestRef.current += 1;
+    initialDetailRequestRef.current += 1;
+    dispatch(handleLoader(false));
+  }, [dispatch]);
 
   const [addModalFlag, setaddModalFlag] = useState(false);
   const [editId, setEditId] = useState();
@@ -640,6 +669,7 @@ function Recommendation() {
     setAppliedGridNames([]);
     setAppliedActions([]);
     setAppliedTagIds([]);
+    handleRecommendationDateChange(null);
   };
 
   const handleEditFilter = (filter) => {
@@ -649,17 +679,25 @@ function Recommendation() {
 
   // Fetch all recommendations
   const fetchRecommendations = useCallback(async () => {
-    if (!selectedCampaign?.profileSendID) return;
+    if (!selectedCampaign?.profileSendID) {
+      setLoading(false);
+      dispatch(handleLoader(false));
+      return;
+    }
+    const request = ++listRequestRef.current;
+    const isCurrentRequest = () => request === listRequestRef.current && requestScopeRef.current === requestScope;
     setLoading(true);
     dispatch(handleLoader(true));
     try {
       const res = await ApiGetRecommendation({
         profileId: selectedCampaign.profileSendID,
+        ...datePayload,
       });
+      if (!isCurrentRequest()) return;
       if (res?.isSuccess) {
         setRecommendations(res.data || []);
         ApiGetRecommendationTags({ profileId: selectedCampaign.profileSendID }).then((tagRes) => {
-          if (tagRes?.isSuccess) {
+          if (isCurrentRequest() && tagRes?.isSuccess) {
             const tags = tagRes.data || [];
             setTagOptions(tags);
             // Drop selected tags that no longer exist
@@ -670,13 +708,16 @@ function Recommendation() {
         Toast.error(res?.message || "Failed to load recommendations");
       }
     } catch (error) {
+      if (!isCurrentRequest()) return;
       console.error("Error fetching recommendations:", error);
       Toast.error(t("Failed to load recommendations"));
     } finally {
-      setLoading(false);
-      dispatch(handleLoader(false));
+      if (isCurrentRequest()) {
+        setLoading(false);
+        dispatch(handleLoader(false));
+      }
     }
-  }, [selectedCampaign?.profileSendID, selectedCampaign?.selectedAdType, dispatch, t]);
+  }, [selectedCampaign?.profileSendID, selectedCampaign?.selectedAdType, datePayload, requestScope, dispatch, t]);
 
   useEffect(() => {
     setRecommendations([]);
@@ -684,6 +725,8 @@ function Recommendation() {
     setModalData(null);
     setDeleteTarget(null);
     setaddModalFlag(false);
+    setItemLoadingId(null);
+    setModalLoading(false);
   }, [selectedCampaign?.profileSendID, selectedCampaign?.selectedAdType]);
 
   useEffect(() => {
@@ -697,6 +740,8 @@ function Recommendation() {
   // Fetch detailed data for a recommendation
   const fetchRecommendationData = async (recommendation) => {
     if (!recommendation?._id || itemLoadingId) return;
+    const request = ++initialDetailRequestRef.current;
+    const isCurrentRequest = () => request === initialDetailRequestRef.current && requestScopeRef.current === requestScope;
     setItemLoadingId(recommendation._id);
     setModalLoading(true);
     try {
@@ -704,7 +749,9 @@ function Recommendation() {
         profileId: selectedCampaign?.profileSendID,
         page: 1,
         perPage: 25,
+        ...datePayload,
       });
+      if (!isCurrentRequest()) return;
       if (res?.isSuccess) {
         setModalData({
           ...res,
@@ -716,17 +763,21 @@ function Recommendation() {
           perPage: res.perPage || 25,
           totalPages: res.totalPages || 1,
           newCount: res?.newCount ?? recommendation?.newCount ?? 0,
+          dateRangeOverride: recommendationDateRange,
         });
         setShowModal(true);
       } else {
         Toast.error(res?.message || "Failed to load recommendation data");
       }
     } catch (error) {
+      if (!isCurrentRequest()) return;
       console.error("Error fetching recommendation data:", error);
       Toast.error(t("Failed to load recommendation data"));
     } finally {
-      setModalLoading(false);
-      setItemLoadingId(null);
+      if (isCurrentRequest()) {
+        setModalLoading(false);
+        setItemLoadingId(null);
+      }
     }
   };
 
@@ -897,6 +948,24 @@ function Recommendation() {
                     onSelectOption={handleFilterOptionClick}
                     id="recommendation-filter-by-btn"
                   />
+                  <DateRangePicker
+                    id="recommendation-date-range"
+                    ariaLabel={t("Recommendation date range")}
+                    className="w-full sm:w-[260px]"
+                    style={{ minWidth: 210, height: 36 }}
+                    ranges={predefinedRanges}
+                    value={recommendationDateRange}
+                    placeholder={t("Rule date ranges")}
+                    onChange={handleRecommendationDateChange}
+                    persistGlobalDate={false}
+                  />
+                  {recommendationDateRange && (
+                    <button type="button" className="customize-button m-0" style={{ height: 36 }}
+                      onClick={() => handleRecommendationDateChange(null)}
+                      title={t("Use rule date ranges")} aria-label={t("Use rule date ranges")}>
+                      {t("Reset dates")}
+                    </button>
+                  )}
                   <button
                     id="recommendation-page-refresh-btn"
                     className="customize-button m-0 gap-1.5 flex items-center"
@@ -1122,6 +1191,7 @@ function Recommendation() {
           adType={selectedCampaign?.selectedAdType}
           loading={modalLoading}
           refreshGrid={fetchRecommendations}
+          onDateRangeChange={handleRecommendationDateChange}
         />
       )}
 
