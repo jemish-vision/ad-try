@@ -764,14 +764,6 @@ function Recommendation() {
         });
         // The server moves a page past the end to the last page (e.g. after a delete)
         if (pg.page && pg.page !== listPage) setListPage(pg.page);
-        ApiGetRecommendationTags({ profileId: selectedCampaign.profileSendID }).then((tagRes) => {
-          if (isCurrentRequest() && tagRes?.isSuccess) {
-            const tags = tagRes.data || [];
-            setTagOptions(tags);
-            // Drop selected tags that no longer exist
-            setAppliedTagIds((prev) => prev.filter((id) => tags.some((tg) => String(tg._id) === id)));
-          }
-        });
       } else {
         Toast.error(res?.message || "Failed to load recommendations");
       }
@@ -786,6 +778,27 @@ function Recommendation() {
       }
     }
   }, [selectedCampaign?.profileSendID, selectedCampaign?.selectedAdType, datePayload, requestScope, dispatch, t, listPage, listPerPage, appliedGridNames, appliedActions, appliedTagIds]);
+
+  // Tag options for the organization (read-only in Recommendations tab).
+  // Fetched on profile or tab change; drops selected tags if deleted on server.
+  useEffect(() => {
+    if (!selectedCampaign?.profileSendID || activeTab !== 0) return;
+    let cancelled = false;
+    ApiGetRecommendationTags({ profileId: selectedCampaign.profileSendID }).then((tagRes) => {
+      if (!cancelled && tagRes?.isSuccess) {
+        const tags = tagRes.data || [];
+        setTagOptions(tags);
+        setAppliedTagIds((prev) => {
+          if (!prev || !prev.length) return prev;
+          const filtered = prev.filter((id) => tags.some((tg) => String(tg._id) === id));
+          return filtered.length === prev.length ? prev : filtered;
+        });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCampaign?.profileSendID, activeTab]);
 
   useEffect(() => {
     setRecommendations([]);
