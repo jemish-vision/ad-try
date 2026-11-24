@@ -1,7 +1,7 @@
 const { validateRoutePermission } = require("../middleware/routePermission");
 const { SYSTEM_PAGES, PAGE_ACTIONS } = require("../constants/permissions");
 const express = require("express");
-const { getSearchTermDetailsData, getAllSearchTerms, getSearchTermsProductView, addToNegative, addNegativeToCampaign, addToNegativeProduct, ruleHistory, getSearchTermRule, createSearchTermRule, updateSearchTermRule, getSearchTermRuleById, changeSearchTermRuleStatus, deleteSearchTermRule, manualRunSearchTermRule, ruleEffectedSearchTerm, suggestedTargetingBid, removeSearchTerm, getKeywordAnalysisData, exportSearchTermRule, importSearchTermRule } = require("../controllers/searchTerm.controller");
+const { getSearchTermDetailsData, getAllSearchTerms, getSearchTermsProductView, addToNegative, addNegativeToCampaign, addToNegativeProduct, ruleHistory, getSearchTermRule, createSearchTermRule, updateSearchTermRule, getSearchTermRuleById, changeSearchTermRuleStatus, deleteSearchTermRule, manualRunSearchTermRule, ruleEffectedSearchTerm, suggestedTargetingBid, removeSearchTerm, getKeywordAnalysisData, exportSearchTermRule, importSearchTermRule, getTargetSearchTerms, negateTargetSearchTerms } = require("../controllers/searchTerm.controller");
 const router = express.Router();
 const { verifyToken } = require("../middleware/user.auth");
 const { AdTypeModels } = require("../middleware/adTypeModel.middleware");
@@ -21,6 +21,8 @@ const allSearchTerms = withAllAdTypes(getAllSearchTerms, {
 router.post("/getSearchTermIdData/:id", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, getSearchTermDetailsData);
 
 router.post("/getAllSearchTerms", verifyToken, validateRoutePermission(SYSTEM_PAGES.SEARCH_TERM, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, allSearchTerms);
+router.post("/getTargetSearchTerms", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.VIEW_ONLY), getTargetSearchTerms);
+router.post("/negateTargetSearchTerms", verifyToken, validateRoutePermission(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.VIEW_ONLY), negateTargetSearchTerms);
 router.post("/getSearchTermsProductView", verifyToken, validateRoutePermission(SYSTEM_PAGES.SEARCH_TERM, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, getSearchTermsProductView);
 router.post("/addToNegative", verifyToken, validateRoutePermission(SYSTEM_PAGES.SEARCH_TERM, PAGE_ACTIONS.CREATE), addToNegative);
 router.post("/addToNegativeProduct", verifyToken, validateRoutePermission(SYSTEM_PAGES.SEARCH_TERM, PAGE_ACTIONS.CREATE), addToNegativeProduct);

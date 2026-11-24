@@ -89,7 +89,7 @@ const COUNTRY_MIN_BIDS = {
   EG: 0.24,
 };
 
-export const getMarketplaceMinBid = (currencyCode, countryCode) => {
+export const getMarketplaceMinBid = (currencyCode, countryCode, fallback = 0.02) => {
   let curr = currencyCode;
   let country = countryCode;
 
@@ -106,19 +106,19 @@ export const getMarketplaceMinBid = (currencyCode, countryCode) => {
 
   if (curr && typeof curr === "string") {
     const upperCurr = curr.trim().toUpperCase();
-    if (MARKETPLACE_MIN_BIDS[upperCurr] !== undefined) {
+    if (Object.hasOwn(MARKETPLACE_MIN_BIDS, upperCurr)) {
       return MARKETPLACE_MIN_BIDS[upperCurr];
     }
   }
 
   if (country && typeof country === "string") {
     const upperCountry = country.trim().toUpperCase();
-    if (COUNTRY_MIN_BIDS[upperCountry] !== undefined) {
+    if (Object.hasOwn(COUNTRY_MIN_BIDS, upperCountry)) {
       return COUNTRY_MIN_BIDS[upperCountry];
     }
   }
 
-  return 0.02;
+  return fallback;
 };
 
 function CurrencyCode(amount, code) {

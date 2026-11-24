@@ -434,11 +434,14 @@ const AgTable = forwardRef(function AgTable(
     }
     if (rowData.length > 0) {
       if (typeof api.hideOverlay === "function") api.hideOverlay();
-      requestAnimationFrame(() => {
-        if (typeof api.resetRowHeights === "function") {
-          api.resetRowHeights();
-        }
-      });
+      const hasAutoHeight = (columnDefsRef.current ?? []).some((c) => c?.autoHeight);
+      if (hasAutoHeight) {
+        requestAnimationFrame(() => {
+          if (typeof api.resetRowHeights === "function") {
+            api.resetRowHeights();
+          }
+        });
+      }
     }
   }, [rowData, ref]);
 
@@ -628,7 +631,8 @@ const AgTable = forwardRef(function AgTable(
           if (api) {
             cancelAnimationFrame(rafId);
             rafId = requestAnimationFrame(() => {
-              if (typeof api.resetRowHeights === "function") {
+              const hasAutoHeight = (columnDefsRef.current ?? []).some((c) => c?.autoHeight);
+              if (hasAutoHeight && typeof api.resetRowHeights === "function") {
                 api.resetRowHeights();
               }
             });

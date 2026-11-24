@@ -235,19 +235,22 @@ async function runAsinSnapshotForProfile({ profile, date, now = new Date() }) {
   const ownAsins = (await productListingModel.distinct("asin", { configId, profileId, status: "BUYABLE" })).filter(Boolean);
   const truncated = ownAsins.length > MAX_OWN_ASINS_PER_PROFILE;
   const asins = ownAsins.slice(0, MAX_OWN_ASINS_PER_PROFILE);
+  const completedOwn = new Set(asins.length ? await asinSnapshotSchema.distinct("asin", {
+    configId, profileId, kind: "OWN", date, asin: { $in: asins },
+    hasActiveOffer: { $in: [true, false] },
+  }) : []);
+  const pendingAsins = asins.filter(asin => !completedOwn.has(asin));
 
   const offers = new Map();
   const ranks = new Map();
-  let failedBatches = 0;
   let lastOffersCallAt = 0;
-  for (const group of chunk(asins, BATCH_SIZE)) {
+  for (const group of chunk(pendingAsins, BATCH_SIZE)) {
     const waitMs = lastOffersCallAt + OFFERS_BATCH_INTERVAL_MS - Date.now();
     if (lastOffersCallAt && waitMs > 0) await sleep(waitMs);
     lastOffersCallAt = Date.now();
     try {
       for (const [k, v] of await fetchOffersBatch({ asins: group, marketplaceConfig, token: spConfig.spAccessToken, meta })) offers.set(k, v);
     } catch (err) {
-      failedBatches++;
       cron_logs({ message: `[${CRON_NAME}] Offers batch failed (profile ${profileId}): ${err.message}`, log_type: "warn" });
     }
     try {
@@ -258,7 +261,7 @@ async function runAsinSnapshotForProfile({ profile, date, now = new Date() }) {
   }
 
   const base = { organizationId, configId, profileId, date, snapshotAt: now, expiresAt };
-  const ownOps = asins.map((asin) => ({
+  const ownOps = pendingAsins.filter(asin => offers.has(asin)).map((asin) => ({
     updateOne: {
       filter: { configId, profileId, kind: "OWN", asin, date },
       update: {
@@ -286,16 +289,15 @@ async function runAsinSnapshotForProfile({ profile, date, now = new Date() }) {
     },
   }));
 
-  if (asins.length && failedBatches === Math.ceil(asins.length / BATCH_SIZE)) {
-    // Nothing saved, so the next hourly run retries this profile.
-    throw new Error(`All ${failedBatches} offer batch request(s) failed; nothing saved, will retry next run.`);
-  }
-
   for (const ops of chunk([...ownOps, ...rivalOps], 1000)) {
     if (ops.length) await asinSnapshotSchema.bulkWrite(ops, { ordered: false });
   }
 
-  return { ownCount: ownOps.length, rivalCount: rivalOps.length, offersFound: offers.size, truncated, totalActiveAsins: ownAsins.length };
+  const ownCount = completedOwn.size + ownOps.length;
+  return {
+    ownCount, rivalCount: rivalOps.length, offersFound: ownCount,
+    pendingOffers: asins.length - ownCount, truncated, totalActiveAsins: ownAsins.length,
+  };
 }
 
 /**
@@ -319,7 +321,10 @@ async function cronAsinSnapshot({ now = new Date() } = {}) {
           }
           const tz = profile.timezone || "UTC";
           const todayLocal = moment.tz(now, tz).format("YYYY-MM-DD");
-          const done = await asinSnapshotSchema.exists({ configId, profileId, kind: "OWN", date: todayLocal });
+          const done = await cronJobHistorySchema.exists({
+            configId, profileId, cronName: CRON_NAME, historyDate: todayLocal,
+            status: "COMPLETED", "details.result.pendingOffers": 0,
+          });
           const date = snapshotDateIfDue({ timezone: tz, now, alreadySnapshottedDates: done ? [todayLocal] : [] });
           if (!date) {
             stats.notDue++;
@@ -361,12 +366,12 @@ async function cronAsinSnapshot({ now = new Date() } = {}) {
           const started = Date.now();
           try {
             const result = await runAsinSnapshotForProfile({ profile, date, now });
-            stats.completed++;
             await cronJobHistorySchema.updateOne(
               { _id: history._id },
               {
                 $set: {
-                  status: "COMPLETED",
+                  status: result.pendingOffers ? "FAILED" : "COMPLETED",
+                  error: result.pendingOffers ? `Missing Amazon offer responses for ${result.pendingOffers} ASIN(s); will retry today.` : null,
                   recordsCount: result.ownCount + result.rivalCount,
                   durationMs: Date.now() - started,
                   "details.result": result,
@@ -374,6 +379,8 @@ async function cronAsinSnapshot({ now = new Date() } = {}) {
                 },
               }
             );
+            if (result.pendingOffers) stats.failed++;
+            else stats.completed++;
           } catch (err) {
             stats.failed++;
             await cronJobHistorySchema.updateOne(

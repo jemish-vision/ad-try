@@ -817,7 +817,6 @@
 /* ── Menu icon: always visible for accessibility and contrast ── */
 .iq-ag-table .ag-header-cell-menu-button {
   opacity: 1 !important;
-  transition: opacity 0.15s, background-color 0.15s;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -838,7 +837,6 @@
   font-size: 13px !important;
   line-height: 1 !important;
   display: inline-block !important;
-  transition: color 0.15s, opacity 0.15s;
 }
 
 .iq-ag-table .ag-header-cell-menu-button:hover .ag-icon,
@@ -883,7 +881,6 @@
   width: 2px;
   border-radius: 2px;
   background: transparent;
-  transition: background 0.15s;
 }
 
 .iq-ag-table .ag-header-cell:hover .ag-header-cell-resize::after {
@@ -1312,7 +1309,6 @@
   cursor: pointer;
   font-size: 15px;
   line-height: 1;
-  transition: all 0.15s;
   padding: 0;
   font-weight: 500;
 }

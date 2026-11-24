@@ -24,6 +24,8 @@ const syncedProfiles = new Set([1, 4, 5, 6]);
 const amazonCalls = [];
 const bulkWrites = [];
 const historyUpdates = [];
+const savedAsins = new Set();
+let omitLastOffer = false;
 
 stub("api-server/helper/common.js", {
   getActivePlanProfiles: async () => profiles,
@@ -33,12 +35,18 @@ stub("api-server/models/superAdmin/pages.model.js", { findOne: () => ({ select: 
 stub("api-server/models/packages.model.js", { exists: async (q) => (plans[q._id] || []).includes(q["pages.pageId"]) });
 stub("api-server/models/synchronizeDetails.model.js", { exists: async (q) => q.groupId === "SELLER_CATALOG" && q.type === "seller" && syncedProfiles.has(q.profileId) });
 stub("api-server/models/asinSnapshot.model.js", {
-  exists: async (q) => q.profileId === 4 && q.kind === "OWN" && q.date === "2026-11-12",
-  bulkWrite: async (ops) => bulkWrites.push(ops),
+  distinct: async () => [...savedAsins],
+  bulkWrite: async (ops) => {
+    bulkWrites.push(ops);
+    for (const { updateOne: { filter } } of ops) {
+      if (filter.kind === "OWN") savedAsins.add(filter.asin);
+    }
+  },
   updateMany: async () => ({ modifiedCount: 0 }),
 });
 stub("api-server/models/cronJobHistory.model.js", {
-  exists: async (q) => q.profileId === 6 && q.status === "PENDING",
+  exists: async (q) => (q.profileId === 6 && q.status === "PENDING") ||
+    (q.profileId === 4 && q.status === "COMPLETED" && q["details.result.pendingOffers"] === 0),
   findOneAndUpdate: async (q) => ({ _id: `h${q.profileId}` }),
   updateOne: async (q, u) => historyUpdates.push({ q, u }),
 });
@@ -50,7 +58,8 @@ stub("api-server/models/competitor.model.js", {
 stub("api-server/helper/amazonAxios.js", async (cfg) => {
   amazonCalls.push(cfg);
   if (cfg.url.includes("/batches/")) {
-    return { data: { responses: cfg.data.requests.map((r) => ({ status: { statusCode: 200 }, request: { Asin: r.uri.split("/")[5] }, body: { payload: { ASIN: r.uri.split("/")[5], Summary: { TotalOfferCount: 1 }, Offers: [{ SellerId: "ME", MyOffer: true, ListingPrice: { Amount: 10 }, Shipping: { Amount: 0 }, IsBuyBoxWinner: true }] } } })) } };
+    const requests = omitLastOffer ? cfg.data.requests.slice(0, -1) : cfg.data.requests;
+    return { data: { responses: requests.map((r) => ({ status: { statusCode: 200 }, request: { Asin: r.uri.split("/")[5] }, body: { payload: { ASIN: r.uri.split("/")[5], Summary: { TotalOfferCount: 1 }, Offers: [{ SellerId: "ME", MyOffer: true, ListingPrice: { Amount: 10 }, Shipping: { Amount: 0 }, IsBuyBoxWinner: true }] } } })) } };
   }
   return { data: { items: [] } };
 });
@@ -83,4 +92,22 @@ test("hourly run: only due Enterprise profiles with completed seller sync are sn
   const done = historyUpdates.find((h) => h.q._id === "h1");
   assert.equal(done.u.$set.status, "COMPLETED");
   assert.equal(done.u.$set.recordsCount, 3);
+});
+
+test("partial responses leave the profile retryable and retry only missing ASINs", async () => {
+  savedAsins.clear();
+  amazonCalls.length = 0;
+  historyUpdates.length = 0;
+  omitLastOffer = true;
+  const first = await cronAsinSnapshot({ now: NOW });
+  assert.equal(first.failed, 1);
+  assert.equal(historyUpdates.at(-1).u.$set.status, "FAILED");
+  assert.deepEqual([...savedAsins], ["B0OWN00001"]);
+  omitLastOffer = false;
+  amazonCalls.length = 0;
+  const retry = await cronAsinSnapshot({ now: NOW });
+  assert.equal(retry.completed, 1);
+  assert.equal(amazonCalls[0].data.requests.length, 1);
+  assert.match(amazonCalls[0].data.requests[0].uri, /B0OWN00002/);
+  assert.equal(historyUpdates.at(-1).u.$set["details.result"].pendingOffers, 0);
 });

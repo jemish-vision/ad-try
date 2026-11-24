@@ -185,6 +185,9 @@ function createSpApiProcessor() {
         case SP_API_TASKS.ASIN_SNAPSHOT: {
           const { cronAsinSnapshot } = require("../../api-server/services/automation/asinSnapshot.service");
           result = await cronAsinSnapshot();
+          if (result?.failed > 0) {
+            throw new Error(`ASIN Snapshot incomplete for ${result.failed} profile(s); successful observations were saved`);
+          }
           break;
         }
         // Previously only scheduled by the retired worker-service/worker-report.js

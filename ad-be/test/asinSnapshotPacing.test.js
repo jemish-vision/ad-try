@@ -16,7 +16,7 @@ stub("api-server/helper/common.js", { getActivePlanProfiles: async () => [], get
 stub("api-server/models/marketPlaceConfig.model.js", { findOne: () => ({ lean: async () => ({ endPoint: "https://sp", marketPlaceId: "A21TJRUUN4KGV" }) }) });
 stub("api-server/models/productListing.model.js", { distinct: async () => asins });
 stub("api-server/models/competitor.model.js", { find: () => ({ select: () => ({ lean: async () => [] }) }) });
-stub("api-server/models/asinSnapshot.model.js", { bulkWrite: async () => {} });
+stub("api-server/models/asinSnapshot.model.js", { distinct: async () => [], bulkWrite: async () => {} });
 stub("api-server/helper/retryHelper.js", { retryWithBackoff: (fn) => fn() });
 stub("winston/cronAutomation/logger.js", { cron_logs: () => {} });
 stub("api-server/helper/amazonAxios.js", async (cfg) => {

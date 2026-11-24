@@ -70,15 +70,13 @@ describe("recommendations list: server-side filters + pagination", () => {
     assert.equal(parseRecommendationListQuery({ page: -3 }).page, 1);
   });
 
-  test("custom orderMap prioritizes specified order; unmapped rules fall back to newest-first", () => {
+  test("custom orderMap prioritizes specified order; unmapped rules appear on top newest-first", () => {
     const orderMap = new Map([
       ["r05", 0],
       ["r02", 1],
     ]);
     const res = filterSortPaginateRecommendations(data, parseRecommendationListQuery({ limit: 5 }), orderMap);
-    assert.equal(res.items[0].rule._id, "r05");
-    assert.equal(res.items[1].rule._id, "r02");
-    // r25 is the newest of unmapped rules
-    assert.equal(res.items[2].rule._id, "r25");
+    // r25 is the newest of unmapped rules, appearing on top
+    assert.equal(res.items[0].rule._id, "r25");
   });
 });

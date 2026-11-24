@@ -11,7 +11,6 @@ import {
   ApiHistory,
   ApiCampainListing,
 } from "../../../api-wrapper/campaign/ApiCampaign";
-import { ApiSearchTermCampaign } from "../../../api-wrapper/search-term/ApiSearchTerm";
 import { ProfileContext } from "../../../helper/usecontext/useContext";
 import moment from "moment-timezone";
 import { Accordion } from "../../../components/ui/accordion";
@@ -32,6 +31,7 @@ import { ApiUpdatePlacementBid } from "../../../api-wrapper/placement/ApiPlaceme
 import Chart from "../../../helper/charts/Chart";
 import AdGroupsSection from "./Campagin/AdGroupsSection";
 import TargetingSection from "./Campagin/TargetingSection";
+import SearchTermSection from "./Campagin/SearchTermSection";
 import { Search, History } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Breadcrumb from "../../../common/components/Breadcrumb";
@@ -49,7 +49,6 @@ function ViewCampaign(props) {
   const { campaignDate, campaignDetails, viewPress } = props;
   const [date, setDate] = useState(() => campaignDate || []);
   const [status, setStatus] = useState("");
-  const [searchTermStatus, setSearchTermStatus] = useState("");
   const [keywordStatus, setKeywordStatus] = useState("");
   const [productAds, setProductAds] = useState([]);
   const [keywordId, setKeywordId] = useState();
@@ -124,7 +123,6 @@ function ViewCampaign(props) {
 
   // AG Grid refs
   const adGroupGridRef = useRef(null);
-  const searchTermGridRef = useRef(null);
   const placementGridRef = useRef(null);
   const historyGridRef = useRef(null);
   const keywordGridRef = useRef(null);
@@ -132,7 +130,6 @@ function ViewCampaign(props) {
 
   // Pagination state for AG Grid tables
   const [adGroupArg, setAdGroupArg] = useState({ pageNo: 1, perPage: firstPageRows });
-  const [searchTermArg, setSearchTermArg] = useState({ pageNo: 1, perPage: firstPageRows });
   const [historyArg, setHistoryArg] = useState({ pageNo: 1, perPage: firstPageRows });
   const [historyDateOption, setHistoryDateOption] = useState("all");
 
@@ -453,114 +450,6 @@ function ViewCampaign(props) {
       },
     },
   ], [t, selectedRows, selectAll, grpData]);
-
-  const searchTermColumns = useMemo(() => [
-    {
-      headerName: t("customerSearchTerm"),
-      field: "productName",
-      width: 350,
-      pinned: "left",
-      lockPinned: true,
-      sortable: true,
-      resizable: true,
-      wrapText: true,
-      autoHeight: true,
-      cellRenderer: (params) => {
-        const row = params.data;
-        if (!row) return null;
-        return (
-          <div className="flex items-center gap-3" style={{ color: "blue", padding: "10px 0" }}>
-            <div>
-              {row?.isTotalRow ? (
-                <b className="text-dark">{row?.productName}</b>
-              ) : (
-                <>
-                  <p className="text-dark">{row?.productName}</p>
-                  <b className="m-0 text-black">
-                    {(row.searchTerm !== row.productName) ? `${t("asins")}:` : ""}
-                    {row.searchTerm !== row.productName ? ` ${row?.searchTerm}`.toUpperCase() : ""}
-                  </b>
-                </>
-              )}
-            </div>
-          </div>
-        );
-      },
-    },
-    {
-      headerName: t("impressions"),
-      field: "totalImpressions",
-      width: 140,
-      sortable: true,
-      resizable: true,
-      cellRenderer: (params) => CurrencyFormat(params.value ?? 0) || "-",
-    },
-    {
-      headerName: t("clicks"),
-      field: "totalClicks",
-      sortable: true,
-      resizable: true,
-      cellRenderer: (params) => CurrencyFormat(params.value ?? 0) || "-",
-    },
-    {
-      headerName: t("sales"),
-      field: "totalSales",
-      sortable: true,
-      resizable: true,
-      cellRenderer: (params) => params.value ? CurrencyCode(params.value) : "-",
-    },
-    {
-      headerName: t("Purchases"),
-      field: "totalOrders",
-      width: 110,
-      sortable: true,
-      resizable: true,
-      cellRenderer: (params) => CurrencyFormat(params.value ?? 0) || "-",
-    },
-    {
-      headerName: t("spend"),
-      field: "totalSpend",
-      sortable: true,
-      resizable: true,
-      cellRenderer: (params) => params.value ? CurrencyCode(params.value) : "-",
-    },
-    {
-      headerName: t("acos"),
-      field: "totalAcos",
-      sortable: true,
-      resizable: true,
-      cellRenderer: (params) => `${params.value}%` || "-",
-    },
-    {
-      headerName: t("roas"),
-      field: "totalRoas",
-      sortable: true,
-      resizable: true,
-      cellRenderer: (params) => `${params.value}` || "-",
-    },
-    {
-      headerName: t("ctr"),
-      field: "totalCtr",
-      sortable: true,
-      resizable: true,
-      cellRenderer: (params) => `${params.value}%` || "-",
-    },
-    {
-      headerName: t("cpc"),
-      field: "totalCpc",
-      sortable: true,
-      resizable: true,
-      cellRenderer: (params) => params.value ? CurrencyCode(params.value) : "-",
-    },
-    {
-      headerName: t("conversionRate"),
-      field: "totalCvr",
-      width: 180,
-      sortable: true,
-      resizable: true,
-      cellRenderer: (params) => `${params.value}%` || "-",
-    },
-  ], [t]);
 
   const keywordColumns = useMemo(() => [
     {
@@ -1016,14 +905,9 @@ function ViewCampaign(props) {
 
   // ─── Data State ───────────────────────────────────────────────────────────
 
-  const [searchTermData, setSearchTermData] = useState();
-  const [searchTermLoading, setSearchTermLoading] = useState(false);
   const [grpRowsPerPage, setGrpRowRowsPerPage] = useState(firstPageRows);
-  const [searchTermRowsPerPage, setSearchTermRowsPerPage] = useState(firstPageRows);
   const [grpTotalRecords, setgrpTotalRecords] = useState(0);
-  const [searchTermTotalRecords, setSearchTermTotalRecords] = useState(0);
   const [grpCurrentPage, setgrpCurrentPage] = useState(1);
-  const [searchTermCurrentPage, setSearchTermCurrentPage] = useState(1);
   const [keywordData, setkeywordData] = useState();
   const [keyRowsPerPage, setkeyRowRowsPerPage] = useState(firstPageRows);
   const [keyTotalRecords, setkeyTotalRecords] = useState(0);
@@ -1100,45 +984,6 @@ function ViewCampaign(props) {
         .catch(() => { })
         .finally(() => {
           setTotalsLoading(false);
-        });
-    }
-  };
-
-  const getSearchTermData = (searchTermPage, searchTermPerPage, ...args) => {
-    if (profileId?.value && selectedAdType && fromDateStr && effectiveCampaignId) {
-      setSearchTermLoading(true);
-      const data = {
-        profileId: profileId.value,
-        fromDate: fromDateStr,
-        toDate: toDateStr,
-        searchTermPageNo: searchTermPage || searchTermCurrentPage,
-        searchTermPerPage: searchTermPerPage || searchTermRowsPerPage,
-        status: searchTermStatus,
-        fieldName: 'totalSales',
-        sortType: 'DESC',
-        ...args?.[0],
-      };
-      // This campaign belongs to one ad type; when opened from the combined
-      // "All" view, pin that type so the per-type search-term collection is
-      // queried (otherwise the request would fall back to SP for SB/SD).
-      const rowAdType = campaignDetails?.adType;
-      const stOptions = ["SP", "SB", "SD"].includes(rowAdType)
-        ? { headers: { adType: rowAdType } }
-        : {};
-      ApiSearchTermCampaign(effectiveCampaignId, data, stOptions)
-        .then((res) => {
-          if (res?.isSuccess) {
-            if (res?.totalRow && res?.getSearchTermData?.length) {
-              setSearchTermData([...res?.getSearchTermData, { ...res?.totalRow, isTotalRow: true }]);
-            } else {
-              setSearchTermData(res.getSearchTermData);
-            }
-            setSearchTermTotalRecords(res?.totalSearchTermData ?? res?.totalSearchTerm ?? res?.totalRecords ?? 0);
-          }
-        })
-        .catch(() => { })
-        .finally(() => {
-          setSearchTermLoading(false);
         });
     }
   };
@@ -1237,13 +1082,6 @@ function ViewCampaign(props) {
     effectiveCampaignDetails?.name,
   ]);
 
-  useEffect(() => {
-    if (viewPress && profileId?.value && effectiveCampaignId && fromDateStr && activeAccordionKeys.includes("3")) {
-      setSearchTermCurrentPage(1);
-      getSearchTermData(1, searchTermRowsPerPage);
-    }
-  }, [viewPress, activeAccordionKeys, fromDateStr, toDateStr, profileId?.value, selectedAdType, searchTermStatus, effectiveCampaignId]);
-
   // ─── Memoised derived data ────────────────────────────────────────────────
 
   const summaryAdGroupData = useMemo(() => {
@@ -1272,16 +1110,7 @@ function ViewCampaign(props) {
     return [summaryRow, ...(grpData ?? [])];
   }, [summaryAdGroupData, grpData]);
 
-  const tableData = useMemo(() => searchTermData, [searchTermData]);
-
   // ─── Sort handlers ────────────────────────────────────────────────────────
-
-  const handleSearchTermSortChanged = (e) => {
-    const sortModel = e.columns;
-    if (!sortModel || sortModel.length === 0) return;
-    const { colId, sortDef: { direction: sort } } = sortModel?.reverse()?.[0];
-    getSearchTermData(searchTermCurrentPage, searchTermRowsPerPage, { fieldName: colId, ...(sort && { sortType: sort === "asc" ? "ASC" : "DESC" }) });
-  };
 
   // ─── Misc handlers ────────────────────────────────────────────────────────
 
@@ -1615,52 +1444,16 @@ function ViewCampaign(props) {
             </Accordion.Body>
           </Accordion.Item>
 
-          {/* Search Terms AG Grid */}
+          {/* Search Terms Section */}
           <Accordion.Item eventKey="3">
             <Accordion.Header>{t("searchTerm")}</Accordion.Header>
             <Accordion.Body className="p-0">
-              <div className="w-full overflow-hidden">
-                <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
-                      <Search className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h5 className="text-base font-bold text-slate-800 dark:text-slate-100 m-0">
-                        {t("searchTerm")}
-                      </h5>
-                      <span className="text-xs text-slate-500 dark:text-slate-400">
-                        {searchTermTotalRecords || 0} {(searchTermTotalRecords || 0) === 1 ? t("record") : t("records")}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className="data_table" id="searchterm-view-table">
-                  <AgTable
-                    ref={searchTermGridRef}
-                    tableId="searchterm-view-table"
-                    loading={searchTermLoading}
-                    isLoading={searchTermLoading}
-                    rowData={tableData?.filter((r) => !r?.isTotalRow) || []}
-                    pinnedBottomRowData={tableData?.some((r) => r?.isTotalRow) ? [tableData.find((r) => r?.isTotalRow)] : []}
-                    columnDefs={searchTermColumns}
-                    totalRecords={searchTermTotalRecords || 0}
-                    perPage={searchTermRowsPerPage}
-                    currentPage={searchTermCurrentPage}
-                    onPageChange={(page) => {
-                      setSearchTermCurrentPage(page);
-                      getSearchTermData(page, searchTermRowsPerPage);
-                    }}
-                    onPerPageChange={(newPerPage) => {
-                      setSearchTermRowsPerPage(newPerPage);
-                      setSearchTermCurrentPage(1);
-                      getSearchTermData(1, newPerPage);
-                    }}
-                    onSortChanged={handleSearchTermSortChanged}
-                    paginationOptions={paginationRowsPerPageOptions}
-                  />
-                </div>
-              </div>
+              <SearchTermSection
+                campaignDetails={effectiveCampaignDetails}
+                date={date}
+                viewPress={viewPress}
+                isActive={activeAccordionKeys.includes("3")}
+              />
             </Accordion.Body>
           </Accordion.Item>
 

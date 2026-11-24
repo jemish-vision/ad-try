@@ -897,8 +897,7 @@ function Recommendation() {
     try {
       const res = await ApiGetRecommendationData(recommendation._id, {
         profileId: selectedCampaign?.profileSendID,
-        page: 1,
-        perPage: 25,
+        ...(recommendation.gridName === "Targeting" ? { filterType: "raw_all" } : { page: 1, perPage: 25 }),
         ...datePayload,
       });
       if (!isCurrentRequest()) return;
@@ -910,7 +909,7 @@ function Recommendation() {
           count: res.totalRecords ?? res.count,
           totalRecords: res.totalRecords ?? res.count,
           currentPage: res.currentPage || 1,
-          perPage: res.perPage || 25,
+          perPage: recommendation.gridName === "Targeting" ? 25 : res.perPage || 25,
           totalPages: res.totalPages || 1,
           newCount: res?.newCount ?? recommendation?.newCount ?? 0,
           dateRangeOverride: recommendationDateRange,

@@ -70,8 +70,9 @@ function filterSortPaginateRecommendations(computed, query, orderMap = null) {
         if (hasA && hasB) {
           return orderMap.get(aId) - orderMap.get(bId);
         }
-        if (hasA) return -1;
-        if (hasB) return 1;
+        // Newly created / unmapped rules appear on top of mapped rules
+        if (!hasA && hasB) return -1;
+        if (hasA && !hasB) return 1;
       }
       return createdTime(b.rule) - createdTime(a.rule) || String(b.rule._id).localeCompare(String(a.rule._id));
     });

@@ -168,3 +168,19 @@ test("snapshot processor can complete while a historical import remains active",
     await historicalRun;
   }
 });
+
+test("a partial snapshot fails the BullMQ attempt so the configured retry can run", async () => {
+  const { createSpApiProcessor } = loadModule("queue-service/processors/spApi.processor.js", {
+    "../contracts/jobPayload": require("../../queue-service/contracts/jobPayload"),
+    "../queues/queueNames": { SP_API_TASKS },
+    "../../shared/automationMode": { isShadowModeEnabled: () => false },
+    "../../winston/cronAutomation/logger": { cron_logs() {} },
+    "../../api-server/services/automation/asinSnapshot.service": {
+      cronAsinSnapshot: async () => ({ completed: 1, failed: 1 }),
+    },
+  });
+  await assert.rejects(createSpApiProcessor()({
+    id: "snapshot",
+    data: { task: SP_API_TASKS.ASIN_SNAPSHOT, scheduledFor: "2026-11-24T05:00:00.000Z", timeBlock: "20261124T0500Z" },
+  }), /ASIN Snapshot incomplete for 1 profile/);
+});

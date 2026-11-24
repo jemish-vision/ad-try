@@ -32,11 +32,12 @@ describe("recommendation reordering", () => {
   });
 
   test("orderMap overrides default sort for mapped rules", () => {
-    // Custom drag order: rule_2 at top, rule_4 second, rule_1 third
+    // Custom drag order: rule_2 at top, rule_4 second, rule_1 third, rule_3 fourth
     const orderMap = new Map([
       ["rule_2", 0],
       ["rule_4", 1],
       ["rule_1", 2],
+      ["rule_3", 3],
     ]);
     const res = filterSortPaginateRecommendations(data, parseRecommendationListQuery({ limit: 10 }), orderMap);
     assert.deepEqual(
@@ -45,16 +46,16 @@ describe("recommendation reordering", () => {
     );
   });
 
-  test("unmapped rules appear after mapped rules, sorted newest first", () => {
+  test("unmapped / newly created rules appear on top of mapped rules, sorted newest first", () => {
     // Only rule_1 mapped to 0
     const orderMap = new Map([
       ["rule_1", 0],
     ]);
     const res = filterSortPaginateRecommendations(data, parseRecommendationListQuery({ limit: 10 }), orderMap);
-    // rule_1 first, then rule_4 (newest), rule_3, rule_2
+    // Unmapped rules (rule_4 newest, rule_3, rule_2) appear on top, then mapped rule_1
     assert.deepEqual(
       res.items.map((x) => x.rule._id),
-      ["rule_1", "rule_4", "rule_3", "rule_2"]
+      ["rule_4", "rule_3", "rule_2", "rule_1"]
     );
   });
 

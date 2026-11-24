@@ -1762,7 +1762,6 @@ html[data-theme="dark"] .rs-input:focus {
 .glass-grid-container .iq-ag-table .ag-row {
   background: var(--table-row-bg) !important;
   color: var(--text-primary) !important;
-  transition: all 0.2s ease !important;
 }
 
 .glass-grid-container .iq-ag-table .ag-cell {
@@ -2058,7 +2057,6 @@ html[data-theme="dark"] .rs-input:focus {
 .glass-grid-container .iq-ag-table .ag-row {
   background: transparent !important;
   color: var(--text-primary) !important;
-  transition: all 0.2s ease !important;
 }
 
 .glass-grid-container .iq-ag-table .ag-cell {
@@ -7777,6 +7775,11 @@ html[data-theme="dark"] .select-menu::-webkit-scrollbar-track {
 .ag-theme-alpine .ag-row,
 .ag-theme-alpine .ag-cell {
   transition: background-color 0.12s ease-in-out, color 0.12s ease-in-out !important;
+}
+
+/* Keep shared-grid hover in sync across pinned and scrollable columns. */
+.glass-grid-container .iq-ag-table :is(.ag-row, .ag-cell) {
+  transition: none !important;
 }
 
 /* ── Direct high-specificity AG Grid Row/Cell Dark Mode Overrides ── */

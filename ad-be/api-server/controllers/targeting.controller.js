@@ -9154,12 +9154,12 @@ exports.getTargetingHistory = async (req, res) => {
                 ...(reqMatchVariants.length > 0 ? { matchType: { $in: reqMatchVariants } } : {}),
                 ...(campaignId ? { campaignId: { $in: [numCampaignId, strCampaignId].filter(Boolean) } } : {}),
                 ...(numProfileId ? { profileId: numProfileId } : {}),
-                ...(compareBids && resolvedConfigId ? { configId: resolvedConfigId } : {}),
+                ...(resolvedConfigId ? { configId: resolvedConfigId } : {}),
             };
             if (!compareBids || targetId || targetName) {
                 tRecord = await targetModel
                     .findOne(targetQuery)
-                    .sort({ reportDate: -1, createdAt: -1 })
+                    .sort({ reportDate: -1 })
                     .lean();
             }
 
@@ -9192,18 +9192,18 @@ exports.getTargetingHistory = async (req, res) => {
         // Find all targetIds in targetModel that belong to targetName with this exact matchType (manual only)
         if (targetName && matchTypeVariants.length > 0) {
             try {
-                const siblingDocs = await targetModel.find({
+                const siblingDocs = await targetModel.distinct("targetId", {
                     targeting: targetName,
                     matchType: { $in: matchTypeVariants },
                     ...(campaignId ? { campaignId: { $in: [numCampaignId, strCampaignId].filter(Boolean) } } : {}),
                     ...(numProfileId ? { profileId: numProfileId } : {}),
-                    ...(compareBids && resolvedConfigId ? { configId: resolvedConfigId } : {}),
+                    ...(resolvedConfigId ? { configId: resolvedConfigId } : {}),
                     ...(compareBids && tRecord?.adGroupId ? { adGroupId: tRecord.adGroupId } : {}),
-                }, { targetId: 1 }).lean();
+                });
                 for (const s of (siblingDocs || [])) {
-                    if (s.targetId) {
-                        const cId = String(s.targetId).replace(/^[TK]-/, "").trim();
-                        possibleTargetIds.push(String(s.targetId), cId, "T-" + cId, "K-" + cId);
+                    if (s) {
+                        const cId = String(s).replace(/^[TK]-/, "").trim();
+                        possibleTargetIds.push(String(s), cId, "T-" + cId, "K-" + cId);
                     }
                 }
             } catch (err) {
@@ -9223,7 +9223,7 @@ exports.getTargetingHistory = async (req, res) => {
             } : {}),
             ...(campaignId ? { campaignId: { $in: [strCampaignId, numCampaignId].filter(Boolean) } } : {}),
             ...(numProfileId ? { profileId: { $in: [numProfileId, String(numProfileId)].filter(Boolean) } } : {}),
-            ...(compareBids && resolvedConfigId ? { configId: resolvedConfigId } : {}),
+            ...(resolvedConfigId ? { configId: resolvedConfigId } : {}),
         };
         if (matchTypeVariants.length > 0) {
             historyFilter.$and = [
@@ -9305,21 +9305,20 @@ exports.getTargetingHistory = async (req, res) => {
         };
 
         const targetDailyFilter = {
-            ...(possibleTargetIdValues.length > 0 || targetName ? {
-                $or: [
-                    ...(possibleTargetIdValues.length > 0 ? [{
-                        targetId: { $in: possibleTargetIdValues },
-                        ...(matchTypeVariants.length > 0 ? { matchType: { $in: matchTypeVariants } } : {}),
-                    }] : []),
-                    ...(targetName ? [{
+            ...(resolvedConfigId ? { configId: resolvedConfigId } : {}),
+            ...(numProfileId ? { profileId: { $in: [numProfileId, String(numProfileId)].filter(Boolean) } } : {}),
+            ...(campaignId ? { campaignId: { $in: [numCampaignId, strCampaignId].filter(Boolean) } } : {}),
+            ...(possibleTargetIdValues.length > 0
+                ? {
+                    targetId: { $in: possibleTargetIdValues },
+                    ...(matchTypeVariants.length > 0 ? { matchType: { $in: matchTypeVariants } } : {}),
+                }
+                : targetName
+                    ? {
                         targeting: targetName,
                         ...(matchTypeVariants.length > 0 ? { matchType: { $in: matchTypeVariants } } : {}),
-                    }] : []),
-                ],
-            } : {}),
-            ...(campaignId ? { campaignId: { $in: [numCampaignId, strCampaignId].filter(Boolean) } } : {}),
-            ...(numProfileId ? { profileId: { $in: [numProfileId, String(numProfileId)].filter(Boolean) } } : {}),
-            ...(resolvedConfigId ? { configId: resolvedConfigId } : {}),
+                    }
+                    : {}),
         };
         // 3. Execute all independent database queries concurrently via Promise.all
         const [profile, historyDocs, manualChanges, ruleActions, dailyStats] = await Promise.all([
@@ -9334,17 +9333,6 @@ exports.getTargetingHistory = async (req, res) => {
         ]);
 
         const userIds = [...new Set((manualChanges || []).map(m => m.userId).filter(Boolean))];
-        const userDocs = userIds.length
-            ? await mongoose.connection.collection("users").find(
-                { _id: { $in: userIds.map(id => { try { return new mongoose.Types.ObjectId(id); } catch(e) { return id; } }) } },
-                { projection: { email: 1, name: 1 } }
-              ).toArray().catch(() => [])
-            : [];
-        const userMap = new Map();
-        for (const u of userDocs) {
-            userMap.set(String(u._id), u.email || u.name);
-        }
-
         const adGroupCollection = AD_TYPE_COLLECTIONS?.[adType]?.["adGroup"] || "ad_groups";
         const allAdGroupIds = [...new Set([
             tRecord?.adGroupId,
@@ -9352,15 +9340,30 @@ exports.getTargetingHistory = async (req, res) => {
             ...(manualChanges || []).map(m => m.adGroupId),
             ...(ruleActions || []).map(r => r.adGroupId),
         ].filter(Boolean))];
-        const adGroupDocs = allAdGroupIds.length
-            ? await mongoose.connection.collection(adGroupCollection).find(
-                {
-                    configId: resolvedConfigId,
-                    adGroupId: { $in: allAdGroupIds.flatMap(id => [id, Number(id), String(id)].filter(x => (x !== undefined && x !== null && !isNaN(x)) || x)) }
-                },
-                { projection: { adGroupId: 1, name: 1 } }
-              ).toArray().catch(() => [])
-            : [];
+
+        const [userDocs, adGroupDocs] = await Promise.all([
+            userIds.length
+                ? mongoose.connection.collection("users").find(
+                    { _id: { $in: userIds.map(id => { try { return new mongoose.Types.ObjectId(id); } catch(e) { return id; } }) } },
+                    { projection: { email: 1, name: 1 } }
+                  ).toArray().catch(() => [])
+                : Promise.resolve([]),
+            allAdGroupIds.length
+                ? mongoose.connection.collection(adGroupCollection).find(
+                    {
+                        configId: resolvedConfigId,
+                        adGroupId: { $in: allAdGroupIds.flatMap(id => [id, Number(id), String(id)].filter(x => (x !== undefined && x !== null && !isNaN(x)) || x)) }
+                    },
+                    { projection: { adGroupId: 1, name: 1 } }
+                  ).toArray().catch(() => [])
+                : Promise.resolve([]),
+        ]);
+
+        const userMap = new Map();
+        for (const u of userDocs) {
+            userMap.set(String(u._id), u.email || u.name);
+        }
+
         const adGroupMap = new Map();
         for (const ag of adGroupDocs) {
             adGroupMap.set(String(ag.adGroupId), ag.name);

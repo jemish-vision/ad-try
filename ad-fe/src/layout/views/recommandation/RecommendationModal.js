@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import React, { useContext, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { SYSTEM_PAGES, PAGE_ACTIONS } from "src/common/constants";
@@ -12,7 +12,11 @@ import { StyledCheckbox } from "../../../common/grid/StyledCheckbox";
 import { ApiGetRecommendationData, ApiApplyRuleRecommendation } from "../../../api-wrapper/recommendation/ApiRecommendation";
 import { predefinedRanges } from "../../../common/helper/calendarValues/calendarValues";
 import { normalizeRecommendationDateRange } from "./recommendationDateRange.mjs";
-import CurrencyCode from "../../../helper/currencyCode/CurrencyCode";
+import CurrencyCode, { getMarketplaceMinBid } from "../../../helper/currencyCode/CurrencyCode";
+import { ProfileContext } from "../../../helper/usecontext/useContext";
+import { getProposedBid, isBelowMarketplaceBid } from "./marketplaceBidFilter.mjs";
+import TargetSearchTermsDrawer from "./TargetSearchTermsDrawer";
+import RecommendationBulkSelection from "./RecommendationBulkSelection";
 import { Toast } from "../../../helper/links/Link";
 import moment from "moment-timezone";
 import { openCampaignViewInNewTab } from "../../../utility/campaignNavigation";
@@ -684,6 +688,10 @@ const RecommendationHeaderCheckbox = React.memo(({ getRowId, toggleAll, headerCh
 function RecommendationModal({ show, onHide, snapshot, profileId, adType, loading: externalLoading, refreshGrid, onDateRangeChange }) {
     const { t } = useTranslation();
     const navigate = useNavigate();
+    const { currencyCode, countryCode } = useContext(ProfileContext) || {};
+    const minimumBid = getMarketplaceMinBid(currencyCode, countryCode, null);
+    const minimumBidLabel = minimumBid == null ? "" : CurrencyCode(minimumBid, currencyCode);
+    const [searchTermsDrawer, setSearchTermsDrawer] = useState(null);
 
     const [isDark, setIsDark] = useState(document.documentElement.getAttribute("data-theme") === "dark");
     useEffect(() => {
@@ -732,6 +740,14 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
     const viewKey = JSON.stringify([show, snapshot?.rule?._id || snapshot?._id, profileId || snapshot?.profileId, adType]);
     const viewKeyRef = useRef(viewKey);
     viewKeyRef.current = viewKey;
+    const fromDate = toYMD(dateRange?.[0]) || undefined;
+    const toDate = toYMD(dateRange?.[1]) || undefined;
+    const drawerScopeKey = JSON.stringify([viewKey, fromDate, toDate]);
+    const activeDrawer = show && searchTermsDrawer?.scopeKey === drawerScopeKey ? searchTermsDrawer : null;
+    const closeSearchTerms = useCallback(() => {
+        setSearchTermsDrawer(null);
+        requestAnimationFrame(() => activeDrawer?.trigger?.focus());
+    }, [activeDrawer]);
     useEffect(() => () => {
         detailRequestRef.current += 1;
         selectAllRequestRef.current += 1;
@@ -859,19 +875,13 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
             });
         }
 
-        if (historyFilter === "less_than_one") {
-            return list.filter((item) => {
-                const val = getUpdatedNumericValue(item, actions, gridName);
-                return val !== null && Number(val.toFixed(2)) < 1;
-            });
-        }
-
-        // For all other filters ("all", "unchanged", "before_days"), exclude items whose updated value is < 1
-        const nonLessThanOneList = list.filter((item) => {
+        const isBelow = (item) => {
+            if (gridName === "Targeting") return isBelowMarketplaceBid(item, actions, minimumBid);
             const val = getUpdatedNumericValue(item, actions, gridName);
-            if (val === null) return true;
-            return !(Number(val.toFixed(2)) < 1);
-        });
+            return val !== null && Number(val.toFixed(2)) < 1;
+        };
+        if (historyFilter === "less_than_one") return list.filter(isBelow);
+        const nonLessThanOneList = list.filter((item) => !isBelow(item));
 
         const getRowHistoryInfo = (item) => {
             const cid = item?.campaignId || item?.campaignID || item?.campaign_id;
@@ -931,12 +941,12 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         }
 
         return nonLessThanOneList;
-    }, [transformedData, historyFilter, filterDays, latestHistoryMap, actions, gridName, campaignSearch]);
+    }, [transformedData, historyFilter, filterDays, latestHistoryMap, actions, gridName, campaignSearch, minimumBid]);
 
     // ─── Data slice / view for current page ───
     // If backend returned paginated data (totalRecords > internalData.length),
     // internalData is already the sliced page from backend. Otherwise fallback to client slice.
-    const isServerPaginated = Boolean(totalRecords && totalRecords > internalData.length);
+    const isServerPaginated = gridName !== "Targeting" && Boolean(totalRecords && totalRecords > internalData.length);
     const displayData = useMemo(() => {
         if (isServerPaginated) {
             return filteredData;
@@ -1040,11 +1050,14 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         setSelectAllLoading(false);
 
         const activeProfileId = profileId || snapshot?.profileId;
+        const isTargeting = (internalRule?.gridName || snapshot?.rule?.gridName) === "Targeting";
         const payload = {
             profileId: activeProfileId,
-            page: targetPage,
-            perPage: targetPerPage,
-            filterType: targetFilter || "all",
+            ...(isTargeting ? { filterType: "raw_all" } : {
+                page: targetPage,
+                perPage: targetPerPage,
+                filterType: targetFilter || "all",
+            }),
         };
 
         const requestDateRange = effectiveDateRangeRef.current;
@@ -1066,8 +1079,8 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                 setInternalCount(total);
                 setLatestNewCount(res?.newCount ?? res?.rule?.newCount ?? null);
                 setTotalRecords(total);
-                setCurrentPage(res?.currentPage || targetPage);
-                setPerPage(res?.perPage || targetPerPage);
+                setCurrentPage(isTargeting ? targetPage : res?.currentPage || targetPage);
+                setPerPage(isTargeting ? targetPerPage : res?.perPage || targetPerPage);
                 if (res?.rule) setInternalRule(res.rule);
                 if (!requestDateRange && res?.rule) {
                     setDateRange(res.rule.reportDate === "LIFETIME" ? [null, null]
@@ -1114,14 +1127,14 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
 
     const handlePageChange = useCallback((newPage) => {
         setCurrentPage(newPage);
-        fetchData(newPage, perPage, dateRange, historyFilter);
-    }, [fetchData, perPage, dateRange, historyFilter]);
+        if (gridName !== "Targeting") fetchData(newPage, perPage, dateRange, historyFilter);
+    }, [fetchData, perPage, dateRange, historyFilter, gridName]);
 
     const handlePerPageChange = useCallback((newSize) => {
         setPerPage(newSize);
         setCurrentPage(1);
-        fetchData(1, newSize, dateRange, historyFilter);
-    }, [fetchData, dateRange, historyFilter]);
+        if (gridName !== "Targeting") fetchData(1, newSize, dateRange, historyFilter);
+    }, [fetchData, dateRange, historyFilter, gridName]);
 
     const handleRefresh = useCallback(() => {
         allFetchedDataRef.current = null;
@@ -1178,7 +1191,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         setTimeout(refreshCheckboxCells, 0);
     }, [refreshCheckboxCells, getRowId]);
 
-    const totalCount = totalRecords ?? filteredData?.length ?? 0;
+    const totalCount = gridName === "Targeting" ? filteredData.length : totalRecords ?? filteredData?.length ?? 0;
 
     const isAllTotalSelected = useMemo(() => {
         if (!totalCount || totalCount === 0 || selectedRows.length === 0) return false;
@@ -1191,6 +1204,12 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
 
         if (isAllTotalSelected) {
             setSelectedRows([]);
+            setTimeout(refreshCheckboxCells, 0);
+            return;
+        }
+
+        if ((internalRule?.gridName || snapshot?.rule?.gridName) === "Targeting") {
+            setSelectedRows(filteredData);
             setTimeout(refreshCheckboxCells, 0);
             return;
         }
@@ -1286,7 +1305,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         } finally {
             if (isCurrentSelection()) setSelectAllLoading(false);
         }
-    }, [totalCount, isAllTotalSelected, transformedData, snapshot, internalRule, profileId, dateRange, gridName, actions, historyFilter, refreshCheckboxCells, viewKey, t]);
+    }, [totalCount, isAllTotalSelected, filteredData, transformedData, snapshot, internalRule, profileId, dateRange, gridName, actions, historyFilter, refreshCheckboxCells, viewKey, t]);
 
     const handleApplyDaysFilter = useCallback(() => {
         const minVal = historyFilter === "exact_days" ? 0 : 1;
@@ -1307,11 +1326,11 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
             const val = Math.max(minVal, Number(filterDays) || (newFilter === "exact_days" ? 0 : 7));
             setFilterDays(val);
         }
-        if (newFilter === "less_than_one" || prevFilter === "less_than_one") {
+        if (gridName !== "Targeting" && (newFilter === "less_than_one" || prevFilter === "less_than_one")) {
             fetchData(1, perPage, dateRange, newFilter);
         }
         setTimeout(refreshCheckboxCells, 0);
-    }, [historyFilter, filterDays, perPage, dateRange, fetchData, refreshCheckboxCells]);
+    }, [historyFilter, filterDays, perPage, dateRange, fetchData, refreshCheckboxCells, gridName]);
 
     const handleResetFilter = useCallback(() => {
         const prevFilter = historyFilter;
@@ -1320,11 +1339,11 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         setCurrentPage(1);
         setSelectedRows([]);
         allFetchedDataRef.current = null;
-        if (prevFilter === "less_than_one") {
+        if (gridName !== "Targeting" && prevFilter === "less_than_one") {
             fetchData(1, perPage, dateRange, "all");
         }
         setTimeout(refreshCheckboxCells, 0);
-    }, [historyFilter, perPage, dateRange, fetchData, refreshCheckboxCells]);
+    }, [historyFilter, perPage, dateRange, fetchData, refreshCheckboxCells, gridName]);
 
     const toggleScope = useCallback((scopeVal) => {
         setOutsideHistoryScopes((prev) => {
@@ -1542,19 +1561,10 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
 
             const action = actions.find((a) => ['IncreaseBid', 'DecreaseBid', 'SetBid'].includes(a.actionName));
             if (!action) {
-                return <span>{CurrencyCode(currBid)}</span>;
+                return <span>{CurrencyCode(currBid, currencyCode)}</span>;
             }
 
-            const actionVal = parseFloat(action.actionValue || 0);
-            let diff = actionVal;
-            if (action.actionValueType === "Percentage") {
-                diff = (currBid * actionVal) / 100;
-            }
-
-            let newBid = currBid;
-            if (action.actionName === "IncreaseBid") newBid = currBid + diff;
-            if (action.actionName === "DecreaseBid") newBid = Math.max(0.02, currBid - diff);
-            if (action.actionName === "SetBid") newBid = actionVal;
+            const newBid = getProposedBid(currBid, action) ?? currBid;
 
             const isPositive = newBid > currBid;
             const isNegative = newBid < currBid;
@@ -1566,10 +1576,10 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
 
             return (
                 <div className="flex items-center gap-1.5 whitespace-nowrap font-medium text-xs">
-                    <span className="text-slate-700 dark:text-slate-200 font-semibold">{CurrencyCode(currBid)}</span>
+                    <span className="text-slate-700 dark:text-slate-200 font-semibold">{CurrencyCode(currBid, currencyCode)}</span>
                     <span className="text-slate-400 dark:text-slate-500 font-bold select-none">→</span>
                     <span className={`font-bold border px-1.5 py-0.5 rounded ${badgeClass}`}>
-                        {CurrencyCode(newBid)}
+                        {CurrencyCode(newBid, currencyCode)}
                     </span>
                 </div>
             );
@@ -1712,7 +1722,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                 </button>
             );
         },
-    }), [actions, navigate, onHide, t, adType, profileId, snapshot, dateRange, rule?.reportDate, hasDateOverride]);
+    }), [actions, navigate, onHide, t, adType, profileId, snapshot, dateRange, rule?.reportDate, hasDateOverride, currencyCode]);
 
     const canUpdate = PermissionCheck(SYSTEM_PAGES.RECOMMENDATION, PAGE_ACTIONS.UPDATE);
 
@@ -1801,13 +1811,52 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
         const hasActions = actions && actions.length > 0;
         const firstTwo = mappedColumns.slice(0, 2);
         const rest = mappedColumns.slice(2);
+        const searchTermsColumn = {
+            field: "targetSearchTerms",
+            headerName: t("Search Terms"),
+            minWidth: 142,
+            sortable: false,
+            filter: false,
+            cellRenderer: ({ data }) => {
+                const rowAdType = String(data?.adType || rule?.adType || adType || "").toUpperCase();
+                const targetId = data?.targetId || data?.keywordId || data?._id?.targetId || data?._id?.keywordId;
+                const campaignId = data?.campaignId || data?._id?.campaignId;
+                const adGroupId = data?.adGroupId || data?._id?.adGroupId;
+                if (!["SP", "SB"].includes(rowAdType) || !targetId || !campaignId || !adGroupId) return null;
+                const isFloorBleed = (Number(data?.targetingBid || data?.keywordBid || 0) <= (minimumBid || 1)) && Number(data?.acos || 0) > 40;
+                return (
+                    <div className="flex items-center h-full">
+                        <button
+                            type="button"
+                            className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold shadow-sm transition-all focus-visible:ring-2 focus-visible:ring-sky-500 cursor-pointer ${isFloorBleed
+                                ? "border border-amber-400/80 dark:border-amber-600/70 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50"
+                                : "border border-sky-300/80 dark:border-sky-700/60 bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-[#38bdf8] hover:bg-sky-100 dark:hover:bg-sky-900/50"}`}
+                            title={isFloorBleed ? t("Floor bid reached with high ACoS — check search terms") : t("View Search Terms")}
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                setSearchTermsDrawer({
+                                    scopeKey: drawerScopeKey,
+                                    trigger: event.currentTarget,
+                                    target: { ...data, targetId, campaignId, adGroupId },
+                                    scope: { configId: rule?.configId, profileId: profileId || snapshot?.profileId, adType: rowAdType, fromDate, toDate },
+                                });
+                            }}
+                        >
+                            <FiSearch size={12} className={isFloorBleed ? "text-amber-600 dark:text-amber-400" : "text-sky-600 dark:text-[#38bdf8]"} aria-hidden="true" />
+                            {t("Search Terms")}
+                        </button>
+                    </div>
+                );
+            },
+        };
         return [
             ...(canUpdate && hasActions ? [checkboxColumn] : []),
             ...firstTwo,
             ...(adType === "All" ? [adTypeColumn] : []),
+            ...(gridName === "Targeting" && historyFilter === "less_than_one" ? [searchTermsColumn] : []),
             ...rest
         ];
-    }, [gridName, cellRendererMap, canUpdate, getRowId, toggleAll, headerCheckboxEvents, toggleRow, actions, adType]);
+    }, [gridName, cellRendererMap, canUpdate, getRowId, toggleAll, headerCheckboxEvents, toggleRow, actions, adType, rule?.adType, rule?.configId, profileId, snapshot?.profileId, fromDate, toDate, drawerScopeKey, historyFilter, t]);
 
     const defaultColDef = useMemo(() => ({
         flex: 0,
@@ -2137,43 +2186,14 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                 </span>
                             )}
                             {canUpdate && actions && actions.length > 0 && displayData.length > 0 && (
-                                <button
-                                    type="button"
+                                <RecommendationBulkSelection
                                     id="recommendation-select-all-total-btn"
-                                    onClick={handleSelectAllPagesToggle}
-                                    disabled={selectAllLoading}
-                                    className={`inline-flex items-center gap-2 px-3 py-1 rounded-xl text-xs font-semibold border transition-all duration-150 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-wait ${isAllTotalSelected
-                                        ? "bg-sky-500 text-white border-sky-600 dark:bg-sky-600 dark:border-sky-500 hover:bg-sky-600"
-                                        : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200/90 dark:border-white/10 hover:border-sky-500/50 hover:bg-sky-50/50 dark:hover:bg-white/5"
-                                        }`}
-                                    title={isAllTotalSelected ? t("Deselect all records") : t("Select all {{count}} records", { count: totalCount })}
-                                >
-                                    {selectAllLoading ? (
-                                        <div className="w-3.5 h-3.5 border-2 border-slate-300 border-t-sky-500 rounded-full animate-spin flex-shrink-0" />
-                                    ) : (
-                                        <StyledCheckbox
-                                            checked={isAllTotalSelected}
-                                            onChange={handleSelectAllPagesToggle}
-                                        />
-                                    )}
-                                    <span>
-                                        {selectAllLoading
-                                            ? t("Selecting all...")
-                                            : isAllTotalSelected
-                                                ? t("Deselect All")
-                                                : t("Select All")}
-                                    </span>
-                                    <span
-                                        className={`px-1.5 py-0.5 rounded-full text-[11px] font-bold ${isAllTotalSelected
-                                            ? "bg-white/25 text-white"
-                                            : "bg-sky-500/10 text-sky-600 dark:bg-sky-500/20 dark:text-[#38bdf8]"
-                                            }`}
-                                    >
-                                        {selectedRows.length > 0 && isAllTotalSelected
-                                            ? `${selectedRows.length} / ${totalCount}`
-                                            : totalCount.toLocaleString()}
-                                    </span>
-                                </button>
+                                    allSelected={isAllTotalSelected}
+                                    selectedCount={selectedRows.length}
+                                    totalCount={totalCount}
+                                    loading={selectAllLoading}
+                                    onToggle={handleSelectAllPagesToggle}
+                                />
                             )}
                         </div>
 
@@ -2301,7 +2321,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                             {historyFilter === "all" || historyFilter === "new_only"
                                                 ? t("All Campaigns")
                                                 : historyFilter === "less_than_one"
-                                                    ? t("Bids Under 1.00")
+                                                    ? t("Bids Below Marketplace Minimum")
                                                     : historyFilter === "unchanged"
                                                         ? t("Unchanged Campaigns (No History)")
                                                         : historyFilter === "before_days"
@@ -2316,9 +2336,11 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                     <SelectItem value="all" className="text-xs font-medium cursor-pointer">
                                         {t("All Campaigns")}
                                     </SelectItem>
-                                    <SelectItem value="less_than_one" className="text-xs font-medium cursor-pointer">
-                                        {t("Bids Under 1.00")}
-                                    </SelectItem>
+                                    {gridName === "Targeting" && minimumBid != null && (
+                                        <SelectItem value="less_than_one" className="text-xs font-medium cursor-pointer">
+                                            {t("Bids Below Marketplace Minimum")}
+                                        </SelectItem>
+                                    )}
                                     <SelectItem value="unchanged" className="text-xs font-medium cursor-pointer">
                                         {t("Unchanged Campaigns (No History)")}
                                     </SelectItem>
@@ -2370,12 +2392,13 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
 
                     {/* ── Body ── */}
                     <div className="flex-1 overflow-hidden py-1 flex flex-col min-h-0">
-                        {/* Note when "Bids Under 1.00" is selected */}
                         {historyFilter === "less_than_one" && (
                             <div className="mb-2 px-3.5 py-2.5 rounded-xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs flex items-center gap-2.5 shadow-sm animate-in fade-in duration-200 shrink-0">
                                 <FiInfo className="text-amber-500 shrink-0" size={16} />
                                 <span className="font-medium">
-                                    {t("Note: Minimum bid for India is ₹1.00. Lower bids will be set to ₹1.00 when applied.")}
+                                    {minimumBid == null
+                                        ? t("Minimum bid is unavailable for this marketplace.")
+                                        : t("The minimum bid for this marketplace is {{minimum}}.", { minimum: minimumBidLabel })}
                                 </span>
                             </div>
                         )}
@@ -2410,7 +2433,7 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                                     getRowId={getGridRowId}
                                     columnDefs={columnDefs}
                                     defaultColDef={defaultColDef}
-                                    totalRecords={totalRecords || filteredData.length}
+                                    totalRecords={totalCount}
                                     perPage={perPage}
                                     currentPage={currentPage}
                                     onPageChange={handlePageChange}
@@ -2457,6 +2480,15 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                 </DialogContent>
             </Dialog>
 
+            {activeDrawer && (
+                <TargetSearchTermsDrawer
+                    target={activeDrawer.target}
+                    scope={activeDrawer.scope}
+                    currencyCode={currencyCode}
+                    onClose={closeSearchTerms}
+                />
+            )}
+
             {/* Campaign History Modal (Last 30 Days) */}
             {showHistoryModal && selectedHistoryCampaign && (
                 <CampaignHistoryModal
@@ -2494,6 +2526,8 @@ function RecommendationModal({ show, onHide, snapshot, profileId, adType, loadin
                     filterType={historyFilter}
                     filterDays={filterDays}
                     getRowId={getRowId}
+                    minimumBid={minimumBid}
+                    minimumBidLabel={minimumBidLabel}
                 />
             )}
         </>

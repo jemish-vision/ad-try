@@ -227,8 +227,7 @@ textarea {
 .middle_container,
 .data_content,
 .router_container,
-.second_conatciner,
-.iq-ag-table {
+.second_conatciner {
   animation: vtFadeIn 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
@@ -240,20 +239,6 @@ textarea {
   to {
     opacity: 1;
     transform: translateY(0);
-  }
-}
-
-.iq-ag-table .ag-row {
-  opacity: 0;
-  animation: agRowFadeIn 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) 0.15s forwards;
-}
-
-@keyframes agRowFadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
   }
 }
 

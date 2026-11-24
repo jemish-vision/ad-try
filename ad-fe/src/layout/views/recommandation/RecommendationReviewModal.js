@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog, DialogContent } from "../../../components/ui/dialog";
 import CurrencyCode from "../../../helper/currencyCode/CurrencyCode";
+import { isBelowMarketplaceBid } from "./marketplaceBidFilter.mjs";
 import { FiCheckCircle, FiInfo, FiClock, FiTrash2, FiSearch, FiAlertTriangle, FiX, FiLayers, FiArrowRight, FiArrowLeft, FiChevronLeft, FiChevronRight } from "react-icons/fi";
 import moment from "moment-timezone";
 
@@ -236,32 +237,17 @@ const RecommendationReviewModal = ({
     filterType = "all",
     filterDays = 7,
     getRowId,
+    minimumBid,
+    minimumBidLabel,
 }) => {
     const { t } = useTranslation();
     const [searchQuery, setSearchQuery] = useState("");
     const [currentPage, setCurrentPage] = useState(1);
     const pageSize = 50;
 
-    const hasLessThanOneItem = useMemo(() => {
-        return (selectedItems || []).some((item) => {
-            if (gridName === "Targeting") {
-                const curr = parseFloat(item?.targetingBid || item?.keywordBid || item?.bid || 0);
-                const action = (actions || []).find((a) => ['IncreaseBid', 'DecreaseBid', 'SetBid'].includes(a.actionName));
-                if (!action) return false;
-                const actionVal = parseFloat(action.actionValue || 0);
-                let diff = actionVal;
-                if (action.actionValueType === "Percentage") {
-                    diff = (curr * actionVal) / 100;
-                }
-                let next = curr;
-                if (action.actionName === "IncreaseBid") next = curr + diff;
-                if (action.actionName === "DecreaseBid") next = curr - diff;
-                if (action.actionName === "SetBid") next = actionVal;
-                return next < 1;
-            }
-            return false;
-        });
-    }, [selectedItems, actions, gridName]);
+    const hasBelowMinimumBid = useMemo(() => gridName === "Targeting"
+        && selectedItems.some((item) => isBelowMarketplaceBid(item, actions, minimumBid)),
+    [selectedItems, actions, gridName, minimumBid]);
 
     const filteredReviewItems = useMemo(() => {
         if (!searchQuery.trim()) return selectedItems;
@@ -289,7 +275,7 @@ const RecommendationReviewModal = ({
     }, [filteredReviewItems, currentPage, pageSize]);
 
     const getFilterBadgeText = () => {
-        if (filterType === "less_than_one") return t("Filtered: Bids Under 1.00");
+        if (filterType === "less_than_one") return t("Bids Below Marketplace Minimum");
         if (filterType === "unchanged") return t("Filtered: Unchanged Campaigns (No Prior Changes)");
         if (filterType === "before_days") return t("Filtered: Changed Before {{days}} Days", { days: filterDays });
         if (filterType === "exact_days") return t("Filtered: Changed Exactly {{days}} Days Ago", { days: filterDays });
@@ -386,11 +372,11 @@ const RecommendationReviewModal = ({
 
                 {/* ── Modal Body: Selected Campaigns Table ── */}
                 <div className="flex-1 overflow-y-auto p-6 max-h-[50vh]">
-                    {hasLessThanOneItem && (
+                    {hasBelowMinimumBid && (
                         <div className="mb-4 p-3 rounded-xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 flex items-center gap-2.5 text-xs text-amber-700 dark:text-amber-300 shadow-sm animate-in fade-in duration-200">
                             <FiInfo className="text-amber-500 shrink-0" size={16} />
                             <span className="font-medium">
-                                {t("Note: Minimum bid for India is ₹1.00. Lower bids will be set to ₹1.00 when applied.")}
+                                {t("The minimum bid for this marketplace is {{minimum}}.", { minimum: minimumBidLabel })}
                             </span>
                         </div>
                     )}

@@ -16,11 +16,27 @@ const { closeQueues } = require("../queues/queues");
 const { registerGracefulShutdown } = require("../shutdown");
 const { closeMongoConnection } = require("../../shared/connection");
 const { isQueueModeEnabled, isShadowModeEnabled } = require("../../shared/automationMode");
+const { SP_API_TASKS } = require("../queues/queueNames");
 
 const activeCronJobs = new Map();
 let cronChangeStream = null;
+let schedulePoll = null;
+let snapshotRecovery = null;
 let heartbeat = null;
 let heartbeatRedis = null;
+
+// The configured trigger and recovery share one BullMQ job per hour. The worker
+// uses the actual observation date and only processes profiles still due today.
+async function enqueueDueSnapshot(now = new Date()) {
+  if (!activeCronJobs.has(SP_API_TASKS.ASIN_SNAPSHOT)) return;
+  const scheduledFor = new Date(now);
+  scheduledFor.setUTCMinutes(0, 0, 0);
+  try {
+    await enqueueSpApiForOccurrence({ task: SP_API_TASKS.ASIN_SNAPSHOT, scheduledFor });
+  } catch (err) {
+    cron_logs({ message: `[ProducerScheduler] ASIN snapshot dispatch failed: ${err.message}`, log_type: "error" });
+  }
+}
 
 /**
  * Registers a single migrated cron schedule.
@@ -31,17 +47,15 @@ function registerSchedule(cronDoc) {
 
   const taskKey = target.task;
 
-  // Stop existing schedule if already running
-  if (activeCronJobs.has(taskKey)) {
-    activeCronJobs.get(taskKey).stop();
+  const current = activeCronJobs.get(taskKey);
+  const enabled = (isQueueModeEnabled() || isShadowModeEnabled()) && cronDoc.isActive && cronDoc.cronExpression;
+  if (enabled && current?.expression === cronDoc.cronExpression) return;
+  if (current) {
+    current.job.stop();
     activeCronJobs.delete(taskKey);
   }
 
-  if (!isQueueModeEnabled() && !isShadowModeEnabled()) return;
-
-  if (!cronDoc.isActive || !cronDoc.cronExpression) {
-    return;
-  }
+  if (!enabled) return;
 
   if (!cron.validate(cronDoc.cronExpression)) {
     cron_logs({
@@ -53,6 +67,7 @@ function registerSchedule(cronDoc) {
 
   const scheduledCron = cron.schedule(cronDoc.cronExpression, async () => {
     const scheduledFor = new Date();
+    if (taskKey === SP_API_TASKS.ASIN_SNAPSHOT) return enqueueDueSnapshot(scheduledFor);
     try {
       if (target.family === "rules") {
         await enqueueRulesForOccurrence({
@@ -78,7 +93,7 @@ function registerSchedule(cronDoc) {
     }
   });
 
-  activeCronJobs.set(taskKey, scheduledCron);
+  activeCronJobs.set(taskKey, { job: scheduledCron, expression: cronDoc.cronExpression });
   cron_logs({
     message: `[ProducerScheduler] Scheduled ${target.task} [${cronDoc.cronExpression}] (Mongo cron: "${cronDoc.cronName}")`,
     log_type: "info",
@@ -90,6 +105,7 @@ function registerSchedule(cronDoc) {
  */
 async function loadSchedules() {
   const cronDocs = await cronJobSchema.find({ isActive: true }).lean();
+  const desired = new Set(cronDocs.map(doc => resolveMigratedSchedule(doc.cronName)?.task));
   for (const doc of cronDocs) {
     registerSchedule(doc);
   }
@@ -104,12 +120,18 @@ async function loadSchedules() {
     });
     // Respect explicitly disabled doc in DB. Otherwise register default 2:30 AM daily schedule
     if (!configuredDoc) {
+      desired.add(resolveMigratedSchedule("HourlyDataConsolidation")?.task);
       registerSchedule({
         cronName: "HourlyDataConsolidation",
         cronExpression: process.env.HOURLY_DATA_CONSOLIDATION_CRON || "0 30 2 * * *",
         isActive: true,
       });
     }
+  }
+  for (const [task, { job }] of activeCronJobs) {
+    if (desired.has(task)) continue;
+    job.stop();
+    activeCronJobs.delete(task);
   }
 }
 
@@ -159,17 +181,33 @@ async function runStartupLookbackRecovery() {
 /**
  * Monitors cronJob collection for real-time schedule modifications.
  */
+function startSchedulePolling() {
+  if (schedulePoll) return;
+  let polling = false;
+  schedulePoll = setInterval(async () => {
+    if (polling) return;
+    polling = true;
+    try {
+      await loadSchedules();
+    } catch (err) {
+      cron_logs({ message: `[ProducerScheduler] Schedule poll failed: ${err.message}`, log_type: "warn" });
+    } finally {
+      polling = false;
+    }
+  }, 60000);
+}
+
 function setupChangeStream() {
   try {
     cronChangeStream = cronJobSchema.watch();
     cronChangeStream.on("change", async (change) => {
-      if (["insert", "update", "replace"].includes(change.operationType)) {
-        const updated = await cronJobSchema.findById(change.documentKey._id).lean();
-        if (updated) {
-          registerSchedule(updated);
-        }
-      } else if (change.operationType === "delete") {
+      if (["insert", "update", "replace", "delete"].includes(change.operationType)) {
+        try {
         await loadSchedules();
+        } catch (err) {
+          cron_logs({ message: `[ProducerScheduler] Schedule reload failed: ${err.message}`, log_type: "warn" });
+          startSchedulePolling();
+        }
       }
     });
     cronChangeStream.on("error", (err) => {
@@ -177,13 +215,14 @@ function setupChangeStream() {
         message: `[ProducerScheduler] Change stream error, falling back to periodic poll: ${err.message || err}`,
         log_type: "warn",
       });
+      startSchedulePolling();
     });
   } catch (err) {
     cron_logs({
       message: "[ProducerScheduler] Could not start change stream (requires replica set), polling every 60s instead.",
       log_type: "warn",
     });
-    setInterval(() => loadSchedules(), 60000);
+    startSchedulePolling();
   }
 }
 
@@ -200,6 +239,8 @@ async function startProducerScheduler() {
 
   await loadSchedules();
   setupChangeStream();
+  snapshotRecovery = cron.schedule("0 20 * * * *", () => enqueueDueSnapshot());
+  await enqueueDueSnapshot();
   await runStartupLookbackRecovery();
 
   cron_logs({
@@ -214,7 +255,10 @@ async function startProducerScheduler() {
         message: "[ProducerScheduler] Shutting down producer...",
         log_type: "info",
       });
-      for (const [name, job] of activeCronJobs.entries()) {
+      snapshotRecovery?.stop();
+      if (schedulePoll) clearInterval(schedulePoll);
+      schedulePoll = null;
+      for (const { job } of activeCronJobs.values()) {
         job.stop();
       }
       activeCronJobs.clear();

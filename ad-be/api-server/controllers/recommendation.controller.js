@@ -1302,6 +1302,27 @@ exports.addRules = async (req, res) => {
 
         await createRule.save();
 
+        if (userId && mongoose.Types.ObjectId.isValid(userId) && profileId) {
+            try {
+                await recommendationOrderSchema.updateOne(
+                    {
+                        userId: new mongoose.Types.ObjectId(userId),
+                        profileId: String(profileId),
+                    },
+                    {
+                        $push: {
+                            ruleIds: {
+                                $each: [createRule._id],
+                                $position: 0,
+                            },
+                        },
+                    }
+                );
+            } catch (orderErr) {
+                recommendation_logs({ message: `[addRules Order Prepend Error] ${orderErr?.message || orderErr}`, log_type: "error" });
+            }
+        }
+
         await logAudit("RECOMMENDATION_RULE_CREATION", `Created recommendation rule: ${createRule?.ruleName}`, {
             ruleName: createRule?.ruleName,
             gridName: createRule?.gridName,
@@ -1755,6 +1776,12 @@ exports.deleteRule = async (req, res) => {
 
         await recommandationStatusSchema.deleteMany({ ruleId });
         await recommandationCampaignByRuleSchema.deleteMany({ ruleId });
+        if (ruleId && mongoose.Types.ObjectId.isValid(ruleId)) {
+            await recommendationOrderSchema.updateMany(
+                { ruleIds: new mongoose.Types.ObjectId(ruleId) },
+                { $pull: { ruleIds: new mongoose.Types.ObjectId(ruleId) } }
+            ).catch(() => {});
+        }
 
         await logAudit("RECOMMENDATION_RULE_DELETION", `Deleted recommendation rule: ${deleteRule?.ruleName}`, {
             ruleName: deleteRule?.ruleName,

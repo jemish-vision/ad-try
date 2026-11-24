@@ -1011,10 +1011,10 @@ The Recommendation modal now supports dynamic cell renderers, allowing direct in
 ### Minimum Bid Validation
 When applying bid changes through recommendations, the system validates against a minimum bid threshold with currency-aware handling, preventing invalid bid submissions.
 
-### Bids Under 1.00 Filter
-The Recommendations module includes a dedicated Bids Under 1.00 filter in the performance filter dropdown:
-- **Low Bid Identification**: Quickly isolates targets with proposed bids below 1.00 for careful review.
-- **Marketplace Threshold Notice**: Displays contextual notices for regional minimum bid thresholds (e.g., minimum bid requirement of ₹1.00 for Amazon India).
+### Bids Below Marketplace Minimum
+The Recommendations module includes a Bids Below Marketplace Minimum option in the performance filter.
+- Shows targets with proposed bids below the minimum allowed in the selected marketplace.
+- Displays the minimum bid for the selected marketplace.
 
 ### Recommendation History & Review Datatable
 - **Dark-Themed Datatable UI**: Matches the modern dark table styling with status tags, bid transition badges (Old Bid → New Bid), ACoS, spend, and relative change timestamps.

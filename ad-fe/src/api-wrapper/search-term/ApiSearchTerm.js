@@ -24,6 +24,20 @@ const ApiGetAllSearchTerms = (data) => {
     .catch((res) => res.data);
 };
 
+const targetSearchTermRequest = (path, data, signal) => axios.post(`${searchTermapi}${path}`, data, {
+  headers: {
+    ...headers,
+    Authorization: `Bearer ${localStorage.getItem("sellerToken")}`,
+    "x-skip-loader": true,
+  },
+  skipLoader: true,
+  signal,
+}).then((response) => response.data);
+
+export const ApiGetTargetSearchTerms = (data, signal) => targetSearchTermRequest("getTargetSearchTerms", data, signal);
+
+export const ApiNegateTargetSearchTerms = (data) => targetSearchTermRequest("negateTargetSearchTerms", data);
+
 const ApiGetSearchTermsProductView = (data) => {
   return axios
     .post(`${searchTermapi}getSearchTermsProductView`, data, { headers, skipLoader: true })

@@ -22,6 +22,8 @@ const { streamArray } = require("stream-json/streamers/StreamArray");
 const campaignSchema = require("../models/campaign.model");
 const adGroupSchema = require("../models/adGroups.model");
 const profileSchema = require("../models/profiles.model");
+const configSchema = require("../models/config.model");
+const profileBasedPermissionSchema = require("../models/profileBasedPermission.model");
 const targetingSchema = require("../models/targeting.model");
 const searchTermSchema = require("../models/searchTerm.model");
 const searchTermAppliedSchema = require("../models/searchTermApplied.model");
@@ -64,6 +66,7 @@ const {
     getAxiosErrorMessage,
     safeJsonParse,
     getAllowedSyncProfiles,
+    checkPermission,
 } = require("../helper/common");
 
 const { cron_logs } = require("../../winston/cronAutomation/logger");
@@ -78,6 +81,122 @@ const { stageReportFileInRedis } = require("../services/reportFileStager.service
 const { processStagedReportBatches } = require("../services/reportBatchWriter.service");
 const { getRunManifest } = require("../services/reportStaging.service");
 const { linkReportHistory, finalizeReportHistory } = require("../services/reportHistoryCompletion.service");
+const { SYSTEM_PAGES, PAGE_ACTIONS } = require("../constants/permissions");
+const { ROLES } = require("../constants/roles");
+const {
+    targetSearchTermScope,
+    readTargetSearchTerms,
+    validateNegativeTerms,
+    submitTargetNegativeTerms,
+} = require("../helper/targetSearchTerms");
+
+function targetReportScope(req) {
+    const configId = req.config?.configId;
+    return mongoose.Types.ObjectId.isValid(configId)
+        ? targetSearchTermScope(req.body || {}, new mongoose.Types.ObjectId(configId))
+        : null;
+}
+
+function isTargetSearchTermDemo(req, scope) {
+    return req.isMockTestingUser || req.user?.isMockUser ||
+        String(scope.filter.configId) === "000000000000000000000001" || scope.filter.profileId === 99999901;
+}
+
+async function getTargetSearchTermProfile(req, { filter }) {
+    const { configId, profileId } = filter;
+    const scope = { configId, profileId };
+    if (req.role?.roleName !== ROLES.SUPER_ADMIN && (
+        !req.user?._id || !await profileBasedPermissionSchema.exists({
+            ...scope, userId: req.user._id, hasAccess: true,
+            ...(req.organizationId && { organizationId: req.organizationId }),
+        })
+    )) return null;
+    return profileSchema.findOne({ ...scope, isActive: true }).lean();
+}
+
+async function canNegateTargetSearchTerms(req, { adType }, profile) {
+    if (adType !== "SP" || !profile?.amazonUrl) return false;
+    const permission = await checkPermission(
+        req.user?._id, SYSTEM_PAGES.SEARCH_TERM, PAGE_ACTIONS.CREATE, true, req.organizationId
+    );
+    return Boolean(permission.hasPermission);
+}
+
+exports.getTargetSearchTerms = async (req, res) => {
+    try {
+        const scope = targetReportScope(req);
+        if (!scope) return res.status(400).send({ isSuccess: false, message: "Invalid target or date range." });
+        if (isTargetSearchTermDemo(req, scope)) {
+            const page = scope.pagination?.page || 1;
+            const pageSize = scope.pagination?.pageSize || 50;
+            return res.send({
+                isSuccess: true, canNegate: false, searchTerms: [],
+                totalRecords: 0, totalCount: 0, totalPages: 1, page, pageSize,
+                totalRow: { impressions: 0, clicks: 0, orders: 0, spend: 0, sales: 0, ...calcMetrics({}) },
+            });
+        }
+        const profile = await getTargetSearchTermProfile(req, scope);
+        if (!profile) return res.status(403).send({ isSuccess: false, message: "Profile access required." });
+        const model = scope.adType === "SP" ? searchTermSchema : sbSearchTermSchema;
+        const [report, canNegate] = await Promise.all([
+            readTargetSearchTerms(model, scope.filter, null, scope.pagination),
+            canNegateTargetSearchTerms(req, scope, profile),
+        ]);
+        return res.send({ isSuccess: true, ...report, canNegate });
+    } catch (error) {
+        write_logs({ message: `[getTargetSearchTerms] ${error?.name || "Error"}`, log_type: "error" });
+        return res.status(500).send({ isSuccess: false, message: "Could not load target search terms." });
+    }
+};
+
+exports.negateTargetSearchTerms = async (req, res) => {
+    try {
+        const scope = targetReportScope(req);
+        const terms = req.body?.terms;
+        if (!scope || !validateNegativeTerms(terms)) {
+            return res.status(400).send({ isSuccess: false, message: "Invalid target, date range or negative terms." });
+        }
+        if (isTargetSearchTermDemo(req, scope) || scope.adType !== "SP") {
+            return res.status(403).send({ isSuccess: false, message: "Negative targeting is unavailable for this profile or ad type." });
+        }
+        const profile = await getTargetSearchTermProfile(req, scope);
+        if (!await canNegateTargetSearchTerms(req, scope, profile)) {
+            return res.status(403).send({ isSuccess: false, message: "Permission to create negative search terms is required." });
+        }
+
+        const { searchTerms } = await readTargetSearchTerms(searchTermSchema, scope.filter, terms.map(term => term.searchTerm));
+        const observed = new Map(searchTerms.map(row => [row.searchTerm, row]));
+        if (terms.some(({ searchTerm, matchType }) =>
+            observed.get(searchTerm)?.isAsin !== (matchType === "ASIN_SAME_AS")
+        )) {
+            return res.status(400).send({ isSuccess: false, message: "Every term must belong to the selected target and use a compatible match type." });
+        }
+        const adsConfig = await configSchema.findById(scope.filter.configId).select("adsClientId").lean();
+        const clientId = adsConfig && (adsConfig.adsClientId || process.env.AMAZON_ADS_CLIENT_ID);
+        if (!clientId) return res.status(502).send({ isSuccess: false, message: "Amazon Ads connection is unavailable." });
+
+        const results = await submitTargetNegativeTerms({
+            request: amazonAxios, profile, clientId, scope: scope.filter, terms,
+        });
+        const successful = results.filter(result => result.success).length;
+        const status = successful === results.length ? "SUCCESS" : successful > 0 ? "PARTIAL" : "FAILURE";
+        for (const [isProduct, event, message] of [
+            [false, "SEARCH_TERM_ADD_AS_NEGATIVE_KEYWORD", "Search terms submitted as negative keywords"],
+            [true, "SEARCH_TERM_ADD_AS_NEGATIVE_PRODUCT", "Search terms submitted as negative products"],
+        ]) {
+            const items = results.filter(result => (result.matchType === "ASIN_SAME_AS") === isProduct);
+            if (items.length) {
+                await logAudit(event, message, {
+                    ...scope.filter, exclusionScope: "ad group", results: items, status,
+                }, req.user?.id);
+            }
+        }
+        return res.send({ isSuccess: true, results });
+    } catch (error) {
+        write_logs({ message: `[negateTargetSearchTerms] ${error?.name || "Error"}`, log_type: "error" });
+        return res.status(500).send({ isSuccess: false, message: "Could not submit negative search terms." });
+    }
+};
 
 exports.cronGenerateSearchTermReport = async (generateWeeklyReport = false, generateBiWeeklyReport = false, pastSyncObj = null) => {
   const historicalScope = pastSyncObj || (typeof generateBiWeeklyReport === "object" ? generateBiWeeklyReport : null);

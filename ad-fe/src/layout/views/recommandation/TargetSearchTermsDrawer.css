@@ -1,0 +1,13 @@
+/* Target Search Terms Drawer - High Performance Clean Styling */
+
+.target-terms-drawer {
+    /* Native smooth rendering without GPU compositor bottlenecks */
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .target-terms-drawer[role="dialog"] {
+        animation: none;
+        transition: none;
+    }
+}
+
