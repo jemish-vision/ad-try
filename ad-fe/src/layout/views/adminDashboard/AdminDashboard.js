@@ -41,6 +41,7 @@ import WasteAndScalingAlertsWidget, { WasteSpendWidget } from "./Dashboard/Waste
 import ProductPerformanceMatrixWidget from "./Dashboard/ProductPerformanceMatrixWidget";
 import SmartInsightsWidget from "./Dashboard/SmartInsightsWidget";
 import OutOfStockAdsWidget from "./Dashboard/OutOfStockAdsWidget";
+import PerformanceDeclineWidget from "./Dashboard/PerformanceDeclineWidget";
 import { PermissionCheck } from "../../../helper/permission/PermissionCheck";
 import { Card } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
@@ -1246,6 +1247,16 @@ export default function AdminDashboard() {
               onRefresh={() => loadInsightsData(1)}
             />
           </div>
+        </div>
+
+        {/* ── Row 7.5: Performance Decline & Root Cause Triage ── */}
+        <div id="dashboard-performance-decline-section" className="w-full mb-8">
+          <PerformanceDeclineWidget
+            profileId={currentProfileId}
+            adType={selectedAdType || "SP"}
+            currencyCode={activeCurrencyCode}
+            marketplace={activeCountryCode}
+          />
         </div>
 
         {/* ── Out-of-stock products still advertised in running campaigns (seller / vendor); above the Product Performance Matrix ── */}

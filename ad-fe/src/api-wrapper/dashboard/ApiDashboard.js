@@ -67,3 +67,14 @@ export const ApiGetOutOfStockAds = (data) => {
     .then((res) => res.data)
     .catch((err) => err?.response?.data || { isSuccess: false });
 };
+
+/** Campaigns whose performance fell versus the period before, with the likely cause. Doesn't block the page loader. */
+export const ApiGetPerformanceDeclineAlerts = (data) => {
+  return axios
+    .post(`${api}getPerformanceDeclineAlerts`, data, {
+      headers: { ...headers, "x-skip-loader": true },
+      skipLoader: true,
+    })
+    .then((res) => res.data)
+    .catch((err) => err?.response?.data || { isSuccess: false });
+};
