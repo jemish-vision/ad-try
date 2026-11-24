@@ -82,7 +82,7 @@ export default function TargetSearchTermsDrawer({ target, scope, onClose, curren
     const [selectAllLoading, setSelectAllLoading] = useState(false);
 
     const requestInProgress = useRef(false);
-    const liveRequest = useRef(null);
+    const mounted = useRef(false);
     const opener = useRef(document.activeElement);
 
     const headerCheckboxEvents = useMemo(() => new EventTarget(), []);
@@ -100,20 +100,24 @@ export default function TargetSearchTermsDrawer({ target, scope, onClose, curren
     const pendingRef = useRef(pending);
     pendingRef.current = pending;
 
-    const request = useMemo(() => ({
+    const mutationScope = useMemo(() => ({
         configId, profileId, adType, campaignId, adGroupId, targetId,
-        page, pageSize,
         ...(fromDate && toDate ? { fromDate, toDate } : {}),
-    }), [configId, profileId, adType, campaignId, adGroupId, targetId, page, pageSize, fromDate, toDate]);
+    }), [configId, profileId, adType, campaignId, adGroupId, targetId, fromDate, toDate]);
+    const request = useMemo(() => ({ ...mutationScope, page, pageSize }), [mutationScope, page, pageSize]);
+    const activeScope = useRef(mutationScope);
+    activeScope.current = mutationScope;
+
+    useEffect(() => {
+        mounted.current = true;
+        return () => { mounted.current = false; };
+    }, []);
 
     // Fetch search terms from backend with backend pagination
     useEffect(() => {
         const controller = new AbortController();
-        liveRequest.current = controller;
         setIsLoading(true);
         setLoadFailed(false);
-        setFailedCount(0);
-        requestInProgress.current = false;
 
         ApiGetTargetSearchTerms(request, controller.signal).then((response) => {
             if (!response?.isSuccess) throw new Error("Search terms request failed");
@@ -136,9 +140,10 @@ export default function TargetSearchTermsDrawer({ target, scope, onClose, curren
         setPage(1);
         setSelected(new Set());
         setNegated(new Map());
+        setFailedCount(0);
         cachedTermsRef.current = new Map();
         allSelectableCountRef.current = null;
-    }, [configId, profileId, adType, campaignId, adGroupId, targetId, fromDate, toDate]);
+    }, [mutationScope]);
 
     const rows = report?.searchTerms ?? [];
     const totalRecords = report?.totalRecords ?? report?.totalCount ?? rows.length;
@@ -348,9 +353,10 @@ export default function TargetSearchTermsDrawer({ target, scope, onClose, curren
     }, [rows, headerCheckboxEvents, fitColumns]);
 
     const negate = async (items, keywordMatchType) => {
-        if (requestInProgress.current || !items.length) return;
+        if (requestInProgress.current || activeScope.current !== mutationScope || !items.length) return;
         requestInProgress.current = true;
-        const controller = liveRequest.current;
+        // Report navigation cancels reads only. Every batch uses the original action scope.
+        const isCurrentScope = () => mounted.current && activeScope.current === mutationScope;
         setPending(true);
         setFailedCount(0);
         const terms = items.map((row) => ({
@@ -359,20 +365,21 @@ export default function TargetSearchTermsDrawer({ target, scope, onClose, curren
         }));
         let failed = 0;
         try {
-            for (let start = 0; start < terms.length && !controller.signal.aborted; start += 100) {
+            for (let start = 0; start < terms.length; start += 100) {
                 const batch = terms.slice(start, start + 100);
                 let results;
                 try {
-                    results = (await ApiNegateTargetSearchTerms({ ...request, terms: batch }))?.results;
+                    results = (await ApiNegateTargetSearchTerms({ ...mutationScope, terms: batch }))?.results;
                 } catch {
                     failed += batch.length;
                     continue;
                 }
-                if (controller.signal.aborted) return;
                 const confirmed = new Map((Array.isArray(results) ? results : [])
                     .filter((result) => result.success === true)
                     .map((result) => [result.searchTerm, result.matchType]));
                 const succeeded = batch.filter(({ searchTerm, matchType }) => confirmed.get(searchTerm) === matchType);
+                failed += batch.length - succeeded.length;
+                if (!isCurrentScope()) continue;
                 setNegated((previous) => {
                     const next = new Map([...previous, ...succeeded.map(({ searchTerm, matchType }) => [searchTerm, matchType])]);
                     negatedRef.current = next;
@@ -388,14 +395,11 @@ export default function TargetSearchTermsDrawer({ target, scope, onClose, curren
                 setTimeout(() => {
                     gridRef.current?.api?.refreshCells({ columns: ["actions", "checkbox"], force: true });
                 }, 0);
-                failed += batch.length - succeeded.length;
             }
         } finally {
-            if (!controller.signal.aborted) {
-                requestInProgress.current = false;
-                setFailedCount(failed);
-                setPending(false);
-            }
+            requestInProgress.current = false;
+            if (isCurrentScope()) setFailedCount(failed);
+            if (mounted.current) setPending(false);
         }
     };
 
@@ -709,8 +713,9 @@ export default function TargetSearchTermsDrawer({ target, scope, onClose, curren
                         {/* Right: Close Button */}
                         <button
                             type="button"
-                            onClick={onClose}
-                            className="w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center text-slate-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all cursor-pointer opacity-80 hover:opacity-100 shadow-sm shrink-0"
+                            disabled={pending}
+                            onClick={() => { if (!requestInProgress.current) onClose(); }}
+                            className="w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center text-slate-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all cursor-pointer opacity-80 hover:opacity-100 shadow-sm shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
                             title={t("Close")}
                         >
                             <MdOutlineClose size={18} />
