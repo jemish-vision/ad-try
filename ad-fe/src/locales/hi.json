@@ -8434,5 +8434,18 @@
   "Credit History": "क्रेडिट इतिहास",
   "Click to see monthly allowances, usage, month closes and adjustments made by an administrator.": "मासिक आवंटन, उपयोग, महीने का समापन और एडमिन के समायोजन देखने के लिए क्लिक करें।",
   "Filter History": "इतिहास फ़िल्टर करें",
-  "Show only one kind of entry, for example only adjustments.": "सिर्फ़ एक तरह की प्रविष्टियाँ दिखाएँ, जैसे सिर्फ़ समायोजन।"
+  "Show only one kind of entry, for example only adjustments.": "सिर्फ़ एक तरह की प्रविष्टियाँ दिखाएँ, जैसे सिर्फ़ समायोजन।",
+  "AI listing generation": "AI लिस्टिंग निर्माण",
+  "Each AI-generated image (A+ Content) = {{n}} credits.": "हर AI से बनी इमेज (A+ Content) = {{n}} क्रेडिट।",
+  "AI Assistant, Optimize with AI, A+ Content and AI listing generation use credits from one monthly allowance shared by your whole organization.": "AI असिस्टेंट, AI से ऑप्टिमाइज़ करें, A+ Content और AI लिस्टिंग निर्माण आपके पूरे संगठन के साझा मासिक आवंटन से क्रेडिट इस्तेमाल करते हैं।",
+  "Credits per generated image": "प्रति बनी इमेज क्रेडिट",
+  "A+ Content banners are charged per image, not by tokens. A basic A+ document has 5 images, premium 7.": "A+ Content बैनर का शुल्क प्रति इमेज लगता है, टोकन के अनुसार नहीं। बेसिक A+ दस्तावेज़ में 5 इमेज होती हैं, प्रीमियम में 7।",
+  "A+ Content images: basic (5) = {{basic}} credits, premium (7) = {{premium}} credits, plus the text.": "A+ Content इमेज: बेसिक (5) = {{basic}} क्रेडिट, प्रीमियम (7) = {{premium}} क्रेडिट, साथ में टेक्स्ट।",
+  "{{n}} images": "{{n}} इमेज",
+  "Background job": "बैकग्राउंड जॉब",
+  "Credits per Image": "प्रति इमेज क्रेडिट",
+  "A+ Content banners are charged per generated image. Batch images are charged when Google returns them; failed batches are free.": "A+ Content बैनर का शुल्क प्रति बनी इमेज लगता है। बैच इमेज का शुल्क तब लगता है जब Google उन्हें लौटाता है; विफल बैच मुफ़्त हैं।",
+  "How the credits split between AI Assistant, Optimize with AI, A+ Content and AI listing generation.": "AI असिस्टेंट, AI से ऑप्टिमाइज़ करें, A+ Content और AI लिस्टिंग निर्माण के बीच क्रेडिट का बँटवारा।",
+  "Uses AI credits: {{amount}} for the {{n}} images, plus the text.": "AI क्रेडिट लगते हैं: {{n}} इमेज के लिए {{amount}}, साथ में टेक्स्ट।",
+  "Uses AI credits from your organization's monthly allowance.": "आपके संगठन के मासिक आवंटन से AI क्रेडिट लगते हैं।"
 }

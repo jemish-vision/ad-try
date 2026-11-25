@@ -37,6 +37,7 @@ function normalizeUsage(u = {}) {
     outputTokens: toInt(u.outputTokens),
     cacheReadInputTokens: cacheRead,
     cacheCreationInputTokens: cacheCreation,
+    images: toInt(u.images), // generated images (priced per image, not per token)
   };
 }
 
@@ -69,14 +70,18 @@ function recordAiUsage(usage) {
   const meter = getAiMeter();
   if (!meter || !usage) return false;
   const call = normalizeUsage(usage);
-  if (!call.inputTokens && !call.outputTokens) return false;
+  if (!call.inputTokens && !call.outputTokens && !call.images) return false;
   meter.calls.push(call);
   return true;
 }
 
-/** Convenience for helpers that call an SDK directly: record from the raw response. */
-function recordAiResponse(provider, model, response) {
-  return recordAiUsage(usageFromResponse(provider, model, response));
+/**
+ * Convenience for helpers that call an SDK directly: record from the raw response.
+ * extra.images: number of images the call generated (image calls are priced per image).
+ */
+function recordAiResponse(provider, model, response, extra = {}) {
+  const usage = usageFromResponse(provider, model, response) || { provider, model };
+  return recordAiUsage({ ...usage, ...extra });
 }
 
 /**

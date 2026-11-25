@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import AiCreditCostNote from "../../../helper/aiCredits/AiCreditCostNote";
 import { t } from "i18next"
 import { useContext, useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -342,6 +343,7 @@ const ProductTypeSchema = () => {
                 Boolean(moveNext) && (
                     <div id="product-form-field p-0" className="budget_container">
                         <div className="data_content data_content_btn p-0">
+                            <AiCreditCostNote id="listing-generation-ai-credit-note" className="px-4 pt-3" />
                             <DynamicFormField
                                 formFields={formFields}
                                 group={productAmazonGroup}

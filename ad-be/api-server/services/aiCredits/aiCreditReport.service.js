@@ -54,7 +54,7 @@ async function getUserSummary(organizationId) {
     requestsThisPeriod: breakdown.byFeature.reduce((s, f) => s + f.requests, 0),
     ...breakdown,
     enforcementEnabled: settings.enforcementEnabled,
-    rates: { inputCreditsPer1K: settings.inputCreditsPer1K, outputCreditsPer1K: settings.outputCreditsPer1K },
+    rates: { inputCreditsPer1K: settings.inputCreditsPer1K, outputCreditsPer1K: settings.outputCreditsPer1K, creditsPerImage: settings.creditsPerImage },
     featureReserves: settings.featureReserves,
   };
 }
@@ -92,6 +92,8 @@ async function listUsage(body = {}, { organizationId = null } = {}) {
       inputTokens: r.inputTokens,
       outputTokens: r.outputTokens,
       totalTokens: r.totalTokens,
+      images: r.images || 0,
+      background: Boolean(r.deferred),
       models: r.models || [],
       enforced: r.enforced !== false,
       user: r.userId ? { _id: r.userId._id, name: r.userId.fullName || r.userId.email || null } : null,

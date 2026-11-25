@@ -63,6 +63,11 @@ const aPlusBatchJobSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    // AI credits held for this job's images; charged when the images arrive, returned if the job fails
+    aiCreditHold: {
+      type: Object,
+      default: null,
+    },
   },
   { timestamps: true }
 );

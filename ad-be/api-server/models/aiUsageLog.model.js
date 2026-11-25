@@ -14,6 +14,7 @@ const callSchema = new mongoose.Schema(
     outputTokens: { type: Number, default: 0 },
     cacheReadInputTokens: { type: Number, default: 0 },
     cacheCreationInputTokens: { type: Number, default: 0 },
+    images: { type: Number, default: 0 },
     credits: { type: Number, default: 0 },
   },
   { _id: false }
@@ -33,9 +34,12 @@ const aiUsageLogSchema = new mongoose.Schema(
     inputTokens: { type: Number, default: 0 },
     outputTokens: { type: Number, default: 0 },
     totalTokens: { type: Number, default: 0 },
+    images: { type: Number, default: 0 }, // generated images (priced per image)
     models: { type: [String], default: [] },
     calls: { type: [callSchema], default: [] },
     enforced: { type: Boolean, default: true }, // false when credit enforcement was switched off
+    // Held for background work that finishes after the request (A+ image batch jobs); released after 72 h if never settled
+    deferred: { type: Boolean, default: false },
     settledAt: { type: Date, default: null },
   },
   { timestamps: true, versionKey: false }

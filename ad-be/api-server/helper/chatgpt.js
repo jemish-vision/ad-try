@@ -83,6 +83,7 @@ export async function runModuleCreation(productData) {
         messages,
         response_format: { type: "json_object" }
     });
+    recordAiResponse("openai", "gpt-4o-mini", completion); // AI credits: token usage
 
     console.log("OpenAI Usage:", completion.usage);
 
@@ -1639,6 +1640,7 @@ with EXACTLY ${count} items.`;
         contents: [{ role: "user", parts }],
         config: { responseMimeType: "application/json", responseSchema: RESPONSE_SCHEMA, temperature: 0.9 },
     });
+    recordAiResponse("gemini", TEXT_MODEL, res); // AI credits: token usage
 
     let json;
     try {

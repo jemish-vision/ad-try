@@ -1,4 +1,5 @@
 import axios from "axios";
+import { aiRequestHeaders, handleAiCreditResponse } from "../../helper/aiCredits/aiCredits";
 
 const api = `${process.env.REACT_APP_API_BASE}/api/seller/order/`
 const apiProducts = `${process.env.REACT_APP_API_BASE}/api/products/`
@@ -8,14 +9,17 @@ const headers = {
     'Content-Type': 'application/json'
 };
 
+// createProduct and generateProduct write the listing with AI (uses AI credits)
 const ApiCreateProduct = (data) => {
-    return axios.post(`${api}createProduct`, data, { headers: { ...headers, "Content-Type": undefined, } })
-        .then(res => res.data).catch(res => res.data)
+    return axios.post(`${api}createProduct`, data, { headers: { ...headers, "Content-Type": undefined, ...aiRequestHeaders() } })
+        .then(res => res.data).catch(res => res?.response?.data || res.data)
+        .then(handleAiCreditResponse)
 }
 
 const ApiGenerateProductData = (data) => {
-    return axios.post(`${api}generateProduct`, data, { headers, timeout: 300000 })
-        .then(res => res.data).catch(res => res.data)
+    return axios.post(`${api}generateProduct`, data, { headers: { ...headers, ...aiRequestHeaders() }, timeout: 300000 })
+        .then(res => res.data).catch(res => res?.response?.data || res.data)
+        .then(handleAiCreditResponse)
 }
 
 const ApiAddProduct = (data) => {

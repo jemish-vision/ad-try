@@ -34,12 +34,15 @@ function createMeter({ feature, requestId, organizationId, userId }) {
     failed: false,
     failureReason: null,
     pendingReserve: null,
-    /** Hold credits for this request (once). Throws AiCreditsError when the wallet can't cover it. */
-    reserve() {
+    /**
+     * Hold credits for this request (once). Throws AiCreditsError when the wallet can't cover it.
+     * opts.amount: hold this many credits instead of the feature's default (e.g. text + N images).
+     */
+    reserve(opts = {}) {
       if (meter.hold) return Promise.resolve(meter.hold);
       if (!meter.pendingReserve) {
         meter.pendingReserve = service
-          .reserve({ organizationId, userId, feature, requestId })
+          .reserve({ organizationId, userId, feature, requestId, amount: opts.amount })
           .then((hold) => {
             meter.hold = hold;
             return hold;
@@ -121,4 +124,27 @@ function creditErrorBody(err) {
   };
 }
 
-module.exports = { withAiCredits, creditErrorBody, createMeter, finalize };
+/**
+ * Hold credits right before a metered request's AI work. Returns true to go ahead; on an empty
+ * wallet it sends the standard out-of-credits response (200 + code) and returns false.
+ * opts.extraCredits: added to the feature's default hold (e.g. images generated in this request).
+ */
+async function reserveAiCredits(req, res, { extraCredits = 0 } = {}) {
+  const meter = req?.aiMeter;
+  if (!meter) return true; // not metered (demo user / no organization)
+  try {
+    let amount;
+    if (extraCredits > 0) {
+      const settings = await service.getSettings();
+      amount = (settings.featureReserves[meter.feature] || 0) + extraCredits;
+    }
+    await meter.reserve({ amount });
+    return true;
+  } catch (err) {
+    if (!(err instanceof service.AiCreditsError)) throw err;
+    res.status(200).json(creditErrorBody(err));
+    return false;
+  }
+}
+
+module.exports = { withAiCredits, creditErrorBody, createMeter, finalize, reserveAiCredits };

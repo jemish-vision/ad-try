@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const FormData = require("form-data");
 const axios = require("axios");
 const { write_logs } = require("../../winston/utility/logger");
+const { recordAiResponse } = require("../services/aiCredits/aiUsageMeter");
 const sharp = require("sharp");
 
 // ---------------------------------------------------------------------------
@@ -447,6 +448,8 @@ async function generateImageWithGemini({ prompt, imageKey, width, height, produc
     const candParts = res?.candidates?.[0]?.content?.parts || [];
     const img = candParts.find((p) => p?.inlineData?.data);
     if (!img) throw new Error("Gemini image generation returned no image.");
+    // AI credits: one generated image (priced per image; tokens kept for reporting)
+    recordAiResponse("gemini", IMAGE_MODEL(), res, { images: 1 });
 
     // Resize to EXACT target pixels (lossless PNG, Lanczos3 kernel) — matching aplus-demo
     const resized = await resizeToExact(img.inlineData.data, size);

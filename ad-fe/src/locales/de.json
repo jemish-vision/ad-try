@@ -8434,5 +8434,18 @@
   "Credit History": "Credit-Verlauf",
   "Click to see monthly allowances, usage, month closes and adjustments made by an administrator.": "Klicken, um monatliche Kontingente, Nutzung, Monatsabschlüsse und Anpassungen durch einen Administrator zu sehen.",
   "Filter History": "Verlauf filtern",
-  "Show only one kind of entry, for example only adjustments.": "Nur eine Art von Einträgen anzeigen, zum Beispiel nur Anpassungen."
+  "Show only one kind of entry, for example only adjustments.": "Nur eine Art von Einträgen anzeigen, zum Beispiel nur Anpassungen.",
+  "AI listing generation": "KI-Listing-Erstellung",
+  "Each AI-generated image (A+ Content) = {{n}} credits.": "Jedes KI-generierte Bild (A+ Content) = {{n}} Credits.",
+  "AI Assistant, Optimize with AI, A+ Content and AI listing generation use credits from one monthly allowance shared by your whole organization.": "KI-Assistent, „Mit KI optimieren“, A+ Content und KI-Listing-Erstellung nutzen Credits aus einem monatlichen Kontingent, das Ihre ganze Organisation teilt.",
+  "Credits per generated image": "Credits pro generiertem Bild",
+  "A+ Content banners are charged per image, not by tokens. A basic A+ document has 5 images, premium 7.": "A+ Content-Banner werden pro Bild berechnet, nicht nach Tokens. Ein Basic-A+-Dokument hat 5 Bilder, Premium 7.",
+  "A+ Content images: basic (5) = {{basic}} credits, premium (7) = {{premium}} credits, plus the text.": "A+ Content-Bilder: Basic (5) = {{basic}} Credits, Premium (7) = {{premium}} Credits, plus der Text.",
+  "{{n}} images": "{{n}} Bilder",
+  "Background job": "Hintergrundjob",
+  "Credits per Image": "Credits pro Bild",
+  "A+ Content banners are charged per generated image. Batch images are charged when Google returns them; failed batches are free.": "A+ Content-Banner werden pro generiertem Bild berechnet. Batch-Bilder werden berechnet, wenn Google sie liefert; fehlgeschlagene Batches sind kostenlos.",
+  "How the credits split between AI Assistant, Optimize with AI, A+ Content and AI listing generation.": "Wie sich die Credits auf KI-Assistent, „Mit KI optimieren“, A+ Content und KI-Listing-Erstellung verteilen.",
+  "Uses AI credits: {{amount}} for the {{n}} images, plus the text.": "Verbraucht KI-Credits: {{amount}} für die {{n}} Bilder, plus den Text.",
+  "Uses AI credits from your organization's monthly allowance.": "Verbraucht KI-Credits aus dem monatlichen Kontingent Ihrer Organisation."
 }

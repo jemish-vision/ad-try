@@ -38,10 +38,10 @@ const { uploadProductFiles } = require("../helper/fileUpload");
 const { singleFileUpload } = require("../helper/singleFileUpload");
 const { verifyCronAuth } = require("../middleware/cron.auth");
 
-router.post("/createProduct", verifyToken, validateRoutePermission(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.CREATE), uploadProductFiles, createProduct);
+router.post("/createProduct", verifyToken, validateRoutePermission(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.CREATE), uploadProductFiles, withAiCredits("LISTING_GENERATION", createProduct));
 router.post("/fileUpload", verifyToken, singleFileUpload, fileUpload);
 
-router.post("/generateProduct", verifyToken, validateRoutePermission(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.CREATE), generateProduct);
+router.post("/generateProduct", verifyToken, validateRoutePermission(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.CREATE), withAiCredits("LISTING_GENERATION", generateProduct));
 router.post("/AddProduct", verifyToken, validateRoutePermission(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.CREATE), AddProduct);
 router.post("/updateProductPrice", verifyToken, validateRoutePermission(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.UPDATE), updateProductPrice);
 router.post("/bulkUpdateProductPrice", verifyToken, validateRoutePermission(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.UPDATE), bulkUpdateProductPrice);

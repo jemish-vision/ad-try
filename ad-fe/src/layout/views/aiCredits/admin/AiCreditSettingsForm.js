@@ -30,7 +30,7 @@ export function previewCost(form, model, inputTokens, outputTokens) {
 
 export function validateSettings(form, t) {
   const errors = {};
-  ["defaultMonthlyCredits", "inputCreditsPer1K", "outputCreditsPer1K", "minimumChargePerRequest"].forEach((k) => {
+  ["defaultMonthlyCredits", "inputCreditsPer1K", "outputCreditsPer1K", "minimumChargePerRequest", "creditsPerImage"].forEach((k) => {
     if (!nonNeg(form[k])) errors[k] = t("Enter 0 or more");
   });
   Object.entries(form.featureReserves || {}).forEach(([k, v]) => {
@@ -69,6 +69,7 @@ export default function AiCreditSettingsForm({ settings, onSave, saving }) {
       inputCreditsPer1K: String(settings.inputCreditsPer1K ?? ""),
       outputCreditsPer1K: String(settings.outputCreditsPer1K ?? ""),
       minimumChargePerRequest: String(settings.minimumChargePerRequest ?? 0),
+      creditsPerImage: String(settings.creditsPerImage ?? 10),
       featureReserves: Object.fromEntries(Object.entries(settings.featureReserves || {}).map(([k, v]) => [k, String(v)])),
       modelRates: (settings.modelRates || []).map((r) => ({ model: r.model, inputCreditsPer1K: String(r.inputCreditsPer1K), outputCreditsPer1K: String(r.outputCreditsPer1K) })),
     });
@@ -91,6 +92,7 @@ export default function AiCreditSettingsForm({ settings, onSave, saving }) {
       inputCreditsPer1K: Number(form.inputCreditsPer1K),
       outputCreditsPer1K: Number(form.outputCreditsPer1K),
       minimumChargePerRequest: Number(form.minimumChargePerRequest),
+      creditsPerImage: Number(form.creditsPerImage),
       featureReserves: Object.fromEntries(Object.entries(form.featureReserves).map(([k, v]) => [k, Number(v)])),
       modelRates: form.modelRates.map((r) => ({ model: r.model.trim(), inputCreditsPer1K: Number(r.inputCreditsPer1K), outputCreditsPer1K: Number(r.outputCreditsPer1K) })),
     });
@@ -120,6 +122,9 @@ export default function AiCreditSettingsForm({ settings, onSave, saving }) {
             </Field>
             <Field id="ai-output-rate" label={t("Credits per 1,000 output tokens")} hint={t("Output usually costs more than input.")} error={errors.outputCreditsPer1K}>
               <Input id="ai-output-rate" type="number" min="0" step="0.01" value={form.outputCreditsPer1K} onChange={(e) => set("outputCreditsPer1K", e.target.value)} />
+            </Field>
+            <Field id="ai-image-rate" label={t("Credits per generated image")} hint={t("A+ Content banners are charged per image, not by tokens. A basic A+ document has 5 images, premium 7.")} error={errors.creditsPerImage}>
+              <Input id="ai-image-rate" type="number" min="0" step="0.01" value={form.creditsPerImage} onChange={(e) => set("creditsPerImage", e.target.value)} />
             </Field>
           </div>
         </Card>
@@ -204,6 +209,14 @@ export default function AiCreditSettingsForm({ settings, onSave, saving }) {
               <div className="text-[12px] text-slate-500 dark:text-slate-400">{t("About {{n}} such requests fit in the standard monthly credits.", { n: Math.floor(Number(form.defaultMonthlyCredits) / preview).toLocaleString(i18n.language) })}</div>
             )}
           </div>
+          {nonNeg(form.creditsPerImage) && (
+            <div className="rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200/80 dark:border-white/[0.08] px-4 py-3 text-[12px] text-slate-600 dark:text-slate-300" id="ai-preview-aplus">
+              {t("A+ Content images: basic (5) = {{basic}} credits, premium (7) = {{premium}} credits, plus the text.", {
+                basic: formatCredits(5 * Number(form.creditsPerImage), i18n.language),
+                premium: formatCredits(7 * Number(form.creditsPerImage), i18n.language),
+              })}
+            </div>
+          )}
         </div>
       </Card>
     </div>

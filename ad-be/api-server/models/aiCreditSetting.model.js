@@ -18,6 +18,7 @@ const aiCreditSettingSchema = new mongoose.Schema(
     inputCreditsPer1K: { type: Number, min: 0, default: 1 },
     outputCreditsPer1K: { type: Number, min: 0, default: 4 },
     minimumChargePerRequest: { type: Number, min: 0, default: 0 },
+    creditsPerImage: { type: Number, min: 0, default: 10 }, // each AI-generated image (A+ Content)
     modelRates: { type: [modelRateSchema], default: [] },
     // Credits held while a request runs; the request needs at least this much available.
     featureReserves: { type: Map, of: Number, default: {} },

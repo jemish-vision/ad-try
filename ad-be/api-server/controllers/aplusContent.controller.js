@@ -22,6 +22,12 @@ const { buildAmazonAPlusPayload } = require("../helper/aplusContent.helper");
 const { generateAndUploadModuleImages, getAllVariationAsins, addAsinsToAPlusContent, uploadImageToAmazon } = require("../helper/generateAPlusImages");
 const { sendNotificationToUser } = require("../helper/sendNotification");
 const { submitAPlusImageBatchJob, checkBatchJobStatus, saveBatchImageToDisk } = require("../helper/geminiBatch.helper");
+const { AiCreditsError } = require("../services/aiCredits/aiCredit.service");
+const { reserveAiCredits, creditErrorBody } = require("../services/aiCredits/withAiCredits");
+const { imageCredits, holdForBackgroundJob, settleBackgroundHold, releaseBackgroundHold } = require("../services/aiCredits/backgroundHolds");
+
+// Images generated per A+ document (matches generateAPlusModulesAI: 5 basic, 7 premium)
+const expectedAPlusImages = (type) => (type === "premium" ? 7 : 5);
 const axios = require("axios");
 const { writeAuditEvent } = require("../helpers/auditHelper");
 
@@ -387,12 +393,17 @@ exports.createAIAPlusContent = async (req, res) => {
 
         const productData = { title: summary?.itemName || "", brand: summary?.brand || "", description, bullets, images };
 
+        // AI credits: hold credits for the text, plus the images when they are generated in this request
+        // (batch images get their own hold below, settled when the batch finishes).
+        const isGenerateImage = generateImageOption === true || generateImageOption === "true";
+        const directImages = isGenerateImage && !useBatch ? expectedAPlusImages(type) : 0;
+        if (!(await reserveAiCredits(req, res, { extraCredits: await imageCredits(directImages) }))) return;
+
         // GEMINI AI — generate image prompts (5 for basic, 7 for premium)
         const aiResult = await generateAPlusModulesAI({ asin, prompt, productData, type });
         const imageModules = aiResult?._imageModules || [];
 
         // If useBatch is requested, submit via Batch API (50% discount) and process in background
-        const isGenerateImage = generateImageOption === true || generateImageOption === "true";
         if (useBatch && isGenerateImage && imageModules.length > 0) {
             let productRef = null;
             const mains = images.filter((i) => i?.variant === "MAIN" && i?.link);
@@ -413,6 +424,15 @@ exports.createAIAPlusContent = async (req, res) => {
                 }
             }
 
+            // AI credits: hold the images' credits until the batch finishes
+            let aiCreditHold = null;
+            try {
+                aiCreditHold = await holdForBackgroundJob(req, "APLUS_CONTENT", await imageCredits(imageModules.length));
+            } catch (creditErr) {
+                if (!(creditErr instanceof AiCreditsError)) throw creditErr;
+                return res.status(200).json(creditErrorBody(creditErr));
+            }
+
             try {
                 const batchSubmission = await submitAPlusImageBatchJob({
                     imageModules,
@@ -430,6 +450,7 @@ exports.createAIAPlusContent = async (req, res) => {
                     status: "PENDING",
                     imageModules,
                     productData: { title: productData.title, brand: productData.brand },
+                    aiCreditHold,
                 });
 
                 return res.status(200).json({
@@ -445,6 +466,7 @@ exports.createAIAPlusContent = async (req, res) => {
                     },
                 });
             } catch (batchErr) {
+                await releaseBackgroundHold(aiCreditHold, "Batch submission failed");
                 const apiErrMsg = batchErr?.response?.data?.error?.message || batchErr.message || "";
                 write_logs({ message: `Batch submission failed: ${apiErrMsg}`, log_type: "warn" });
 
@@ -616,6 +638,10 @@ exports.editAIAPlusContent = async (req, res) => {
         const productData = { title: summary?.itemName || "", brand: summary?.brand || "", description, bullets, images }
 
         // GEMINI AI — generate image prompts (5 for basic, 7 for premium)
+        // AI credits: hold credits for the text and the images generated in this request
+        const editImages = generateImageOption === true || generateImageOption === "true" ? expectedAPlusImages(type) : 0;
+        if (!(await reserveAiCredits(req, res, { extraCredits: await imageCredits(editImages) }))) return;
+
         const aiResult = await generateAPlusModulesAI({ asin, prompt, productData, type });
 
         // GENERATE IMAGES
@@ -868,6 +894,7 @@ exports.cronProcessPendingAPlusBatchJobs = async () => {
                     job.status = "FAILED";
                     job.error = statusRes.error || "Batch generation failed at Google";
                     await job.save();
+                    await releaseBackgroundHold(job.aiCreditHold, job.error); // AI credits: nothing charged
                     cron_logs({ message: `A+ Batch Job ${job._id} failed: ${job.error}`, log_type: "error" });
                     continue;
                 }
@@ -889,11 +916,13 @@ exports.cronProcessPendingAPlusBatchJobs = async () => {
                 const endPoint = marketplaceConfig?.endPoint;
 
                 const generatedImages = [];
+                let imagesFromGoogle = 0;
                 for (let i = 0; i < imageModules.length; i++) {
                     const mod = imageModules[i];
                     const rawResponse = responses[i];
                     const candParts = rawResponse?.response?.candidates?.[0]?.content?.parts || rawResponse?.candidates?.[0]?.content?.parts || [];
                     const img = candParts.find((p) => p?.inlineData?.data);
+                    if (img?.inlineData?.data) imagesFromGoogle += 1;
 
                     let localPath = null;
                     if (img?.inlineData?.data) {
@@ -1005,6 +1034,9 @@ exports.cronProcessPendingAPlusBatchJobs = async () => {
                 job.generatedImages = generatedImages;
                 job.contentReferenceKey = contentReferenceKey;
                 await job.save();
+
+                // AI credits: charge for the images Google produced; the rest of the hold is returned
+                await settleBackgroundHold(job.aiCreditHold, [{ provider: "gemini", model: "gemini-image-batch", images: imagesFromGoogle }]);
 
                 // 5. 🔔 Send In-App & Push Notification to User
                 const notifTitle = "A+ Content Generated & Ready!";

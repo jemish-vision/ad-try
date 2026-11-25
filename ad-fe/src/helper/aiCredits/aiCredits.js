@@ -8,6 +8,8 @@ export const CREDITS_EXHAUSTED = "AI_CREDITS_EXHAUSTED";
 export const FEATURE_LABELS = {
   AI_ASSISTANT: "AI Assistant",
   LISTING_OPTIMIZATION: "Optimize with AI",
+  LISTING_GENERATION: "AI listing generation",
+  APLUS_CONTENT: "A+ Content",
 };
 
 /** A fresh id for one AI action; sent as X-AI-Request-Id so a repeated submit is never charged twice. */
@@ -38,6 +40,20 @@ export function creditsExhaustedHtml() {
   const t = (k) => (typeof i18n?.t === "function" ? i18n.t(k) : k);
   return `<p><b>${esc(t("You've run out of AI credits for this month."))}</b></p><p>${esc(t("Your organization's credits refill on the next reset date. Ask your administrator if you need more credits sooner."))} <a href="/ai-credits">${esc(t("View AI credits"))}</a></p>`;
 }
+
+/**
+ * For API calls that run an AI feature: refresh the credit badges and, when the organization is
+ * out of credits, put a translated message in res.message (screens show res.message on failure).
+ */
+export function handleAiCreditResponse(res) {
+  notifyAiCreditsChanged();
+  if (!isCreditsExhausted(res)) return res;
+  const t = (k) => (typeof i18n?.t === "function" ? i18n.t(k) : k);
+  return { ...res, message: t("You've run out of AI credits for this month.") };
+}
+
+/** Headers for one AI action: a fresh X-AI-Request-Id so a repeated submit is never charged twice. */
+export const aiRequestHeaders = () => ({ "X-AI-Request-Id": newAiRequestId() });
 
 export const formatTokens = (n, locale) => {
   const v = Number(n) || 0;

@@ -8434,5 +8434,18 @@
   "Credit History": "クレジット履歴",
   "Click to see monthly allowances, usage, month closes and adjustments made by an administrator.": "月間の割り当て、使用、月の締め、管理者による調整を見るにはクリックしてください。",
   "Filter History": "履歴を絞り込む",
-  "Show only one kind of entry, for example only adjustments.": "1種類の項目だけを表示します(例: 調整のみ)。"
+  "Show only one kind of entry, for example only adjustments.": "1種類の項目だけを表示します(例: 調整のみ)。",
+  "AI listing generation": "AIによるリスティング作成",
+  "Each AI-generated image (A+ Content) = {{n}} credits.": "AIで生成した画像(A+コンテンツ)1枚 = {{n}} クレジット。",
+  "AI Assistant, Optimize with AI, A+ Content and AI listing generation use credits from one monthly allowance shared by your whole organization.": "AIアシスタント、「AIで最適化」、A+コンテンツ、AIによるリスティング作成は、組織全体で共有する月間の割り当てからクレジットを使います。",
+  "Credits per generated image": "生成画像1枚あたりのクレジット",
+  "A+ Content banners are charged per image, not by tokens. A basic A+ document has 5 images, premium 7.": "A+コンテンツのバナーはトークンではなく画像1枚ごとに課金されます。ベーシックのA+は5枚、プレミアムは7枚です。",
+  "A+ Content images: basic (5) = {{basic}} credits, premium (7) = {{premium}} credits, plus the text.": "A+コンテンツの画像: ベーシック(5枚)= {{basic}} クレジット、プレミアム(7枚)= {{premium}} クレジット、さらにテキスト分。",
+  "{{n}} images": "画像 {{n}} 枚",
+  "Background job": "バックグラウンドジョブ",
+  "Credits per Image": "画像1枚あたりのクレジット",
+  "A+ Content banners are charged per generated image. Batch images are charged when Google returns them; failed batches are free.": "A+コンテンツのバナーは生成画像1枚ごとに課金されます。バッチ画像はGoogleから返されたときに課金され、失敗したバッチは無料です。",
+  "How the credits split between AI Assistant, Optimize with AI, A+ Content and AI listing generation.": "AIアシスタント、「AIで最適化」、A+コンテンツ、AIによるリスティング作成のクレジットの内訳。",
+  "Uses AI credits: {{amount}} for the {{n}} images, plus the text.": "AIクレジットを使います: 画像 {{n}} 枚で {{amount}}、さらにテキスト分。",
+  "Uses AI credits from your organization's monthly allowance.": "組織の月間の割り当てからAIクレジットを使います。"
 }

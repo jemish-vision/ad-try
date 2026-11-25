@@ -30,6 +30,9 @@ const packagesModel = require('../../models/packages.model');
 const FEATURES = Object.freeze({
   AI_ASSISTANT: { key: 'AI_ASSISTANT', label: 'AI Assistant', reserve: 20 },
   LISTING_OPTIMIZATION: { key: 'LISTING_OPTIMIZATION', label: 'Optimize with AI', reserve: 25 },
+  LISTING_GENERATION: { key: 'LISTING_GENERATION', label: 'AI listing generation', reserve: 15 },
+  // A+ text; generated images are held on top of this (creditsPerImage each)
+  APLUS_CONTENT: { key: 'APLUS_CONTENT', label: 'A+ Content', reserve: 20 },
 });
 
 const DEFAULT_SETTINGS = Object.freeze({
@@ -38,11 +41,14 @@ const DEFAULT_SETTINGS = Object.freeze({
   inputCreditsPer1K: 1,
   outputCreditsPer1K: 4,
   minimumChargePerRequest: 0,
+  creditsPerImage: 10,
   modelRates: [],
   featureReserves: {},
 });
 
 const STALE_HOLD_MINUTES = 15;
+// Holds for background work (A+ image batch jobs at Google) wait up to 72 hours for the job.
+const STALE_DEFERRED_HOLD_HOURS = 72;
 const SETTINGS_TTL_MS = 30 * 1000;
 
 class AiCreditsError extends Error {
@@ -84,6 +90,7 @@ function normalizeSettings(doc) {
     inputCreditsPer1K: Number(s.inputCreditsPer1K) || 0,
     outputCreditsPer1K: Number(s.outputCreditsPer1K) || 0,
     minimumChargePerRequest: Number(s.minimumChargePerRequest) || 0,
+    creditsPerImage: Number.isFinite(Number(s.creditsPerImage)) && s.creditsPerImage !== null ? Number(s.creditsPerImage) : DEFAULT_SETTINGS.creditsPerImage,
     modelRates: (s.modelRates || []).map((r) => ({ model: String(r.model), inputCreditsPer1K: Number(r.inputCreditsPer1K) || 0, outputCreditsPer1K: Number(r.outputCreditsPer1K) || 0 })),
     featureReserves: Object.fromEntries(Object.values(FEATURES).map((f) => [f.key, Number.isFinite(Number(reserves[f.key])) && reserves[f.key] !== null ? Number(reserves[f.key]) : f.reserve])),
     updatedAt: s.updatedAt || null,
@@ -105,7 +112,7 @@ function validateSettingsInput(input = {}) {
     const v = Number(input[k]);
     if (!Number.isFinite(v) || v < 0) errors.push(`${k} must be 0 or more`);
   };
-  ['defaultMonthlyCredits', 'inputCreditsPer1K', 'outputCreditsPer1K', 'minimumChargePerRequest'].forEach(nonNeg);
+  ['defaultMonthlyCredits', 'inputCreditsPer1K', 'outputCreditsPer1K', 'minimumChargePerRequest', 'creditsPerImage'].forEach(nonNeg);
   if (input.modelRates !== undefined) {
     if (!Array.isArray(input.modelRates)) errors.push('modelRates must be a list');
     else {
@@ -137,7 +144,7 @@ async function updateSettings(input, actorId) {
   const current = await getSettings({ fresh: true });
   const $set = { updatedBy: actorId ? toObjectId(actorId) : null };
   if (input.enforcementEnabled !== undefined) $set.enforcementEnabled = Boolean(input.enforcementEnabled);
-  ['defaultMonthlyCredits', 'inputCreditsPer1K', 'outputCreditsPer1K', 'minimumChargePerRequest'].forEach((k) => {
+  ['defaultMonthlyCredits', 'inputCreditsPer1K', 'outputCreditsPer1K', 'minimumChargePerRequest', 'creditsPerImage'].forEach((k) => {
     if (input[k] !== undefined) $set[k] = round4(input[k]);
   });
   if (input.modelRates !== undefined) {
@@ -162,6 +169,8 @@ function rateForModel(model, settings) {
 }
 
 function creditsForCall(call, settings) {
+  // Image generation is priced per image, whatever tokens the call reports
+  if (call.images > 0) return round4(call.images * settings.creditsPerImage);
   const rate = rateForModel(call.model, settings);
   return round4((call.inputTokens / 1000) * rate.inputCreditsPer1K + (call.outputTokens / 1000) * rate.outputCreditsPer1K);
 }
@@ -173,7 +182,8 @@ function priceCalls(calls = [], settings) {
   if (priced.length && total < settings.minimumChargePerRequest) total = settings.minimumChargePerRequest;
   const inputTokens = priced.reduce((s, c) => s + c.inputTokens, 0);
   const outputTokens = priced.reduce((s, c) => s + c.outputTokens, 0);
-  return { calls: priced, credits: round2(total), inputTokens, outputTokens, totalTokens: inputTokens + outputTokens, models: [...new Set(priced.map((c) => c.model).filter(Boolean))] };
+  const images = priced.reduce((s, c) => s + (c.images || 0), 0);
+  return { calls: priced, credits: round2(total), inputTokens, outputTokens, totalTokens: inputTokens + outputTokens, images, models: [...new Set(priced.map((c) => c.model).filter(Boolean))] };
 }
 
 // ── Periods & allowance ──────────────────────────────────────────────────────
@@ -283,12 +293,13 @@ function walletView(w) {
  * Hold credits for one AI request. Returns the hold; throws AiCreditsError when the wallet can't
  * cover it (AI_CREDITS_EXHAUSTED) or the requestId was already used (DUPLICATE_AI_REQUEST).
  */
-async function reserve({ organizationId, userId = null, feature, requestId, now = new Date() }) {
+async function reserve({ organizationId, userId = null, feature, requestId, amount: customAmount, deferred = false, now = new Date() }) {
   if (!FEATURES[feature]) throw new Error(`Unknown AI feature ${feature}`);
   const settings = await getSettings();
   const wallet = await getWallet(organizationId, { now, settings });
   const enforced = settings.enforcementEnabled;
-  const amount = enforced ? round2(settings.featureReserves[feature]) : 0;
+  // customAmount: callers that know the cost up front (e.g. N images) hold that instead of the feature default
+  const amount = enforced ? round2(customAmount !== undefined && customAmount !== null ? Math.max(0, customAmount) : settings.featureReserves[feature]) : 0;
 
   let held = wallet;
   if (enforced && amount <= 0 && !(wallet.balance > 0)) {
@@ -302,7 +313,7 @@ async function reserve({ organizationId, userId = null, feature, requestId, now 
     }
   }
   try {
-    await usageLogModel.create({ requestId, organizationId: wallet.organizationId, walletId: wallet._id, userId: userId ? toObjectId(userId) : null, feature, status: 'RESERVED', reservedCredits: amount, enforced });
+    await usageLogModel.create({ requestId, organizationId: wallet.organizationId, walletId: wallet._id, userId: userId ? toObjectId(userId) : null, feature, status: 'RESERVED', reservedCredits: amount, enforced, deferred: Boolean(deferred) });
   } catch (err) {
     if (amount > 0) await walletModel.findOneAndUpdate({ _id: wallet._id }, { $inc: { reserved: -amount, balance: amount } }).lean();
     if (isDuplicateKey(err)) throw new AiCreditsError('DUPLICATE_AI_REQUEST', 'This AI request was already submitted.');
@@ -322,7 +333,7 @@ async function settle(hold, rawCalls = [], { now = new Date() } = {}) {
   const log = await usageLogModel
     .findOneAndUpdate(
       { requestId: hold.requestId, status: 'RESERVED' },
-      { $set: { status: 'SETTLED', credits: priced.credits, inputTokens: priced.inputTokens, outputTokens: priced.outputTokens, totalTokens: priced.totalTokens, models: priced.models, calls: priced.calls, settledAt: now } },
+      { $set: { status: 'SETTLED', credits: priced.credits, inputTokens: priced.inputTokens, outputTokens: priced.outputTokens, totalTokens: priced.totalTokens, images: priced.images, models: priced.models, calls: priced.calls, settledAt: now } },
       { new: true }
     )
     .lean();
@@ -339,7 +350,7 @@ async function settle(hold, rawCalls = [], { now = new Date() } = {}) {
     )
     .lean();
   if (credits > 0) {
-    await writeTransaction({ organizationId: hold.organizationId, walletId: hold.walletId, type: 'DEDUCTION', credits: -credits, balanceAfter: wallet ? round2(wallet.balance) : null, feature: hold.feature, requestId: hold.requestId, userId: hold.userId ? toObjectId(hold.userId) : null, note: `${priced.totalTokens} tokens (${priced.models.join(', ') || 'AI'})`, dedupeKey: `deduct:${hold.requestId}` });
+    await writeTransaction({ organizationId: hold.organizationId, walletId: hold.walletId, type: 'DEDUCTION', credits: -credits, balanceAfter: wallet ? round2(wallet.balance) : null, feature: hold.feature, requestId: hold.requestId, userId: hold.userId ? toObjectId(hold.userId) : null, note: `${priced.images ? `${priced.images} images, ` : ''}${priced.totalTokens} tokens (${priced.models.join(', ') || 'AI'})`, dedupeKey: `deduct:${hold.requestId}` });
   }
   return { charged: credits > 0, credits, ...priced, wallet: walletView(wallet) };
 }
@@ -354,7 +365,7 @@ async function release(hold, reason, rawCalls = [], { status = 'RELEASED', now =
   const log = await usageLogModel
     .findOneAndUpdate(
       { requestId: hold.requestId, status: 'RESERVED' },
-      { $set: { status, failureReason: reason || null, credits: 0, inputTokens: priced.inputTokens, outputTokens: priced.outputTokens, totalTokens: priced.totalTokens, models: priced.models, calls: priced.calls, settledAt: now } },
+      { $set: { status, failureReason: reason || null, credits: 0, inputTokens: priced.inputTokens, outputTokens: priced.outputTokens, totalTokens: priced.totalTokens, images: priced.images, models: priced.models, calls: priced.calls, settledAt: now } },
       { new: true }
     )
     .lean();
@@ -367,7 +378,13 @@ async function release(hold, reason, rawCalls = [], { status = 'RELEASED', now =
 /** Return holds left by requests that never finished (e.g. the server restarted mid-request). */
 async function expireStaleHolds({ olderThanMinutes = STALE_HOLD_MINUTES, now = new Date(), limit = 500 } = {}) {
   const cutoff = new Date(now.getTime() - olderThanMinutes * 60 * 1000);
-  const stale = await usageLogModel.find({ status: 'RESERVED', createdAt: { $lt: cutoff } }).select('requestId organizationId walletId feature reservedCredits').limit(limit).lean();
+  const deferredCutoff = new Date(now.getTime() - STALE_DEFERRED_HOLD_HOURS * 60 * 60 * 1000);
+  const fields = 'requestId organizationId walletId feature reservedCredits deferred';
+  const [requestHolds, deferredHolds] = await Promise.all([
+    usageLogModel.find({ status: 'RESERVED', deferred: { $ne: true }, createdAt: { $lt: cutoff } }).select(fields).limit(limit).lean(),
+    usageLogModel.find({ status: 'RESERVED', deferred: true, createdAt: { $lt: deferredCutoff } }).select(fields).limit(limit).lean(),
+  ]);
+  const stale = [...requestHolds, ...deferredHolds];
   let expired = 0;
   for (const log of stale) {
     const r = await release({ requestId: log.requestId, walletId: log.walletId }, 'Request did not finish', [], { status: 'EXPIRED', now });
@@ -431,6 +448,7 @@ async function runMonthlyMaintenance({ now = new Date(), batchSize = 200 } = {})
 module.exports = {
   FEATURES,
   DEFAULT_SETTINGS,
+  STALE_DEFERRED_HOLD_HOURS,
   AiCreditsError,
   getSettings,
   updateSettings,

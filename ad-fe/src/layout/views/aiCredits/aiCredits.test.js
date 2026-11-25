@@ -6,7 +6,8 @@ import AiCreditsPage from "./AiCreditsPage";
 import AiCreditBadge from "../../../helper/aiCredits/AiCreditBadge";
 import AiCreditSettingsForm, { previewCost, validateSettings } from "./admin/AiCreditSettingsForm";
 import { AdjustCreditsModal, MonthlyLimitModal } from "./admin/AiCreditAdminModals";
-import { __resetAiCreditCache, creditLevel, creditsExhaustedHtml, isCreditsExhausted, newAiRequestId, notifyAiCreditsChanged } from "../../../helper/aiCredits/aiCredits";
+import { __resetAiCreditCache, creditLevel, creditsExhaustedHtml, handleAiCreditResponse, isCreditsExhausted, newAiRequestId, notifyAiCreditsChanged, AI_CREDITS_CHANGED } from "../../../helper/aiCredits/aiCredits";
+import AiCreditCostNote from "../../../helper/aiCredits/AiCreditCostNote";
 
 jest.mock("react-dom/test-utils", () => ({ ...jest.requireActual("react-dom/test-utils"), act: require("react").act }));
 jest.mock("react-i18next", () => ({
@@ -33,7 +34,7 @@ const summary = (over = {}) => ({
   byFeature: [{ feature: "AI_ASSISTANT", credits: 200, requests: 10, inputTokens: 100000, outputTokens: 20000 }, { feature: "LISTING_OPTIMIZATION", credits: 50.5, requests: 4, inputTokens: 20000, outputTokens: 10000 }],
   byDay: [{ date: "2026-11-03", credits: 20, requests: 2 }],
   enforcementEnabled: true,
-  rates: { inputCreditsPer1K: 1, outputCreditsPer1K: 4 },
+  rates: { inputCreditsPer1K: 1, outputCreditsPer1K: 4, creditsPerImage: 10 },
   ...over,
 });
 const usageRow = { _id: "u1", createdAt: "2026-11-20T10:00:00Z", feature: "LISTING_OPTIMIZATION", status: "SETTLED", credits: 12.4, inputTokens: 4000, outputTokens: 2100, models: ["gemini-3.8-flash", "gpt-4o-mini"], user: { name: "Asha" } };
@@ -152,7 +153,7 @@ describe("AiCreditsPage", () => {
 });
 
 describe("Super Admin settings", () => {
-  const settings = { enforcementEnabled: true, defaultMonthlyCredits: 500, inputCreditsPer1K: 1, outputCreditsPer1K: 4, minimumChargePerRequest: 0, featureReserves: { AI_ASSISTANT: 20, LISTING_OPTIMIZATION: 25 }, modelRates: [{ model: "gpt-4o-mini", inputCreditsPer1K: 0.2, outputCreditsPer1K: 0.8 }] };
+  const settings = { enforcementEnabled: true, defaultMonthlyCredits: 500, inputCreditsPer1K: 1, outputCreditsPer1K: 4, minimumChargePerRequest: 0, creditsPerImage: 10, featureReserves: { AI_ASSISTANT: 20, LISTING_OPTIMIZATION: 25 }, modelRates: [{ model: "gpt-4o-mini", inputCreditsPer1K: 0.2, outputCreditsPer1K: 0.8 }] };
 
   test("cost preview uses the same longest-prefix rule as the server", () => {
     const form = { ...settings, modelRates: [{ model: "gpt-4o", inputCreditsPer1K: 2, outputCreditsPer1K: 8 }, ...settings.modelRates] };
@@ -175,8 +176,10 @@ describe("Super Admin settings", () => {
     const models = screen.getAllByLabelText("Model");
     fireEvent.change(models[models.length - 1], { target: { value: "claude-" } });
     fireEvent.click(screen.getByRole("switch", { name: "Enforce credit limits" }));
+    fireEvent.change(screen.getByLabelText("Credits per generated image"), { target: { value: "12" } });
+    expect(screen.getByText("A+ Content images: basic (5) = 60 credits, premium (7) = 84 credits, plus the text.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Save settings/ }));
-    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ enforcementEnabled: false, outputCreditsPer1K: 5, modelRates: [{ model: "gpt-4o-mini", inputCreditsPer1K: 0.2, outputCreditsPer1K: 0.8 }, { model: "claude-", inputCreditsPer1K: 1, outputCreditsPer1K: 5 }] }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ enforcementEnabled: false, outputCreditsPer1K: 5, creditsPerImage: 12, modelRates: [{ model: "gpt-4o-mini", inputCreditsPer1K: 0.2, outputCreditsPer1K: 0.8 }, { model: "claude-", inputCreditsPer1K: 1, outputCreditsPer1K: 5 }] }));
   });
 
   test("invalid input blocks saving", () => {
@@ -218,5 +221,32 @@ describe("Super Admin dialogs", () => {
     fireEvent.click(screen.getByLabelText(/Use the plan's allowance/));
     fireEvent.click(screen.getByRole("button", { name: /Save/ }));
     expect(onSave).toHaveBeenLastCalledWith({ organizationId: "o1", monthlyLimit: null });
+  });
+});
+
+describe("other AI features (A+ Content, listing generation)", () => {
+  test("API responses: badges refresh, and out-of-credits gets a translated message", () => {
+    const seen = jest.fn();
+    window.addEventListener(AI_CREDITS_CHANGED, seen);
+    expect(handleAiCreditResponse({ isSuccess: true, data: 1 })).toEqual({ isSuccess: true, data: 1 });
+    expect(handleAiCreditResponse({ isSuccess: false, code: "AI_CREDITS_EXHAUSTED", message: "server text" }).message).toBe("You've run out of AI credits for this month.");
+    expect(handleAiCreditResponse({ isSuccess: false, message: "Product not found" }).message).toBe("Product not found");
+    expect(seen).toHaveBeenCalledTimes(3);
+    window.removeEventListener(AI_CREDITS_CHANGED, seen);
+  });
+
+  test("cost note shows the image cost at the current rate, with the credit badge", async () => {
+    render(<MemoryRouter><AiCreditCostNote images={7} /></MemoryRouter>);
+    expect(await screen.findByText("Uses AI credits: 70 for the 7 images, plus the text.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "AI credits: 749.5 left" })).toBeInTheDocument();
+  });
+
+  test("usage history shows generated images and background jobs", async () => {
+    Api.ApiGetAiCreditUsage.mockResolvedValue({ isSuccess: true, data: [{ ...usageRow, _id: "a1", feature: "APLUS_CONTENT", images: 5, background: true, models: ["gemini-image-batch"] }], totalRecords: 1 });
+    render(<MemoryRouter><AiCreditsPage /></MemoryRouter>);
+    const row = await screen.findByRole("row", { name: /gemini-image-batch/ });
+    expect(within(row).getByText("A+ Content")).toBeInTheDocument();
+    expect(within(row).getByText("5 images · Background job")).toBeInTheDocument();
+    expect(screen.getByText(/Each AI-generated image \(A\+ Content\) = 10 credits\./)).toBeInTheDocument();
   });
 });

@@ -259,7 +259,14 @@ export function UsageTable({ rows = [], loading, showOrganization = false }) {
             {showOrganization && <td className={td}>{r.organization?.name || "—"}</td>}
             <td className={`${td} whitespace-nowrap`}>{t(FEATURE_LABELS[r.feature] || r.feature)}</td>
             <td className={`${td} whitespace-nowrap`}>{r.user?.name || "—"}</td>
-            <td className={`${td} font-mono text-[11.5px] whitespace-nowrap`}>{r.models?.length ? r.models.join(", ") : "—"}</td>
+            <td className={`${td} font-mono text-[11.5px] whitespace-nowrap`}>
+              {r.models?.length ? r.models.join(", ") : "—"}
+              {(r.images > 0 || r.background) && (
+                <div className="font-sans text-[10.5px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  {[r.images > 0 ? t("{{n}} images", { n: r.images }) : null, r.background ? t("Background job") : null].filter(Boolean).join(" · ")}
+                </div>
+              )}
+            </td>
             <td className={`${td} text-right tabular-nums`}>{(r.inputTokens || 0).toLocaleString(i18n.language)}</td>
             <td className={`${td} text-right tabular-nums`}>{(r.outputTokens || 0).toLocaleString(i18n.language)}</td>
             <td className={`${td} text-right tabular-nums font-semibold`}>{r.status === "SETTLED" ? formatCredits(r.credits, i18n.language) : "—"}</td>

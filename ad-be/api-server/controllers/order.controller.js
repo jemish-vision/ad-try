@@ -58,6 +58,7 @@ const {
 const { sendNotificationToUser } = require("../helper/sendNotification");
 const { ConditionRegistry, ConditionEvaluator, FlattenedFieldBuilder, ensureEnumIntegrity } = require("../helper/parseField");
 const { generateListingWithGPT, buildListingBodyPayload, buildListingDynamicBodyPayload, analyzeExistingListingWithGPT, buildOptimizationPatchPayload } = require("../helper/chatgpt");
+const { reserveAiCredits } = require("../services/aiCredits/withAiCredits");
 
 const { write_logs } = require("../../winston/orders/logger");
 const { cron_logs } = require("../../winston/cronAutomation/logger");
@@ -2003,6 +2004,8 @@ exports.createProduct = async (req, res) => {
             .concat(parsedData.mainProductImage ? [parsedData.mainProductImage] : [])
             .concat(parsedData.additionalImages?.length ? parsedData.additionalImages : []);
 
+        // AI credits: hold credits before the AI call
+        if (!(await reserveAiCredits(req, res))) return;
         const generated = await generateListingWithGPT({
             imageUrls: allImageUrlsForGPT, locale: "en-IN", ...parsedData,
         });
@@ -2088,6 +2091,8 @@ exports.generateProduct = async (req, res) => {
     })
     try {
         const body = req.body;
+        // AI credits: hold credits before the AI call
+        if (!(await reserveAiCredits(req, res))) return;
         const generated = await generateListingWithGPT({ ...body });
 
         write_logs({

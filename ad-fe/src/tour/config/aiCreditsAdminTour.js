@@ -1,5 +1,5 @@
 import { tourRegistry } from '../TourRegistry';
-import { Sparkle, ChartLine, Buildings, MagnifyingGlass, ListBullets, GearSix, ToggleLeft, Cpu, Calculator, FloppyDisk } from '@phosphor-icons/react';
+import { Sparkle, ChartLine, Buildings, MagnifyingGlass, ListBullets, GearSix, ToggleLeft, Cpu, Calculator, FloppyDisk, Image } from '@phosphor-icons/react';
 
 export const aiCreditsAdminTourConfig = {
     id: "ai-credits-admin",
@@ -12,6 +12,7 @@ export const aiCreditsAdminTourConfig = {
         { target: "#ai-credits-admin-tab-usage", icon: ListBullets, title: "Usage Log", content: "Click to see every AI request with its organization, user, model, tokens and cost.", requireClick: true },
         { target: "#ai-credits-admin-tab-settings", icon: GearSix, title: "Settings", content: "Click to set how tokens convert to credits.", requireClick: true },
         { target: "#ai-credit-enforcement", icon: ToggleLeft, title: "Enforce Credit Limits", content: "Turn off to let AI run without taking credits (usage is still recorded).", blockTargetInteraction: true },
+        { target: "#ai-image-rate", icon: Image, title: "Credits per Image", content: "A+ Content banners are charged per generated image. Batch images are charged when Google returns them; failed batches are free.", blockTargetInteraction: true },
         { target: "#ai-credit-model-rates", icon: Cpu, title: "Rates per AI Model", content: "Give expensive models their own credits per 1,000 input and output tokens.", blockTargetInteraction: true },
         { target: "#ai-credit-cost-preview", icon: Calculator, title: "Cost Preview", content: "Check what a request would cost before you save.", blockTargetInteraction: true },
         { target: "#ai-credit-settings-save", icon: FloppyDisk, title: "Save", content: "New rates apply to new AI requests within a minute.", blockTargetInteraction: true }

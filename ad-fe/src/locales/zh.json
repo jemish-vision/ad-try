@@ -8434,5 +8434,18 @@
   "Credit History": "积分记录",
   "Click to see monthly allowances, usage, month closes and adjustments made by an administrator.": "点击查看每月额度、使用、月度结算和管理员的调整。",
   "Filter History": "筛选记录",
-  "Show only one kind of entry, for example only adjustments.": "只显示一种记录,例如仅显示调整。"
+  "Show only one kind of entry, for example only adjustments.": "只显示一种记录,例如仅显示调整。",
+  "AI listing generation": "AI 生成商品详情",
+  "Each AI-generated image (A+ Content) = {{n}} credits.": "每张 AI 生成的图片(A+ 内容)= {{n}} 积分。",
+  "AI Assistant, Optimize with AI, A+ Content and AI listing generation use credits from one monthly allowance shared by your whole organization.": "AI 助手、“AI 优化”、A+ 内容和 AI 生成商品详情共用整个组织的每月积分额度。",
+  "Credits per generated image": "每张生成图片的积分",
+  "A+ Content banners are charged per image, not by tokens. A basic A+ document has 5 images, premium 7.": "A+ 内容横幅按图片计费,而不是按 Token。基础版 A+ 文档有 5 张图片,高级版有 7 张。",
+  "A+ Content images: basic (5) = {{basic}} credits, premium (7) = {{premium}} credits, plus the text.": "A+ 内容图片:基础版(5 张)= {{basic}} 积分,高级版(7 张)= {{premium}} 积分,另加文本。",
+  "{{n}} images": "{{n}} 张图片",
+  "Background job": "后台任务",
+  "Credits per Image": "每张图片的积分",
+  "A+ Content banners are charged per generated image. Batch images are charged when Google returns them; failed batches are free.": "A+ 内容横幅按生成的图片计费。批量图片在 Google 返回时计费;失败的批次免费。",
+  "How the credits split between AI Assistant, Optimize with AI, A+ Content and AI listing generation.": "积分在 AI 助手、“AI 优化”、A+ 内容和 AI 生成商品详情之间的分配。",
+  "Uses AI credits: {{amount}} for the {{n}} images, plus the text.": "使用 AI 积分:{{n}} 张图片 {{amount}},另加文本。",
+  "Uses AI credits from your organization's monthly allowance.": "使用您组织每月额度中的 AI 积分。"
 }

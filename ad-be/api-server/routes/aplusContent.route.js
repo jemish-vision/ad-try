@@ -1,4 +1,5 @@
 const { validateRoutePermission } = require("../middleware/routePermission");
+const { withAiCredits } = require("../services/aiCredits/withAiCredits");
 const { SYSTEM_PAGES, PAGE_ACTIONS } = require("../constants/permissions");
 const express = require("express");
 const router = express.Router();
@@ -10,8 +11,8 @@ router.get("/cronFetchAPlusContentFromAmazon", verifyToken, verifyCronAuth, cron
 router.get("/cronProcessPendingAPlusBatchJobs", verifyToken, verifyCronAuth, cronProcessPendingAPlusBatchJobs);
 
 router.post("/get", verifyToken, validateRoutePermission(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.VIEW_ONLY), getAPlusContentByReferenceKey);
-router.post("/create", verifyToken, validateRoutePermission(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.CREATE), createAIAPlusContent);
-router.post("/edit", verifyToken, validateRoutePermission(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.UPDATE), editAIAPlusContent);
+router.post("/create", verifyToken, validateRoutePermission(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.CREATE), withAiCredits("APLUS_CONTENT", createAIAPlusContent));
+router.post("/edit", verifyToken, validateRoutePermission(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.UPDATE), withAiCredits("APLUS_CONTENT", editAIAPlusContent));
 
 router.post("/submitForApproval", verifyToken, validateRoutePermission(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.UPDATE), submitAPlusContentForApproval);
 

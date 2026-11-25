@@ -89,6 +89,7 @@ export default function AiCreditDetail({ summary, loadUsage, loadTransactions, r
               input: formatCredits(summary.rates.inputCreditsPer1K, L),
               output: formatCredits(summary.rates.outputCreditsPer1K, L),
             })}
+            {summary.rates.creditsPerImage !== undefined && " " + t("Each AI-generated image (A+ Content) = {{n}} credits.", { n: formatCredits(summary.rates.creditsPerImage, L) })}
           </p>
         )}
       </Card>

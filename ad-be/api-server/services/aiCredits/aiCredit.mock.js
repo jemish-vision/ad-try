@@ -7,8 +7,8 @@
 const { monthPeriod } = require('./aiCredit.service');
 
 const MONTHLY = 1000;
-const FEATURES = ['AI_ASSISTANT', 'LISTING_OPTIMIZATION'];
-const MODELS = { AI_ASSISTANT: ['claude-haiku-5-5'], LISTING_OPTIMIZATION: ['gemini-3.8-flash', 'gpt-4o-mini'] };
+const FEATURES = ['AI_ASSISTANT', 'LISTING_OPTIMIZATION', 'APLUS_CONTENT', 'LISTING_GENERATION'];
+const MODELS = { AI_ASSISTANT: ['claude-haiku-5-5'], LISTING_OPTIMIZATION: ['gemini-3.8-flash', 'gpt-4o-mini'], APLUS_CONTENT: ['gemini-3.8-flash', 'gemini-3-pro-image-preview'], LISTING_GENERATION: ['gpt-4o-mini'] };
 const USERS = [
   { _id: '000000000000000000000d01', name: 'Demo Owner' },
   { _id: '000000000000000000000d02', name: 'Demo Analyst' },
@@ -32,11 +32,13 @@ function buildRequests(now = new Date()) {
   for (let d = 0; d < days; d += 1) {
     const perDay = 1 + Math.floor(rand() * 4);
     for (let i = 0; i < perDay; i += 1) {
-      const feature = rand() < 0.65 ? 'AI_ASSISTANT' : 'LISTING_OPTIMIZATION';
+      const roll = rand();
+      const feature = roll < 0.55 ? 'AI_ASSISTANT' : roll < 0.8 ? 'LISTING_OPTIMIZATION' : roll < 0.9 ? 'LISTING_GENERATION' : 'APLUS_CONTENT';
       const inputTokens = feature === 'AI_ASSISTANT' ? 6000 + Math.floor(rand() * 9000) : 3500 + Math.floor(rand() * 2500);
       const outputTokens = feature === 'AI_ASSISTANT' ? 400 + Math.floor(rand() * 1200) : 1500 + Math.floor(rand() * 1500);
+      const images = feature === 'APLUS_CONTENT' ? (rand() < 0.5 ? 5 : 7) : 0;
       const failed = rand() < 0.05;
-      const credits = failed ? 0 : round2(inputTokens / 1000 + (outputTokens / 1000) * 4);
+      const credits = failed ? 0 : round2(inputTokens / 1000 + (outputTokens / 1000) * 4 + images * 10);
       const createdAt = new Date(start.getTime() + d * 86400000 + Math.floor(rand() * 86400000));
       if (createdAt > now) continue;
       rows.push({
@@ -50,6 +52,7 @@ function buildRequests(now = new Date()) {
         inputTokens,
         outputTokens,
         totalTokens: inputTokens + outputTokens,
+        images,
         models: MODELS[feature],
         enforced: true,
         user: USERS[Math.floor(rand() * USERS.length)],
@@ -85,8 +88,8 @@ function summary(now = new Date()) {
     byFeature,
     byDay: [...dayMap.values()].sort((a, b) => (a.date < b.date ? -1 : 1)),
     enforcementEnabled: true,
-    rates: { inputCreditsPer1K: 1, outputCreditsPer1K: 4 },
-    featureReserves: { AI_ASSISTANT: 20, LISTING_OPTIMIZATION: 25 },
+    rates: { inputCreditsPer1K: 1, outputCreditsPer1K: 4, creditsPerImage: 10 },
+    featureReserves: { AI_ASSISTANT: 20, LISTING_OPTIMIZATION: 25, LISTING_GENERATION: 15, APLUS_CONTENT: 20 },
     isDemo: true,
   };
 }
@@ -113,7 +116,7 @@ function transactions(body = {}, now = new Date()) {
     .reverse()
     .map((r) => {
       balance = round2(balance - r.credits);
-      return { _id: `tx-${r._id}`, createdAt: r.createdAt, type: 'DEDUCTION', credits: -r.credits, balanceAfter: balance, feature: r.feature, note: `${r.totalTokens} tokens (${r.models.join(', ')})`, user: r.user };
+      return { _id: `tx-${r._id}`, createdAt: r.createdAt, type: 'DEDUCTION', credits: -r.credits, balanceAfter: balance, feature: r.feature, note: `${r.images ? `${r.images} images, ` : ''}${r.totalTokens} tokens (${r.models.join(', ')})`, user: r.user };
     });
   let all = [...rows, ...deductions].sort((a, b) => b.createdAt - a.createdAt);
   if (body.type) all = all.filter((t) => t.type === body.type);

@@ -28,7 +28,8 @@ stub('winston/utility/logger.js', { write_logs: (l) => logs.push(l) });
 
 const meterLib = require('../api-server/services/aiCredits/aiUsageMeter');
 const service = require('../api-server/services/aiCredits/aiCredit.service');
-const { withAiCredits } = require('../api-server/services/aiCredits/withAiCredits');
+const { withAiCredits, reserveAiCredits } = require('../api-server/services/aiCredits/withAiCredits');
+const background = require('../api-server/services/aiCredits/backgroundHolds');
 const mock = require('../api-server/services/aiCredits/aiCredit.mock');
 const { requestTurn } = require('../api-server/services/aiProvider.service');
 
@@ -62,7 +63,7 @@ describe('token tracking', () => {
   });
 
   test('reads usage from raw OpenAI, Gemini (thinking tokens = output) and Anthropic responses', () => {
-    assert.deepEqual(meterLib.normalizeUsage(meterLib.usageFromResponse('openai', 'gpt-4o-mini', { model: 'gpt-4o-mini-2024', usage: { prompt_tokens: 1200, completion_tokens: 300 } })), { provider: 'openai', model: 'gpt-4o-mini-2024', inputTokens: 1200, outputTokens: 300, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 });
+    assert.deepEqual(meterLib.normalizeUsage(meterLib.usageFromResponse('openai', 'gpt-4o-mini', { model: 'gpt-4o-mini-2024', usage: { prompt_tokens: 1200, completion_tokens: 300 } })), { provider: 'openai', model: 'gpt-4o-mini-2024', inputTokens: 1200, outputTokens: 300, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, images: 0 });
     const g = meterLib.normalizeUsage(meterLib.usageFromResponse('gemini', 'gemini-3.8-flash', { usageMetadata: { promptTokenCount: 4000, candidatesTokenCount: 1500, thoughtsTokenCount: 500 } }));
     assert.deepEqual([g.inputTokens, g.outputTokens], [4000, 2000]);
     const a = meterLib.normalizeUsage(meterLib.usageFromResponse('anthropic', 'claude-haiku-5-5', { usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 90 } }));
@@ -87,7 +88,7 @@ describe('token tracking', () => {
     const client = { messages: { create: async (payload) => { order.push('call'); return { model: payload.model, content: [{ type: 'text', text: 'hi' }], stop_reason: 'end_turn', usage: { input_tokens: 1200, output_tokens: 80, cache_read_input_tokens: 300 } }; } } };
     await meterLib.runWithAiMeter(meter, () => requestTurn({ messages: [{ role: 'user', content: 'hi' }], options: { provider: 'anthropic', model: 'claude-haiku-5-5', apiKey: 'test' } }, client));
     assert.deepEqual(order, ['reserve', 'call']);
-    assert.deepEqual(meter.calls, [{ provider: 'anthropic', model: 'claude-haiku-5-5', inputTokens: 1500, outputTokens: 80, cacheReadInputTokens: 300, cacheCreationInputTokens: 0 }]);
+    assert.deepEqual(meter.calls, [{ provider: 'anthropic', model: 'claude-haiku-5-5', inputTokens: 1500, outputTokens: 80, cacheReadInputTokens: 300, cacheCreationInputTokens: 0, images: 0 }]);
   });
 });
 
@@ -390,5 +391,119 @@ describe('demo (mock) data', () => {
     assert.ok(u.data.every((r) => r.feature === 'AI_ASSISTANT'));
     const t = mock.transactions({ perPage: 200 }, now);
     assert.equal(t.data.at(-1).type, 'ALLOCATION');
+  });
+});
+
+describe('image generation and background (batch) work', () => {
+  test('generated images are priced per image, text by tokens', () => {
+    const s = service.normalizeSettings({ creditsPerImage: 12 });
+    const p = service.priceCalls([{ provider: 'gemini', model: 'gemini-3.8-flash', inputTokens: 4000, outputTokens: 1000 }, { provider: 'gemini', model: 'gemini-3-pro-image-preview', inputTokens: 900, outputTokens: 1300, images: 1 }, { provider: 'gemini', model: 'gemini-image-batch', images: 5 }], s);
+    // text 4 + 4 = 8 ; images 6 × 12 = 72 (their tokens are not charged)
+    assert.equal(p.credits, 80);
+    assert.equal(p.images, 6);
+    assert.deepEqual(p.calls.map((c) => c.credits), [8, 12, 60]);
+  });
+
+  test('image-only usage is recorded (no tokens needed)', async () => {
+    const meter = { calls: [] };
+    await meterLib.runWithAiMeter(meter, async () => meterLib.recordAiResponse('gemini', 'img', null, { images: 1 }));
+    assert.equal(meter.calls[0].images, 1);
+  });
+
+  test('credits per image is a validated, saved setting', async () => {
+    assert.deepEqual(service.validateSettingsInput({ creditsPerImage: -1 }), ['creditsPerImage must be 0 or more']);
+    const s = await service.updateSettings({ creditsPerImage: 7.5 });
+    assert.equal(s.creditsPerImage, 7.5);
+    assert.equal(await background.imageCredits(4), 30);
+  });
+
+  const fakeRes = () => {
+    const res = { statusCode: 200, body: null, status(c) { res.statusCode = c; return res; }, json(b) { res.body = b; return res; } };
+    return res;
+  };
+  const req = () => ({ organizationId: String(orgId), user: { _id: new mongoose.Types.ObjectId() }, headers: {}, body: {} });
+
+  test('reserveAiCredits holds the feature default plus extra credits (text + direct images)', async () => {
+    await withAiCredits('APLUS_CONTENT', async (rq, rs) => {
+      assert.equal(await reserveAiCredits(rq, rs, { extraCredits: await background.imageCredits(5) }), true);
+      assert.equal(walletOf().reserved, 70); // 20 + 5 × 10
+      for (let i = 0; i < 5; i += 1) meterLib.recordAiUsage({ provider: 'gemini', model: 'img', images: 1 });
+      meterLib.recordAiUsage(call('gemini-3.8-flash', 4000, 1000, 'gemini'));
+      return rs.json({ isSuccess: true });
+    })(req(), fakeRes());
+    assert.deepEqual([walletOf().used, walletOf().reserved, usageLogs.docs[0].images, usageLogs.docs[0].feature], [58, 0, 5, 'APLUS_CONTENT']);
+  });
+
+  test('reserveAiCredits answers "out of credits" and stops the handler', async () => {
+    await service.getWallet(orgId);
+    await service.adjustCredits({ organizationId: orgId, credits: -990, note: 'leave 10' });
+    const res = fakeRes();
+    let ranAi = false;
+    await withAiCredits('LISTING_GENERATION', async (rq, rs) => {
+      if (!(await reserveAiCredits(rq, rs))) return undefined;
+      ranAi = true;
+      return rs.json({ isSuccess: true });
+    })(req(), res);
+    assert.equal(ranAi, false);
+    assert.deepEqual([res.statusCode, res.body.isSuccess, res.body.code], [200, false, 'AI_CREDITS_EXHAUSTED']);
+    assert.equal(walletOf().reserved, 0);
+  });
+
+  test('batch images: held during the request, charged for what Google produced when the job finishes', async () => {
+    let hold;
+    await withAiCredits('APLUS_CONTENT', async (rq, rs) => {
+      await reserveAiCredits(rq, rs);
+      meterLib.recordAiUsage(call('gemini-3.8-flash', 3000, 500, 'gemini')); // text: 5 credits
+      hold = await background.holdForBackgroundJob(rq, 'APLUS_CONTENT', await background.imageCredits(7));
+      return rs.json({ isSuccess: true, isBatch: true });
+    })(req(), fakeRes());
+    // text charged; 70 still held for the images
+    assert.deepEqual([walletOf().used, walletOf().reserved, walletOf().balance], [5, 70, 925]);
+    assert.equal(JSON.parse(JSON.stringify(hold)).requestId, hold.requestId); // storable with the job
+    await background.settleBackgroundHold(hold, [{ provider: 'gemini', model: 'gemini-image-batch', images: 6 }]);
+    await background.settleBackgroundHold(hold, [{ provider: 'gemini', model: 'gemini-image-batch', images: 6 }]); // retried run
+    assert.deepEqual([walletOf().used, walletOf().reserved, walletOf().balance], [65, 0, 935]);
+    const bg = usageLogs.docs.find((l) => l.requestId === hold.requestId);
+    assert.deepEqual([bg.status, bg.images, bg.credits, bg.deferred], ['SETTLED', 6, 60, true]);
+  });
+
+  test('a failed batch returns the whole image hold', async () => {
+    let hold;
+    await withAiCredits('APLUS_CONTENT', async (rq, rs) => {
+      hold = await background.holdForBackgroundJob(rq, 'APLUS_CONTENT', 50);
+      return rs.json({ isSuccess: true });
+    })(req(), fakeRes());
+    await background.releaseBackgroundHold(hold, 'Batch generation failed at Google');
+    assert.deepEqual([walletOf().used, walletOf().reserved, walletOf().balance], [0, 0, 1000]);
+  });
+
+  test('not enough credits for the batch images is refused before anything is submitted', async () => {
+    await service.getWallet(orgId);
+    await service.adjustCredits({ organizationId: orgId, credits: -960, note: 'leave 40' });
+    await withAiCredits('APLUS_CONTENT', async (rq, rs) => {
+      await assert.rejects(background.holdForBackgroundJob(rq, 'APLUS_CONTENT', 70), { code: 'AI_CREDITS_EXHAUSTED' });
+      return rs.json({ isSuccess: false });
+    })(req(), fakeRes());
+    assert.equal(walletOf().reserved, 0);
+  });
+
+  test('not metered (demo user): no hold, nothing to settle', async () => {
+    assert.equal(await background.holdForBackgroundJob({}, 'APLUS_CONTENT', 50), null);
+    assert.equal(await background.settleBackgroundHold(null, []), null);
+  });
+
+  test('batch holds survive the 15-minute cleanup and are returned after 72 hours', async () => {
+    const now = new Date('2026-11-20T12:00:00Z');
+    let hold;
+    await withAiCredits('APLUS_CONTENT', async (rq, rs) => {
+      hold = await background.holdForBackgroundJob(rq, 'APLUS_CONTENT', 50);
+      return rs.json({ isSuccess: true });
+    })(req(), fakeRes());
+    const log = usageLogs.docs.find((l) => l.requestId === hold.requestId);
+    log.createdAt = new Date(now.getTime() - 2 * 60 * 60 * 1000); // 2 hours old
+    assert.deepEqual(await service.expireStaleHolds({ now }), { expired: 0 });
+    log.createdAt = new Date(now.getTime() - 73 * 60 * 60 * 1000);
+    assert.deepEqual(await service.expireStaleHolds({ now }), { expired: 1 });
+    assert.equal(walletOf().reserved, 0);
   });
 });

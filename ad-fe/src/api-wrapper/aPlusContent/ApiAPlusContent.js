@@ -1,4 +1,5 @@
 import axios from "axios";
+import { aiRequestHeaders, handleAiCreditResponse } from "../../helper/aiCredits/aiCredits";
 
 const api = `${process.env.REACT_APP_API_BASE}/api/aplusContent/`
 const getHeaders = () => ({
@@ -6,14 +7,17 @@ const getHeaders = () => ({
     'Content-Type': 'application/json'
 });
 
+// A+ create/edit use AI credits (text + generated images)
 const ApiCreateAPlusContent = (data) => {
-    return axios.post(`${api}create`, data, { headers: getHeaders(), timeout: 600000 })
+    return axios.post(`${api}create`, data, { headers: { ...getHeaders(), ...aiRequestHeaders() }, timeout: 600000 })
         .then(res => res.data).catch(res => res?.response?.data || res.data || { isSuccess: false, message: "Request failed" })
+        .then(handleAiCreditResponse)
 }
 
 const ApiUpdateAPlusContent = (data) => {
-    return axios.post(`${api}edit`, data, { headers: getHeaders(), timeout: 600000 })
+    return axios.post(`${api}edit`, data, { headers: { ...getHeaders(), ...aiRequestHeaders() }, timeout: 600000 })
         .then(res => res.data).catch(res => res?.response?.data || res.data || { isSuccess: false, message: "Request failed" })
+        .then(handleAiCreditResponse)
 }
 
 const ApiGetAPlusContent = (data) => {
