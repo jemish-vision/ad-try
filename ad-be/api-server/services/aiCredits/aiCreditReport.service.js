@@ -16,6 +16,8 @@ const page = (body = {}, max = 100) => {
   const perPage = Math.min(max, Math.max(1, parseInt(body.perPage, 10) || 10));
   return { pageNo, perPage, skip: (pageNo - 1) * perPage };
 };
+// "Low" = under 20% of the month's credits left (same rule as the frontend's creditLevel)
+const LOW_BALANCE_SHARE = 0.2;
 const VALID_STATUSES = ['RESERVED', 'SETTLED', 'RELEASED', 'EXPIRED'];
 const VALID_TX_TYPES = ['ALLOCATION', 'RESET', 'DEDUCTION', 'ADJUSTMENT'];
 
@@ -214,7 +216,7 @@ async function getAdminOverview(body = {}) {
     ]),
     walletModel.aggregate([
       { $match: { periodEnd: { $gt: new Date() } } },
-      { $group: { _id: null, wallets: { $sum: 1 }, allocated: { $sum: '$allocated' }, used: { $sum: '$used' }, exhausted: { $sum: { $cond: [{ $lte: ['$balance', 0] }, 1, 0] } }, low: { $sum: { $cond: [{ $and: [{ $gt: ['$balance', 0] }, { $lt: ['$balance', { $multiply: ['$allocated', 0.1] }] }] }, 1, 0] } } } },
+      { $group: { _id: null, wallets: { $sum: 1 }, allocated: { $sum: '$allocated' }, used: { $sum: '$used' }, exhausted: { $sum: { $cond: [{ $lte: ['$balance', 0] }, 1, 0] } }, low: { $sum: { $cond: [{ $and: [{ $gt: ['$balance', 0] }, { $lt: ['$balance', { $multiply: ['$allocated', LOW_BALANCE_SHARE] }] }] }, 1, 0] } } } },
     ]),
     usageLogModel.aggregate([{ $match: { ...match, status: 'SETTLED' } }, { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, credits: { $sum: '$credits' }, requests: { $sum: 1 } } }, { $sort: { _id: 1 } }]),
   ]);

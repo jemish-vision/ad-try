@@ -63,7 +63,8 @@ function createChatController({
           if (!(creditErr instanceof AiCreditsError)) throw creditErr;
           const { creditErrorBody } = require('../services/aiCredits/withAiCredits');
           const body = creditErrorBody(creditErr);
-          return res.status(402).json({ isSuccess: false, error: { code: body.code, message: body.message, aiCredits: body.aiCredits }, replyMessage: body.message });
+          // 200 + error code, like the other AI routes (/customer/chatbot, analyzeListingWithAI)
+          return res.status(200).json({ isSuccess: false, error: { code: body.code, message: body.message, aiCredits: body.aiCredits }, replyMessage: body.message });
         }
       }
       const profileIds = req.body?.profileIds || [];

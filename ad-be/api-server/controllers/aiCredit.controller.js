@@ -14,11 +14,12 @@ function fail(res, err, where) {
   return res.status(500).json({ isSuccess: false, message: "Something went wrong. Please try again." });
 }
 
-function audit(event, message, metadata, userId) {
-  try {
-    const { logAudit } = require("../helpers/auditHelper");
-    logAudit(event, message, metadata, userId)?.catch?.(() => {});
-  } catch (_) {}
+/**
+ * Details for the audit log row the auditRequest middleware writes for this route
+ * (events registered in constants/auditRouteEvents.js under "ai-credits").
+ */
+function auditChange(req, change) {
+  req.auditChange = { resourceType: "ai credit wallet", ...change };
 }
 
 const features = () => Object.values(service.FEATURES).map((f) => ({ key: f.key, label: f.label, defaultReserve: f.reserve }));
@@ -116,7 +117,7 @@ exports.adminUpdateSettings = async (req, res) => {
   try {
     const before = await service.getSettings({ fresh: true });
     const data = await service.updateSettings(req.body || {}, req.user?._id);
-    audit("AI_CREDIT_SETTINGS_UPDATED", "AI credit settings updated.", { previousValue: before, newValue: data }, req.user?._id);
+    auditChange(req, { resourceType: "ai credit settings", previousValue: before, newValue: data });
     return res.status(200).json({ isSuccess: true, message: "AI credit settings saved", data: { ...data, features: features() } });
   } catch (err) {
     return fail(res, err, "adminUpdateSettings");
@@ -128,7 +129,7 @@ exports.adminAdjustCredits = async (req, res) => {
     const { organizationId, credits, note } = req.body || {};
     if (!validOrgId(organizationId)) return res.status(200).json({ isSuccess: false, message: "organizationId is required" });
     const wallet = await service.adjustCredits({ organizationId, credits: Number(credits), note, actorId: req.user?._id });
-    audit("AI_CREDITS_ADJUSTED", `AI credits adjusted by ${credits}.`, { organizationId, credits: Number(credits), note }, req.user?._id);
+    auditChange(req, { organizationId, resourceId: String(organizationId), newValue: wallet, metadata: { credits: Number(credits), note } });
     return res.status(200).json({ isSuccess: true, message: "Credits updated", data: wallet });
   } catch (err) {
     return fail(res, err, "adminAdjustCredits");
@@ -139,8 +140,9 @@ exports.adminSetMonthlyLimit = async (req, res) => {
   try {
     const { organizationId, monthlyLimit } = req.body || {};
     if (!validOrgId(organizationId)) return res.status(200).json({ isSuccess: false, message: "organizationId is required" });
+    const before = service.walletView(await service.getWallet(organizationId));
     const wallet = await service.setMonthlyLimitOverride({ organizationId, limit: monthlyLimit, actorId: req.user?._id });
-    audit("AI_CREDIT_LIMIT_UPDATED", "Organization AI monthly credits changed.", { organizationId, monthlyLimit: monthlyLimit ?? null }, req.user?._id);
+    auditChange(req, { organizationId, resourceId: String(organizationId), previousValue: { monthlyLimit: before.monthlyLimit, limitSource: before.limitSource }, newValue: { monthlyLimit: wallet.monthlyLimit, limitSource: wallet.limitSource } });
     return res.status(200).json({ isSuccess: true, message: "Monthly credits updated", data: wallet });
   } catch (err) {
     return fail(res, err, "adminSetMonthlyLimit");

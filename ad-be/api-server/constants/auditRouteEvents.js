@@ -174,6 +174,11 @@ const modules = {
     "/deletePerformanceScoreSetting": "PERFORMANCE_SCORE_SETTING_DELETED",
   },
   "products": { "/history-settings": "COMPETITOR_HISTORY_SETTINGS_UPDATED" },
+  "ai-credits": {
+    "/admin/settings/update": "AI_CREDIT_SETTINGS_UPDATED",
+    "/admin/adjust": "AI_CREDITS_ADJUSTED",
+    "/admin/monthly-limit": "AI_CREDIT_LIMIT_UPDATED",
+  },
   "support": { "/closeSupportTicket": "SUPPORT_TICKET_CLOSED" },
   "asana": { "/assignSupportUser": "SUPPORT_ASSIGNMENT_UPDATED", "/addWebhook": "ASANA_WEBHOOK_CONFIGURATION_UPDATED" },
   "columns": { "/updateColumns": "TABLE_COLUMNS_UPDATED", "/updateChartSettings": "CHART_SETTINGS_UPDATED" },

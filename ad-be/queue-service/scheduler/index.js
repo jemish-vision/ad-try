@@ -100,6 +100,16 @@ function registerSchedule(cronDoc) {
   });
 }
 
+// Jobs that are scheduled even without a cron doc in MongoDB.
+const DEFAULT_SCHEDULES = [
+  // 2:30 AM daily
+  { cronName: "HourlyDataConsolidation", aliases: ["HourlyDataConsolidation", "Hourly Data Consolidation"], cronExpression: () => process.env.HOURLY_DATA_CONSOLIDATION_CRON || "0 30 2 * * *" },
+  // :40 past every hour
+  { cronName: "AdBlackoutMonitor", aliases: ["AdBlackoutMonitor", "Ad Blackout Monitor"], cronExpression: () => process.env.AD_BLACKOUT_MONITOR_CRON || "0 40 * * * *" },
+  // :05 past every hour: monthly AI credit reset + return credits held by unfinished AI requests
+  { cronName: "AiCreditMaintenance", aliases: ["AiCreditMaintenance", "AI Credit Maintenance", "Ai Credit Maintenance"], cronExpression: () => process.env.AI_CREDIT_MAINTENANCE_CRON || "0 5 * * * *" },
+];
+
 /**
  * Loads all active migrated cron schedules from MongoDB.
  */
@@ -110,41 +120,15 @@ async function loadSchedules() {
     registerSchedule(doc);
   }
 
-  // Ensure default schedule for HourlyDataConsolidation if not present in DB
-  const hasHourlyConsolidation = cronDocs.some(
-    (job) => job.cronName?.replace(/\s+/g, "").toLowerCase() === "hourlydataconsolidation"
-  );
-  if (!hasHourlyConsolidation) {
-    const configuredDoc = await cronJobSchema.exists({
-      cronName: { $in: ["HourlyDataConsolidation", "Hourly Data Consolidation"] },
-    });
-    // Respect explicitly disabled doc in DB. Otherwise register default 2:30 AM daily schedule
-    if (!configuredDoc) {
-      desired.add(resolveMigratedSchedule("HourlyDataConsolidation")?.task);
-      registerSchedule({
-        cronName: "HourlyDataConsolidation",
-        cronExpression: process.env.HOURLY_DATA_CONSOLIDATION_CRON || "0 30 2 * * *",
-        isActive: true,
-      });
-    }
-  }
-
-  // Ensure default hourly schedule (:15 past every hour) for AdBlackoutMonitor if not present in DB
-  const hasBlackoutMonitor = cronDocs.some(
-    (job) => job.cronName?.replace(/\s+/g, "").toLowerCase() === "adblackoutmonitor"
-  );
-  if (!hasBlackoutMonitor) {
-    const configuredBlackoutDoc = await cronJobSchema.exists({
-      cronName: { $in: ["AdBlackoutMonitor", "Ad Blackout Monitor"] },
-    });
-    if (!configuredBlackoutDoc) {
-      desired.add(resolveMigratedSchedule("AdBlackoutMonitor")?.task);
-      registerSchedule({
-        cronName: "AdBlackoutMonitor",
-        cronExpression: process.env.AD_BLACKOUT_MONITOR_CRON || "0 40 * * * *",
-        isActive: true,
-      });
-    }
+  // Built-in jobs run on a default schedule unless MongoDB has a cron doc for them
+  // (an inactive doc there switches the job off).
+  for (const def of DEFAULT_SCHEDULES) {
+    const key = def.cronName.toLowerCase();
+    if (cronDocs.some((job) => job.cronName?.replace(/\s+/g, "").toLowerCase() === key)) continue;
+    const configuredDoc = await cronJobSchema.exists({ cronName: { $in: def.aliases } });
+    if (configuredDoc) continue;
+    desired.add(resolveMigratedSchedule(def.cronName)?.task);
+    registerSchedule({ cronName: def.cronName, cronExpression: def.cronExpression(), isActive: true });
   }
   for (const [task, { job }] of activeCronJobs) {
     if (desired.has(task)) continue;
