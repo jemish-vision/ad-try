@@ -203,6 +203,12 @@ function createSpApiProcessor() {
           break;
         }
 
+        case SP_API_TASKS.AI_CREDIT_MAINTENANCE: {
+          const { cronAiCreditMaintenance } = require("../../api-server/controllers/aiCredit.controller");
+          result = await cronAiCreditMaintenance();
+          break;
+        }
+
         case SP_API_TASKS.OUT_OF_STOCK_ADS: {
           const { cronOutOfStockAds } = require("../../api-server/services/automation/outOfStockAds.service");
           result = await cronOutOfStockAds();

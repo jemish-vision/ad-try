@@ -34,6 +34,8 @@ const { createAsanaTicket, addAsanaComment } = require("../services/asana.servic
 const { write_logs } = require("../../winston/utility/logger");
 const { getMostMatchedFAQ, getMeaningfulWord } = require("../helper/chatbot");
 const { createChatService, isAnalyticsQuestion, isGeneralOrConversationalQuestion } = require("../services/chatbotReporting.chat");
+const { AiCreditsError } = require("../services/aiCredits/aiCredit.service");
+const { creditErrorBody } = require("../services/aiCredits/withAiCredits");
 const defaultReportingChatService = createChatService();
 const { recordUnansweredQuestion } = require("../services/unansweredQuestion.capture");
 const AD_TYPE_COLLECTIONS = require("../helper/adTypeCollections");
@@ -1865,6 +1867,31 @@ exports.customChatBot = async (req, res) => {
     const isStream = Boolean(req.body?.stream === true || req.headers?.accept?.includes('text/event-stream'));
 
     if (isReporting) {
+      // AI credits: hold credits for this answer before any model call (no-op for demo users / no organization).
+      if (req.aiMeter) {
+        try {
+          await req.aiMeter.reserve();
+        } catch (creditErr) {
+          if (!(creditErr instanceof AiCreditsError)) throw creditErr;
+          const body = creditErrorBody(creditErr);
+          const payload = {
+            replyMessage: `<p><b>${body.message}</b></p><p>Your organization's AI credits refill on the next reset date. Ask your administrator if you need more credits sooner.</p>`,
+            report: null,
+            isReport: false,
+            stopConversion: false,
+            error: { code: body.code, message: body.message, aiCredits: body.aiCredits },
+          };
+          if (isStream) {
+            res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-cache, no-transform');
+            res.flushHeaders?.();
+            res.write(`event: done\ndata: ${JSON.stringify(payload)}\n\n`);
+            return res.end();
+          }
+          return res.status(200).send(payload);
+        }
+      }
+
       if (isStream) {
         res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
         res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -1898,6 +1925,7 @@ exports.customChatBot = async (req, res) => {
           currencyCode: activeProfile?.currencyCode || req.user?.currencyCode || 'INR',
         });
 
+        if (chatResult?.error) req.aiMeter?.markFailed(chatResult.error.code || chatResult.error.message || 'Chat error');
         sendEvent('done', {
           replyMessage: chatResult?.replyMessage || 'Here is your requested report.',
           report: chatResult?.report || null,
@@ -1921,6 +1949,7 @@ exports.customChatBot = async (req, res) => {
         profileIds: activeProfileIds,
       });
 
+      if (chatResult?.error) req.aiMeter?.markFailed(chatResult.error.code || chatResult.error.message || 'Chat error');
       if (chatResult) {
         return res.status(200).send({
           replyMessage: chatResult.replyMessage || 'Here is your requested report.',
@@ -1981,6 +2010,7 @@ exports.customChatBot = async (req, res) => {
     });
   } catch (error) {
       write_logs({ message: `[customChatBot Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
+    req.aiMeter?.markFailed(error?.message || 'Chat error');
     if (res.headersSent) {
       try {
         res.write(`event: error\ndata: ${JSON.stringify({ replyMessage: '<b>Error:</b> <span style="color:red;">An internal server error occurred</span>. Please <i>try again later</i>.' })}\n\n`);

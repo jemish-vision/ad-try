@@ -44,6 +44,8 @@ const Placement = lazy(() => import("../layout/views/placement/Placement"));
 const Holidays = lazy(() => import("../layout/views/holidays/Holidays"));
 const Coupons = lazy(() => import("../layout/views/coupons/Coupons"));
 const AiAssistantPage = lazy(() => import("../layout/views/aiAssistant/AiAssistantPage"));
+const AiCreditsPage = lazy(() => import("../layout/views/aiCredits/AiCreditsPage"));
+const AiCreditsAdmin = lazy(() => import("../layout/views/aiCredits/admin/AiCreditsAdmin"));
 
 const AdminDashboard = lazy(() => import("../layout/views/adminDashboard/AdminDashboard"));
 const OwnerDashboard = lazy(() => import("../layout/views/adminDashboard/OwnerDashboard"));
@@ -480,6 +482,18 @@ const PagesRoutes = [
     component: <AiAssistantPage />,
     exact: true,
     name: "AI Assistant",
+  },
+  {
+    path: "/ai-credits",
+    component: <AiCreditsPage />,
+    exact: true,
+    name: "AI Credits",
+  },
+  {
+    path: "/ai-credits-admin",
+    component: <AiCreditsAdmin />,
+    exact: true,
+    name: "AI Credit Management",
   },
 ];
 PagesRoutes.push({

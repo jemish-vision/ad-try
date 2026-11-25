@@ -1,6 +1,7 @@
 'use strict';
 
 const { requestTurn } = require('./aiProvider.service');
+const { runOutsideAiMeter } = require('./aiCredits/aiUsageMeter');
 
 const INSTRUCTIONS = `Rewrite the supplied unanswered chatbot message as one clear, grammatical interrogative question ending with a question mark (?). Return only raw JSON {"question":"...", "existingQuestionHash":null} with no markdown or code fences.
 Even if the message is a statement or command (e.g., "Predict my sales next month" or "Show my competitor keywords"), rewrite it as a complete question ending with "?" (e.g., "What are the predicted sales for next month?").
@@ -64,11 +65,12 @@ function createQuestionCanonicalizer({ aiProvider = { requestTurn }, timeoutMs =
     let reply;
     try {
       reply = await Promise.race([
-        aiProvider.requestTurn({
+        // Internal bookkeeping: never charged to the customer's AI credits.
+        runOutsideAiMeter(() => aiProvider.requestTurn({
           instructions: INSTRUCTIONS,
           messages: [{ role: 'user', content: JSON.stringify({ message: question, candidates }) }],
       tools: [], signal: abort.signal, options: { timeoutMs: Math.min(timeoutMs, 8000), maxTokens: 512 },
-        }),
+        })),
         new Promise((_, reject) => { timer = setTimeout(() => { abort.abort(); reject(new Error('CANONICAL_QUESTION_TIMEOUT')); }, Math.min(timeoutMs, 8000)); }),
       ]);
     } finally { clearTimeout(timer); }

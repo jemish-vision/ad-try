@@ -37,6 +37,8 @@ import './plCalculaterTour';
 import './usersTour';
 import './settingsTour';
 import './packagesTour';
+import './aiCreditsTour';
+import './aiCreditsAdminTour';
 import './holidaysTour';
 import './roleTour';
 import './cronJobTour';

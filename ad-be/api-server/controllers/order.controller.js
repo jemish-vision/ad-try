@@ -4164,6 +4164,18 @@ exports.analyzeListingWithAI = async (req, res) => {
             categoryName,
         };
 
+        // ── AI credits: hold credits before the model calls (cached results above are free) ──
+        if (req.aiMeter) {
+            try {
+                await req.aiMeter.reserve();
+            } catch (creditErr) {
+                const { AiCreditsError } = require("../services/aiCredits/aiCredit.service");
+                if (!(creditErr instanceof AiCreditsError)) throw creditErr;
+                const { creditErrorBody } = require("../services/aiCredits/withAiCredits");
+                return res.status(200).json(creditErrorBody(creditErr));
+            }
+        }
+
         // ── Call AI (Gemini text + GPT-4o-mini image) ──────────
         const aiResult = await analyzeExistingListingWithGPT(productData, { analyzeContent, analyzeImage });
 

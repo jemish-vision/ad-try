@@ -19,6 +19,7 @@ jest.mock("../../../helper/usecontext/useContext", () => ({
   ProfileContext: require("react").createContext({}),
 }));
 jest.mock("../../../helper/modal/CustomModal", () => ({ CustomModal: () => null }));
+jest.mock("../../../helper/aiCredits/AiCreditBadge", () => () => null);
 jest.mock("../../../helper/chatbot/reporting/ChatReportRenderer", () => () => <div>Report workspace</div>);
 jest.mock("../../../api-wrapper/customer/ApiCustomer", () => ({
   ApiGetChatSessions: jest.fn(),

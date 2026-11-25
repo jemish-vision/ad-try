@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GoogleGenAI } from "@google/genai";
 import axios from "axios";
+import { recordAiResponse } from "../services/aiCredits/aiUsageMeter.js";
 
 const openai = new OpenAI({
     apiKey: `${process.env.OPENAI_API_KEY}`,
@@ -1082,6 +1083,7 @@ If the image fully complies with Amazon standards, return empty issues array and
             response_format: { type: "json_object" },
             max_tokens: 600,
         });
+        recordAiResponse("openai", "gpt-4o-mini", completion); // AI credits: token usage
         return safeJsonParse(completion.choices[0].message.content);
     } catch (err) {
         console.warn("Image analysis failed:", err.message);
@@ -1240,6 +1242,7 @@ Return EXACTLY this JSON structure:
         tools: [],
     });
 
+    recordAiResponse("gemini", "gemini-3.8-flash", result.response); // AI credits: token usage
     const parsed = safeJsonParse(result.response.text());
 
     // Server-side override — average of all 5 sections, each out of 100

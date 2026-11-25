@@ -61,6 +61,7 @@ const SP_API_TASKS = Object.freeze({
   OUT_OF_STOCK_ADS: "out-of-stock-ads",
   FC_INVENTORY_LEDGER: "fc-inventory-ledger",
   FC_STORAGE_FEE: "fc-storage-fee",
+  AI_CREDIT_MAINTENANCE: "ai-credit-maintenance",
 });
 
 module.exports = {

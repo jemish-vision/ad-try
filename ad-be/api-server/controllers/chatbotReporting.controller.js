@@ -54,6 +54,18 @@ function createChatController({
 } = {}) {
   return async function handleChat(req, res) {
     try {
+      // AI credits (when the route is metered): hold credits before any model call.
+      if (req.aiMeter) {
+        try {
+          await req.aiMeter.reserve();
+        } catch (creditErr) {
+          const { AiCreditsError } = require('../services/aiCredits/aiCredit.service');
+          if (!(creditErr instanceof AiCreditsError)) throw creditErr;
+          const { creditErrorBody } = require('../services/aiCredits/withAiCredits');
+          const body = creditErrorBody(creditErr);
+          return res.status(402).json({ isSuccess: false, error: { code: body.code, message: body.message, aiCredits: body.aiCredits }, replyMessage: body.message });
+        }
+      }
       const profileIds = req.body?.profileIds || [];
       let activeProfile = req.body?.activeProfile;
       if (!activeProfile && profileIds.length) {

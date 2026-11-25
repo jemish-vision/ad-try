@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../components/ui/dialog";
 import Toast from "../../../common/helper/toast/Toast";
 import { ApiAnalyzeListingWithAI, ApiApplyListingOptimization } from "../../../api-wrapper/productList/ApiListingOptimization";
+import AiCreditBadge from "../../../helper/aiCredits/AiCreditBadge";
+import { isCreditsExhausted, notifyAiCreditsChanged } from "../../../helper/aiCredits/aiCredits";
 import "./ListingOptimizationModal.css";
 import "./IllustratorLoader.css";
 import { AppTooltip } from "../../../components/ui/AppTooltip";
@@ -476,6 +478,7 @@ export default function ListingOptimizationModal({ show, onClose, product, profi
 
     // Toggles for what to analyze
     const [analyzeContent, setAnalyzeContent] = useState(true);
+    const [creditBlocked, setCreditBlocked] = useState(false);
     const [analyzeImage, setAnalyzeImage] = useState(false);
 
     // Editable fields
@@ -501,7 +504,7 @@ export default function ListingOptimizationModal({ show, onClose, product, profi
     const [showNotices, setShowNotices] = useState(false);
 
     const resetAll = () => {
-        setStep(0); setResult(null); setLoading(false); setFromCache(false);
+        setStep(0); setResult(null); setLoading(false); setFromCache(false); setCreditBlocked(false);
         setAcceptTitle(false); setAcceptBullets(false);
         setAcceptDescription(false); setAcceptKeywords(false);
         setActiveReviewTab("title");
@@ -526,6 +529,8 @@ export default function ListingOptimizationModal({ show, onClose, product, profi
                 analyzeContent,
                 analyzeImage
             });
+            notifyAiCreditsChanged();
+            setCreditBlocked(isCreditsExhausted(res));
             if (res?.isSuccess) {
                 const d = res.data;
                 setResult(d);
@@ -547,6 +552,8 @@ export default function ListingOptimizationModal({ show, onClose, product, profi
                 setSelectedKeywords(new Array(keywordsArray.length).fill(false));
 
                 setStep(1);
+            } else if (isCreditsExhausted(res)) {
+                Toast.error(t("You've run out of AI credits for this month."));
             } else {
                 Toast.error(res?.message || t("AI analysis failed. Please try again."));
             }
@@ -883,6 +890,20 @@ export default function ListingOptimizationModal({ show, onClose, product, profi
                             </div>
 
                             <div className="flex flex-col gap-3">
+                                {creditBlocked ? (
+                                    <div id="listing-ai-credits-exhausted" className="rounded-xl border border-rose-200 dark:border-rose-900/40 bg-rose-50 dark:bg-rose-950/30 px-4 py-3 text-[13px] text-rose-700 dark:text-rose-300">
+                                        <div className="font-bold">{t("You've run out of AI credits for this month.")}</div>
+                                        <div className="mt-0.5">
+                                            {t("Your organization's credits refill on the next reset date. Ask your administrator if you need more credits sooner.")}{" "}
+                                            <a href="/ai-credits" className="font-semibold underline">{t("View AI credits")}</a>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center justify-between gap-3 flex-wrap text-[12px] text-slate-500 dark:text-slate-400" id="listing-ai-credits-note">
+                                        <span>{t("Each new analysis uses AI credits. A result from the last 7 days is reused for free.")}</span>
+                                        <AiCreditBadge id="listing-ai-credit-badge" />
+                                    </div>
+                                )}
                                 <button 
                                     className={`w-full py-3 px-6 rounded-xl font-bold text-sm transition-all duration-300 flex items-center justify-center gap-2 text-white ${
                                         (analyzeContent || analyzeImage)

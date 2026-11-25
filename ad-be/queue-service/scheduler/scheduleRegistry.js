@@ -59,6 +59,8 @@ const CRON_NAME_MAP = Object.freeze({
   "fcinventoryledger": { queue: QUEUES.FC_INVENTORY_LEDGER, task: SP_API_TASKS.FC_INVENTORY_LEDGER, family: "sp-api" },
   "fcstoragefee": { queue: QUEUES.SP_API, task: SP_API_TASKS.FC_STORAGE_FEE, family: "sp-api" },
   "outofstockads": { queue: QUEUES.OUT_OF_STOCK_ADS, task: SP_API_TASKS.OUT_OF_STOCK_ADS, family: "sp-api" },
+  // Monthly AI credit reset (+ returns holds left by unfinished AI requests); cheap, runs hourly
+  "aicreditmaintenance": { queue: QUEUES.SP_API, task: SP_API_TASKS.AI_CREDIT_MAINTENANCE, family: "sp-api" },
 });
 
 /**

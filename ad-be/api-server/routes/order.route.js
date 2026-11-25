@@ -1,6 +1,7 @@
 const { validateRoutePermission } = require("../middleware/routePermission");
 const { SYSTEM_PAGES, PAGE_ACTIONS } = require("../constants/permissions");
 const express = require("express");
+const { withAiCredits } = require("../services/aiCredits/withAiCredits");
 const router = express.Router();
 
 const { verifyToken } = require("../middleware/user.auth");
@@ -58,7 +59,7 @@ router.post("/parseFields", verifyToken, validateRoutePermission(SYSTEM_PAGES.PR
 
 router.post("/checkASINFromDB", verifyToken, checkASINFromDB);
 
-router.post("/analyzeListingWithAI", verifyToken, validateRoutePermission(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.VIEW_ONLY), analyzeListingWithAI);
+router.post("/analyzeListingWithAI", verifyToken, validateRoutePermission(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.VIEW_ONLY), withAiCredits("LISTING_OPTIMIZATION", analyzeListingWithAI));
 router.post("/applyListingOptimization", verifyToken, validateRoutePermission(SYSTEM_PAGES.PRODUCT_LIST, PAGE_ACTIONS.UPDATE), applyListingOptimization);
 
 router.get("/cronGenerateOrderReport", verifyToken, verifyCronAuth, cronGenerateOrderReport);

@@ -1,3 +1,4 @@
+import { newAiRequestId } from "../../helper/aiCredits/aiCredits";
 import axios from "axios";
 
 const api = `${process.env.REACT_APP_API_BASE}/api/seller/order/`;
@@ -9,7 +10,8 @@ const getHeaders = () => ({
 export const ApiAnalyzeListingWithAI = (data) => {
   return axios
     .post(`${api}analyzeListingWithAI`, data, {
-      headers: getHeaders(),
+      // One id per click: a repeated submit is never charged twice (AI credits)
+      headers: { ...getHeaders(), "X-AI-Request-Id": newAiRequestId() },
       timeout: 300000, // 5 min — AI can be slow
     })
     .then((res) => res.data)

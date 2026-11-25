@@ -1,6 +1,7 @@
 const { validateRoutePermission } = require("../middleware/routePermission");
 const { SYSTEM_PAGES, PAGE_ACTIONS } = require("../constants/permissions");
 const express = require("express");
+const { withAiCredits } = require("../services/aiCredits/withAiCredits");
 const router = express.Router();
 const {
   login,
@@ -64,7 +65,7 @@ router.post("/getadsNotification", verifyToken, getadsNotification)
 router.post("/readAdsNotification", verifyToken, readAdsNotification)
 router.post("/reaAllAdsNotification", verifyToken, readAllAdsNotification)
 
-router.post("/chatbot", verifyToken, customChatBot);
+router.post("/chatbot", verifyToken, withAiCredits("AI_ASSISTANT", customChatBot));
 router.post("/createSupportTicket", ticketLimiter, verifyToken, createSupportTicket);
 router.post("/getSupportTicket", verifyToken, getSupportTicket);
 router.post("/sendSupportTicketMessage", ticketLimiter, verifyToken, sendSupportTicketMessage);

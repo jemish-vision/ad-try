@@ -271,6 +271,20 @@ const Packages = () => {
       cellRenderer: (params) => <span className={`fw-semibold ${isDark ? "text-light" : "text-dark"}`}>{params.value || 0}</span>,
     },
     {
+      headerName: t("AI credits / month"),
+      field: "aiMonthlyCredits",
+      title: t("AI credits / month"),
+      minWidth: 150,
+      sortable: false,
+      resizable: true,
+      cellRenderer: (params) =>
+        params.value === null || params.value === undefined ? (
+          <span className={isDark ? "text-gray-500" : "text-secondary"}>{t("Standard")}</span>
+        ) : (
+          <span className={`fw-semibold ${isDark ? "text-light" : "text-dark"}`}>{Number(params.value).toLocaleString()}</span>
+        ),
+    },
+    {
       headerName: t("Amazon Connection"),
       field: "allowAmazonConnection",
       title: t("Amazon Connection"),

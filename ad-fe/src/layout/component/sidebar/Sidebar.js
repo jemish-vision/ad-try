@@ -936,6 +936,11 @@ function Sidebar({ open, setOpen }) {
                     <DropdownMenuItem className="cursor-pointer py-2 px-3 rounded-md" onClick={() => navigate("/profile")}>
                       {t("View Profile")}
                     </DropdownMenuItem>
+                    {role !== ROLES.SUPER_ADMIN && (
+                      <DropdownMenuItem id="sidebar-ai-credits-item" className="cursor-pointer py-2 px-3 rounded-md" onClick={() => navigate("/ai-credits")}>
+                        {t("AI Credits")}
+                      </DropdownMenuItem>
+                    )}
                     {role === ROLES.ADMIN && (
                       <DropdownMenuItem className="cursor-pointer py-2 px-3 rounded-md" onClick={() => navigate("/purchase-plans")}>
                         {t("Purchase Plans")}

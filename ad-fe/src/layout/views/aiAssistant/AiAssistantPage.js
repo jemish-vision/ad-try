@@ -1,5 +1,6 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import AiCreditBadge from "../../../helper/aiCredits/AiCreditBadge";
 import {
   MessageSquare,
   Bot,
@@ -1116,6 +1117,7 @@ export default function AiAssistantPage() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <AiCreditBadge id="ai-assistant-credit-badge" />
             {!canCreate && !canUpdate && (
               <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
                 View Only

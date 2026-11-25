@@ -13,7 +13,7 @@ export const productListTourConfig = {
         { target: "#product-list-bulk-price-upload", icon: UploadSimple, title: "Bulk Price Update", content: "Upload an Excel or CSV file to update multiple product prices and limits in bulk.", blockTargetInteraction: true },
         { target: "#product-list-add-product", icon: PlusCircle, title: "Add Product", content: "Create and add new product listings directly to your catalog.", blockTargetInteraction: true },
         { target: "#product-list-first-target-0", icon: Sidebar, title: "Product Details", content: "Click on any product to open the side drawer and view in-depth details, pricing, and performance.", childTourId: "product-list-drawer-tour" },
-        { target: "#product-list-optimize-ai-0", icon: Funnel, title: "Optimize with AI", content: "Automatically optimize your product listings with AI.", blockTargetInteraction: true },
+        { target: "#product-list-optimize-ai-0", icon: Funnel, title: "Optimize with AI", content: "Automatically optimize your product listings with AI. Each new analysis uses your organization's AI credits.", blockTargetInteraction: true },
         { target: "#product-list-view-competitors-0", icon: Funnel, title: "View Competitors", content: "Open the Competitor Analysis Modal to see how your product stacks up.", blockTargetInteraction: true },
         { target: "#product-list-compare-offers-0", icon: Funnel, title: "Compare Offers", content: "Open Competitor Comparison for this product to compare Buy Box, prices and rival brands side by side.", blockTargetInteraction: true },
     ]

@@ -1,6 +1,7 @@
 'use strict';
 
 const { write_logs } = require('../../winston/utility/logger');
+const { ensureAiCredits, recordAiUsage } = require('./aiCredits/aiUsageMeter');
 
 const SUPPORTED_PROVIDERS = Object.freeze(['anthropic', 'openai', 'gemini']);
 
@@ -504,16 +505,24 @@ async function requestTurn(input = {}, clientFactory = null) {
   let config;
   try {
     config = resolveConfig(input.options || {});
+    // Inside a metered request (AI credits): hold credits before calling the model, record tokens after.
+    await ensureAiCredits();
+    let result;
     switch (config.provider) {
       case 'anthropic':
-        return await requestAnthropic(config, input, clientFactory);
+        result = await requestAnthropic(config, input, clientFactory);
+        break;
       case 'openai':
-        return await requestOpenAI(config, input, clientFactory);
+        result = await requestOpenAI(config, input, clientFactory);
+        break;
       case 'gemini':
-        return await requestGemini(config, input, clientFactory);
+        result = await requestGemini(config, input, clientFactory);
+        break;
       default:
         throw providerError('UNSUPPORTED_AI_PROVIDER', `Unknown provider: ${config.provider}`);
     }
+    if (result?.usage) recordAiUsage({ provider: result.provider || config.provider, model: result.model || config.model, ...result.usage });
+    return result;
   } catch (error) {
     const code = /^([A-Z]+_)*AI_[A-Z_]+$/.test(error?.code) ? error.code : 'AI_TURN_ERROR';
     const provider = config?.provider || 'unresolved';

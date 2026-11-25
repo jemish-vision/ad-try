@@ -47,6 +47,13 @@ exports.getAllPackages = async (req, res) => {
   }
 };
 
+// AI credits a month for organizations on the plan: blank = the global standard allowance.
+const parseAiMonthlyCredits = (v) => {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null;
+};
+
 exports.createPackages = async (req, res) => {
   try {
     const {
@@ -66,7 +73,8 @@ exports.createPackages = async (req, res) => {
       description,
       features,
       isPopular,
-      pages
+      pages,
+      aiMonthlyCredits,
     } = req.body;
 
     /* -------------------- 1. Validation -------------------- */
@@ -122,6 +130,7 @@ exports.createPackages = async (req, res) => {
       features: Array.isArray(features) ? features : [],
       isPopular: Boolean(isPopular),
       pages: formattedPages,
+      aiMonthlyCredits: parseAiMonthlyCredits(aiMonthlyCredits),
     });
 
     return res.status(200).json({
@@ -197,6 +206,7 @@ exports.updatePackages = async (req, res) => {
       features,
       isPopular,
       pages,
+      aiMonthlyCredits,
     } = req.body;
 
     if (!packageId) {
@@ -234,6 +244,7 @@ exports.updatePackages = async (req, res) => {
       ...(description !== undefined && { description }),
       ...(features !== undefined && { features: Array.isArray(features) ? features : [] }),
       ...(isPopular !== undefined && { isPopular: Boolean(isPopular) }),
+      ...(aiMonthlyCredits !== undefined && { aiMonthlyCredits: parseAiMonthlyCredits(aiMonthlyCredits) }),
     };
 
     if (Array.isArray(pages)) {

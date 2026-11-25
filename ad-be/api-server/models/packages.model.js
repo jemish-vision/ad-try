@@ -14,6 +14,8 @@ const packageSchema = new mongoose.Schema(
     profileLimit: { type: Number, trim: true },
     numberOfInvites: { type: Number, trim: true },
     trialDays: { type: Number, trim: true },
+    // AI credits granted to each organization on this plan every month; null = the global default
+    aiMonthlyCredits: { type: Number, min: 0, default: null },
     isActive: { type: Boolean, default: true },
     isPublic: { type: Boolean, default: true },
     pages: [

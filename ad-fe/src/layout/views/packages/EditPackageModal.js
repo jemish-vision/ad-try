@@ -93,6 +93,7 @@ export default function SubscriptionPlanModal({
         allowAmazonConnection: Yup.number().min(0, t("Must be 0 or greater")).required(t("Amazon connection is required")),
         profileLimit: Yup.number().min(0, t("Must be 0 or greater")),
         numberOfInvites: Yup.number().min(0, t("Must be 0 or greater")),
+        aiMonthlyCredits: Yup.number().transform((v, o) => (o === "" || o === null ? undefined : v)).min(0, t("Must be 0 or greater")),
         isActive: Yup.boolean(),
         isPublic: Yup.boolean(),
     });
@@ -107,6 +108,7 @@ export default function SubscriptionPlanModal({
         allowAmazonConnection: plan?.amazonConnectLimit !== undefined ? plan?.amazonConnectLimit : (plan?.allowAmazonConnection ?? 0),
         profileLimit: plan?.profileLimit || 0,
         numberOfInvites: plan?.numberOfInvites || 0,
+        aiMonthlyCredits: plan?.aiMonthlyCredits ?? "",
         isActive: plan?.isActive ?? true,
         isPublic: plan?.isPublic ?? true,
     };
@@ -133,6 +135,8 @@ export default function SubscriptionPlanModal({
                 profileLimit: Number(values.profileLimit || 0),
                 numberOfInvites: Number(values.numberOfInvites || 0),
                 trialDays: Number(values.trialDays || 0),
+                // blank = the global standard AI allowance
+                aiMonthlyCredits: values.aiMonthlyCredits === "" || values.aiMonthlyCredits === null ? null : Number(values.aiMonthlyCredits),
                 isActive: values.isActive,
                 isPublic: values.isPublic,
                 pages: pagesPayload,
@@ -490,6 +494,27 @@ export default function SubscriptionPlanModal({
                                                     />
                                                     {touched.trialDays && !!errors.trialDays && (
                                                         <div className="text-red-500 text-sm mt-1">{errors.trialDays}</div>
+                                                    )}
+                                                </div>
+
+                                                {/* AI credits per month */}
+                                                <div id="package-ai-credits-field">
+                                                    <label className="text-[13px] font-semibold text-[#475569] dark:text-[#cbd5e1] mb-1.5 block">
+                                                        {t("AI credits / month")}
+                                                    </label>
+                                                    <Input
+                                                        type="number"
+                                                        name="aiMonthlyCredits"
+                                                        min="0"
+                                                        value={values.aiMonthlyCredits}
+                                                        onChange={handleChange}
+                                                        placeholder={t("Standard allowance")}
+                                                        className={`form-control dark:!bg-white/5 dark:!border-white/10 dark:!text-white ${touched.aiMonthlyCredits && !!errors.aiMonthlyCredits ? "!border-red-500" : ""}`}
+                                                    />
+                                                    {touched.aiMonthlyCredits && !!errors.aiMonthlyCredits ? (
+                                                        <div className="text-red-500 text-sm mt-1">{errors.aiMonthlyCredits}</div>
+                                                    ) : (
+                                                        <div className="text-[11.5px] text-slate-500 dark:text-slate-400 mt-1">{t("Shared by each organization on this plan. Leave blank for the standard allowance; changes apply from the next monthly reset.")}</div>
                                                     )}
                                                 </div>
 

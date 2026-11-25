@@ -17,7 +17,7 @@ import {
   Moon, Sun, UserCircle,
   House, Users, Globe, Gear, Package,
   CalendarCheck, Prohibit, BookOpen, Headset, Buildings,
-  ShieldCheck, ChartLineUp, CaretRight, List, SignOut, FileText, X, ClockCountdown, ChatCenteredText, Gauge,
+  ShieldCheck, ChartLineUp, CaretRight, List, SignOut, FileText, X, ClockCountdown, ChatCenteredText, Gauge, Sparkle,
 } from "@phosphor-icons/react";
 import { ApiDeleteDeviceToken } from "../../../api-wrapper/devices/ApiDeviceToken";
 import { ApiGetProfile } from "../../../api-wrapper/customer/ApiCustomer";
@@ -52,6 +52,7 @@ const OWNER_NAV_SECTIONS = [
       { name: "Role", icon: <ShieldCheck size={17} weight="regular" />, path: "/role" },
       { name: "Retention", icon: <ClockCountdown size={17} weight="regular" />, path: "/retention" },
       { name: "Chatbot Gaps", icon: <ChatCenteredText size={17} weight="regular" />, path: "/unanswered-questions" },
+      { name: "AI Credit Management", icon: <Sparkle size={17} weight="regular" />, path: "/ai-credits-admin" },
       { name: "Support Ticket", icon: <Headset size={17} weight="regular" />, path: "/support-ticket" },
     ],
   },

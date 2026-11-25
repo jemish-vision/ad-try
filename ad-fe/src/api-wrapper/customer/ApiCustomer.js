@@ -1,4 +1,5 @@
 import axios from "axios";
+import { newAiRequestId, isCreditsExhausted, creditsExhaustedHtml, notifyAiCreditsChanged } from "../../helper/aiCredits/aiCredits";
 import { getAccountScopeHeaders } from "../../helper/accountScopeHeaders";
 
 const api = `${process.env.REACT_APP_API_BASE}/api/customer/`;
@@ -67,7 +68,13 @@ const ApiCustomChatBot = (data) => {
     }));
 };
 
-const ApiCustomChatBotStream = async ({ data, signal, onStatus, onReport, onToken, onDone, onError }) => {
+const ApiCustomChatBotStream = async ({ data, signal, onStatus, onReport, onToken, onDone: onDoneRaw, onError }) => {
+  // AI credits: show a translated "out of credits" reply, and refresh the credit badges after every answer.
+  const onDone = (payload) => {
+    const res = isCreditsExhausted(payload) ? { ...payload, replyMessage: creditsExhaustedHtml() } : payload;
+    onDoneRaw?.(res);
+    notifyAiCreditsChanged();
+  };
   try {
     const token = localStorage.getItem("sellerToken");
     const response = await fetch(`${api}chatbot`, {
@@ -77,6 +84,8 @@ const ApiCustomChatBotStream = async ({ data, signal, onStatus, onReport, onToke
         "Content-Type": "application/json",
         "Accept": "text/event-stream",
         Authorization: `Bearer ${token}`,
+        // One id per message: a repeated submit is never charged twice (AI credits)
+        "X-AI-Request-Id": newAiRequestId(),
         ...getAccountScopeHeaders(),
       },
       body: JSON.stringify({ ...data, stream: true }),

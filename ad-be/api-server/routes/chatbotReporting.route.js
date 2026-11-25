@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const { withAiCredits } = require('../services/aiCredits/withAiCredits');
 const {
   createSummaryController,
   createReportController,
@@ -19,7 +20,7 @@ function createSummaryRouter({
   const rateLimit = limiter || require('../middleware/rateLimiter').chatbotLimiter;
   router.post('/summary', auth, rateLimit, controller || createSummaryController());
   router.post('/query', auth, rateLimit, queryController || createReportController());
-  router.post('/chat', auth, rateLimit, chatController || createChatController());
+  router.post('/chat', auth, rateLimit, chatController || withAiCredits('AI_ASSISTANT', createChatController()));
 
   return router;
 }

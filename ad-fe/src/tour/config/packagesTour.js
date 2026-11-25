@@ -58,6 +58,13 @@ export const packagesTourConfig = {
             blockTargetInteraction: true
         },
         {
+            target: "#package-ai-credits-field",
+            icon: CurrencyDollar,
+            title: "AI Credits per Month",
+            content: "AI credits each organization on this plan gets every month. Leave blank for the standard allowance.",
+            blockTargetInteraction: true
+        },
+        {
             target: "#package-amazon-field",
             icon: Link,
             title: "Amazon Connection",
