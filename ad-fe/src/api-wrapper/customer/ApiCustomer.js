@@ -1,4 +1,5 @@
 import axios from "axios";
+import { getAccountScopeHeaders } from "../../helper/accountScopeHeaders";
 
 const api = `${process.env.REACT_APP_API_BASE}/api/customer/`;
 const authToken = localStorage.getItem("sellerToken");
@@ -76,6 +77,7 @@ const ApiCustomChatBotStream = async ({ data, signal, onStatus, onReport, onToke
         "Content-Type": "application/json",
         "Accept": "text/event-stream",
         Authorization: `Bearer ${token}`,
+        ...getAccountScopeHeaders(),
       },
       body: JSON.stringify({ ...data, stream: true }),
     });

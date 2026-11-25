@@ -55,6 +55,36 @@ The dashboard includes a **multi-metric trend chart** (Sales, Spend, ACoS, ROAS,
 ### Product Performance Grid & Smart Insights
 ![Product Analytics — Performance Grid & Smart Insights](/guide-images/dashboard_insights.png)
 The **Top Products** grid is a sortable, filterable AG Grid table showing per-product metrics including Title, ASIN, SKU and AI-driven labels like **Scale**, **Optimize**, **Fix Listing**, or **Stop Ads**.
+
+### Hourly Ad Blackouts
+The **Hourly Ad Blackouts** widget monitors your live **Amazon Marketing Stream** hourly traffic (`sp-traffic`, `sb-traffic`, `sd-traffic`) and alerts you within the hour when an active campaign or ad group suddenly drops to **0 impressions** during an hour that normally receives traffic.
+- **False-Alarm Protection:** Evaluates each completed hour only when the entity averaged at least 100 impressions in that same hour-of-day over the prior 7 days and the profile's Marketing Stream is actively receiving events.
+- **On-Demand Root Cause Diagnostics:** Checks live Amazon Ads serving-status fields, SB/SD creative moderation reviews, portfolio caps, SP-API Buy Box ownership, listing suppression/ineligibility issues, and automated rule pauses—explaining the exact cause in plain words.
+- **Auto-Resolution & Dismiss:** Alerts resolve automatically once impressions resume or the ad is intentionally paused, and can be dismissed directly from the dashboard card.
+
+### Performance Decline & Root Cause Triage
+The **Performance Decline & Root Cause Triage** card acts as an intelligent diagnostic radar for campaigns suffering sustained, statistically significant performance degradation. Rather than alerting on normal day-to-day volatility, it evaluates comparative performance across dual time windows with automated root cause correlation.
+
+- **48-Hour Sales Attribution Buffer:** Automatically excludes the last 2 days from the comparison to account for Amazon Ads 48-hour sales attribution lag and prevent false alarms from pending sales data.
+- **Evaluation Windows:** Toggle between **7D**, **14D** (default), and **30D** to diagnose short-term anomalies vs. medium-term and monthly performance trends.
+- **Decline Scenarios & Classification:**
+  - **Traffic Blackout (Critical):** Impressions and clicks both dropped by 60% or more. The system checks for campaign/target pauses, out-of-stock ASINs, Buy Box loss, or recent downward bid cuts.
+  - **Bleeding Ad (Critical):** Orders fell by 30% or more and Conversion Rate (CVR) dropped by 35% or more while spend and clicks remained steady. Correlates with wasted search terms (queries spending 10x CPC or more with 0 orders) or listing price increases.
+  - **Bidding War (Warning):** CPC surged by 25% or more while clicks remained flat or fell and ACoS degraded. Correlates with recent bid/placement raises or intense competitor bidding.
+  - **Ad Fatigue (Warning):** Click-Through Rate (CTR) dropped by 30% or more while impressions remained steady. Checks for rival price undercutting or Buy Box loss reducing click appeal.
+  - **Budget Starvation (Warning):** Campaign runs out of budget early (time in budget under 65% across 2 or more days) despite maintaining good, profitable ACoS.
+  - **General Decay (Warning):** Sales fell by 20% or more, or ACoS degraded by 25% or more without matching a single isolated pattern.
+- **Evidence Confidence Levels:**
+  - **Confirmed:** Root cause directly verified by empirical internal evidence (audit log change history, out-of-stock alerts, Buy Box loss, or wasted search terms).
+  - **Likely:** When no internal changes occurred, the system highlights the most probable external market driver (e.g., competitor price moves or market bid escalations).
+- **Interactive Severity Tag Filtering:** Click the **Critical** or **Warnings** count tags in the card header to filter the list instantly. Clicking an active tag toggles it off to display all declining campaigns.
+- **Cached Pagination:** Paginates 6 campaign cards per page with instant Redis-cached page navigation.
+- **Direct Campaign Access:** Click the campaign name or external link icon to jump straight into the campaign management tab for immediate action.
+
+### Out-of-Stock Products in Running Ads
+Located directly on the Executive Dashboard, this widget highlights campaigns that are actively spending budget on product ads whose advertised ASIN is currently **Out of Stock** on Amazon.
+- **Spend 7D:** Displays the advertising spend accumulated on the out-of-stock product over the past 7 days.
+- **Inventory Sync:** Continuously correlates campaign status with live catalog availability to prevent wasted ad spend when products cannot be purchased.
     `
   },
   {

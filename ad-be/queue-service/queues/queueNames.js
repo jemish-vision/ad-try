@@ -4,6 +4,7 @@ const QUEUES = Object.freeze({
   SP_API: "sp-api-queue",
   ASIN_SNAPSHOT: "asin-snapshot-queue",
   OUT_OF_STOCK_ADS: "out-of-stock-ads-queue",
+  FC_INVENTORY_LEDGER: "fc-inventory-ledger-queue",
 });
 
 const RULE_TASKS = Object.freeze({
@@ -28,6 +29,7 @@ const SYNC_TASKS = Object.freeze({
   WEEKLY_REPORT: "weekly-report",
   REPORT_BATCH_WRITER: "report-batch-writer",
   HOURLY_DATA_CONSOLIDATION: "hourly-data-consolidation",
+  AD_BLACKOUT_MONITOR: "ad-blackout-monitor",
 });
 
 const SP_API_TASKS = Object.freeze({

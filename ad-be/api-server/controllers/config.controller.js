@@ -51,20 +51,23 @@ const {
   getAccessToken,
   getRuleDate,
   getDatesBetween,
-  generateUnique,
   clearProfileCache,
   clearActivePlanProfilesCache
 } = require("../helper/common");
 
 const { cron_logs } = require("../../winston/cronAutomation/logger");
-const { getSqsByAmazonUrl } = require("../helper/amsArn");
+const { getAmsDestination } = require("../helper/amsArn");
 const { subscribeAmsDataset, archiveAmsSubscription } = require("../services/amazonAms.service");
 const { logAudit } = require("../helpers/auditHelper");
 
 const { sendEmailHelper } = require("../helper/emailHelper");
 const { buildDisconnectEmail } = require("../../emailTemplate/buildDisconnectEmail");
 const { buildDisconnectReminderEmail } = require("../../emailTemplate/buildDisconnectReminderEmail");
-const { notifyNewSellerConnection } = require("../helper/sellerNotification.helper");
+const {
+  notifyNewSellerConnection,
+  notifyNewProfileConnection,
+  notifyDataSyncRequest,
+} = require("../helper/sellerNotification.helper");
 const { cronDeleteExpiredAccountsData } = require("../services/accountDataCleanup.service");
 const { ROLES } = require("../constants/roles");
 const amazonAxios = require("../helper/amazonAxios");
@@ -2315,142 +2318,114 @@ exports.SyncPastData = async () => {
 
 exports.manageSubscribeAMS = async (req, res) => {
   try {
-    const configId = req.body.configId || req.query.configId || req?.config?.configId || req?.headers?.["x-config-id"];
-    const { profileId, datasets } = req.body;
-
-    const existingSubs = await amsSubscriptionSchema.find({ ...(configId && { configId }), profileId }).lean();
-    const profile = await profileSchema.findOne({ profileId: Number(profileId), ...(configId && { configId }) }).lean();
-    const checkConfigAds = await getAccessToken(configId);
-
-    const existingMap = new Map(existingSubs.map((s) => [s.dataset, s]));
-
-    const bulkOps = [];
-
+    const body = req.body || {};
+    const configId = body.configId ?? req.query?.configId ?? req.config?.configId ?? req.headers?.["x-config-id"];
+    const profileId = Number(body.profileId);
+    const respond = (message) => res.status(203).json({ isSuccess: false, message });
+    if (!ObjectId.isValid(configId) || !["string", "number"].includes(typeof body.profileId) ||
+        !Number.isSafeInteger(profileId) || profileId <= 0) {
+      return respond("A valid configId and profileId are required.");
+    }
+    const allowedDatasets = amsSubscriptionSchema.schema.path("dataset").enumValues;
+    if (!Array.isArray(body.datasets) || body.datasets.some(dataset => !allowedDatasets.includes(dataset))) {
+      return respond("Provide an array of supported Amazon Marketing Stream datasets.");
+    }
+    const datasets = [...new Set(body.datasets)];
+    const scope = { configId, profileId };
+    const userId = req.user?._id || req.user?.id;
+    if (req.role?.roleName !== ROLES.SUPER_ADMIN && (!userId || !await profileBasedPermissionSchema.exists({
+      ...scope, userId, hasAccess: true,
+    }))) {
+      return respond("You do not have permission to manage subscriptions for this Ads profile.");
+    }
+    const profile = await profileSchema.findOne(scope).lean();
+    if (!profile) return respond("Amazon Ads profile not found for this configuration.");
+    const existingSubs = await amsSubscriptionSchema.find(scope).lean();
+    const existingMap = new Map(existingSubs.map(sub => [sub.dataset, sub]));
     const result = { subscribed: [], archived: [], failed: [] };
+    let adsConfigPromise;
+    const getAdsConfig = () => adsConfigPromise ??= getAccessToken(configId).then(config => {
+      if (!config?.adsAccessToken || !config.adsClientId) {
+        throw new Error("Reconnect this Amazon Ads account before managing subscriptions.");
+      }
+      return config;
+    });
+    const recordFailure = (dataset, action, error) => {
+      const reason = error?.message || String(error);
+      write_logs({ message: `[manageSubscribeAMS] ${action} ${dataset} for profile ${profileId}: ${reason}`, log_type: "error" });
+      result.failed.push({ dataset, action, reason });
+    };
+    let destinationError;
 
-    // ---------------- SUBSCRIBE ----------------
     for (const dataset of datasets) {
       const existing = existingMap.get(dataset);
-      if (existing && existing.status === "ACTIVE") continue;
+      if (existing?.status === "ACTIVE") continue;
 
       try {
-        const sqsArn = getSqsByAmazonUrl(profile?.amazonUrl, "sqsArn");
-        const region = getSqsByAmazonUrl(profile?.amazonUrl, "region");
-        const clientRequestToken = generateUnique();
-
-        const amazonRes = await subscribeAmsDataset({ profile, checkConfigAds, clientRequestToken, dataset, sqsArn });
-
-        if (!amazonRes.success) {
-          const errorMsg = typeof amazonRes.error === "object" ? (amazonRes.error?.message || JSON.stringify(amazonRes.error)) : String(amazonRes.error || "Subscribe failed");
-          throw new Error(errorMsg);
-        }
-
-        bulkOps.push({
-          updateOne: {
-            filter: { configId, profileId, dataset, status: "ACTIVE", },
-            update: {
-              $set: {
-                region,
-                sqsArn,
-                subscriptionId: amazonRes.subscriptionId,
-                clientRequestToken,
-              },
-            },
-            upsert: true,
-          },
-        });
-
-        result.subscribed.push(dataset);
-      } catch (err) {
-        const errMsg = typeof err?.message === "object" ? (err.message?.message || JSON.stringify(err.message)) : (err?.message || String(err));
-        write_logs({ message: `[manageSubscribeAMS Error] ${errMsg} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
-        result.failed.push({
-          dataset,
-          action: "SUBSCRIBE",
-          reason: errMsg,
-        });
-      }
-    }
-
-    // ---------------- ARCHIVE ----------------
-    for (const sub of existingSubs) {
-      if (!datasets.includes(sub.dataset) && sub.status === "ACTIVE") {
+        let destination;
         try {
-          if (!sub?.subscriptionId) {
-            bulkOps.push({
-              updateOne: {
-                filter: { _id: sub._id },
-                update: { $set: { status: "ARCHIVED" } },
-              },
-            });
-            result.archived.push(sub.dataset);
-            continue;
-          }
-
-          const amazonRes = await archiveAmsSubscription({ subscriptionId: sub?.subscriptionId, profile, checkConfigAds });
-
-          if (!amazonRes.success) {
-            const errorMsg = typeof amazonRes.error === "object" ? (amazonRes.error?.message || JSON.stringify(amazonRes.error)) : String(amazonRes.error || "Archive failed");
-            throw new Error(errorMsg);
-          }
-
-          bulkOps.push({
-            updateOne: {
-              filter: { _id: sub._id },
-              update: { $set: { status: "ARCHIVED" } },
-            },
-          });
-
-          result.archived.push(sub.dataset);
-        } catch (err) {
-          const errMsg = typeof err?.message === "object" ? (err.message?.message || JSON.stringify(err.message)) : (err?.message || String(err));
-          write_logs({ message: `[manageSubscribeAMS Error] ${errMsg} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
-          result.failed.push({
-            dataset: sub.dataset,
-            action: "ARCHIVE",
-            reason: errMsg,
-          });
+          destination = getAmsDestination(profile.amazonUrl);
+        } catch (error) {
+          destinationError = error.message;
+          throw error;
         }
+        const { region, sqsArn } = destination;
+        const checkConfigAds = await getAdsConfig();
+        // Keep the same Amazon request token when retrying a failed local save.
+        const clientRequestToken = crypto.createHash("sha256").update(JSON.stringify([
+          String(configId), profileId, dataset, sqsArn, existing?.subscriptionId || existing?.clientRequestToken || existing?._id,
+        ])).digest("hex").slice(0, 25);
+        const amazonRes = await subscribeAmsDataset({ profile, checkConfigAds, clientRequestToken, dataset, sqsArn });
+        if (!amazonRes.success) {
+          const reason = amazonRes.error;
+          throw new Error(typeof reason === "object" ? reason?.message || JSON.stringify(reason) : reason || "Subscribe failed");
+        }
+        await amsSubscriptionSchema.updateOne({ ...scope, dataset }, { $set: {
+          status: "ACTIVE", region, sqsArn, subscriptionId: amazonRes.subscriptionId, clientRequestToken, lastError: null,
+        } }, { upsert: true, runValidators: true });
+        result.subscribed.push(dataset);
+      } catch (error) {
+        recordFailure(dataset, "SUBSCRIBE", error);
       }
     }
 
-    if (bulkOps.length) {
-      await amsSubscriptionSchema.bulkWrite(bulkOps);
+    for (const sub of existingSubs) {
+      if (datasets.includes(sub.dataset) || sub.status !== "ACTIVE") continue;
+
+      try {
+        if (sub.subscriptionId) {
+          const checkConfigAds = await getAdsConfig();
+          const amazonRes = await archiveAmsSubscription({ subscriptionId: sub.subscriptionId, profile, checkConfigAds });
+          if (!amazonRes.success) throw new Error(amazonRes.error || "Archive failed");
+        }
+        const update = await amsSubscriptionSchema.updateOne({ ...scope, _id: sub._id, subscriptionId: sub.subscriptionId ?? null }, {
+          $set: { status: "ARCHIVED", lastError: null },
+        });
+        if (!update.matchedCount) throw new Error("The subscription changed while archiving. Refresh and try again.");
+        result.archived.push(sub.dataset);
+      } catch (error) {
+        recordFailure(sub.dataset, "ARCHIVE", error);
+      }
     }
 
-    // ---------------- RESPONSE LOGIC ----------------
-    if (result.failed.length > 0 && (result.subscribed.length || result.archived.length)) {
-      await logAudit("SELLER_CONFIG_SUBSCRIPTIONS", "Some subscriptions failed", { datasets, ...result }, req?.user?.id);
-      return res.status(203).json({
-        isSuccess: false,
-        partialSuccess: true,
-        message: "Some subscriptions failed",
-        result,
-      });
-    }
-
-    if (result.failed.length > 0) {
-      await logAudit("SELLER_CONFIG_SUBSCRIPTIONS", "All subscription actions failed", { datasets, ...result }, req?.user?.id);
-      return res.status(203).json({
-        isSuccess: false,
-        message: "All subscription actions failed",
-        result,
-      });
-    }
-
-    await logAudit("SELLER_CONFIG_SUBSCRIPTIONS", `${result.subscribed.length} datasets subscribed and ${result.archived.length} datasets archived successfully.`, { datasets }, req?.user?.id);
-
-    return res.status(200).json({
-      isSuccess: true,
-      message: "Subscription updated successfully",
+    const isSuccess = result.failed.length === 0;
+    const partialSuccess = !isSuccess && Boolean(result.subscribed.length || result.archived.length);
+    const auditMessage = isSuccess
+      ? `${result.subscribed.length} datasets subscribed and ${result.archived.length} datasets archived successfully.`
+      : partialSuccess ? "Some subscriptions failed" : "All subscription actions failed";
+    const message = isSuccess ? "Subscription updated successfully" : auditMessage;
+    const status = isSuccess ? "SUCCESS" : partialSuccess ? "PARTIAL" : "FAILURE";
+    await logAudit("SELLER_CONFIG_SUBSCRIPTIONS", auditMessage, { configId, profileId, datasets, ...result, status }, userId);
+    return res.status(isSuccess ? 200 : 203).json({
+      isSuccess,
+      ...(partialSuccess && { partialSuccess }),
+      message: !isSuccess && destinationError && result.failed.every(failure => failure.reason === destinationError)
+        ? destinationError : message,
       result,
     });
   } catch (error) {
-    write_logs({ message: `[manageSubscribeAMS Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
-    return res.status(203).json({
-      isSuccess: false,
-      message: "Failed to manage subscription",
-    });
+    write_logs({ message: `[manageSubscribeAMS Error] ${error?.message || error}`, log_type: "error" });
+    return res.status(203).json({ isSuccess: false, message: "Failed to manage subscription" });
   }
 };
 
@@ -2860,6 +2835,17 @@ exports.saveAmazonProfiles = async (req, res) => {
       configId, organizationId: orgId, resourceType: "ADS_CONFIGURATION", resourceId: configId,
       metadata: { profileIds: selectedProfiles.map(profile => profile.profileId), selectedCount: selectedProfiles.length } });
 
+    const newlyAddedProfiles = selectedProfiles.filter(p => !existingActiveSet.has(String(p.profileId)));
+    if (newlyAddedProfiles.length > 0 && typeof notifyNewProfileConnection === "function") {
+      void notifyNewProfileConnection({
+        userId,
+        organizationId: orgId,
+        config: configDoc,
+        profiles: newlyAddedProfiles,
+        req,
+      }).catch(err => write_logs({ message: `[saveAmazonProfiles Notification Error] ${err?.message || err}`, log_type: "error" }));
+    }
+
     return res.status(200).json({ isSuccess: true, message: 'Profiles saved successfully' });
   } catch (error) {
     write_logs({ message: `[saveAmazonProfiles Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
@@ -2997,6 +2983,25 @@ exports.saveSynchronizationDetails = async (req, res) => {
       previousValue: existing.map(record => ({ groupId: record.groupId, selectedSyncDays: record.selectedSyncDays, requestStatus: record.requestStatus })),
       newValue: saved.map(record => ({ groupId: record.groupId, selectedSyncDays: record.selectedSyncDays, requestStatus: record.requestStatus })),
       metadata: { type: syncType, awaitingApproval: saved.some(record => record.requestStatus === "PENDING") } });
+
+    const existingByGroup = new Map(existing.map(record => [record.groupId, record]));
+    const newlyRequestedRecords = saved.filter((record) => {
+      if (record.requestStatus !== "PENDING") return false;
+      const prev = existingByGroup.get(record.groupId);
+      return !prev || prev.selectedSyncDays !== record.selectedSyncDays || prev.requestStatus !== "PENDING";
+    });
+    if (newlyRequestedRecords.length > 0 && typeof notifyDataSyncRequest === "function") {
+      void notifyDataSyncRequest({
+        userId,
+        organizationId: config.organizationId,
+        config,
+        profileId: numericProfileId,
+        type: syncType,
+        requestedRecords: newlyRequestedRecords,
+        groups,
+        req,
+      }).catch(err => write_logs({ message: `[saveSynchronizationDetails Notification Error] ${err?.message || err}`, log_type: "error" }));
+    }
 
     return res.status(200).send({
       isSuccess: true,

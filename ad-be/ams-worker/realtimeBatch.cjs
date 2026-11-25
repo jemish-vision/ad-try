@@ -35,7 +35,7 @@ function trafficInstructions(body, profile) {
     const placement = {
         "Other on-Amazon": "Rest of Search",
         "Other Placements": "Rest of Search",
-        "Detail Page on-Amazon": "Product pages",
+        "Detail Page on-Amazon": "Product Pages",
         "Top of Search on-Amazon": "Top of Search",
         "Top of Search": "Top of Search",
     }[body.placement] || "";

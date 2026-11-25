@@ -34,7 +34,7 @@ describe("1. SP-API Schedule Registry Mapping", () => {
 
     const fcLedger = resolveMigratedSchedule("FC Inventory Ledger");
     assert.deepStrictEqual(fcLedger, {
-      queue: QUEUES.SP_API,
+      queue: QUEUES.FC_INVENTORY_LEDGER,
       task: SP_API_TASKS.FC_INVENTORY_LEDGER,
       family: "sp-api",
     });

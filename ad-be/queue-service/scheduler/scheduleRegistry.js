@@ -23,6 +23,7 @@ const CRON_NAME_MAP = Object.freeze({
   "weeklyreport": { queue: QUEUES.HOURLY_SYNC, task: SYNC_TASKS.WEEKLY_REPORT, family: "sync" },
   "reportbatchwriter": { queue: QUEUES.HOURLY_SYNC, task: SYNC_TASKS.REPORT_BATCH_WRITER, family: "sync" },
   "hourlydataconsolidation": { queue: QUEUES.HOURLY_SYNC, task: SYNC_TASKS.HOURLY_DATA_CONSOLIDATION, family: "sync" },
+  "adblackoutmonitor": { queue: QUEUES.HOURLY_SYNC, task: SYNC_TASKS.AD_BLACKOUT_MONITOR, family: "sync" },
 
   // SP-API tasks (heavy / periodic)
   "syncorder": { queue: QUEUES.SP_API, task: SP_API_TASKS.SYNC_ORDER, family: "sp-api" },
@@ -55,7 +56,7 @@ const CRON_NAME_MAP = Object.freeze({
   "productsmetalisting": { queue: QUEUES.SP_API, task: SP_API_TASKS.PRODUCTS_META_LISTING, family: "sp-api" },
   "syncpastdata": { queue: QUEUES.SP_API, task: SP_API_TASKS.SYNC_PAST_DATA, family: "sp-api" },
   "asinsnapshot": { queue: QUEUES.ASIN_SNAPSHOT, task: SP_API_TASKS.ASIN_SNAPSHOT, family: "sp-api" },
-  "fcinventoryledger": { queue: QUEUES.SP_API, task: SP_API_TASKS.FC_INVENTORY_LEDGER, family: "sp-api" },
+  "fcinventoryledger": { queue: QUEUES.FC_INVENTORY_LEDGER, task: SP_API_TASKS.FC_INVENTORY_LEDGER, family: "sp-api" },
   "fcstoragefee": { queue: QUEUES.SP_API, task: SP_API_TASKS.FC_STORAGE_FEE, family: "sp-api" },
   "outofstockads": { queue: QUEUES.OUT_OF_STOCK_ADS, task: SP_API_TASKS.OUT_OF_STOCK_ADS, family: "sp-api" },
 });

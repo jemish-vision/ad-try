@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import Filter from "../../../helper/filter/Filter";
 import AgTable from "../../../common/grid/AgTable";
@@ -32,7 +32,8 @@ const Organizations = () => {
   const [selectedOrgForUsers, setSelectedOrgForUsers] = useState(null);
 
   const [openSyncModal, setOpenSyncModal] = useState(false);
-  const [selectedOrgForSync, setSelectedOrgForSync] = useState(null);
+  const [selectedSyncOrgId, setSelectedSyncOrgId] = useState(null);
+  const selectedOrgForSync = orgList.find((org) => org._id === selectedSyncOrgId);
   const [loadingGrid, setLoadingGrid] = useState(false);
   const [openDeletionQueueModal, setOpenDeletionQueueModal] = useState(false);
   const [openOrgDeletionModal, setOpenOrgDeletionModal] = useState(false);
@@ -62,25 +63,45 @@ const Organizations = () => {
     }
   };
 
-  const fetchOrganizations = async (skip = false) => {
-    setLoadingGrid(true);
+  const organizationsRequest = useRef(0);
+  const fetchOrganizations = useCallback(async (skip = false, background = false) => {
+    const request = ++organizationsRequest.current;
+    if (!background) setLoadingGrid(true);
     try {
       const res = await ApiGetSuperAdminOrganizations(skip);
+      if (request !== organizationsRequest.current) return;
       if (res && res.isSuccess && Array.isArray(res.data)) {
         setOrgList(res.data);
-      } else {
+      } else if (!background) {
         setOrgList([]);
       }
     } catch (err) {
       console.error("Error loading organizations:", err);
     } finally {
-      setLoadingGrid(false);
+      if (request === organizationsRequest.current) setLoadingGrid(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchOrganizations();
-  }, []);
+  }, [fetchOrganizations]);
+
+  const refreshSyncStatus = useCallback(() => fetchOrganizations(true, true), [fetchOrganizations]);
+
+  useEffect(() => {
+    if (!openSyncModal) return;
+    let stopped = false;
+    let timer;
+    const poll = async () => {
+      await refreshSyncStatus();
+      if (!stopped) timer = setTimeout(poll, 10000);
+    };
+    poll();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [openSyncModal, refreshSyncStatus]);
 
   useEffect(() => {
     if (!searchName.trim()) {
@@ -118,7 +139,8 @@ const Organizations = () => {
       headerName: "Action",
       field: "action",
       title: "Action",
-      width: 170,
+      width: 200,
+      minWidth: 196,
       sortable: false,
       resizable: false,
       cellRenderer: (params) => {
@@ -160,7 +182,7 @@ const Organizations = () => {
                 <i
                   className="fa fa-play cursor-pointer"
                   onClick={() => {
-                    setSelectedOrgForSync(row);
+                    setSelectedSyncOrgId(row._id);
                     setOpenSyncModal(true);
                   }}
                 />
@@ -302,7 +324,7 @@ const Organizations = () => {
               setSelectedOrgForUsers(row);
               setOpenUsersModal(true);
             }}
-            className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 font-semibold transition-all flex items-center gap-1.5 shadow-2xs text-[11px] cursor-pointer"
+            className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 dark:hover:text-white border border-slate-200/80 dark:border-slate-700/80 font-semibold transition-all flex items-center gap-1.5 shadow-2xs text-[11px] cursor-pointer"
           >
             <i className="fa fa-users text-blue-600 dark:text-blue-400" />
             <span>
@@ -389,7 +411,7 @@ const Organizations = () => {
         open={openSyncModal}
         setOpen={setOpenSyncModal}
         organization={selectedOrgForSync}
-        onSuccess={fetchOrganizations}
+        onSuccess={refreshSyncStatus}
       />
       <DeletionQueueModal
         open={openDeletionQueueModal}

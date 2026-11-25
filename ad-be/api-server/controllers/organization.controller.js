@@ -505,7 +505,7 @@ exports.getAllOrganizationsForSuperAdmin = async (req, res) => {
         .find({ hasAccess: true })
         .populate("userId", "fullName email companyName phoneNumber")
         .lean(),
-      synchronizeDetailsSchema.find({ requestStatus: { $in: ["PENDING", "FAILED"] } }).lean(),
+      synchronizeDetailsSchema.find({ requestStatus: { $in: ["PENDING", "FAILED", "IN_PROGRESS"] } }).lean(),
       profileSchema.find({ isActive: true }).select("profileId name countryCode configId").lean(),
       coreGroupSchema.find({ isActive: true }).select("id title").lean(),
     ]);
@@ -604,6 +604,7 @@ exports.getAllOrganizationsForSuperAdmin = async (req, res) => {
             selectedGroups: [],
             syncIds: [],
             hasFailed: false, // Flag to indicate if this profile has failed syncs
+            hasInProgress: false,
           });
         }
         const profileObj = profilesMap.get(pId);
@@ -611,14 +612,19 @@ exports.getAllOrganizationsForSuperAdmin = async (req, res) => {
         if (rec.requestStatus === "FAILED") {
           profileObj.hasFailed = true;
         }
+        if (rec.requestStatus === "IN_PROGRESS") {
+          profileObj.hasInProgress = true;
+        } else {
+          profileObj.syncIds.push(rec._id);
+        }
 
         profileObj.selectedGroups.push({
           groupId: rec.groupId,
           groupTitle: groupTitleMap.get(rec.groupId) || rec.groupId,
           selectedSyncDays: rec.selectedSyncDays,
           syncId: rec._id,
+          requestStatus: rec.requestStatus,
         });
-        profileObj.syncIds.push(rec._id);
       }
 
       const pendingSyncProfiles = Array.from(profilesMap.values()).map((p) => ({

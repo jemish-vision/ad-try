@@ -424,25 +424,6 @@ function OwnerSidebar({ open, setOpen }) {
                   </span>
                 </AppTooltip>
 
-                <AppTooltip text={t("Keyboard Shortcuts (?)")} side={!isExpanded ? "right" : "top"}>
-                  <span
-                    className="owner-icon-btn cursor-pointer"
-                    onClick={() => window.dispatchEvent(new CustomEvent("openShortcutsGuide"))}
-                    style={{
-                      width: "32px",
-                      height: "32px",
-                      borderRadius: "8px",
-                      transition: "background 0.2s",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "var(--text-secondary)"
-                    }}
-                  >
-                    <i className="fa-solid fa-keyboard" style={{ fontSize: "14px" }} />
-                  </span>
-                </AppTooltip>
-
                 <AppTooltip text={t("Logout")} side={!isExpanded ? "right" : "top"}>
                   <span
                     className="owner-icon-btn text-danger cursor-pointer"

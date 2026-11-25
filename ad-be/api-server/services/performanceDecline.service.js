@@ -56,15 +56,35 @@ const round = (n, d = 2) => {
 
 const normalizeWindow = (w) => (WINDOW_OPTIONS.includes(Number(w)) ? Number(w) : DEFAULT_WINDOW);
 
-/** Current and prior date ranges (YYYY-MM-DD, profile timezone). */
-function buildEvaluationWindows(windowDays, timezone, now = new Date()) {
-  const w = normalizeWindow(windowDays);
+/** Current and prior date ranges (YYYY-MM-DD, profile timezone). Supports custom startDate / endDate or window presets. */
+function buildEvaluationWindows(windowDays, timezone, now = new Date(), customRange = null) {
   const today = moment.tz(now, timezone || "UTC").startOf("day");
   const d = (n) => today.clone().subtract(n, "days").format("YYYY-MM-DD");
   const bufferedDays = [];
   for (let i = LAG_BUFFER_DAYS - 1; i >= 0; i--) bufferedDays.push(d(i));
+
+  if (customRange?.startDate && customRange?.endDate) {
+    const startM = moment.tz(customRange.startDate, timezone || "UTC").startOf("day");
+    const endM = moment.tz(customRange.endDate, timezone || "UTC").startOf("day");
+    if (startM.isValid() && endM.isValid() && !endM.isBefore(startM)) {
+      const days = endM.diff(startM, "days") + 1;
+      const priorEnd = startM.clone().subtract(1, "day");
+      const priorStart = priorEnd.clone().subtract(days - 1, "days");
+      return {
+        windowDays: days,
+        isCustom: true,
+        today: today.format("YYYY-MM-DD"),
+        current: { start: startM.format("YYYY-MM-DD"), end: endM.format("YYYY-MM-DD") },
+        prior: { start: priorStart.format("YYYY-MM-DD"), end: priorEnd.format("YYYY-MM-DD") },
+        bufferedDays,
+      };
+    }
+  }
+
+  const w = normalizeWindow(windowDays);
   return {
     windowDays: w,
+    isCustom: false,
     today: today.format("YYYY-MM-DD"),
     current: { start: d(w + LAG_BUFFER_DAYS - 1), end: d(LAG_BUFFER_DAYS) },
     prior: { start: d(2 * w + LAG_BUFFER_DAYS - 1), end: d(w + LAG_BUFFER_DAYS) },

@@ -1053,7 +1053,7 @@ function Targeting() {
       lastFetchParamsRef.current = requestSignature;
       const currentFetchId = ++fetchIdRef.current;
       setIsTableLoading(true);
-      if (!isReload) setChartLoading(true);
+      setChartLoading(true);
       const apiOptions = { skipLoader: true };
 
       const rawTargets = localStorage.getItem("AffectedTargets");
@@ -1133,7 +1133,6 @@ function Targeting() {
       };
 
       const loadChart = async () => {
-        if (isReload) return;
         try {
           const e = await ApiTargetingChartListing(data);
           if (currentFetchId !== fetchIdRef.current) return;

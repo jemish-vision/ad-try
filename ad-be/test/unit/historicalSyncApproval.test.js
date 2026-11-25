@@ -37,6 +37,43 @@ test('approval endpoints use Super Admin middleware and the same import handler'
     assert.equal(denied.code, 403);
 });
 
+test('Super Admin organization list exposes running profiles while keeping their sync IDs out of retries', async () => {
+    const requests = [
+        { _id: 'running-only', profileId: 1, groupId: 'catalog', requestStatus: 'IN_PROGRESS' },
+        { _id: 'running-mixed', profileId: 2, groupId: 'catalog', requestStatus: 'IN_PROGRESS' },
+        { _id: 'retry', profileId: 2, groupId: 'orders', requestStatus: 'FAILED' },
+        { _id: 'pending', profileId: 3, groupId: 'orders', requestStatus: 'PENDING' },
+        { _id: 'done', profileId: 4, groupId: 'orders', requestStatus: 'COMPLETED' },
+    ].map(row => ({ ...row, userId: 'owner', configId, selectedSyncDays: 30 }));
+    const query = (rows) => {
+        const chain = { populate: () => chain, sort: () => chain, select: () => chain, lean: async () => rows };
+        return chain;
+    };
+    const list = loadExport(organization, 'getAllOrganizationsForSuperAdmin', {
+        ROLES,
+        organizationSchema: { find: () => query([{ _id: 'org', userId: { _id: 'owner' } }]) },
+        roleBasedPermissionSchema: { find: () => query([]) },
+        profileBasedPermissionSchema: { find: () => query([]) },
+        synchronizeDetailsSchema: { find: filter => query(requests.filter(row => filter.requestStatus.$in.includes(row.requestStatus))) },
+        profileSchema: { find: () => query([]) },
+        coreGroupSchema: { find: () => query([]) },
+        write_logs() {},
+    });
+    const res = reply();
+    await list({}, res);
+    assert.equal(res.code, 200);
+    const [org] = res.body.data;
+    assert.equal(org.hasPendingSync, true);
+    assert.deepEqual(Array.from(org.pendingSyncProfiles, row => ({
+        id: row.profileId, active: row.hasInProgress, failed: row.hasFailed,
+        syncIds: Array.from(row.syncIds), statuses: Array.from(row.selectedGroups, group => group.requestStatus),
+    })), [
+        { id: 1, active: true, failed: false, syncIds: [], statuses: ['IN_PROGRESS'] },
+        { id: 2, active: true, failed: true, syncIds: ['retry'], statuses: ['IN_PROGRESS', 'FAILED'] },
+        { id: 3, active: false, failed: false, syncIds: ['pending'], statuses: ['PENDING'] },
+    ]);
+});
+
 test('saving Seller groups preserves unchanged approvals and stores choices under the selected configuration', async () => {
     const scope = { configId, profileId: 7, type: 'seller' };
     const records = [

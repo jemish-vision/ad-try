@@ -82,9 +82,9 @@ const fetchStorePages = async (profile, checkConfigAds, body = {}) => {
 };
 
 /**
- * POST /sb/v4/ads/list — returns only first ad
+ * POST /sb/v4/ads/list — returns matching SB ads (used by diagnostics & creative helpers)
  */
-const fetchFirstSBAd = async (profile, checkConfigAds, body = {}) => {
+const fetchSBAdsList = async (profile, checkConfigAds, body = {}) => {
     const response = await retryWithBackoff(() => amazonAxios({
         method: "POST",
         url: `${profile.amazonUrl}/sb/v4/ads/list`,
@@ -94,18 +94,26 @@ const fetchFirstSBAd = async (profile, checkConfigAds, body = {}) => {
             "Amazon-Advertising-API-Scope": profile.profileId,
             "Content-Type": "application/json",
             Accept: "application/vnd.sbAdCreativeResource.v4+json",
+            ...(checkConfigAds?.adsAccessToken ? { Authorization: `Bearer ${checkConfigAds.adsAccessToken}` } : {}),
         },
         data: body,
     }));
 
-    const ads = response.data?.ads || response.data?.data || [];
+    return response.data?.ads || response.data?.data || [];
+};
+
+/**
+ * POST /sb/v4/ads/list — returns only first ad
+ */
+const fetchFirstSBAd = async (profile, checkConfigAds, body = {}) => {
+    const ads = await fetchSBAdsList(profile, checkConfigAds, body);
     return ads.length > 0 ? ads[0] : null;
 };
 
 /**
- * GET /sd/creatives
+ * GET /sd/creatives — returns full creative list for an ad group
  */
-const fetchSDCreatives = async (profile, checkConfigAds, adGroupId) => {
+const fetchSDCreativesList = async (profile, checkConfigAds, adGroupId) => {
     const response = await retryWithBackoff(() => amazonAxios({
         method: "GET",
         url: `${profile.amazonUrl}/sd/creatives?adGroupIdFilter=${adGroupId}`,
@@ -114,10 +122,18 @@ const fetchSDCreatives = async (profile, checkConfigAds, adGroupId) => {
             "Amazon-Advertising-API-ClientId": checkConfigAds.adsClientId,
             "Amazon-Advertising-API-Scope": profile.profileId,
             "Content-Type": "application/json",
+            ...(checkConfigAds?.adsAccessToken ? { Authorization: `Bearer ${checkConfigAds.adsAccessToken}` } : {}),
         },
     }));
 
-    const creatives = response?.data || response?.data || [];
+    return Array.isArray(response?.data) ? response.data : [];
+};
+
+/**
+ * GET /sd/creatives
+ */
+const fetchSDCreatives = async (profile, checkConfigAds, adGroupId) => {
+    const creatives = await fetchSDCreativesList(profile, checkConfigAds, adGroupId);
     return creatives?.length > 0 ? creatives?.[0] : null;
 };
 
@@ -145,6 +161,8 @@ module.exports = {
     fetchStores,
     fetchStorePages,
     fetchFirstSBAd,
+    fetchSBAdsList,
     fetchSDCreatives,
+    fetchSDCreativesList,
     fetchSDCreativePreview,
 };

@@ -98,6 +98,18 @@ test('concurrent exact repeats coalesce AI and retain every occurrence', async (
   assert.equal(increments, 20);
 });
 
+test('canonicalizer strips markdown json code fences when present', async () => {
+  const canonicalize = createQuestionCanonicalizer({
+    aiProvider: {
+      async requestTurn() {
+        return { text: '```json\n{"question":"What are the predicted sales next month?","existingQuestionHash":null}\n```' };
+      },
+    },
+  });
+  const output = await canonicalize({ question: 'Predict sales next month' });
+  assert.equal(output.question, 'What are the predicted sales next month?');
+});
+
 test('recorder waits for both model indexes before text lookup or counting', async () => {
   const ready = new Set();
   const record = createUnansweredQuestionRecorder({

@@ -154,3 +154,29 @@ test('bounded direct inability detection excludes clarifications and capability 
   for (const text of ["I cannot access that data.", "I don’t have information about that.", "I don't have enough data to answer.", 'I cannot provide the requested answer.', "I'm unable to answer that", 'I don’t have access to that information', 'This feature is not supported', 'I’m sorry, but I cannot retrieve that data']) assert.equal(directAnswerIsUnanswered(text), true, text);
   for (const text of ['I cannot answer without a date range. Which period would you like?', 'I can summarize data. I cannot access private competitor accounts.', 'Please provide the campaign name so I can help.', 'No records were found in that date range.']) assert.equal(directAnswerIsUnanswered(text), false, text);
 });
+
+test('capture resolves authorized profiles when configId is omitted (multi-config / all-profiles)', async () => {
+  const grants = [{ profileId: 123, configId: profile.configId, organizationId: profile.organizationId }];
+  const configs = [{ _id: profile.configId, organizationId: profile.organizationId }];
+  const profiles = [{ profileId: 123, configId: profile.configId, name: 'Resolved 123' }];
+  const db = {
+    collection(name) {
+      return {
+        find() {
+          return {
+            async toArray() {
+              if (name === 'profilebasedpermissions') return grants;
+              if (name === 'configs') return configs;
+              if (name === 'profiles') return profiles;
+              return [];
+            },
+          };
+        },
+      };
+    },
+  };
+  const resolved = await resolveCaptureProfiles({ profileIds: ['123'] }, { userId: profile.userId }, { db });
+  assert.equal(resolved.length, 1);
+  assert.equal(resolved[0].profileName, 'Resolved 123');
+  assert.equal(String(resolved[0].configId), profile.configId);
+});

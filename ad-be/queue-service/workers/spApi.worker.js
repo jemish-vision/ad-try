@@ -3,7 +3,7 @@ process.env.CUSTOM_SHUTDOWN = "true";
 require("../../shared/connection");
 
 const { Worker } = require("bullmq");
-const { QUEUES } = require("../queues/queueNames");
+const { QUEUES, SP_API_TASKS } = require("../queues/queueNames");
 const { getWorkerConnection, createRedisClient, getBullMQPrefix } = require("../config/bullmq.config");
 const { createSpApiProcessor } = require("../processors/spApi.processor");
 const { WorkerHeartbeat } = require("../observability/workerHeartbeat");
@@ -14,6 +14,7 @@ const { cron_logs } = require("../../winston/cronAutomation/logger");
 let worker = null;
 let snapshotWorker = null;
 let outOfStockAdsWorker = null;
+let fcInventoryLedgerWorker = null;
 let heartbeat = null;
 let workerRedis = null;
 let heartbeatRedis = null;
@@ -34,7 +35,14 @@ async function startSpApiWorker() {
 
   const processor = createSpApiProcessor();
 
-  worker = new Worker(QUEUES.SP_API, processor, {
+  // Old queued ledger jobs would fetch today's rolling window, duplicating the new lane.
+  const processSharedJob = async (job) => {
+    if (job.data?.task === SP_API_TASKS.FC_INVENTORY_LEDGER) {
+      return { skipped: true, reason: "FC_INVENTORY_LEDGER_MOVED" };
+    }
+    return processor(job);
+  };
+  worker = new Worker(QUEUES.SP_API, processSharedJob, {
     connection: workerRedis,
     prefix: getBullMQPrefix(),
     concurrency,
@@ -60,7 +68,15 @@ async function startSpApiWorker() {
     lockDuration,
   });
 
-  for (const queueWorker of [worker, snapshotWorker, outOfStockAdsWorker]) {
+  fcInventoryLedgerWorker = new Worker(QUEUES.FC_INVENTORY_LEDGER, processor, {
+    connection: workerRedis,
+    prefix: getBullMQPrefix(),
+    concurrency: 1,
+    maxStalledCount,
+    lockDuration,
+  });
+
+  for (const queueWorker of [worker, snapshotWorker, outOfStockAdsWorker, fcInventoryLedgerWorker]) {
     queueWorker.on("active", (job) => {
       const task = job.data?.task || "UNKNOWN_TASK";
       const attempt = job.attemptsMade ? job.attemptsMade + 1 : 1;
@@ -75,6 +91,13 @@ async function startSpApiWorker() {
     queueWorker.on("completed", (job, result) => {
       const task = job.data?.task || "UNKNOWN_TASK";
       const duration = job.processedOn ? `${Date.now() - job.processedOn}` : "unknown";
+      if (result?.reason === "FC_INVENTORY_LEDGER_MOVED") {
+        cron_logs({
+          message: `[SpApiWorker] <<< SKIPPED Job ${job.id} | Task: ${task} | Reason: ${result.reason} | Current queue: ${QUEUES.FC_INVENTORY_LEDGER}`,
+          log_type: "info",
+        });
+        return;
+      }
       let detail = "";
       if (result?.dryRun) {
         detail = " (DryRun - Shadow Mode)";
@@ -105,7 +128,7 @@ async function startSpApiWorker() {
   }
 
   cron_logs({
-    message: `[SpApiWorker] Running with concurrency ${concurrency} and dedicated snapshot / out-of-stock-ads concurrency 1 (lockDuration: ${lockDuration}ms) on PID ${process.pid}`,
+    message: `[SpApiWorker] Running with concurrency ${concurrency} and dedicated snapshot / out-of-stock-ads / FC inventory ledger concurrency 1 (lockDuration: ${lockDuration}ms) on PID ${process.pid}`,
     log_type: "info",
   });
 
@@ -117,7 +140,7 @@ async function startSpApiWorker() {
         log_type: "info",
       });
       if (heartbeat) await heartbeat.stop();
-      await Promise.all([worker?.close(), snapshotWorker?.close(), outOfStockAdsWorker?.close()]);
+      await Promise.all([worker?.close(), snapshotWorker?.close(), outOfStockAdsWorker?.close(), fcInventoryLedgerWorker?.close()]);
       if (heartbeatRedis) await heartbeatRedis.quit().catch(() => {});
       if (workerRedis) await workerRedis.quit().catch(() => {});
       await closeMongoConnection();

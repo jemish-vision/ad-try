@@ -12,8 +12,9 @@ const spProductSchema = require("../models/product.model");
 const pd = require("../services/performanceDecline.service");
 
 const CACHE_TTL_SECONDS = 15 * 60;
-const DEFAULT_LIMIT = 5;
-const MAX_LIMIT = 25;
+const DEFAULT_LIMIT = 6;
+const DEFAULT_PAGE = 1;
+const MAX_LIMIT = 50;
 
 const toObjectId = (id) => (mongoose.Types.ObjectId.isValid(String(id)) ? new mongoose.Types.ObjectId(String(id)) : id);
 
@@ -26,21 +27,22 @@ async function aggregateCampaignWindows(model, base, w) {
     sales: { $sum: { $ifNull: ["$sales", 0] } },
     orders: { $sum: { $ifNull: ["$orders", 0] } },
   };
+  // Index-optimized: match -> sort by reportDate -1 (covered by { configId, profileId, reportDate: -1, ... })
+  // Group evaluates isCurrent on the fly without an intermediate $project projection stage.
   const rows = await model
     .aggregate([
       { $match: { ...base, reportDate: { $gte: w.prior.start, $lte: w.current.end } } },
-      { $project: { campaignId: 1, name: 1, status: 1, reportDate: 1, budget: 1, budgetType: 1, targetingType: 1, startDate: 1, endDate: 1, timeInBudget: 1, impressions: 1, clicks: 1, spend: 1, sales: 1, orders: 1, isCurrent: { $gte: ["$reportDate", w.current.start] } } },
-      { $sort: { reportDate: 1 } },
+      { $sort: { reportDate: -1 } },
       {
         $group: {
-          _id: { campaignId: "$campaignId", isCurrent: "$isCurrent" },
-          name: { $last: "$name" },
-          status: { $last: "$status" },
-          budget: { $last: "$budget" },
-          budgetType: { $last: "$budgetType" },
-          targetingType: { $last: "$targetingType" },
-          startDate: { $last: "$startDate" },
-          endDate: { $last: "$endDate" },
+          _id: { campaignId: "$campaignId", isCurrent: { $gte: ["$reportDate", w.current.start] } },
+          name: { $first: "$name" },
+          status: { $first: "$status" },
+          budget: { $first: "$budget" },
+          budgetType: { $first: "$budgetType" },
+          targetingType: { $first: "$targetingType" },
+          startDate: { $first: "$startDate" },
+          endDate: { $first: "$endDate" },
           // Missing / 0 means Amazon didn't report it for that day.
           timeInBudget: { $avg: { $cond: [{ $and: [{ $gt: ["$timeInBudget", 0] }, { $lte: ["$timeInBudget", 100] }] }, "$timeInBudget", null] } },
           ...sumFields,
@@ -131,25 +133,27 @@ async function budgetHistory(configId, profileId, campaignIds, w) {
   return new Map(rows.map((r) => [r._id, r]));
 }
 
-/** Build the full payload for one profile (all requested ad types). Exported for tests. */
-async function buildPerformanceDeclinePayload({ configId, profileId, adTypes, modelsByType, windowDays, limit, timezone, now }) {
-  const w = pd.buildEvaluationWindows(windowDays, timezone, now);
+/** Computes all declining campaigns and their root causes for a profile across the windows. */
+async function computeAllPerformanceDeclineAlerts({ configId, profileId, adTypes, modelsByType, windowDays, customRange = null, timezone, now }) {
+  const w = pd.buildEvaluationWindows(windowDays, timezone, now, customRange);
   const base = { configId, profileId };
 
-  // 1. Campaign totals per window, per ad type
-  const perType = await Promise.all(
-    adTypes.map(async (adType) => {
-      const models = modelsByType[adType] || {};
-      if (!models.adTypeCampaignSchema) return [];
-      const list = await aggregateCampaignWindows(models.adTypeCampaignSchema, base, w);
-      return list.map((c) => ({ ...c, adType }));
-    }),
-  );
+  // 1. Campaign totals per window (per ad type) and target ACoS setting in parallel
+  const [perType, setting] = await Promise.all([
+    Promise.all(
+      adTypes.map(async (adType) => {
+        const models = modelsByType[adType] || {};
+        if (!models.adTypeCampaignSchema) return [];
+        const list = await aggregateCampaignWindows(models.adTypeCampaignSchema, base, w);
+        return list.map((c) => ({ ...c, adType }));
+      }),
+    ),
+    camapignSettingSchema.findOne({ configId, profileId }).select("targetAcos").lean().catch(() => null),
+  ]);
 
-  const setting = await camapignSettingSchema.findOne({ configId, profileId }).select("targetAcos").lean().catch(() => null);
   const targetAcos = Number(setting?.targetAcos) > 0 ? Number(setting.targetAcos) : null;
 
-  // 2. Enough earlier volume, compute deltas
+  // 2. Filter campaigns with enough volume and compute metric deltas
   const candidates = perType
     .flat()
     .filter((c) => c.prior && pd.hasEnoughVolume(c.prior))
@@ -158,7 +162,7 @@ async function buildPerformanceDeclinePayload({ configId, profileId, adTypes, mo
   const allIds = candidates.map((c) => c.campaignId);
   const budget = await budgetHistory(configId, profileId, allIds, w);
 
-  // 3. Pattern per campaign
+  // 3. Classify pattern per campaign
   const flagged = [];
   for (const c of candidates) {
     const hist = budget.get(c.campaignId);
@@ -169,10 +173,16 @@ async function buildPerformanceDeclinePayload({ configId, profileId, adTypes, mo
   }
 
   if (!flagged.length) {
-    return { windowDays: w.windowDays, evaluationWindow: { current: w.current, prior: w.prior, bufferedDays: w.bufferedDays }, summary: pd.summarize([]), alerts: [], targetAcos };
+    return {
+      windowDays: w.windowDays,
+      evaluationWindow: { current: w.current, prior: w.prior, bufferedDays: w.bufferedDays, isCustom: Boolean(w.isCustom) },
+      summary: pd.summarize([]),
+      allAlerts: [],
+      targetAcos,
+    };
   }
 
-  // 4. Evidence for the flagged campaigns only
+  // 4. Evidence collection for flagged campaigns only
   const flaggedIds = flagged.map((c) => c.campaignId);
   const idsByType = flagged.reduce((acc, c) => ({ ...acc, [c.adType]: [...(acc[c.adType] || []), c.campaignId] }), {});
   const historyFrom = moment.tz(w.current.start, timezone || "UTC").subtract(pd.THRESHOLDS.HISTORY_LOOKBACK_DAYS, "days").startOf("day").toDate();
@@ -190,7 +200,10 @@ async function buildPerformanceDeclinePayload({ configId, profileId, adTypes, mo
     Promise.all(Object.entries(idsByType).map(([t, ids]) => campaignAsins(modelsByType[t]?.adTypeProductAdsSchema, base, ids, w))),
     Promise.all(
       Object.entries(idsByType).map(([t, ids]) => {
-        const limits = new Map(flagged.filter((c) => c.adType === t && ids.includes(c.campaignId)).map((c) => [c.campaignId, pd.wasteSpendLimit(c.metrics)]));
+        // Optimization: Wasted search terms are only relevant for BLEEDING_AD campaigns
+        const bleeding = flagged.filter((c) => c.adType === t && ids.includes(c.campaignId) && c.pattern === "BLEEDING_AD");
+        if (!bleeding.length) return new Map();
+        const limits = new Map(bleeding.map((c) => [c.campaignId, pd.wasteSpendLimit(c.metrics)]));
         return wastedSearchTerms(modelsByType[t]?.adTypeSearchTermSchema, base, limits, w);
       }),
     ),
@@ -243,7 +256,6 @@ async function buildPerformanceDeclinePayload({ configId, profileId, adTypes, mo
   const alerts = flagged.map((c) => {
     const asinInfo = asinByCampaign.get(c.campaignId);
     const asins = asinInfo?.asins || [];
-    // Our own product evidence: the first ASIN that shows a price rise or Buy Box loss, else the main one.
     let own = null;
     for (const a of asins) {
       const s = pd.summarizeOwnSnapshots(ownByAsin.get(a) || [], w);
@@ -299,16 +311,55 @@ async function buildPerformanceDeclinePayload({ configId, profileId, adTypes, mo
   pd.sortAlerts(alerts);
   return {
     windowDays: w.windowDays,
-    evaluationWindow: { current: w.current, prior: w.prior, bufferedDays: w.bufferedDays },
+    evaluationWindow: { current: w.current, prior: w.prior, bufferedDays: w.bufferedDays, isCustom: Boolean(w.isCustom) },
     summary: pd.summarize(alerts),
-    alerts: alerts.slice(0, limit),
+    allAlerts: alerts,
     targetAcos,
   };
 }
 
+/** Formats and paginates a computed dataset according to page, limit, and severity */
+function paginateAndFilterPayload(fullData, { page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, severity = null } = {}) {
+  const normalizedSeverity = severity && ["CRITICAL", "WARNING"].includes(String(severity).toUpperCase())
+    ? String(severity).toUpperCase()
+    : null;
+  const eligibleAlerts = normalizedSeverity
+    ? (fullData.allAlerts || []).filter((a) => a.severity === normalizedSeverity)
+    : (fullData.allAlerts || []);
+
+  const totalRecords = eligibleAlerts.length;
+  const totalPages = Math.ceil(totalRecords / limit) || 1;
+  const currentPage = Math.max(1, Math.min(page, totalPages));
+  const startIndex = (currentPage - 1) * limit;
+  const paginatedAlerts = eligibleAlerts.slice(startIndex, startIndex + limit);
+
+  return {
+    windowDays: fullData.windowDays,
+    evaluationWindow: fullData.evaluationWindow,
+    summary: fullData.summary,
+    alerts: paginatedAlerts,
+    activeSeverity: normalizedSeverity,
+    pagination: {
+      page: currentPage,
+      limit,
+      totalRecords,
+      totalPages,
+      hasNextPage: currentPage < totalPages,
+      hasPrevPage: currentPage > 1,
+    },
+    targetAcos: fullData.targetAcos,
+  };
+}
+
+/** Build the full payload for one profile (all requested ad types). Exported for tests. */
+async function buildPerformanceDeclinePayload({ configId, profileId, adTypes, modelsByType, windowDays, customRange = null, page = DEFAULT_PAGE, limit = DEFAULT_LIMIT, severity = null, timezone, now }) {
+  const fullData = await computeAllPerformanceDeclineAlerts({ configId, profileId, adTypes, modelsByType, windowDays, customRange, timezone, now });
+  return paginateAndFilterPayload(fullData, { page, limit, severity });
+}
+
 /**
  * Dashboard: campaigns whose performance fell versus the period before, with the likely cause.
- * Body: { profileId, windowDays: 7 | 14 | 30 (default 14), limit (default 5), refresh, currencyCode, marketplace }
+ * Body: { profileId, windowDays: 7 | 14 | 30 (default 14), startDate, endDate, page (default 1), limit (default 6), severity: 'CRITICAL' | 'WARNING' | null, refresh, currencyCode, marketplace }
  * Ad type comes from the adType header (SP / SB / SD / All) via AdTypeModels.
  */
 exports.getPerformanceDeclineAlerts = async (req, res) => {
@@ -318,35 +369,68 @@ exports.getPerformanceDeclineAlerts = async (req, res) => {
     if (!configId || !profileId) return res.status(203).json({ isSuccess: false, message: "Profile Id is required" });
 
     const windowDays = pd.normalizeWindow(req.body?.windowDays);
-    const limit = Math.min(MAX_LIMIT, Math.max(1, parseInt(req.body?.limit, 10) || DEFAULT_LIMIT));
+    const startDate = req.body?.startDate ? String(req.body.startDate).trim() : null;
+    const endDate = req.body?.endDate ? String(req.body.endDate).trim() : null;
+    const customRange = startDate && endDate ? { startDate, endDate } : null;
+
+    const limit = Math.min(MAX_LIMIT, Math.max(1, parseInt(req.body?.limit || req.body?.perPage, 10) || DEFAULT_LIMIT));
+    const page = Math.max(1, parseInt(req.body?.page || req.body?.pageNo, 10) || DEFAULT_PAGE);
+    const severity = req.body?.severity && ["CRITICAL", "WARNING"].includes(String(req.body.severity).toUpperCase())
+      ? String(req.body.severity).toUpperCase()
+      : null;
     const adTypes = req.adTypes?.length ? req.adTypes : ["SP"];
     const modelsByType = req.modelsByType || { [adTypes[0]]: req.models || {} };
 
     if (req.user?.isMockUser || req.isMockTestingUser) {
-      const w = pd.buildEvaluationWindows(windowDays, "UTC");
-      return res.status(200).json({ isSuccess: true, message: "Performance decline alerts retrieved successfully", data: { windowDays, evaluationWindow: { current: w.current, prior: w.prior, bufferedDays: w.bufferedDays }, summary: pd.summarize([]), alerts: [], targetAcos: null } });
+      const w = pd.buildEvaluationWindows(windowDays, "UTC", new Date(), customRange);
+      return res.status(200).json({
+        isSuccess: true,
+        message: "Performance decline alerts retrieved successfully",
+        data: {
+          windowDays: w.windowDays,
+          evaluationWindow: { current: w.current, prior: w.prior, bufferedDays: w.bufferedDays, isCustom: w.isCustom },
+          summary: pd.summarize([]),
+          alerts: [],
+          activeSeverity: severity,
+          pagination: { page: 1, limit, totalRecords: 0, totalPages: 1, hasNextPage: false, hasPrevPage: false },
+          targetAcos: null,
+        },
+      });
     }
 
     const profile = await profileSchema.findOne({ configId, profileId }).select("timezone").lean();
     const timezone = profile?.timezone || "UTC";
     const today = moment.tz(timezone).format("YYYY-MM-DD");
-    const cacheKey = `perf_decline:${configId}:${profileId}:${adTypes.join("+")}:${windowDays}:${limit}:${today}`;
+    // Shared cache key for the profile + window/custom range + adType + day
+    const rangeKey = customRange ? `custom_${startDate}_${endDate}` : `${windowDays}`;
+    const cacheKey = `perf_decline_all:${configId}:${profileId}:${adTypes.join("+")}:${rangeKey}:${today}`;
 
+    let fullData = null;
     // refresh: true (the card's refresh button) skips the cached copy and recomputes.
     if (!req.body?.refresh) {
       try {
         const cached = await getCacheWithLog(cacheKey);
-        if (cached) return res.status(200).json(typeof cached === "string" ? JSON.parse(cached) : cached);
+        if (cached) fullData = typeof cached === "string" ? JSON.parse(cached) : cached;
       } catch (_) {}
     }
 
-    const data = await buildPerformanceDeclinePayload({ configId: toObjectId(configId), profileId, adTypes, modelsByType, windowDays, limit, timezone });
-    const payload = { isSuccess: true, message: "Performance decline alerts retrieved successfully", data };
+    if (!fullData) {
+      fullData = await computeAllPerformanceDeclineAlerts({
+        configId: toObjectId(configId),
+        profileId,
+        adTypes,
+        modelsByType,
+        windowDays,
+        customRange,
+        timezone,
+      });
+      try {
+        await setCacheWithLog(cacheKey, JSON.stringify(fullData), CACHE_TTL_SECONDS);
+      } catch (_) {}
+    }
 
-    try {
-      await setCacheWithLog(cacheKey, JSON.stringify(payload), CACHE_TTL_SECONDS);
-    } catch (_) {}
-    return res.status(200).json(payload);
+    const data = paginateAndFilterPayload(fullData, { page, limit, severity });
+    return res.status(200).json({ isSuccess: true, message: "Performance decline alerts retrieved successfully", data });
   } catch (err) {
     write_logs?.error?.(`[getPerformanceDeclineAlerts Error] ${err.message}`);
     return res.status(500).json({ isSuccess: false, message: err.message || "Internal server error occurred" });

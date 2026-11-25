@@ -186,6 +186,26 @@ function createHourlySyncProcessor() {
       }
     }
 
+    if (task === SYNC_TASKS.AD_BLACKOUT_MONITOR) {
+      const { isShadowModeEnabled } = require("../../shared/automationMode");
+      const rawTimeBlock = (timeBlock || "").replace(/^shadow-/, "");
+      const jobTime = moment.utc(rawTimeBlock, "YYYYMMDDTHHZ").isValid()
+        ? moment.utc(rawTimeBlock, "YYYYMMDDTHHZ")
+        : moment.utc(scheduledFor);
+
+      if (jobTime.isValid() && moment.utc().diff(jobTime, "hours") >= 2) {
+        return { skipped: true, reason: "JOB_STALE_EXPIRED", timeBlock, task, profileId };
+      }
+
+      const { evaluateProfileBlackouts } = require("../../api-server/services/adBlackoutDetector.service");
+      return await evaluateProfileBlackouts({
+        configId,
+        profileId,
+        scheduledFor,
+        dryRun: isShadowModeEnabled(),
+      });
+    }
+
     // Proactively discard stale sync jobs scheduled more than 6 hours ago
     const rawTimeBlock = (timeBlock || "").replace(/^shadow-/, "");
     const jobTime = moment.utc(rawTimeBlock, "YYYYMMDDTHHZ").isValid()

@@ -20,20 +20,49 @@ function objectId(value) {
 async function resolveCaptureProfiles(input, context, { db = mongoose.connection.readyState === 1 ? mongoose.connection.db : null } = {}) {
   if (!db) return [];
   const userId = objectId(context.userId);
-  const configId = objectId(context.configId);
-  if (!userId || !configId) return [];
+  const explicitConfigId = objectId(context.configId);
+  if (!userId) return [];
   const supplied = input.profileIds || context.profileIds || [];
   const ids = [...new Set((Array.isArray(supplied) ? supplied : []).map(String))];
   if (!ids.length || ids.length > 20 || ids.some(id => !/^[1-9]\d*$/.test(id) || !Number.isSafeInteger(Number(id)))) return [];
-  const config = await db.collection('configs').findOne({ _id: configId, isActive: true }, { projection: { organizationId: 1 }, maxTimeMS: 2000 });
-  const organizationId = objectId(config?.organizationId);
-  if (!organizationId || (context.organizationId && String(context.organizationId) !== String(organizationId))) return [];
-  const grants = await db.collection('profilebasedpermissions').find({ userId, configId, organizationId, profileId: { $in: ids.map(Number) }, hasAccess: true }, { projection: { profileId: 1 }, maxTimeMS: 2000 }).toArray();
-  const allowed = new Set(grants.map(grant => String(grant.profileId)));
-  if (ids.some(id => !allowed.has(id))) return [];
-  const profiles = await db.collection('profiles').find({ configId, profileId: { $in: ids.map(Number) }, isActive: true }, { projection: { profileId: 1, name: 1, profileName: 1 }, maxTimeMS: 2000 }).toArray();
-  if (profiles.length !== ids.length) return [];
-  return profiles.map(profile => ({ profileId: String(profile.profileId), profileName: profile.name || profile.profileName || '', userId, configId, organizationId }));
+  const numericIds = ids.map(Number);
+
+  if (explicitConfigId) {
+    const config = await db.collection('configs').findOne({ _id: explicitConfigId, isActive: true }, { projection: { organizationId: 1 }, maxTimeMS: 2000 });
+    const organizationId = objectId(config?.organizationId);
+    if (!organizationId || (context.organizationId && String(context.organizationId) !== String(organizationId))) return [];
+    const grants = await db.collection('profilebasedpermissions').find({ userId, configId: explicitConfigId, organizationId, profileId: { $in: numericIds }, hasAccess: true }, { projection: { profileId: 1 }, maxTimeMS: 2000 }).toArray();
+    const allowed = new Set(grants.map(grant => String(grant.profileId)));
+    if (ids.some(id => !allowed.has(id))) return [];
+    const profiles = await db.collection('profiles').find({ configId: explicitConfigId, profileId: { $in: numericIds }, isActive: true }, { projection: { profileId: 1, name: 1, profileName: 1 }, maxTimeMS: 2000 }).toArray();
+    if (profiles.length !== ids.length) return [];
+    return profiles.map(profile => ({ profileId: String(profile.profileId), profileName: profile.name || profile.profileName || '', userId, configId: explicitConfigId, organizationId }));
+  }
+
+  // Fallback when no single x-config-id is scoped (e.g. All Profiles view)
+  const explicitOrgId = objectId(context.organizationId);
+  const grantFilter = { userId, ...(explicitOrgId ? { organizationId: explicitOrgId } : {}), profileId: { $in: numericIds }, hasAccess: true };
+  const grants = await db.collection('profilebasedpermissions').find(grantFilter, { projection: { profileId: 1, configId: 1, organizationId: 1 }, maxTimeMS: 2000 }).toArray();
+  const grantByProfile = new Map();
+  for (const grant of grants) {
+    const pid = String(grant.profileId);
+    if (!grantByProfile.has(pid) && grant.configId) grantByProfile.set(pid, grant);
+  }
+  if (ids.some(id => !grantByProfile.has(id))) return [];
+  const configIds = [...new Set([...grantByProfile.values()].map(g => String(g.configId)))].map(objectId).filter(Boolean);
+  if (!configIds.length) return [];
+  const configs = await db.collection('configs').find({ _id: { $in: configIds }, isActive: true }, { projection: { organizationId: 1 }, maxTimeMS: 2000 }).toArray();
+  const configOrgMap = new Map(configs.map(c => [String(c._id), objectId(c.organizationId)]));
+  const profiles = await db.collection('profiles').find({ configId: { $in: configIds }, profileId: { $in: numericIds }, isActive: true }, { projection: { profileId: 1, configId: 1, name: 1, profileName: 1 }, maxTimeMS: 2000 }).toArray();
+  const resolved = [];
+  for (const id of ids) {
+    const grant = grantByProfile.get(id);
+    const prof = profiles.find(p => String(p.profileId) === id && String(p.configId) === String(grant?.configId));
+    const orgId = prof ? configOrgMap.get(String(prof.configId)) : null;
+    if (!prof || !orgId || (explicitOrgId && String(explicitOrgId) !== String(orgId))) return [];
+    resolved.push({ profileId: id, profileName: prof.name || prof.profileName || '', userId, configId: prof.configId, organizationId: orgId });
+  }
+  return resolved;
 }
 
 function createUnansweredQuestionRecorder({ model = Model, variantModel = VariantModel, canonicalizeQuestion = defaultCanonicalize, resolveProfiles = resolveCaptureProfiles, now = () => new Date(), logger = console } = {}) {

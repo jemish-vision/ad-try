@@ -1,5 +1,4 @@
-import * as dotenv from "dotenv";
-dotenv.config();
+import "dotenv/config";
 
 import mongoose from "mongoose";
 import { SQSClient, ReceiveMessageCommand, DeleteMessageBatchCommand } from "@aws-sdk/client-sqs";

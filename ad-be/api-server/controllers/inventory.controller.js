@@ -753,9 +753,49 @@ const processReportFileStream = async (
     });
 }
 
-const buildInventoryBasePipeline = (req) => {
+const escapeInventoryRegex = (s) => (
+    typeof RegExp.escape === "function"
+        ? RegExp.escape(String(s))
+        : String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+);
+
+const computeInventoryStatus = (totalStock, daysLeft) => {
+    if (totalStock <= 0) return "OUT_OF_STOCK";
+    if (daysLeft > 0 && daysLeft <= 5) return "LOW";
+    if (daysLeft > 5 && daysLeft <= 15) return "MEDIUM";
+    return "HEALTHY";
+};
+
+const computeAgingBucket = (daysLeft) => {
+    if (daysLeft <= 30) return "30";
+    if (daysLeft <= 60) return "60";
+    if (daysLeft <= 90) return "90";
+    return "180+";
+};
+
+const compareInventoryValues = (aVal, bVal, asc) => {
+    const dir = asc ? 1 : -1;
+    const aNull = aVal === undefined || aVal === null;
+    const bNull = bVal === undefined || bVal === null;
+    if (aNull && bNull) return 0;
+    if (aNull) return -1 * dir;
+    if (bNull) return 1 * dir;
+    if (typeof aVal === "number" && typeof bVal === "number") {
+        return (aVal - bVal) * dir;
+    }
+    const aStr = String(aVal);
+    const bStr = String(bVal);
+    if (aStr < bStr) return -1 * dir;
+    if (aStr > bStr) return 1 * dir;
+    return 0;
+};
+
+const fetchEnrichedInventoryRows = async (req, { includeProductData = true, applyFulfillmentFilter = true } = {}) => {
     const configId = req?.config?.configId;
-    const configObjectId = configId && mongoose.Types.ObjectId.isValid(configId) ? new mongoose.Types.ObjectId(configId) : configId;
+    const configObjectId = configId && mongoose.Types.ObjectId.isValid(configId)
+        ? new mongoose.Types.ObjectId(configId)
+        : configId;
+
     let {
         profileId,
         fulfillmentType,
@@ -765,161 +805,247 @@ const buildInventoryBasePipeline = (req) => {
         fieldOperator,
         fieldValue,
         fromDate,
-        toDate
+        toDate,
     } = req.body;
 
+    const numericProfileId = Number(profileId);
     toDate = toDate || moment().format("YYYY-MM-DD");
     fromDate = fromDate || moment().subtract(7, "days").format("YYYY-MM-DD");
-
     const totalDays = Math.max(moment(toDate).diff(moment(fromDate), "days"), 1);
 
-    const filter = {
-        configId,
-        profileId: Number(profileId),
-        ...(fulfillmentType && { fulfillmentType }),
+    const baseFilter = {
+        ...(configObjectId ? { configId: configObjectId } : {}),
+        profileId: numericProfileId,
+        ...(applyFulfillmentFilter && fulfillmentType ? { fulfillmentType } : {}),
     };
 
-    let extraMatchStage = null;
+    let inventoryFilter = baseFilter;
     if (fieldName && fieldOperator && fieldValue !== undefined) {
-        extraMatchStage = buildFieldFilter(fieldName, fieldOperator, fieldValue);
+        const extraMatchStage = buildFieldFilter(fieldName, fieldOperator, fieldValue);
+        if (extraMatchStage && Object.keys(extraMatchStage).length > 0) {
+            inventoryFilter = { $and: [baseFilter, extraMatchStage] };
+        }
     }
 
-    return [
-        { $match: filter },
-        ...(extraMatchStage ? [{ $match: extraMatchStage }] : []),
-        {
-            $lookup: {
-                from: "product_ads",
-                localField: "sku",
-                foreignField: "sku",
-                pipeline: [
-                    { $match: { profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } } },
-                    { $group: { _id: null, totalSales: { $sum: "$orders" } } }
-                ],
-                as: "salesData"
-            }
-        },
-        { $unwind: { path: "$salesData", preserveNullAndEmptyArrays: true } },
-        { $addFields: { salesPerDay: { $cond: [{ $gt: ["$salesData.totalSales", 0] }, { $ceil: { $divide: ["$salesData.totalSales", totalDays] } }, 0] } } },
-        { $addFields: { daysLeft: { $cond: [{ $gt: ["$salesPerDay", 0] }, { $round: [{ $divide: ["$totalStock", "$salesPerDay"] }, 0] }, 30] } } },
-        {
-            $addFields: {
-                status: {
-                    $switch: {
-                        branches: [
-                            { case: { $lte: ["$totalStock", 0] }, then: "OUT_OF_STOCK" },
-                            { case: { $and: [{ $gt: ["$daysLeft", 0] }, { $lte: ["$daysLeft", 5] }] }, then: "LOW" },
-                            { case: { $and: [{ $gt: ["$daysLeft", 5] }, { $lte: ["$daysLeft", 15] }] }, then: "MEDIUM" }
-                        ],
-                        default: "HEALTHY"
-                    }
-                }
-            }
-        },
-        {
-            $lookup: {
-                from: "productlistings",
-                let: { asin: "$asin", sku: "$sku" },
-                pipeline: [
-                    { $match: { $expr: { $or: [{ $eq: ["$asin", "$$asin"] }, { $eq: ["$sku", "$$sku"] }] } } },
-                    { $sort: { reportDate: -1 } },
-                    { $limit: 1 },
-                    { $project: { title: "$itemName", imageUrl: "$imageURL" } }
-                ],
-                as: "productData"
-            }
-        },
-        { $unwind: { path: "$productData", preserveNullAndEmptyArrays: true } },
-        ...(searchName ? [{
-            $match: {
-                $or: [
-                    { sku: { $regex: new RegExp(RegExp.escape(`${searchName}`?.trim()), "i") } },
-                    { asin: { $regex: new RegExp(RegExp.escape(`${searchName}`?.trim()), "i") } },
-                    { "productData.title": { $regex: new RegExp(RegExp.escape(`${searchName}`?.trim()), "i") } }
-                ]
-            }
-        }] : []),
-        // ── Filter by status (supports DEAD_INVENTORY via deadInventoryStatus field) ──
-        ...(status === "DEAD_INVENTORY"
-            ? [{ $match: { deadInventoryStatus: "DEAD" } }]
-            : status ? [{ $match: { status } }] : []),
-        // ── Aging bucket field (computed from daysLeft) ────────────────────────
-        {
-            $addFields: {
-                agingBucket: {
-                    $switch: {
-                        branches: [
-                            { case: { $lte: ["$daysLeft", 30] }, then: "30" },
-                            { case: { $lte: ["$daysLeft", 60] }, then: "60" },
-                            { case: { $lte: ["$daysLeft", 90] }, then: "90" },
-                        ],
-                        default: "180+"
-                    }
-                }
-            }
-        },
-    ];
+    const needsListings = Boolean(includeProductData || (searchName && String(searchName).trim()));
+    const productAdsMatch = {
+        ...(configObjectId ? { configId: configObjectId } : {}),
+        profileId: numericProfileId,
+        reportDate: { $gte: fromDate, $lte: toDate },
+        sku: { $ne: null },
+    };
+
+    const [inventoryDocs, salesAgg, listingDocs] = await Promise.all([
+        inventorySchema.find(inventoryFilter, {
+            sku: 1,
+            asin: 1,
+            fulfillmentType: 1,
+            currentStock: 1,
+            inboundStock: 1,
+            reservedStock: 1,
+            totalStock: 1,
+            deadInventoryStatus: 1,
+            suggestion: 1,
+        }).lean(),
+        productAdsSchema.aggregate([
+            { $match: productAdsMatch },
+            { $group: { _id: "$sku", totalSales: { $sum: "$orders" } } },
+        ]),
+        needsListings
+            ? productListingSchema.find(
+                { ...(configObjectId ? { configId: configObjectId } : {}), profileId: numericProfileId },
+                { asin: 1, sku: 1, itemName: 1, imageURL: 1 }
+            ).lean()
+            : Promise.resolve([]),
+    ]);
+
+    const salesBySku = new Map();
+    for (const s of salesAgg) {
+        if (s._id != null) salesBySku.set(s._id, s.totalSales || 0);
+    }
+
+    const listingByAsin = new Map();
+    const listingBySku = new Map();
+    for (const l of listingDocs) {
+        if (l.asin && !listingByAsin.has(l.asin)) listingByAsin.set(l.asin, l);
+        if (l.sku && !listingBySku.has(l.sku)) listingBySku.set(l.sku, l);
+    }
+
+    const searchRegex = searchName && String(searchName).trim()
+        ? new RegExp(escapeInventoryRegex(String(searchName).trim()), "i")
+        : null;
+
+    const enriched = [];
+    for (const doc of inventoryDocs) {
+        const totalSales = (doc.sku && salesBySku.get(doc.sku)) || 0;
+        const salesPerDay = totalSales > 0 ? Math.ceil(totalSales / totalDays) : 0;
+        const totalStockNum = Number(doc.totalStock) || 0;
+        const daysLeft = salesPerDay > 0 ? Math.round(totalStockNum / salesPerDay) : 30;
+        const computedStatus = computeInventoryStatus(totalStockNum, daysLeft);
+
+        if (status === "DEAD_INVENTORY") {
+            if (doc.deadInventoryStatus !== "DEAD") continue;
+        } else if (status && computedStatus !== status) {
+            continue;
+        }
+
+        const listing = (doc.asin && listingByAsin.get(doc.asin)) || (doc.sku && listingBySku.get(doc.sku)) || null;
+        const title = listing?.itemName;
+        const image = listing?.imageURL;
+
+        if (searchRegex) {
+            const matched =
+                (doc.sku && searchRegex.test(doc.sku)) ||
+                (doc.asin && searchRegex.test(doc.asin)) ||
+                (title && searchRegex.test(title));
+            if (!matched) continue;
+        }
+
+        enriched.push({
+            sku: doc.sku,
+            asin: doc.asin,
+            fulfillmentType: doc.fulfillmentType,
+            status: computedStatus,
+            currentStock: doc.currentStock,
+            inboundStock: doc.inboundStock,
+            reservedStock: doc.reservedStock,
+            totalStock: doc.totalStock,
+            salesPerDay: Math.round(salesPerDay * 100) / 100,
+            daysLeft,
+            title,
+            image,
+            agingBucket: computeAgingBucket(daysLeft),
+            deadInventoryStatus: doc.deadInventoryStatus,
+            suggestion: doc.suggestion,
+        });
+    }
+
+    return enriched;
+};
+
+const summarizeInventoryCards = (rows, filterFulfillmentType, includeDeadCount = true) => {
+    const globalStats = {
+        totalSKUs: 0,
+        fbaStock: 0,
+        fbmStock: 0,
+        totalFBASkus: 0,
+        totalFBMSkus: 0,
+    };
+    const filteredStats = {
+        alertCount: 0,
+        outOfStockCount: 0,
+        lowStockCount: 0,
+        mediumStockCount: 0,
+        healthyCount: 0,
+        ...(includeDeadCount ? { deadInventoryCount: 0 } : {}),
+    };
+
+    for (const r of rows) {
+        globalStats.totalSKUs += 1;
+        const currentStock = Number(r.currentStock) || 0;
+        if (r.fulfillmentType === "FBA") {
+            globalStats.fbaStock += currentStock;
+            globalStats.totalFBASkus += 1;
+        } else if (r.fulfillmentType === "FBM") {
+            globalStats.fbmStock += currentStock;
+            globalStats.totalFBMSkus += 1;
+        }
+
+        if (filterFulfillmentType && r.fulfillmentType !== filterFulfillmentType) continue;
+
+        if (r.status === "OUT_OF_STOCK") {
+            filteredStats.outOfStockCount += 1;
+            filteredStats.alertCount += 1;
+        } else if (r.status === "LOW") {
+            filteredStats.lowStockCount += 1;
+            filteredStats.alertCount += 1;
+        } else if (r.status === "MEDIUM") {
+            filteredStats.mediumStockCount += 1;
+            filteredStats.alertCount += 1;
+        } else if (r.status === "HEALTHY") {
+            filteredStats.healthyCount += 1;
+        }
+
+        if (includeDeadCount && r.deadInventoryStatus === "DEAD") {
+            filteredStats.deadInventoryCount += 1;
+        }
+    }
+
+    return { ...globalStats, ...filteredStats };
+};
+
+const buildInventoryChartData = (rows) => {
+    const byType = new Map();
+    for (const r of rows) {
+        const key = r.fulfillmentType ?? null;
+        let bucket = byType.get(key);
+        if (!bucket) {
+            bucket = {
+                fulfillmentType: key,
+                currentStock: 0,
+                inboundStock: 0,
+                reservedStock: 0,
+                totalStock: 0,
+                daysLeftSum: 0,
+                skuCount: 0,
+            };
+            byType.set(key, bucket);
+        }
+        bucket.currentStock += Number(r.currentStock) || 0;
+        bucket.inboundStock += Number(r.inboundStock) || 0;
+        bucket.reservedStock += Number(r.reservedStock) || 0;
+        bucket.totalStock += Number(r.totalStock) || 0;
+        bucket.daysLeftSum += Number(r.daysLeft) || 0;
+        bucket.skuCount += 1;
+    }
+
+    return Array.from(byType.values())
+        .map((b) => ({
+            fulfillmentType: b.fulfillmentType,
+            currentStock: b.currentStock,
+            inboundStock: b.inboundStock,
+            reservedStock: b.reservedStock,
+            totalStock: b.totalStock,
+            avgDaysLeft: b.skuCount > 0 ? Math.round((b.daysLeftSum / b.skuCount) * 10) / 10 : 0,
+            skuCount: b.skuCount,
+        }))
+        .sort((a, b) => compareInventoryValues(a.fulfillmentType, b.fulfillmentType, true));
+};
+
+const sortAndPaginateInventory = (rows, { pageNo = 1, perPage = 10, fieldName, sortType, defaultSortField = "title", defaultAsc = true }) => {
+    const sortField = sortType && fieldName ? fieldName : defaultSortField;
+    const asc = sortType ? sortType === "ASC" : defaultAsc;
+    const sorted = [...rows].sort((a, b) => compareInventoryValues(a[sortField], b[sortField], asc));
+    const page = Math.max(Number(pageNo) || 1, 1);
+    const limitPerPage = Math.max(Number(perPage) || 10, 1);
+    const start = (page - 1) * limitPerPage;
+    return {
+        totalRecords: sorted.length,
+        data: sorted.slice(start, start + limitPerPage),
+        currentPageNo: page,
+        totalPages: Math.ceil(sorted.length / limitPerPage),
+    };
 };
 
 exports.getInventoryList = async (req, res) => {
     if (req.user?.isMockUser) return require("../services/mockTestingData.service").getInventoryList(req, res);
     try {
-
-        let {
+        const {
             pageNo = 1,
             perPage = 10,
             fieldName,
             sortType,
         } = req.body;
 
-        const basePipeline = buildInventoryBasePipeline(req);
-
-        const pipeline = [
-            ...basePipeline,
-            {
-                $project: {
-                    _id: 0,
-                    sku: 1,
-                    asin: 1,
-                    fulfillmentType: 1,
-                    status: 1,
-                    currentStock: 1,
-                    inboundStock: 1,
-                    reservedStock: 1,
-                    totalStock: 1,
-                    salesPerDay: { $round: ["$salesPerDay", 2] },
-                    daysLeft: 1,
-                    title: "$productData.title",
-                    image: "$productData.imageUrl",
-                    // Aging Tracker fields
-                    agingBucket: 1,
-                    deadInventoryStatus: 1,
-                    suggestion: 1,
-                }
-            },
-            ...(sortType
-                ? [{ $sort: { [fieldName]: sortType === "ASC" ? 1 : -1 } }]
-                : [{ $sort: { title: 1 } }]
-            ),
-            {
-                $facet: {
-                    metadata: [{ $count: "total" }],
-                    data: [{ $skip: (pageNo - 1) * perPage }, { $limit: perPage }]
-                }
-            }
-        ];
-
-        const result = await inventorySchema.aggregate(pipeline);
-
-        const totalRecords = result[0].metadata[0]?.total || 0;
-        const inventoryList = result[0].data;
+        const rows = await fetchEnrichedInventoryRows(req, { includeProductData: true, applyFulfillmentFilter: true });
+        const paged = sortAndPaginateInventory(rows, { pageNo, perPage, fieldName, sortType, defaultSortField: "title", defaultAsc: true });
 
         return res.status(200).send({
             isSuccess: true,
-            data: inventoryList,
-            currentPageNo: pageNo,
-            totalRecords,
-            totalPages: Math.ceil(totalRecords / perPage),
+            data: paged.data,
+            currentPageNo: paged.currentPageNo,
+            totalRecords: paged.totalRecords,
+            totalPages: paged.totalPages,
         });
     } catch (e) {
         write_logs({ message: `[getInventoryList Error] ${e?.message || e} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
@@ -931,75 +1057,14 @@ exports.getInventoryCards = async (req, res) => {
     if (req.user?.isMockUser) return require("../services/mockTestingData.service").getInventoryCards(req, res);
 
     try {
-
         const originalFulfillmentType = req.body.fulfillmentType;
-        req.body.fulfillmentType = undefined;
-        const basePipeline = buildInventoryBasePipeline(req);
-        req.body.fulfillmentType = originalFulfillmentType;
-
-        const pipeline = [
-            ...basePipeline,
-            {
-                $facet: {
-                    globalStats: [
-                        {
-                            $group: {
-                                _id: null,
-                                totalSKUs: { $sum: 1 },
-                                fbaStock: { $sum: { $cond: [{ $eq: ["$fulfillmentType", "FBA"] }, "$currentStock", 0] } },
-                                fbmStock: { $sum: { $cond: [{ $eq: ["$fulfillmentType", "FBM"] }, "$currentStock", 0] } },
-                                totalFBASkus: { $sum: { $cond: [{ $eq: ["$fulfillmentType", "FBA"] }, 1, 0] } },
-                                totalFBMSkus: { $sum: { $cond: [{ $eq: ["$fulfillmentType", "FBM"] }, 1, 0] } },
-                            }
-                        }
-                    ],
-                    filteredStats: [
-                        ...(originalFulfillmentType ? [{ $match: { fulfillmentType: originalFulfillmentType } }] : []),
-                        {
-                            $group: {
-                                _id: null,
-                                alertCount: {
-                                    $sum: {
-                                        $cond: [
-                                            { $in: ["$status", ["OUT_OF_STOCK", "LOW", "MEDIUM"]] },
-                                            1, 0
-                                        ]
-                                    }
-                                },
-                                outOfStockCount: { $sum: { $cond: [{ $eq: ["$status", "OUT_OF_STOCK"] }, 1, 0] } },
-                                lowStockCount: { $sum: { $cond: [{ $eq: ["$status", "LOW"] }, 1, 0] } },
-                                mediumStockCount: { $sum: { $cond: [{ $eq: ["$status", "MEDIUM"] }, 1, 0] } },
-                                healthyCount: { $sum: { $cond: [{ $eq: ["$status", "HEALTHY"] }, 1, 0] } },
-                                deadInventoryCount: { $sum: { $cond: [{ $eq: ["$deadInventoryStatus", "DEAD"] }, 1, 0] } },
-                            }
-                        }
-                    ]
-                }
-            }
-        ];
-
-        const result = await inventorySchema.aggregate(pipeline);
-        const globalData = result[0]?.globalStats[0] || {};
-        const filteredData = result[0]?.filteredStats[0] || {};
+        const rows = await fetchEnrichedInventoryRows(req, { includeProductData: false, applyFulfillmentFilter: false });
+        const summaryData = summarizeInventoryCards(rows, originalFulfillmentType, true);
 
         return res.status(200).send({
             isSuccess: true,
-            summaryData: {
-                totalSKUs: globalData.totalSKUs ?? 0,
-                fbaStock: globalData.fbaStock ?? 0,
-                fbmStock: globalData.fbmStock ?? 0,
-                totalFBASkus: globalData.totalFBASkus ?? 0,
-                totalFBMSkus: globalData.totalFBMSkus ?? 0,
-                alertCount: filteredData.alertCount ?? 0,
-                outOfStockCount: filteredData.outOfStockCount ?? 0,
-                lowStockCount: filteredData.lowStockCount ?? 0,
-                mediumStockCount: filteredData.mediumStockCount ?? 0,
-                healthyCount: filteredData.healthyCount ?? 0,
-                deadInventoryCount: filteredData.deadInventoryCount ?? 0,
-            },
+            summaryData,
         });
-
-
     } catch (e) {
         write_logs({ message: `[getInventoryCards Error] ${e?.message || e} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
         res.send(e);
@@ -1010,45 +1075,13 @@ exports.getInventoryGraph = async (req, res) => {
     if (req.user?.isMockUser) return require("../services/mockTestingData.service").getInventoryGraph(req, res);
 
     try {
-
-        const basePipeline = buildInventoryBasePipeline(req);
-
-        const pipeline = [
-            ...basePipeline,
-            {
-                $group: {
-                    _id: "$fulfillmentType",
-                    currentStock: { $sum: "$currentStock" },
-                    inboundStock: { $sum: "$inboundStock" },
-                    reservedStock: { $sum: "$reservedStock" },
-                    totalStock: { $sum: "$totalStock" },
-                    avgDaysLeft: { $avg: "$daysLeft" },
-                    skuCount: { $sum: 1 },
-                }
-            },
-            {
-                $project: {
-                    _id: 0,
-                    fulfillmentType: "$_id",
-                    currentStock: 1,
-                    inboundStock: 1,
-                    reservedStock: 1,
-                    totalStock: 1,
-                    avgDaysLeft: { $round: ["$avgDaysLeft", 1] },
-                    skuCount: 1,
-                }
-            },
-            { $sort: { fulfillmentType: 1 } }
-        ];
-
-        const result = await inventorySchema.aggregate(pipeline);
-        const chartData = result || [];
+        const rows = await fetchEnrichedInventoryRows(req, { includeProductData: false, applyFulfillmentFilter: true });
+        const chartData = buildInventoryChartData(rows);
 
         return res.status(200).send({
             isSuccess: true,
             chartData,
         });
-
     } catch (e) {
         write_logs({ message: `[getInventoryGraph Error] ${e?.message || e} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
         res.send(e);
@@ -1057,25 +1090,14 @@ exports.getInventoryGraph = async (req, res) => {
 
 exports.listInventory = async (req, res) => {
     if (req.user?.isMockUser) return require("../services/mockTestingData.service").listInventory(req, res);
-    const configId = req?.config?.configId;
-    const configObjectId = configId && mongoose.Types.ObjectId.isValid(configId)
-        ? new mongoose.Types.ObjectId(configId)
-        : configId;
 
     try {
-        let {
+        const {
             profileId,
             pageNo = 1,
             perPage = 10,
-            fulfillmentType,
-            status,
-            searchName,
             fieldName,
-            fieldOperator,
-            fieldValue,
             sortType,
-            fromDate,
-            toDate
         } = req.body;
 
         if (!profileId) {
@@ -1085,200 +1107,18 @@ exports.listInventory = async (req, res) => {
             });
         }
 
-        toDate = toDate || moment().format("YYYY-MM-DD");
-        fromDate = fromDate || moment().subtract(7, "days").format("YYYY-MM-DD");
-
-        const totalDays = Math.max(moment(toDate).diff(moment(fromDate), "days"), 1);
-
-        const filter = {
-            configId,
-            profileId: Number(profileId),
-            ...(fulfillmentType && { fulfillmentType }),
-        };
-
-        let extraMatchStage = null;
-        if (fieldName && fieldOperator && fieldValue !== undefined) {
-            extraMatchStage = buildFieldFilter(fieldName, fieldOperator, fieldValue);
-        }
-
-        // ── Shared base pipeline (reused across all 3 aggregations) ───────────
-        const basePipeline = [
-            { $match: filter },
-            ...(extraMatchStage ? [{ $match: extraMatchStage }] : []),
-            {
-                $lookup: {
-                    from: "product_ads",
-                    localField: "sku",
-                    foreignField: "sku",
-                    pipeline: [
-                        { $match: { profileId: Number(profileId), reportDate: { $gte: fromDate, $lte: toDate } } },
-                        { $group: { _id: null, totalSales: { $sum: "$orders" } } }
-                    ],
-                    as: "salesData"
-                }
-            },
-            { $unwind: { path: "$salesData", preserveNullAndEmptyArrays: true } },
-            { $addFields: { salesPerDay: { $cond: [{ $gt: ["$salesData.totalSales", 0] }, { $ceil: { $divide: ["$salesData.totalSales", totalDays] } }, 0] } } },
-            { $addFields: { daysLeft: { $cond: [{ $gt: ["$salesPerDay", 0] }, { $round: [{ $divide: ["$totalStock", "$salesPerDay"] }, 0] }, 30] } } },
-            {
-                $addFields: {
-                    status: {
-                        $switch: {
-                            branches: [
-                                { case: { $lte: ["$totalStock", 0] }, then: "OUT_OF_STOCK" },
-                                { case: { $and: [{ $gt: ["$daysLeft", 0] }, { $lte: ["$daysLeft", 5] }] }, then: "LOW" },
-                                { case: { $and: [{ $gt: ["$daysLeft", 5] }, { $lte: ["$daysLeft", 15] }] }, then: "MEDIUM" }
-                            ],
-                            default: "HEALTHY"
-                        }
-                    }
-                }
-            },
-            {
-                $lookup: {
-                    from: "productlistings",
-                    let: { asin: "$asin", sku: "$sku" },
-                    pipeline: [
-                        { $match: { $expr: { $or: [{ $eq: ["$asin", "$$asin"] }, { $eq: ["$sku", "$$sku"] }] } } },
-                        { $sort: { reportDate: -1 } },
-                        { $limit: 1 },
-                        { $project: { title: "$itemName", imageUrl: "$imageURL" } }
-                    ],
-                    as: "productData"
-                }
-            },
-            { $unwind: { path: "$productData", preserveNullAndEmptyArrays: true } },
-            ...(searchName ? [{
-                $match: {
-                    $or: [
-                        { sku: { $regex: new RegExp(RegExp.escape(`${searchName}`?.trim()), "i") } },
-                        { asin: { $regex: new RegExp(RegExp.escape(`${searchName}`?.trim()), "i") } },
-                        { "productData.title": { $regex: new RegExp(RegExp.escape(`${searchName}`?.trim()), "i") } }
-                    ]
-                }
-            }] : []),
-            ...(status ? [{ $match: { status } }] : []),
-        ];
-
-        // ── 1. Main paginated list ────────────────────────────────────────────
-        const listPipeline = [
-            ...basePipeline,
-            {
-                $project: {
-                    _id: 0,
-                    sku: 1,
-                    asin: 1,
-                    fulfillmentType: 1,
-                    status: 1,
-                    currentStock: 1,
-                    inboundStock: 1,
-                    reservedStock: 1,
-                    totalStock: 1,
-                    salesPerDay: { $round: ["$salesPerDay", 2] },
-                    daysLeft: 1,
-                    title: "$productData.title",
-                    image: "$productData.imageUrl",
-                }
-            },
-            ...(sortType
-                ? [{ $sort: { [fieldName]: sortType === "ASC" ? 1 : -1 } }]
-                : [{ $sort: { title: 1 } }]
-            ),
-            {
-                $facet: {
-                    metadata: [{ $count: "total" }],
-                    data: [{ $skip: (pageNo - 1) * perPage }, { $limit: perPage }]
-                }
-            }
-        ];
-
-        // ── 2. Summary cards ─────────────────────────────────────────────────
-        const summaryPipeline = [
-            ...basePipeline,
-            {
-                $group: {
-                    _id: null,
-                    totalSKUs: { $sum: 1 },
-                    fbaStock: { $sum: { $cond: [{ $eq: ["$fulfillmentType", "FBA"] }, "$currentStock", 0] } },
-                    fbmStock: { $sum: { $cond: [{ $eq: ["$fulfillmentType", "FBM"] }, "$currentStock", 0] } },
-                    totalFBASkus: { $sum: { $cond: [{ $eq: ["$fulfillmentType", "FBA"] }, 1, 0] } },
-                    totalFBMSkus: { $sum: { $cond: [{ $eq: ["$fulfillmentType", "FBM"] }, 1, 0] } },
-                    alertCount: {
-                        $sum: {
-                            $cond: [
-                                { $in: ["$status", ["OUT_OF_STOCK", "LOW", "MEDIUM"]] },
-                                1, 0
-                            ]
-                        }
-                    },
-                    outOfStockCount: { $sum: { $cond: [{ $eq: ["$status", "OUT_OF_STOCK"] }, 1, 0] } },
-                    lowStockCount: { $sum: { $cond: [{ $eq: ["$status", "LOW"] }, 1, 0] } },
-                    mediumStockCount: { $sum: { $cond: [{ $eq: ["$status", "MEDIUM"] }, 1, 0] } },
-                    healthyCount: { $sum: { $cond: [{ $eq: ["$status", "HEALTHY"] }, 1, 0] } },
-                }
-            },
-            { $project: { _id: 0 } }
-        ];
-
-        // ── 3. Chart data ─────────────────────────────────────────────────────
-        const chartPipeline = [
-            ...basePipeline,
-            {
-                $group: {
-                    _id: "$fulfillmentType",
-                    currentStock: { $sum: "$currentStock" },
-                    inboundStock: { $sum: "$inboundStock" },
-                    reservedStock: { $sum: "$reservedStock" },
-                    totalStock: { $sum: "$totalStock" },
-                    avgDaysLeft: { $avg: "$daysLeft" },
-                    skuCount: { $sum: 1 },
-                }
-            },
-            {
-                $project: {
-                    _id: 0,
-                    fulfillmentType: "$_id",
-                    currentStock: 1,
-                    inboundStock: 1,
-                    reservedStock: 1,
-                    totalStock: 1,
-                    avgDaysLeft: { $round: ["$avgDaysLeft", 1] },
-                    skuCount: 1,
-                }
-            },
-            { $sort: { fulfillmentType: 1 } }
-        ];
-
-        // ── Run all 3 in parallel ─────────────────────────────────────────────
-        const [listResult, summaryResult, chartResult] = await Promise.all([
-            inventorySchema.aggregate(listPipeline),
-            inventorySchema.aggregate(summaryPipeline),
-            inventorySchema.aggregate(chartPipeline),
-        ]);
-
-        const totalRecords = listResult[0].metadata[0]?.total || 0;
-        const inventoryList = listResult[0].data;
-        const summaryData = summaryResult[0] || {};
-        const chartData = chartResult || [];
+        const rows = await fetchEnrichedInventoryRows(req, { includeProductData: true, applyFulfillmentFilter: true });
+        const paged = sortAndPaginateInventory(rows, { pageNo, perPage, fieldName, sortType, defaultSortField: "title", defaultAsc: true });
+        const summaryData = summarizeInventoryCards(rows, null, false);
+        const chartData = buildInventoryChartData(rows);
 
         return res.status(200).send({
             isSuccess: true,
-            data: inventoryList,
-            currentPageNo: pageNo,
-            totalRecords,
-            totalPages: Math.ceil(totalRecords / perPage),
-            summaryData: {
-                totalSKUs: summaryData.totalSKUs ?? 0,
-                fbaStock: summaryData.fbaStock ?? 0,
-                fbmStock: summaryData.fbmStock ?? 0,
-                totalFBASkus: summaryData.totalFBASkus ?? 0,
-                totalFBMSkus: summaryData.totalFBMSkus ?? 0,
-                alertCount: summaryData.alertCount ?? 0,
-                outOfStockCount: summaryData.outOfStockCount ?? 0,
-                lowStockCount: summaryData.lowStockCount ?? 0,
-                mediumStockCount: summaryData.mediumStockCount ?? 0,
-                healthyCount: summaryData.healthyCount ?? 0,
-            },
+            data: paged.data,
+            currentPageNo: paged.currentPageNo,
+            totalRecords: paged.totalRecords,
+            totalPages: paged.totalPages,
+            summaryData,
             chartData,
         });
 
@@ -3687,30 +3527,24 @@ exports.saveAgingConfig = async (req, res) => {
 // ── Aging summary card counts (bucket breakdown) ─────────────────────────────
 exports.getAgingCards = async (req, res) => {
     if (req.user?.isMockUser) return require("../services/mockTestingData.service").getAgingCards(req, res);
-    const configId = req?.config?.configId;
     try {
-        const basePipeline = buildInventoryBasePipeline(req);
-
-        const pipeline = [
-            ...basePipeline,
-            {
-                $group: {
-                    _id: null,
-                    bucket30: { $sum: { $cond: [{ $lte: ["$daysLeft", 30] }, 1, 0] } },
-                    bucket60: { $sum: { $cond: [{ $and: [{ $gt: ["$daysLeft", 30] }, { $lte: ["$daysLeft", 60] }] }, 1, 0] } },
-                    bucket90: { $sum: { $cond: [{ $and: [{ $gt: ["$daysLeft", 60] }, { $lte: ["$daysLeft", 90] }] }, 1, 0] } },
-                    bucket180: { $sum: { $cond: [{ $gt: ["$daysLeft", 90] }, 1, 0] } },
-                    deadCount: { $sum: { $cond: [{ $eq: ["$deadInventoryStatus", "DEAD"] }, 1, 0] } },
-                }
-            },
-            { $project: { _id: 0 } }
-        ];
-
-        const result = await inventorySchema.aggregate(pipeline);
-        const agingData = result[0] || {
-            bucket30: 0, bucket60: 0, bucket90: 0, bucket180: 0,
-            deadCount: 0
+        const rows = await fetchEnrichedInventoryRows(req, { includeProductData: false, applyFulfillmentFilter: true });
+        const agingData = {
+            bucket30: 0,
+            bucket60: 0,
+            bucket90: 0,
+            bucket180: 0,
+            deadCount: 0,
         };
+
+        for (const r of rows) {
+            if (r.daysLeft <= 30) agingData.bucket30 += 1;
+            else if (r.daysLeft <= 60) agingData.bucket60 += 1;
+            else if (r.daysLeft <= 90) agingData.bucket90 += 1;
+            else agingData.bucket180 += 1;
+
+            if (r.deadInventoryStatus === "DEAD") agingData.deadCount += 1;
+        }
 
         return res.status(200).send({ isSuccess: true, agingData });
     } catch (e) {
@@ -3738,49 +3572,29 @@ exports.getAgingInventoryList = async (req, res) => {
         pageNo = Number(pageNo);
         perPage = Number(perPage);
 
-        const basePipeline = buildInventoryBasePipeline(req);
+        let rows = await fetchEnrichedInventoryRows(req, { includeProductData: true, applyFulfillmentFilter: true });
+        if (agingBucket) {
+            rows = rows.filter((r) => r.agingBucket === agingBucket);
+        }
+        if (deadOnly) {
+            rows = rows.filter((r) => r.deadInventoryStatus === "DEAD");
+        }
 
-        const pipeline = [
-            ...basePipeline,
-            // Filter by aging bucket if passed
-            ...(agingBucket ? [{ $match: { agingBucket } }] : []),
-            // Filter dead-only if passed
-            ...(deadOnly ? [{ $match: { deadInventoryStatus: "DEAD" } }] : []),
-            {
-                $project: {
-                    _id: 0,
-                    sku: 1, asin: 1, fulfillmentType: 1, status: 1,
-                    currentStock: 1, inboundStock: 1, reservedStock: 1, totalStock: 1,
-                    salesPerDay: { $round: ["$salesPerDay", 2] },
-                    daysLeft: 1,
-                    title: "$productData.title",
-                    image: "$productData.imageUrl",
-                    agingBucket: 1,
-                    deadInventoryStatus: 1,
-                    suggestion: 1,
-                }
-            },
-            ...(sortType
-                ? [{ $sort: { [fieldName]: sortType === "ASC" ? 1 : -1 } }]
-                : [{ $sort: { daysLeft: -1 } }]  // worst aging first
-            ),
-            {
-                $facet: {
-                    metadata: [{ $count: "total" }],
-                    data: [{ $skip: (pageNo - 1) * perPage }, { $limit: perPage }]
-                }
-            }
-        ];
-
-        const result = await inventorySchema.aggregate(pipeline);
-        const totalRecords = result[0]?.metadata[0]?.total || 0;
+        const paged = sortAndPaginateInventory(rows, {
+            pageNo,
+            perPage,
+            fieldName,
+            sortType,
+            defaultSortField: "daysLeft",
+            defaultAsc: false,
+        });
 
         return res.status(200).send({
             isSuccess: true,
-            data: result[0]?.data || [],
-            currentPageNo: pageNo,
-            totalRecords,
-            totalPages: Math.ceil(totalRecords / perPage),
+            data: paged.data,
+            currentPageNo: paged.currentPageNo,
+            totalRecords: paged.totalRecords,
+            totalPages: paged.totalPages,
         });
     } catch (e) {
         write_logs({

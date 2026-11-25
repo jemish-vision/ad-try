@@ -16,6 +16,7 @@ import i18n from "./i18n";
 import { PrimeReactProvider } from 'primereact/api';
 import { ROLES } from "./common/constants";
 import { getEffectiveAdType } from "./helper/filter/adTypeAll";
+import { getAccountScopeHeaders } from "./helper/accountScopeHeaders";
 
 // Prevent ResizeObserver loop errors from throwing in development
 const _ResizeObserver = window.ResizeObserver;
@@ -233,20 +234,8 @@ axios.interceptors.request.use(
     const isAppRequest = !isAbsoluteUrl || (!!apiBase && config.url.startsWith(apiBase));
 
     if (isAppRequest) {
-      let parsedProfile = null;
-      try {
-        parsedProfile = JSON.parse(localStorage.getItem("profile"));
-      } catch (e) { }
-
-      const configId =
-        config.headers?.["x-config-id"] ||
-        parsedProfile?.config?.configId ||
-        parsedProfile?.configId ||
-        localStorage.getItem("configId");
-
-      if (configId) {
-        config.headers["x-config-id"] = configId;
-      }
+      const scopeHeaders = getAccountScopeHeaders(config.headers?.["x-config-id"]);
+      Object.assign(config.headers, scopeHeaders);
 
       const authToken = localStorage.getItem("sellerToken");
       if (authToken && authToken !== "null" && authToken !== "undefined") {
@@ -262,10 +251,8 @@ axios.interceptors.request.use(
         if (adType) config.headers["adType"] = adType;
       }
 
-      const organizationId = localStorage.getItem("organizationId");
-      if (organizationId && organizationId !== "null" && organizationId !== "undefined") {
-        config.headers["x-organization-id"] = organizationId;
-        config.headers["organizationid"] = organizationId;
+      if (scopeHeaders["x-organization-id"]) {
+        config.headers["organizationid"] = scopeHeaders["x-organization-id"];
       }
 
       const currentLanguage = localStorage.getItem("i18nextLng") || i18n.language || "en";

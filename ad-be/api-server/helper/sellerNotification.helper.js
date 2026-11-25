@@ -5,7 +5,36 @@ const profileSchema = require("../models/profiles.model");
 const { writeAuditEvent } = require("../helpers/auditHelper");
 const { sendEmailHelper } = require("./emailHelper");
 const { buildNewSellerConnectionEmail } = require("../../emailTemplate/buildNewSellerConnectionEmail");
+const {
+  buildNewProfileConnectionEmail,
+  buildDataSyncRequestEmail,
+} = require("../../emailTemplate/buildProfileAndSyncNotificationEmail");
 const { write_logs } = require("../../winston/ams/logger");
+
+async function fetchUserAndOrganization(userId, organizationId) {
+  let user = null;
+  if (userId) {
+    user = await userSchema
+      .findById(userId)
+      .select("fullName email companyName phoneNumber organizationId")
+      .lean();
+  }
+
+  let organization = null;
+  const orgId = organizationId || user?.organizationId;
+  if (orgId) {
+    organization = await organizationSchema
+      .findById(orgId)
+      .populate("planId")
+      .lean();
+  }
+
+  return { user, organization, orgId };
+}
+
+function getDevNotificationRecipient() {
+  return process.env.RECEIVER_EMAIL || process.env.ADMIN_EMAIL;
+}
 
 /**
  * Dispatches an email notification when a new Amazon seller account connects.
@@ -35,24 +64,8 @@ async function notifyNewSellerConnection({
       return;
     }
 
-    // 1. Fetch user details
-    let user = null;
-    if (userId) {
-      user = await userSchema
-        .findById(userId)
-        .select("fullName email companyName phoneNumber organizationId")
-        .lean();
-    }
-
-    // 2. Fetch organization details
-    let organization = null;
-    const orgId = organizationId || user?.organizationId;
-    if (orgId) {
-      organization = await organizationSchema
-        .findById(orgId)
-        .populate("planId")
-        .lean();
-    }
+    // 1 & 2. Fetch user and organization details
+    const { user, organization, orgId } = await fetchUserAndOrganization(userId, organizationId);
 
     // 3. Find linked advertising profiles (if not explicitly passed)
     let linkedProfiles = Array.isArray(profiles) && profiles.length > 0 ? profiles : [];
@@ -132,4 +145,118 @@ async function notifyNewSellerConnection({
   }
 }
 
-module.exports = { notifyNewSellerConnection };
+async function notifyNewProfileConnection({
+  userId,
+  organizationId,
+  config,
+  profiles = [],
+  req,
+}) {
+  try {
+    if (!Array.isArray(profiles) || profiles.length === 0) return;
+
+    const recipient = getDevNotificationRecipient();
+    if (!recipient) {
+      write_logs({
+        message: "[notifyNewProfileConnection] Skipped: RECEIVER_EMAIL / ADMIN_EMAIL not configured",
+        log_type: "info",
+      });
+      return;
+    }
+
+    const { user, organization } = await fetchUserAndOrganization(userId, organizationId || config?.organizationId);
+    const emailHtml = buildNewProfileConnectionEmail({
+      user,
+      organization,
+      config,
+      profiles,
+      connectedAt: new Date(),
+      ipAddress: req?.ip,
+    });
+
+    const orgOrUserName = organization?.organizationName || user?.fullName || config?.companyName || "AdvertiseIQ";
+    const profileLabel = profiles.length === 1
+      ? `${profiles[0].name || profiles[0].profileId}`
+      : `${profiles.length} Profiles`;
+    const subject = `New Profile Connected - ${profileLabel} (${orgOrUserName})`;
+
+    const result = await sendEmailHelper(recipient, subject, emailHtml);
+    write_logs({
+      message: `[notifyNewProfileConnection] Notification email sent for ${profiles.length} profile(s) with status "${result?.status}"`,
+      log_type: "info",
+    });
+    return result;
+  } catch (error) {
+    write_logs({
+      message: `[notifyNewProfileConnection Error] ${error?.message || error}`,
+      log_type: "error",
+    });
+  }
+}
+
+async function notifyDataSyncRequest({
+  userId,
+  organizationId,
+  config,
+  profileId,
+  type = "ads",
+  requestedRecords = [],
+  groups = [],
+  req,
+}) {
+  try {
+    if (!Array.isArray(requestedRecords) || requestedRecords.length === 0) return;
+
+    const recipient = getDevNotificationRecipient();
+    if (!recipient) {
+      write_logs({
+        message: "[notifyDataSyncRequest] Skipped: RECEIVER_EMAIL / ADMIN_EMAIL not configured",
+        log_type: "info",
+      });
+      return;
+    }
+
+    const [{ user, organization }, profile] = await Promise.all([
+      fetchUserAndOrganization(userId, organizationId || config?.organizationId),
+      config?._id && profileId
+        ? profileSchema.findOne({ configId: config._id, profileId: Number(profileId) }).select("name profileId countryCode currencyCode type").lean()
+        : null,
+    ]);
+
+    const emailHtml = buildDataSyncRequestEmail({
+      user,
+      organization,
+      config,
+      profile,
+      profileId,
+      type,
+      requestedRecords,
+      groups,
+      requestedAt: new Date(),
+      ipAddress: req?.ip,
+    });
+
+    const orgOrUserName = organization?.organizationName || user?.fullName || config?.companyName || "AdvertiseIQ";
+    const profileLabel = profile?.name || `Profile ${profileId}`;
+    const typeLabel = type === "seller" ? "Seller" : "Ads";
+    const subject = `Data Sync Requested (${typeLabel}) - ${profileLabel} (${orgOrUserName})`;
+
+    const result = await sendEmailHelper(recipient, subject, emailHtml);
+    write_logs({
+      message: `[notifyDataSyncRequest] Notification email sent for profileId=${profileId} (${type}) with status "${result?.status}"`,
+      log_type: "info",
+    });
+    return result;
+  } catch (error) {
+    write_logs({
+      message: `[notifyDataSyncRequest Error] ${error?.message || error}`,
+      log_type: "error",
+    });
+  }
+}
+
+module.exports = {
+  notifyNewSellerConnection,
+  notifyNewProfileConnection,
+  notifyDataSyncRequest,
+};

@@ -128,6 +128,24 @@ async function loadSchedules() {
       });
     }
   }
+
+  // Ensure default hourly schedule (:15 past every hour) for AdBlackoutMonitor if not present in DB
+  const hasBlackoutMonitor = cronDocs.some(
+    (job) => job.cronName?.replace(/\s+/g, "").toLowerCase() === "adblackoutmonitor"
+  );
+  if (!hasBlackoutMonitor) {
+    const configuredBlackoutDoc = await cronJobSchema.exists({
+      cronName: { $in: ["AdBlackoutMonitor", "Ad Blackout Monitor"] },
+    });
+    if (!configuredBlackoutDoc) {
+      desired.add(resolveMigratedSchedule("AdBlackoutMonitor")?.task);
+      registerSchedule({
+        cronName: "AdBlackoutMonitor",
+        cronExpression: process.env.AD_BLACKOUT_MONITOR_CRON || "0 40 * * * *",
+        isActive: true,
+      });
+    }
+  }
   for (const [task, { job }] of activeCronJobs) {
     if (desired.has(task)) continue;
     job.stop();

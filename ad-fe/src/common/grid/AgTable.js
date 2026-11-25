@@ -249,7 +249,7 @@ const AgTable = forwardRef(function AgTable(
           ...col,
           order: (matched.order !== undefined && matched.order !== 9999) ? matched.order : fallbackOrder,
           hide: col.lockVisible ? false : matched.isDisplay === false,
-          ...(matched.width ? { width: matched.width, flex: null } : {}),
+          ...(matched.width ? { width: Math.max(matched.width, col.minWidth || 0), flex: null } : {}),
         };
       }
       return {

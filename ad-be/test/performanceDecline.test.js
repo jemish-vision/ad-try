@@ -85,6 +85,14 @@ describe("evaluation windows (2-day attribution buffer)", () => {
     assert.equal(pd.buildEvaluationWindows(9, "UTC", now).windowDays, 14);
     assert.equal(pd.buildEvaluationWindows("30", "UTC", now).windowDays, 30);
   });
+
+  test("custom date range sets current and exact prior period of equal length", () => {
+    const w = pd.buildEvaluationWindows(14, "UTC", now, { startDate: "2026-11-01", endDate: "2026-11-15" });
+    assert.equal(w.isCustom, true);
+    assert.equal(w.windowDays, 15);
+    assert.deepEqual(w.current, { start: "2026-11-01", end: "2026-11-15" });
+    assert.deepEqual(w.prior, { start: "2026-10-17", end: "2026-10-31" });
+  });
 });
 
 describe("metric deltas", () => {
@@ -383,9 +391,29 @@ describe("getPerformanceDeclineAlerts controller", () => {
   });
 
   test("limit slices the list but the summary counts all", async () => {
-    const { json } = await call({ limit: 1 });
+    const { json } = await call({ page: 1, limit: 1 });
     assert.equal(json.data.alerts.length, 1);
     assert.equal(json.data.summary.totalDeclines, 2);
+    assert.deepEqual(json.data.pagination, {
+      page: 1,
+      limit: 1,
+      totalRecords: 2,
+      totalPages: 2,
+      hasNextPage: true,
+      hasPrevPage: false,
+    });
+
+    const page2 = await call({ page: 2, limit: 1 });
+    assert.equal(page2.json.data.alerts.length, 1);
+    assert.notEqual(page2.json.data.alerts[0].campaignId, json.data.alerts[0].campaignId);
+    assert.deepEqual(page2.json.data.pagination, {
+      page: 2,
+      limit: 1,
+      totalRecords: 2,
+      totalPages: 2,
+      hasNextPage: false,
+      hasPrevPage: true,
+    });
   });
 
   test("out-of-stock ASIN becomes a supporting cause for the blackout", async () => {
@@ -399,11 +427,28 @@ describe("getPerformanceDeclineAlerts controller", () => {
     const first = await call();
     assert.equal(cacheCalls.set.length, 1);
     assert.equal(cacheCalls.set[0].ttl, 900);
-    assert.match(cacheCalls.set[0].k, /^perf_decline:64b7f0c2a1b2c3d4e5f60718:111:SP:14:5:\d{4}-\d{2}-\d{2}$/);
+    assert.match(cacheCalls.set[0].k, /^perf_decline_all:64b7f0c2a1b2c3d4e5f60718:111:SP:14:\d{4}-\d{2}-\d{2}$/);
     db.changes = []; // would change the answer if it were recomputed
     const second = await call();
     assert.equal(cacheCalls.set.length, 1);
     assert.deepEqual(second.json, first.json);
+  });
+
+  test("severity filter returns only matching alerts but keeps overall summary counts", async () => {
+    const critRes = await call({ severity: "CRITICAL" });
+    assert.equal(critRes.json.data.alerts.length, 2);
+    assert.equal(critRes.json.data.summary.totalDeclines, 2);
+    assert.equal(critRes.json.data.summary.criticalCount, 2);
+    assert.equal(critRes.json.data.activeSeverity, "CRITICAL");
+    assert.equal(critRes.json.data.pagination.totalRecords, 2);
+
+    const warnRes = await call({ severity: "WARNING" });
+    assert.equal(warnRes.json.data.alerts.length, 0);
+    // Summary still preserves total declines & critical count
+    assert.equal(warnRes.json.data.summary.totalDeclines, 2);
+    assert.equal(warnRes.json.data.summary.criticalCount, 2);
+    assert.equal(warnRes.json.data.activeSeverity, "WARNING");
+    assert.equal(warnRes.json.data.pagination.totalRecords, 0);
   });
 
   test("refresh: true recomputes instead of reading the cache", async () => {
@@ -418,6 +463,15 @@ describe("getPerformanceDeclineAlerts controller", () => {
     await call({ windowDays: 7 });
     await call({ windowDays: 30 });
     assert.equal(new Set(cacheCalls.set.map((c) => c.k)).size, 2);
+  });
+
+  test("custom date range queries and caches under custom key", async () => {
+    const { json } = await call({ startDate: "2026-11-01", endDate: "2026-11-15" });
+    assert.equal(json.data.evaluationWindow.isCustom, true);
+    assert.equal(json.data.windowDays, 15);
+    assert.deepEqual(json.data.evaluationWindow.current, { start: "2026-11-01", end: "2026-11-15" });
+    assert.deepEqual(json.data.evaluationWindow.prior, { start: "2026-10-17", end: "2026-10-31" });
+    assert.match(cacheCalls.set[0].k, /^perf_decline_all:64b7f0c2a1b2c3d4e5f60718:111:SP:custom_2026-11-01_2026-11-15:\d{4}-\d{2}-\d{2}$/);
   });
 
   test("missing profileId is rejected", async () => {

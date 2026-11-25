@@ -75,11 +75,17 @@ test('responses from a superseded filter request cannot change data or loaders',
   expect(f.context.setIsTableLoading).toHaveBeenLastCalledWith(true);
   expect(f.context.setChartLoading).toHaveBeenLastCalledWith(true);
 });
-test('table-only reload still skips the chart', async () => {
+test('clicking reload refreshes both table and chart', async () => {
   const f = fixture(); const pending = f.run({ isReload: true });
-  expect(f.context.ApiTargetingChartListing).not.toHaveBeenCalled();
-  expect(f.context.setChartLoading).not.toHaveBeenCalled();
-  f.table.resolve(tableResponse); await pending;
+  expect(f.context.ApiTargetingListing).toHaveBeenCalledTimes(1);
+  expect(f.context.ApiTargetingChartListing).toHaveBeenCalledTimes(1);
+  expect(f.context.setIsTableLoading).toHaveBeenCalledWith(true);
+  expect(f.context.setChartLoading).toHaveBeenCalledWith(true);
+  f.table.resolve(tableResponse); f.chart.resolve(chartResponse); await pending;
+  expect(f.context.setTargetingData).toHaveBeenCalledWith(tableResponse);
+  expect(f.context.setChartData).toHaveBeenCalledWith(chartResponse.data);
+  expect(f.context.setIsTableLoading).toHaveBeenLastCalledWith(false);
+  expect(f.context.setChartLoading).toHaveBeenLastCalledWith(false);
 });
 test('identical in-flight fetch signatures do not duplicate either request', async () => {
   const f = fixture(); const pending = f.run(); await f.run();

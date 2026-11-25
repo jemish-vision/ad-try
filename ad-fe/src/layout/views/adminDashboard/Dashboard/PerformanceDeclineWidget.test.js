@@ -9,6 +9,26 @@ jest.mock("react-dom/test-utils", () => ({ ...jest.requireActual("react-dom/test
 const fillT = (text, vars = {}) => String(text).replace(/\{\{(\w+)\}\}/g, (_, k) => (vars[k] ?? `{{${k}}}`));
 jest.mock("react-i18next", () => ({ useTranslation: () => ({ t: (text, vars) => String(text).replace(/\{\{(\w+)\}\}/g, (_, k) => (vars?.[k] ?? `{{${k}}}`)) }) }));
 jest.mock("../../../../api-wrapper/dashboard/ApiDashboard", () => ({ ApiGetPerformanceDeclineAlerts: jest.fn(), ApiGetOutOfStockAds: jest.fn() }));
+jest.mock("../../../../components/ui/date-range-picker", () => ({
+  ShadcnDateRangePicker: ({ value, onChange, placeholder, ariaLabel }) => (
+    <div data-testid="mock-date-range-picker">
+      <button
+        type="button"
+        aria-label={ariaLabel || "Custom Date Range"}
+        onClick={() => onChange([new Date("2026-11-01T00:00:00Z"), new Date("2026-11-15T00:00:00Z")])}
+      >
+        {value?.[0] ? `${value[0]} - ${value[1]}` : placeholder || "Custom"}
+      </button>
+      <button
+        type="button"
+        aria-label="Clear Custom Dates"
+        onClick={() => onChange(null)}
+      >
+        Clear
+      </button>
+    </div>
+  ),
+}));
 
 const metric = (current, prior, delta) => ({ current, prior, delta });
 const blackout = {
@@ -23,13 +43,22 @@ const blackout = {
   rootCause: { confidence: "CONFIRMED", code: "BID_CUT", params: { pct: -35.7, date: "2026-11-18T12:00:00Z", oldValue: 1.4, newValue: 0.9, count: 1 }, supporting: [{ code: "OUT_OF_STOCK", params: { asin: "B09V7YZ2RP" } }] },
   estimatedLoss: 770,
 };
-const payload = (alerts) => ({
+const payload = (alerts, paginationOverrides = {}) => ({
   isSuccess: true,
   data: {
     windowDays: 14,
     evaluationWindow: { current: { start: "2026-11-09", end: "2026-11-22" }, prior: { start: "2026-10-26", end: "2026-11-08" }, bufferedDays: [] },
     summary: { totalDeclines: alerts.length, criticalCount: alerts.length, warningCount: 0, totalEstimatedLoss: 770 },
     alerts,
+    pagination: {
+      page: 1,
+      limit: 6,
+      totalRecords: alerts.length,
+      totalPages: 1,
+      hasNextPage: false,
+      hasPrevPage: false,
+      ...paginationOverrides,
+    },
   },
 });
 
@@ -95,6 +124,151 @@ test("error state with retry", async () => {
   expect(screen.getByText("Couldn't load performance declines.")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   expect(requests).toHaveLength(2);
+});
+
+test("pagination: next page button refetches page 2 and updates page indicator", async () => {
+  renderWidget();
+  const multiPagePayload = {
+    isSuccess: true,
+    data: {
+      windowDays: 14,
+      evaluationWindow: { current: { start: "2026-11-09", end: "2026-11-22" }, prior: { start: "2026-10-26", end: "2026-11-08" }, bufferedDays: [] },
+      summary: { totalDeclines: 12, criticalCount: 1, warningCount: 11, totalEstimatedLoss: 1400 },
+      alerts: [blackout],
+      pagination: {
+        page: 1,
+        limit: 6,
+        totalRecords: 12,
+        totalPages: 2,
+        hasNextPage: true,
+        hasPrevPage: false,
+      },
+    },
+  };
+  await act(async () => requests[0].resolve(multiPagePayload));
+
+  expect(screen.getByText("Showing 1–6 of 12 declining campaigns")).toBeInTheDocument();
+  expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
+  const prevBtn = screen.getByRole("button", { name: "Previous page" });
+  const nextBtn = screen.getByRole("button", { name: "Next page" });
+  expect(prevBtn).toBeDisabled();
+  expect(nextBtn).not.toBeDisabled();
+
+  fireEvent.click(nextBtn);
+  expect(requests[1].body).toMatchObject({ profileId: "111", page: 2, limit: 6 });
+});
+
+test("severity filter: clicking Critical filters by CRITICAL, clicking again toggles off", async () => {
+  renderWidget();
+  const payloadWithBoth = {
+    isSuccess: true,
+    data: {
+      windowDays: 14,
+      evaluationWindow: { current: { start: "2026-11-09", end: "2026-11-22" }, prior: { start: "2026-10-26", end: "2026-11-08" }, bufferedDays: [] },
+      summary: { totalDeclines: 10, criticalCount: 3, warningCount: 7, totalEstimatedLoss: 2500 },
+      alerts: [blackout],
+      pagination: {
+        page: 1,
+        limit: 6,
+        totalRecords: 10,
+        totalPages: 2,
+        hasNextPage: true,
+        hasPrevPage: false,
+      },
+    },
+  };
+  await act(async () => requests[0].resolve(payloadWithBoth));
+
+  const critBtn = screen.getByRole("button", { name: "3 Critical" });
+  const warnBtn = screen.getByRole("button", { name: "7 Warnings" });
+  expect(critBtn).toHaveAttribute("aria-pressed", "false");
+  expect(warnBtn).toHaveAttribute("aria-pressed", "false");
+
+  // Click Critical
+  fireEvent.click(critBtn);
+  expect(requests[1].body).toMatchObject({ profileId: "111", severity: "CRITICAL", page: 1 });
+  await act(async () =>
+    requests[1].resolve({
+      ...payloadWithBoth,
+      data: {
+        ...payloadWithBoth.data,
+        alerts: [blackout],
+        activeSeverity: "CRITICAL",
+        pagination: { page: 1, limit: 6, totalRecords: 3, totalPages: 1, hasNextPage: false, hasPrevPage: false },
+      },
+    }),
+  );
+  expect(critBtn).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByText("Showing 1–3 of 3 critical campaigns")).toBeInTheDocument();
+
+  // Click Critical again to toggle off
+  fireEvent.click(critBtn);
+  expect(requests[2].body).toMatchObject({ profileId: "111", severity: null, page: 1 });
+  await act(async () => requests[2].resolve(payloadWithBoth));
+  expect(critBtn).toHaveAttribute("aria-pressed", "false");
+
+  // Click Warnings
+  fireEvent.click(warnBtn);
+  expect(requests[3].body).toMatchObject({ profileId: "111", severity: "WARNING", page: 1 });
+});
+
+test("custom date range: selecting dates refetches with startDate/endDate, updates subtitle, and preset clears it", async () => {
+  renderWidget();
+  await act(async () => requests[0].resolve(payload([blackout])));
+
+  // Select custom date range
+  const customBtn = screen.getByRole("button", { name: "Custom Date Range" });
+  fireEvent.click(customBtn);
+
+  expect(requests[1].body).toMatchObject({
+    profileId: "111",
+    startDate: "2026-11-01",
+    endDate: "2026-11-15",
+    page: 1,
+  });
+
+  const customPayload = {
+    isSuccess: true,
+    data: {
+      windowDays: 15,
+      evaluationWindow: {
+        current: { start: "2026-11-01", end: "2026-11-15" },
+        prior: { start: "2026-10-17", end: "2026-10-31" },
+        isCustom: true,
+        bufferedDays: [],
+      },
+      summary: { totalDeclines: 1, criticalCount: 1, warningCount: 0, totalEstimatedLoss: 770 },
+      alerts: [blackout],
+      pagination: { page: 1, limit: 6, totalRecords: 1, totalPages: 1, hasNextPage: false, hasPrevPage: false },
+    },
+  };
+  await act(async () => requests[1].resolve(customPayload));
+
+  // Verify custom subtitle
+  expect(screen.getByText("Comparing 01 Nov – 15 Nov with prior period (17 Oct – 31 Oct).")).toBeInTheDocument();
+
+  // Clear custom range via clear button
+  const clearBtn = screen.getByTitle("Clear custom date range");
+  fireEvent.click(clearBtn);
+
+  expect(requests[2].body).toMatchObject({
+    profileId: "111",
+    startDate: null,
+    endDate: null,
+    windowDays: 14,
+  });
+
+  // Re-select custom date range, then click preset 7D
+  fireEvent.click(screen.getByRole("button", { name: "Custom Date Range" }));
+  expect(requests[3].body).toMatchObject({ startDate: "2026-11-01", endDate: "2026-11-15" });
+
+  fireEvent.click(screen.getByRole("button", { name: "7D" }));
+  expect(requests[4].body).toMatchObject({
+    profileId: "111",
+    startDate: null,
+    endDate: null,
+    windowDays: 7,
+  });
 });
 
 describe("cause text", () => {

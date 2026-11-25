@@ -231,7 +231,7 @@ test('Brand historical provider identity includes stable canonical ASIN hash', a
 });
 
 for (const [file, start, end, name, payload] of [
-  ['inventory', 'const processReportFileStream =', 'const buildInventoryBasePipeline', 'processReportFileStream', { value: { childAsin: 'B0FIXTURE' } }],
+  ['inventory', 'const processReportFileStream =', 'const escapeInventoryRegex', 'processReportFileStream', { value: { childAsin: 'B0FIXTURE' } }],
   ['order', 'const processReturnsReportStream =', 'async function generateFBAReturnsSPReport', 'processReturnsReportStream', { value: { order_id: 'fixture', item_details: {} } }],
   ['order', 'const processFBAReturnsReportStream =', 'exports.refundGraphData', 'processFBAReturnsReportStream', { value: { 'order-id': 'fixture' } }],
   ['reconciliationReimbursement', 'const processReimbursementReportStream =', 'exports.cronGenerateShipmentQueueReport', 'processReimbursementReportStream', { 'reimbursement-id': 'fixture', reason: 'fixture' }],

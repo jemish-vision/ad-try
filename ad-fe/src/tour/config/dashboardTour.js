@@ -1,8 +1,8 @@
 import { tourRegistry } from '../TourRegistry';
 import {
     Funnel, TrendUp, ChartLineUp, Megaphone,
-    Package, MagnifyingGlass, GridFour, Trophy,
-    Table, Lightbulb, SlidersHorizontal
+    ChartBar, Clock, Lightbulb, TrendDown,
+    WarningCircle, WarningOctagon, GridFour, Trophy, SlidersHorizontal, Table
 } from '@phosphor-icons/react';
 
 export const dashboardTourConfig = {
@@ -31,24 +31,52 @@ export const dashboardTourConfig = {
             blockTargetInteraction: true 
         },
         { 
-            target: "#dashboard-changes-by-campaign", 
+            target: "#dashboard-campaign-breakdowns", 
             icon: Megaphone, 
-            title: "Campaign Momentum", 
-            content: "Instantly identify campaigns with the most significant positive or negative performance changes.",
+            title: "Campaign Allocation", 
+            content: "Track performance across assigned and unassigned campaigns to ensure every advertising initiative is properly managed.",
             blockTargetInteraction: true 
         },
         { 
-            target: "#dashboard-changes-by-asin", 
-            icon: Package, 
-            title: "Product Fluctuations", 
-            content: "Monitor product-level fluctuations to see which items are driving changes in your overall performance.",
+            target: "#dashboard-ad-type-breakdown", 
+            icon: ChartBar, 
+            title: "Ad Type Performance", 
+            content: "Compare performance metrics across Sponsored Products, Sponsored Brands, and Sponsored Display formats.",
             blockTargetInteraction: true 
         },
         { 
-            target: "#dashboard-changes-by-keyword", 
-            icon: MagnifyingGlass, 
-            title: "Keyword Volatility", 
-            content: "Track your most volatile keywords to understand which search terms are impacting your spend and sales.",
+            target: "#dashboard-time-recommendations", 
+            icon: Clock, 
+            title: "Time Analytics & Recommendations", 
+            content: "Identify high-converting days of the week, peak shopping hours, and algorithmic optimization opportunities.",
+            blockTargetInteraction: true 
+        },
+        { 
+            target: "#dashboard-waste-matrix-section", 
+            icon: Lightbulb, 
+            title: "Waste Spend & Smart Insights", 
+            content: "Monitor spend wasted on non-converting search terms and review AI-powered recommendations tailored to your account.",
+            blockTargetInteraction: true 
+        },
+        { 
+            target: "#dashboard-ad-blackout", 
+            icon: WarningOctagon, 
+            title: "Hourly Ad Blackouts", 
+            content: "Alerts when active SP, SB, or SD ads suddenly drop to zero impressions within the hour, with plain-language causes from Amazon serving status, Buy Box, listing, and rule data.",
+            blockTargetInteraction: true 
+        },
+        { 
+            target: "#dashboard-performance-decline", 
+            icon: TrendDown, 
+            title: "Performance Decline & Root Cause Triage", 
+            content: "Detect campaigns with sudden drops in sales or spikes in ACoS, estimate revenue loss, and view diagnosed root causes with actionable fixes.",
+            blockTargetInteraction: true 
+        },
+        { 
+            target: "#dashboard-out-of-stock-ads", 
+            icon: WarningCircle, 
+            title: "Out-of-Stock Running Ads", 
+            content: "Identify campaigns actively spending advertising budget on products that are currently out of stock so you can avoid wasted spend.",
             blockTargetInteraction: true 
         },
         { 
@@ -77,13 +105,6 @@ export const dashboardTourConfig = {
             icon: Table, 
             title: "Data Grid", 
             content: "Browse your complete campaign and product data in a customizable grid for your own deep-dive analysis.",
-            blockTargetInteraction: true 
-        },
-        { 
-            target: "#dashboard-smart-insights", 
-            icon: Lightbulb, 
-            title: "Smart Insights", 
-            content: "Leverage our AI to receive proactive recommendations and actionable insights tailored to your account.",
             blockTargetInteraction: true 
         }
     ]

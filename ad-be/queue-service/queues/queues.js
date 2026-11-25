@@ -8,6 +8,7 @@ let hourlySyncQueue = null;
 let spApiQueue = null;
 let asinSnapshotQueue = null;
 let outOfStockAdsQueue = null;
+let fcInventoryLedgerQueue = null;
 let producerConnection = null;
 
 function getQueues() {
@@ -56,12 +57,21 @@ function getQueues() {
     });
   }
 
+  if (!fcInventoryLedgerQueue) {
+    fcInventoryLedgerQueue = new Queue(QUEUES.FC_INVENTORY_LEDGER, {
+      connection: producerConnection,
+      prefix: getBullMQPrefix(),
+      defaultJobOptions: spApiJobOptions,
+    });
+  }
+
   return {
     rulesQueue,
     hourlySyncQueue,
     spApiQueue,
     asinSnapshotQueue,
     outOfStockAdsQueue,
+    fcInventoryLedgerQueue,
   };
 }
 
@@ -86,6 +96,10 @@ async function closeQueues() {
   if (outOfStockAdsQueue) {
     closePromises.push(outOfStockAdsQueue.close());
     outOfStockAdsQueue = null;
+  }
+  if (fcInventoryLedgerQueue) {
+    closePromises.push(fcInventoryLedgerQueue.close());
+    fcInventoryLedgerQueue = null;
   }
   await Promise.allSettled(closePromises);
 

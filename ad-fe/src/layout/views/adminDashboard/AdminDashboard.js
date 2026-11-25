@@ -42,6 +42,7 @@ import ProductPerformanceMatrixWidget from "./Dashboard/ProductPerformanceMatrix
 import SmartInsightsWidget from "./Dashboard/SmartInsightsWidget";
 import OutOfStockAdsWidget from "./Dashboard/OutOfStockAdsWidget";
 import PerformanceDeclineWidget from "./Dashboard/PerformanceDeclineWidget";
+import AdBlackoutWidget from "./Dashboard/AdBlackoutWidget";
 import { PermissionCheck } from "../../../helper/permission/PermissionCheck";
 import { Card } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
@@ -1249,6 +1250,15 @@ export default function AdminDashboard() {
           </div>
         </div>
 
+        {/* ── Row 7.25: Hourly Ad Blackout Alerts (Marketing Stream) ── */}
+        <div id="dashboard-ad-blackout-section" className="w-full mb-8">
+          <AdBlackoutWidget
+            profileId={currentProfileId}
+            adType={selectedAdType || "All"}
+            marketplace={activeCountryCode}
+          />
+        </div>
+
         {/* ── Row 7.5: Performance Decline & Root Cause Triage ── */}
         <div id="dashboard-performance-decline-section" className="w-full mb-8">
           <PerformanceDeclineWidget
@@ -1261,7 +1271,7 @@ export default function AdminDashboard() {
 
         {/* ── Out-of-stock products still advertised in running campaigns (seller / vendor); above the Product Performance Matrix ── */}
         {isSellerOrVendor && (
-          <div className="w-full">
+          <div id="dashboard-out-of-stock-ads-section" className="w-full">
             <OutOfStockAdsWidget
               profileId={currentProfileId}
               currencyCode={activeCurrencyCode}

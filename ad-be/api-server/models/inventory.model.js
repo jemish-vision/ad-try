@@ -97,6 +97,12 @@ inventorySchema.index({
   configId: 1,
   profileId: 1,
   asin: 1
-})
+});
+
+inventorySchema.index({
+  configId: 1,
+  profileId: 1,
+  fulfillmentType: 1
+});
 
 module.exports = new mongoose.model("inventory", inventorySchema);

@@ -20,8 +20,9 @@ const { QUEUES, SP_API_TASKS } = require("../../queue-service/queues/queueNames"
 const { isMigratedTask } = require("../../shared/automationMode");
 const { createSpApiProcessor } = require("../../queue-service/processors/spApi.processor");
 
-test("FC report cron names map to sp-api-queue tasks", () => {
-  assert.deepEqual(resolveMigratedSchedule("FC Inventory Ledger"), { queue: QUEUES.SP_API, task: SP_API_TASKS.FC_INVENTORY_LEDGER, family: "sp-api" });
+test("FC Inventory Ledger has a dedicated queue and storage fees stay on the shared SP-API queue", () => {
+  assert.equal(QUEUES.FC_INVENTORY_LEDGER, "fc-inventory-ledger-queue");
+  assert.deepEqual(resolveMigratedSchedule("FC Inventory Ledger"), { queue: QUEUES.FC_INVENTORY_LEDGER, task: SP_API_TASKS.FC_INVENTORY_LEDGER, family: "sp-api" });
   assert.deepEqual(resolveMigratedSchedule("FC Storage Fee"), { queue: QUEUES.SP_API, task: SP_API_TASKS.FC_STORAGE_FEE, family: "sp-api" });
 });
 

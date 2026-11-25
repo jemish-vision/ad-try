@@ -2,9 +2,10 @@ const { getQueues } = require("../queues/queues");
 const { generateJobId, formatTimeBlock } = require("../contracts/jobId");
 const { validateJobPayload } = require("../contracts/jobPayload");
 const { SP_API_TASKS } = require("../queues/queueNames");
+const { cron_logs } = require("../../winston/cronAutomation/logger");
 
 /**
- * Dispatches SP-API scheduled batch jobs into the dedicated BullMQ sp-api-queue.
+ * Dispatches scheduled SP-API jobs to their configured BullMQ lane.
  *
  * @param {Object} params
  * @param {string} params.task e.g. "sync-order", "sync-inventory", "brand-analytics-report"
@@ -29,20 +30,26 @@ async function enqueueSpApiForOccurrence({ task, scheduledFor = new Date(), trig
     trigger,
   });
 
-  const { spApiQueue, asinSnapshotQueue, outOfStockAdsQueue } = getQueues();
-  // Daily jobs get their own lanes so long historical imports on sp-api-queue can't delay them.
-  const queue =
-    task === SP_API_TASKS.ASIN_SNAPSHOT ? asinSnapshotQueue
-      : task === SP_API_TASKS.OUT_OF_STOCK_ADS ? outOfStockAdsQueue
-        : spApiQueue;
+  const { spApiQueue, asinSnapshotQueue, outOfStockAdsQueue, fcInventoryLedgerQueue } = getQueues();
+  const dedicatedQueues = {
+    [SP_API_TASKS.ASIN_SNAPSHOT]: asinSnapshotQueue,
+    [SP_API_TASKS.OUT_OF_STOCK_ADS]: outOfStockAdsQueue,
+    [SP_API_TASKS.FC_INVENTORY_LEDGER]: fcInventoryLedgerQueue,
+  };
+  const queue = Object.hasOwn(dedicatedQueues, task) ? dedicatedQueues[task] : spApiQueue;
   const job = await queue.add(task, data, {
     jobId,
   });
 
   const durationMs = Date.now() - startTime;
-  console.log(
-    `[SpApiProducer] Enqueued job for ${task} (jobId: ${job.id}, duration: ${durationMs}ms)`
-  );
+  if (task === SP_API_TASKS.FC_INVENTORY_LEDGER) {
+    cron_logs({
+      message: `[SpApiProducer] Enqueued job for ${task} (queue: ${queue.name}, jobId: ${job.id}, scheduledFor: ${data.scheduledFor}, duration: ${durationMs}ms)`,
+      log_type: "info",
+    });
+  } else {
+    console.log(`[SpApiProducer] Enqueued job for ${task} (jobId: ${job.id}, duration: ${durationMs}ms)`);
+  }
 
   return {
     task,

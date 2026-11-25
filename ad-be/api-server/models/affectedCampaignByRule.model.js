@@ -209,5 +209,6 @@ const affectedCampaignByRuleSchema = new mongoose.Schema(
 affectedCampaignByRuleSchema.index({ configId: 1, profileId: 1, ruleSchema: 1, ruleId: 1, ruleDate: -1, campaignId: 1 });
 affectedCampaignByRuleSchema.index({ configId: 1, profileId: 1, ruleId: 1, isActive: 1, campaignId: 1, targetId: 1 });
 affectedCampaignByRuleSchema.index({ configId: 1, profileId: 1, campaignId: 1, reportDate: 1 });
+affectedCampaignByRuleSchema.index({ profileId: 1, isActive: 1, ruleId: 1 });
 
 module.exports = new mongoose.model("affectedCampaignByRule", affectedCampaignByRuleSchema);

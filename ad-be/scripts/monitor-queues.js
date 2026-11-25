@@ -38,7 +38,7 @@ async function printStatus() {
     console.clear();
   }
 
-  const { rulesQueue, hourlySyncQueue, spApiQueue, asinSnapshotQueue, outOfStockAdsQueue } = getQueues();
+  const { rulesQueue, hourlySyncQueue, spApiQueue, asinSnapshotQueue, outOfStockAdsQueue, fcInventoryLedgerQueue } = getQueues();
   if (!redisClient) {
     redisClient = createRedisClient("producer");
   }
@@ -80,7 +80,7 @@ async function printStatus() {
 
   // 2. Queue Job Counts
   console.log("\n--- QUEUE STATISTICS ---");
-  console.log("  QUEUE NAME            WAITING   ACTIVE   COMPLETED   FAILED   DELAYED   TOTAL ACTIVE/PENDING");
+  console.log("  QUEUE NAME                WAITING   ACTIVE   COMPLETED   FAILED   DELAYED   TOTAL ACTIVE/PENDING");
   console.log("  -----------------------------------------------------------------------------------------");
 
   const queues = [
@@ -89,6 +89,7 @@ async function printStatus() {
     { name: "sp-api-queue", queue: spApiQueue },
     { name: "asin-snapshot-queue", queue: asinSnapshotQueue },
     { name: "out-of-stock-ads-queue", queue: outOfStockAdsQueue },
+    { name: "fc-inventory-ledger-queue", queue: fcInventoryLedgerQueue },
   ];
 
   let totalFailedAllQueues = 0;
@@ -99,7 +100,7 @@ async function printStatus() {
     const totalPending = counts.waiting + counts.active + counts.delayed;
     totalFailedAllQueues += counts.failed;
 
-    const qName = name.padEnd(21);
+    const qName = name.padEnd(25);
     const waiting = String(counts.waiting).padEnd(9);
     const active = String(counts.active).padEnd(8);
     const completed = String(counts.completed).padEnd(11);

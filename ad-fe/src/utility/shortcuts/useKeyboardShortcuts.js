@@ -20,7 +20,7 @@ export const isInputElement = (target) => {
   return false;
 };
 
-export const useKeyboardShortcuts = () => {
+export const useKeyboardShortcuts = ({ enabled = true } = {}) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [isGuideOpen, setIsGuideOpen] = useState(false);
@@ -53,23 +53,33 @@ export const useKeyboardShortcuts = () => {
   }, []);
 
   const openGuide = useCallback(() => {
+    if (!enabled) return;
     clearChord();
     setIsGuideOpen(true);
-  }, [clearChord]);
+  }, [enabled, clearChord]);
 
   const closeGuide = useCallback(() => {
     setIsGuideOpen(false);
     clearChord();
   }, [clearChord]);
 
+  useEffect(() => {
+    if (!enabled) {
+      setIsGuideOpen(false);
+      clearChord();
+    }
+  }, [enabled, clearChord]);
+
   // Handle external open event (e.g. from header button)
   useEffect(() => {
+    if (!enabled) return undefined;
     const handleExternalOpen = () => openGuide();
     window.addEventListener("openShortcutsGuide", handleExternalOpen);
     return () => window.removeEventListener("openShortcutsGuide", handleExternalOpen);
-  }, [openGuide]);
+  }, [enabled, openGuide]);
 
   useEffect(() => {
+    if (!enabled) return undefined;
     const handleKeyDown = (e) => {
       // 1. Guard against firing inside input, textarea, contenteditable, etc.
       if (isInputElement(e.target)) {
@@ -176,7 +186,7 @@ export const useKeyboardShortcuts = () => {
       window.removeEventListener("keydown", handleKeyDown);
       if (chordTimerRef.current) clearTimeout(chordTimerRef.current);
     };
-  }, [navigate, location.pathname, isGuideOpen, closeGuide, openGuide, clearChord, triggerThemeToggle]);
+  }, [enabled, navigate, location.pathname, isGuideOpen, closeGuide, openGuide, clearChord, triggerThemeToggle]);
 
   return {
     isGuideOpen,

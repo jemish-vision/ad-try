@@ -698,22 +698,24 @@ function LayoutHeader({ nameShow = false, name, dateShow = false, profileShow, i
                                 </div>
                             </AppTooltip>
                         )}
-                        <AppTooltip text={t("Keyboard Shortcuts (?)")} side="bottom">
-                            <div id="keyboard-shortcuts">
-                                <button
-                                    type="button"
-                                    onClick={(e) => {
-                                        e.currentTarget.blur();
-                                        window.dispatchEvent(new CustomEvent("openShortcutsGuide"));
-                                    }}
-                                    className="theme-toggle-btn"
-                                    title={t("Keyboard Shortcuts (?)")}
-                                    aria-label="Keyboard Shortcuts"
-                                >
-                                    <i className="fa-solid fa-keyboard" style={{ fontSize: "16px", color: "var(--text-secondary)" }} />
-                                </button>
-                            </div>
-                        </AppTooltip>
+                        {role !== ROLES.SUPER_ADMIN && (
+                            <AppTooltip text={t("Keyboard Shortcuts (?)")} side="bottom">
+                                <div id="keyboard-shortcuts">
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.currentTarget.blur();
+                                            window.dispatchEvent(new CustomEvent("openShortcutsGuide"));
+                                        }}
+                                        className="theme-toggle-btn"
+                                        title={t("Keyboard Shortcuts (?)")}
+                                        aria-label="Keyboard Shortcuts"
+                                    >
+                                        <i className="fa-solid fa-keyboard" style={{ fontSize: "16px", color: "var(--text-secondary)" }} />
+                                    </button>
+                                </div>
+                            </AppTooltip>
+                        )}
                         <AppTooltip text={t("Notifications")} side="bottom">
                             <div id="notification">
                                 <NotificationPanel />

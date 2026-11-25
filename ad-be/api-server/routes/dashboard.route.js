@@ -5,6 +5,7 @@ const { getChangesByCampaign, getChangesByKeyword, getChangesByProduct, cronWeek
 const { getRecommendationsHub } = require("../controllers/recommendationsHub.controller");
 const { getWasteAndScalingAlerts } = require("../controllers/wasteAndScaling.controller");
 const { getPerformanceDeclineAlerts } = require("../controllers/performanceDecline.controller");
+const { getAdBlackoutAlerts, dismissAdBlackoutAlert } = require("../controllers/adBlackout.controller");
 const { AdTypeModels } = require("../middleware/adTypeModel.middleware");
 const { verifyCronAuth } = require("../middleware/cron.auth");
 const { validateRoutePermission } = require("../middleware/routePermission");
@@ -20,6 +21,8 @@ router.post("/getAdTypeBreakdown", verifyToken, validateRoutePermission(SYSTEM_P
 router.post("/getTimeBasedAnalytics", verifyToken, validateRoutePermission(SYSTEM_PAGES.DASHBOARD, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, getTimeBasedAnalytics);
 router.post("/getWasteAndScalingAlerts", verifyToken, validateRoutePermission(SYSTEM_PAGES.DASHBOARD, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, getWasteAndScalingAlerts);
 router.post("/getPerformanceDeclineAlerts", verifyToken, validateRoutePermission(SYSTEM_PAGES.DASHBOARD, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, getPerformanceDeclineAlerts);
+router.post("/getAdBlackoutAlerts", verifyToken, validateRoutePermission(SYSTEM_PAGES.DASHBOARD, PAGE_ACTIONS.VIEW_ONLY), getAdBlackoutAlerts);
+router.post("/dismissAdBlackoutAlert", verifyToken, validateRoutePermission(SYSTEM_PAGES.DASHBOARD, PAGE_ACTIONS.VIEW_ONLY), dismissAdBlackoutAlert);
 
 router.get("/cronWeeklyPerformanceEmail", verifyToken, verifyCronAuth, cronWeeklyPerformanceEmail);
 

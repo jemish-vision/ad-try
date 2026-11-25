@@ -116,7 +116,7 @@ const SubscriptionModal = ({ show, onHide, rowData, refreshGrid }) => {
                 return;
             }
             if (res?.partialSuccess) {
-                Toast.warn(t("Partial success: {{count}} dataset(s) failed", { count: res.result.failed.length }));
+                Toast.warning(t("Partial success: {{count}} dataset(s) failed", { count: res.result.failed.length }));
                 refreshGrid();
                 onHide();
                 return;

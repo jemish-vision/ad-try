@@ -1847,7 +1847,7 @@ exports.customChatBot = async (req, res) => {
     if (activeProfileIds.length > 0 && mongoose.connection.readyState === 1) {
       try {
         const profileDoc = await mongoose.connection.db.collection('profiles').findOne({
-          profileId: activeProfileIds[0]
+          profileId: Number(activeProfileIds[0])
         });
         if (profileDoc) {
           activeProfile = {

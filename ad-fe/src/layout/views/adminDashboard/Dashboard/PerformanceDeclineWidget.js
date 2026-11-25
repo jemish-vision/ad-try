@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import moment from "moment";
-import { ShieldAlert, RefreshCw, ExternalLink, CheckCircle2, AlertTriangle, Package } from "lucide-react";
+import { ShieldAlert, RefreshCw, ExternalLink, CheckCircle2, AlertTriangle, Package, ChevronLeft, ChevronRight, X, Calendar as CalendarIcon } from "lucide-react";
+import { ShadcnDateRangePicker as DateRangePicker } from "../../../../components/ui/date-range-picker";
 import { ApiGetPerformanceDeclineAlerts } from "../../../../api-wrapper/dashboard/ApiDashboard";
 import { formatFullRegionalCurrency, formatRegionalCurrency, formatRegionalNumber } from "../../../../utility/regionalNumberFormat";
 import { campaignViewUrl } from "./OutOfStockAdsWidget";
@@ -25,10 +26,30 @@ const CALLOUT_BORDER = { CRITICAL: "border-l-rose-500", WARNING: "border-l-amber
 /** Fetches alerts for one profile / ad type / window; ignores answers to superseded requests. */
 export function usePerformanceDeclineData({ profileId, adType, currencyCode, marketplace }) {
   const [windowDays, setWindowDays] = useState(DEFAULT_WINDOW);
+  const [customRange, setCustomRange] = useState(null); // { startDate, endDate } | null
+  const [page, setPage] = useState(1);
+  const [limit] = useState(6);
+  const [severity, setSeverity] = useState(null); // 'CRITICAL' | 'WARNING' | null
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const requestSeq = useRef(0);
+
+  const changeWindowDays = useCallback((w) => {
+    setCustomRange(null);
+    setWindowDays(w);
+    setPage(1);
+  }, []);
+
+  const changeCustomRange = useCallback((range) => {
+    setCustomRange(range);
+    setPage(1);
+  }, []);
+
+  const changeSeverity = useCallback((sev) => {
+    setSeverity((prev) => (prev === sev ? null : sev));
+    setPage(1);
+  }, []);
 
   const load = useCallback(
     async (refresh = false) => {
@@ -36,7 +57,19 @@ export function usePerformanceDeclineData({ profileId, adType, currencyCode, mar
       const seq = ++requestSeq.current;
       setLoading(true);
       setError(false);
-      const res = await ApiGetPerformanceDeclineAlerts({ profileId, adType, windowDays, currencyCode, marketplace, ...(refresh ? { refresh: true } : {}) });
+      const res = await ApiGetPerformanceDeclineAlerts({
+        profileId,
+        adType,
+        windowDays,
+        startDate: customRange?.startDate || null,
+        endDate: customRange?.endDate || null,
+        page,
+        limit,
+        severity,
+        currencyCode,
+        marketplace,
+        ...(refresh ? { refresh: true } : {}),
+      });
       if (seq !== requestSeq.current) return; // a newer request (profile / window change) is in flight
       if (res?.isSuccess) setData(res.data);
       else {
@@ -45,14 +78,35 @@ export function usePerformanceDeclineData({ profileId, adType, currencyCode, mar
       }
       setLoading(false);
     },
-    [profileId, adType, windowDays, currencyCode, marketplace],
+    [profileId, adType, windowDays, customRange, page, limit, severity, currencyCode, marketplace],
   );
 
   useEffect(() => {
     load(false);
   }, [load]);
 
-  return { windowDays, setWindowDays, data, loading, error, refetch: () => load(true) };
+  // Reset to page 1 and clear filters if profile or adType changes
+  useEffect(() => {
+    setPage(1);
+    setSeverity(null);
+    setCustomRange(null);
+  }, [profileId, adType]);
+
+  return {
+    windowDays,
+    setWindowDays: changeWindowDays,
+    customRange,
+    setCustomRange: changeCustomRange,
+    page,
+    setPage,
+    limit,
+    severity,
+    setSeverity: changeSeverity,
+    data,
+    loading,
+    error,
+    refetch: () => load(true),
+  };
 }
 
 function MetricChip({ metric, m, t, money, number }) {
@@ -173,7 +227,21 @@ function AlertCard({ alert, t, money, moneyShort, number }) {
  */
 export default function PerformanceDeclineWidget({ profileId, adType = "SP", currencyCode, marketplace = "IN" }) {
   const { t } = useTranslation();
-  const { windowDays, setWindowDays, data, loading, error, refetch } = usePerformanceDeclineData({ profileId, adType, currencyCode, marketplace });
+  const {
+    windowDays,
+    setWindowDays,
+    customRange,
+    setCustomRange,
+    page,
+    setPage,
+    limit,
+    severity,
+    setSeverity,
+    data,
+    loading,
+    error,
+    refetch,
+  } = usePerformanceDeclineData({ profileId, adType, currencyCode, marketplace });
   // Exact amounts (2 decimals) in chips and explanations; compact for the loss totals.
   const money = (v) => formatFullRegionalCurrency(v, currencyCode, marketplace);
   const moneyShort = (v) => formatRegionalCurrency(v, currencyCode, marketplace);
@@ -183,6 +251,15 @@ export default function PerformanceDeclineWidget({ profileId, adType = "SP", cur
   const summary = data?.summary || { totalDeclines: 0, criticalCount: 0, warningCount: 0, totalEstimatedLoss: 0 };
   const ew = data?.evaluationWindow;
   const range = (r) => (r ? `${moment(r.start).format("DD MMM")} – ${moment(r.end).format("DD MMM")}` : "");
+  const totalDeclines = summary.totalDeclines || alerts.length;
+  const pagination = data?.pagination || {
+    page: page || 1,
+    limit: limit || 6,
+    totalRecords: totalDeclines,
+    totalPages: Math.ceil(totalDeclines / (limit || 6)) || 1,
+    hasNextPage: page < Math.ceil(totalDeclines / (limit || 6)),
+    hasPrevPage: page > 1,
+  };
 
   return (
     <div className="dg-root rounded-2xl overflow-hidden flex flex-col h-[420px] max-h-[420px] transition-all border border-slate-100 dark:border-white/5" id="dashboard-performance-decline">
@@ -195,31 +272,100 @@ export default function PerformanceDeclineWidget({ profileId, adType = "SP", cur
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-[15px] font-bold text-slate-900 dark:text-white tracking-tight">{t("Performance Decline & Root Cause Triage")}</h3>
-              {summary.criticalCount > 0 && <span className={`px-2 py-0.5 rounded-full border text-[12px] font-semibold ${TONE.rose}`}>{t("{{count}} Critical", { count: summary.criticalCount })}</span>}
-              {summary.warningCount > 0 && <span className={`px-2 py-0.5 rounded-full border text-[12px] font-semibold ${TONE.amber}`}>{t("{{count}} Warnings", { count: summary.warningCount })}</span>}
+              {summary.criticalCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSeverity("CRITICAL")}
+                  aria-pressed={severity === "CRITICAL"}
+                  title={severity === "CRITICAL" ? t("Filtered by Critical — click to show all") : t("Click to filter Critical alerts only")}
+                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[12px] font-semibold transition-all cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/50 ${
+                    severity === "CRITICAL"
+                      ? "bg-rose-600 text-white border-rose-600 dark:bg-rose-600 dark:border-rose-600 dark:text-white shadow-sm"
+                      : `${TONE.rose} hover:bg-rose-100/80 dark:hover:bg-rose-900/40`
+                  }`}
+                >
+                  <span>{t("{{count}} Critical", { count: summary.criticalCount })}</span>
+                  {severity === "CRITICAL" && <X className="w-3 h-3 opacity-90 hover:opacity-100 shrink-0" />}
+                </button>
+              )}
+              {summary.warningCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSeverity("WARNING")}
+                  aria-pressed={severity === "WARNING"}
+                  title={severity === "WARNING" ? t("Filtered by Warnings — click to show all") : t("Click to filter Warning alerts only")}
+                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[12px] font-semibold transition-all cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 ${
+                    severity === "WARNING"
+                      ? "bg-amber-600 text-white border-amber-600 dark:bg-amber-600 dark:border-amber-600 dark:text-white shadow-sm"
+                      : `${TONE.amber} hover:bg-amber-100/80 dark:hover:bg-amber-900/40`
+                  }`}
+                >
+                  <span>{t("{{count}} Warnings", { count: summary.warningCount })}</span>
+                  {severity === "WARNING" && <X className="w-3 h-3 opacity-90 hover:opacity-100 shrink-0" />}
+                </button>
+              )}
             </div>
             {ew && (
               <p className="text-[11.5px] text-slate-400 mt-0.5">
-                {t("Comparing {{current}} with {{prior}}. The last 2 days are left out while Amazon finishes counting sales.", { current: range(ew.current), prior: range(ew.prior) })}
+                {ew.isCustom
+                  ? t("Comparing {{current}} with prior period ({{prior}}).", { current: range(ew.current), prior: range(ew.prior) })
+                  : t("Comparing {{current}} with {{prior}}. The last 2 days are left out while Amazon finishes counting sales.", { current: range(ew.current), prior: range(ew.prior) })}
               </p>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <div className="inline-flex rounded-lg border border-slate-200 dark:border-white/10 p-0.5 bg-slate-50 dark:bg-white/[0.03]" role="group" aria-label={t("Comparison window")}>
             {WINDOWS.map((d) => (
               <button
                 key={d}
                 type="button"
                 onClick={() => setWindowDays(d)}
-                aria-pressed={windowDays === d}
-                className={`h-6 px-2.5 rounded-md text-[12px] font-semibold transition-colors ${windowDays === d ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-sky-400 shadow-sm" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-200"}`}
+                aria-pressed={!customRange && windowDays === d}
+                className={`h-6 px-2.5 rounded-md text-[12px] font-semibold transition-colors ${
+                  !customRange && windowDays === d
+                    ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-sky-400 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-200"
+                }`}
               >
                 {t("{{days}}D", { days: d })}
               </button>
             ))}
           </div>
+
+          <DateRangePicker
+            id="perf-decline-date-range"
+            ariaLabel={t("Custom Date Range")}
+            placeholder={t("Custom")}
+            value={customRange ? [customRange.startDate, customRange.endDate] : undefined}
+            persistGlobalDate={false}
+            align="end"
+            disabledDate={(date) => date > new Date()}
+            className="[&_button]:h-7 [&_button]:text-xs [&_button]:px-2.5 [&_button]:rounded-lg [&_button]:border-slate-200 dark:[&_button]:border-white/10 shrink-0"
+            onChange={(dates) => {
+              if (dates && dates[0] && dates[1]) {
+                setCustomRange({
+                  startDate: moment(dates[0]).format("YYYY-MM-DD"),
+                  endDate: moment(dates[1]).format("YYYY-MM-DD"),
+                });
+              } else {
+                setCustomRange(null);
+              }
+            }}
+          />
+
+          {customRange && (
+            <button
+              type="button"
+              onClick={() => setCustomRange(null)}
+              title={t("Clear custom date range")}
+              className="h-7 w-7 rounded-lg border border-slate-200 dark:border-white/10 flex items-center justify-center text-slate-500 hover:text-rose-600 bg-white dark:bg-slate-900 transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+
           <button
             type="button"
             onClick={refetch}
@@ -256,8 +402,25 @@ export default function PerformanceDeclineWidget({ profileId, adType = "SP", cur
         ) : alerts.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center gap-1.5 py-8">
             <CheckCircle2 className="w-9 h-9 text-emerald-500" />
-            <p className="text-[13.5px] font-semibold text-slate-700 dark:text-slate-200">{t("All campaigns are within their normal range.")}</p>
-            <p className="text-[12px] text-slate-400">{t("No unusual performance declines in the last {{days}} days.", { days: windowDays })}</p>
+            <p className="text-[13.5px] font-semibold text-slate-700 dark:text-slate-200">
+              {severity ? t("No {{severity}} alerts found.", { severity: severity === "CRITICAL" ? t("Critical") : t("Warning") }) : t("All campaigns are within their normal range.")}
+            </p>
+            <p className="text-[12px] text-slate-400">
+              {severity
+                ? t("Try selecting a different filter or clear the filter to see all declining campaigns.")
+                : customRange
+                ? t("No unusual performance declines in the selected date range.")
+                : t("No unusual performance declines in the last {{days}} days.", { days: windowDays })}
+            </p>
+            {severity && (
+              <button
+                type="button"
+                onClick={() => setSeverity(severity)}
+                className="mt-2 h-7 px-3 rounded-lg text-[12px] font-semibold border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/[0.05]"
+              >
+                {t("Clear filter")}
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-3.5 items-start">
@@ -270,11 +433,49 @@ export default function PerformanceDeclineWidget({ profileId, adType = "SP", cur
 
       {/* Footer */}
       {alerts.length > 0 && (
-        <div className="px-5 py-2 border-t border-slate-100 dark:border-white/5 flex items-center justify-between text-[11.5px] text-slate-400 shrink-0">
-          <span>{t("Showing the top {{shown}} of {{total}} declining campaigns", { shown: alerts.length, total: summary.totalDeclines })}</span>
+        <div className="px-5 py-2.5 border-t border-slate-100 dark:border-white/5 flex items-center justify-between text-[11.5px] text-slate-400 shrink-0 flex-wrap gap-2">
           <span>
-            {t("Total est. loss")} <span className="font-bold text-rose-600 dark:text-rose-400 tabular-nums" title={money(summary.totalEstimatedLoss)}>{moneyShort(summary.totalEstimatedLoss)}</span>
+            {severity
+              ? t("Showing {{start}}–{{end}} of {{total}} {{severity}} campaigns", {
+                  start: (pagination.page - 1) * pagination.limit + 1,
+                  end: Math.min(pagination.page * pagination.limit, pagination.totalRecords),
+                  total: pagination.totalRecords,
+                  severity: severity === "CRITICAL" ? t("critical") : t("warning"),
+                })
+              : t("Showing {{start}}–{{end}} of {{total}} declining campaigns", {
+                  start: (pagination.page - 1) * pagination.limit + 1,
+                  end: Math.min(pagination.page * pagination.limit, pagination.totalRecords),
+                  total: pagination.totalRecords,
+                })}
           </span>
+
+          {pagination.totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={!pagination.hasPrevPage || loading}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                aria-label={t("Previous page")}
+                className="h-6 w-6 rounded flex items-center justify-center border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/[0.06] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+
+              <span className="font-semibold text-slate-700 dark:text-slate-200 tabular-nums">
+                {t("Page {{page}} of {{totalPages}}", { page: pagination.page, totalPages: pagination.totalPages })}
+              </span>
+
+              <button
+                type="button"
+                disabled={!pagination.hasNextPage || loading}
+                onClick={() => setPage((p) => p + 1)}
+                aria-label={t("Next page")}
+                className="h-6 w-6 rounded flex items-center justify-center border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/[0.06] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

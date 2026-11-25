@@ -155,8 +155,20 @@ exports.cronGenerateFcInventoryLedgerReport = async (customParam1 = null) => {
   }
 };
 
-async function generateFcLedgerReportForDate(profile, startDate, endDate, token, recurring = true) {
+exports.runFcLedgerBackfillDay = async (profile, date) => {
+  if (!profile?.isActive || !profile.isSpSyncEnabled || typeof date !== "string" ||
+      !moment(date, "YYYY-MM-DD", true).isValid() ||
+      date >= moment().tz(profile.timezone || "Asia/Kolkata").format("YYYY-MM-DD")) {
+    return "FAILED";
+  }
+  const token = await getSPAccessToken(profile.configId, profile.profileId);
+  if (!token) return "FAILED";
+  return generateFcLedgerReportForDate(profile, date, date, token, false, true);
+};
+
+async function generateFcLedgerReportForDate(profile, startDate, endDate, token, recurring = true, backfill = false) {
   const reportTypeId = "GET_LEDGER_SUMMARY_VIEW_DATA";
+  const reportName = backfill ? "FC_INVENTORY_LEDGER_BACKFILL" : "FC_INVENTORY_LEDGER";
   const todayStr = moment().tz(profile.timezone || "Asia/Kolkata").format("YYYY-MM-DD");
   if (!endDate) endDate = startDate;
   if (moment(endDate).isAfter(todayStr)) endDate = todayStr;
@@ -172,6 +184,7 @@ async function generateFcLedgerReportForDate(profile, startDate, endDate, token,
       profileId: profile.profileId,
       configId: profile.configId,
       reportTypeId,
+      reportName: { $ne: "FC_INVENTORY_LEDGER_BACKFILL" },
       status: { $in: ["PENDING", "PROCESSING", "IN_QUEUE", "IN_PROGRESS"] },
       createdAt: { $gte: twentyFourHoursAgo },
     }).sort({ createdAt: -1 }).lean();
@@ -183,6 +196,7 @@ async function generateFcLedgerReportForDate(profile, startDate, endDate, token,
         startDate,
         endDate,
         reportTypeId,
+        reportName: { $ne: "FC_INVENTORY_LEDGER_BACKFILL" },
         status: "COMPLETED",
         createdAt: { $gte: twentyFourHoursAgo },
       }).sort({ createdAt: -1 }).lean();
@@ -198,7 +212,8 @@ async function generateFcLedgerReportForDate(profile, startDate, endDate, token,
       configId: profile.configId,
       startDate,
       endDate,
-      reportTypeId
+      reportTypeId,
+      ...(backfill && { reportName }),
     }).sort({ createdAt: -1 }).lean();
     if (existing?.status === "COMPLETED") return "COMPLETED";
     if (existing && !["PENDING", "PROCESSING", "IN_QUEUE", "IN_PROGRESS"].includes(existing.status)) {
@@ -255,22 +270,38 @@ async function generateFcLedgerReportForDate(profile, startDate, endDate, token,
           profileId: profile.profileId,
           configId: profile.configId,
           sellerId: token?.sellerId,
-          defaultDate: startDate
+          defaultDate: startDate,
+          exactDate: backfill ? startDate : undefined,
         });
+        const completed = backfill
+          ? {
+              completedAt: new Date(),
+              verifiedRows: await fcInventoryLedgerSchema.countDocuments({
+                profileId: profile.profileId, configId: profile.configId, reportDate: startDate,
+              }),
+            }
+          : { processedAt: new Date(), recordCount: affectedRecords };
         await reportsSchema.updateOne(
           { _id: existing._id },
-          { $set: { status: "COMPLETED", processedAt: new Date(), recordCount: affectedRecords } }
+          { $set: { status: "COMPLETED", ...completed } }
         );
         return "COMPLETED";
       }
       if (["CANCELLED", "FATAL", "FAILED"].includes(processingStatus)) {
         await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED", failedAt: new Date() } });
+        if (backfill) return "FAILED";
         existing = null;
       } else {
         return "PENDING";
       }
     } catch (error) {
       cron_logs({ message: `[FC Ledger] Poll error: ${error.stack || error.message}`, log_type: "error" });
+      if (backfill && error.code === "LEDGER_DATE_MISMATCH") {
+        await reportsSchema.updateOne({ _id: existing._id }, {
+          $set: { status: "FAILED", failedAt: new Date(), errorMessage: error.message },
+        });
+        return "FAILED";
+      }
       return "PENDING";
     }
   }
@@ -306,7 +337,7 @@ async function generateFcLedgerReportForDate(profile, startDate, endDate, token,
         endDate,
         adProduct: "INVENTORY",
         reportTypeId,
-        reportName: "FC_INVENTORY_LEDGER",
+        reportName,
         status: "PENDING"
       });
       cron_logs({ message: `[FC Ledger] Report created: ${reportId}`, log_type: "info" });
@@ -319,8 +350,13 @@ async function generateFcLedgerReportForDate(profile, startDate, endDate, token,
   return existing?.status || "PENDING";
 }
 
-async function processFcLedgerFile(filePath, { profileId, configId, sellerId, defaultDate }) {
-  console.log("-------------Starte to insert the data")
+function parseFcLedgerDate(value) {
+  if (!value) return null;
+  const parsed = moment(String(value).trim(), ["MM/DD/YYYY", "YYYY-MM-DD", "YYYY/MM/DD", "DD/MM/YYYY", "MM-DD-YYYY", "DD-MM-YYYY"], true);
+  return parsed.isValid() ? parsed.format("YYYY-MM-DD") : null;
+}
+
+async function* readFcLedgerRows(filePath) {
   if (!fs.existsSync(filePath)) throw new Error(`[FC Ledger] File not found: ${filePath}`);
   const stats = fs.statSync(filePath);
   if (!stats.size) throw new Error(`[FC Ledger] File is empty: ${filePath}`);
@@ -328,31 +364,8 @@ async function processFcLedgerFile(filePath, { profileId, configId, sellerId, de
   const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
   let headers = null;
   let delimiter = "\t";
-  let bulkOps = [];
-  const discoveredFcs = new Map();
-  const BATCH_SIZE = 500;
-  let totalRows = 0;
-  let validRows = 0;
-  let skippedRows = 0;
-  let insertedCount = 0;
-  let modifiedCount = 0;
-  let upsertedCount = 0;
-
   const clean = (value) => value === undefined || value === null ? "" : String(value).replace(/^\uFEFF/, "").trim().replace(/^"(.*)"$/, "$1").trim();
   const normalizeHeader = (value) => clean(value).toLowerCase().replace(/\s+/g, " ").trim();
-  const number = (value) => {
-    if (value === undefined || value === null || value === "") return 0;
-    const n = Number(String(value).replace(/,/g, "").trim());
-    return Number.isFinite(n) ? n : 0;
-  };
-  console.log("defaultDate", defaultDate);
-  const parseDate = (value) => {
-    if (!value) return defaultDate;
-    const parsed = moment(String(value).trim(), ["MM/DD/YYYY", "YYYY-MM-DD", "YYYY/MM/DD", "DD/MM/YYYY", "MM-DD-YYYY", "DD-MM-YYYY"], true);
-    return parsed.isValid() ? parsed.format("YYYY-MM-DD") : defaultDate;
-  };
-
-
   const parseLine = (line, delimiter) => {
     const result = [];
     let current = "";
@@ -376,7 +389,46 @@ async function processFcLedgerFile(filePath, { profileId, configId, sellerId, de
     result.push(clean(current));
     return result;
   };
-  console.log("defaultDate", defaultDate);
+  for await (const line of rl) {
+    if (!line || !line.trim()) continue;
+    if (!headers) {
+      delimiter = line.includes("\t") ? "\t" : ",";
+      headers = parseLine(line, delimiter).map(normalizeHeader);
+      const required = ["date", "fnsku", "asin", "msku", "disposition", "ending warehouse balance", "location"];
+      const missing = required.filter((field) => !headers.includes(field));
+      if (missing.length) throw Object.assign(new Error(`[FC Ledger] Missing headers: ${missing.join(", ")}`), { code: "LEDGER_DATE_MISMATCH" });
+      continue;
+    }
+
+    const columns = parseLine(line, delimiter);
+    yield Object.fromEntries(headers.map((header, index) => [header, columns[index] || ""]));
+  }
+}
+
+async function processFcLedgerFile(filePath, { profileId, configId, sellerId, defaultDate, exactDate }) {
+  if (exactDate) {
+    // Validate the entire report before writing any chunks. Never relabel dates during a backfill.
+    for await (const row of readFcLedgerRows(filePath)) {
+      if (parseFcLedgerDate(row.date) !== exactDate) {
+        throw Object.assign(new Error(`[FC Ledger] Report contains rows outside the requested day ${exactDate}`), { code: "LEDGER_DATE_MISMATCH" });
+      }
+    }
+  }
+
+  const bulkOps = [];
+  const discoveredFcs = new Map();
+  const BATCH_SIZE = 500;
+  let totalRows = 0;
+  let validRows = 0;
+  let skippedRows = 0;
+  let insertedCount = 0;
+  let modifiedCount = 0;
+  let upsertedCount = 0;
+  const clean = (value) => String(value ?? "").trim();
+  const number = (value) => {
+    const n = Number(String(value ?? "").replace(/,/g, "").trim());
+    return Number.isFinite(n) ? n : 0;
+  };
   const flush = async () => {
     if (!bulkOps.length) return;
     const operations = bulkOps.splice(0);
@@ -396,24 +448,9 @@ async function processFcLedgerFile(filePath, { profileId, configId, sellerId, de
     }
   };
 
-  for await (const line of rl) {
-    if (!line || !line.trim()) continue;
-    if (!headers) {
-      delimiter = line.includes("\t") ? "\t" : ",";
-      headers = parseLine(line, delimiter).map(normalizeHeader);
-      cron_logs({ message: `[FC Ledger] Headers: ${JSON.stringify(headers)}`, log_type: "info" });
-      const required = ["date", "fnsku", "asin", "msku", "disposition", "ending warehouse balance", "location"];
-      const missing = required.filter((field) => !headers.includes(field));
-      if (missing.length) throw new Error(`[FC Ledger] Missing headers: ${missing.join(", ")}`);
-      continue;
-    }
-
+  for await (const row of readFcLedgerRows(filePath)) {
     totalRows++;
-    const columns = parseLine(line, delimiter);
-    const row = {};
-    headers.forEach((header, index) => { row[header] = columns[index] || ""; });
-
-    const reportDate = parseDate(row["date"]);
+    const reportDate = parseFcLedgerDate(row.date) || defaultDate;
     const fnsku = clean(row["fnsku"]);
     const asin = clean(row["asin"]);
     const sku = clean(row["msku"] || row["merchant-sku"] || row["seller-sku"] || row["sku"]);
@@ -452,6 +489,13 @@ async function processFcLedgerFile(filePath, { profileId, configId, sellerId, de
 
     discoveredFcs.set(fcCode, { fcCode, countryCode, source: "REPORT_LEDGER" });
 
+    const values = {
+      sellerId, profileId, configId, reportDate, fcCode, countryCode, asin, sku, fnsku, title, disposition,
+      startingWarehouseBalance, inTransitBetweenWarehouses, receipts, customerShipments, customerReturns,
+      vendorReturns, warehouseTransfers, foundInventory, lostInventory, damagedInventory, disposedInventory,
+      otherEvents, endingWarehouseBalance, unknownEvents, unfulfillableBalance,
+      source: "GET_LEDGER_SUMMARY_VIEW_DATA", updatedAt: new Date(),
+    };
     bulkOps.push({
       updateOne: {
         filter: {
@@ -462,42 +506,11 @@ async function processFcLedgerFile(filePath, { profileId, configId, sellerId, de
           sku,
           disposition
         },
-        update: {
-          $set: {
-            sellerId,
-            profileId,
-            configId,
-            reportDate,
-            fcCode,
-            countryCode,
-            asin,
-            sku,
-            fnsku,
-            title,
-            disposition,
-            startingWarehouseBalance,
-            inTransitBetweenWarehouses,
-            receipts,
-            customerShipments,
-            customerReturns,
-            vendorReturns,
-            warehouseTransfers,
-            foundInventory,
-            lostInventory,
-            damagedInventory,
-            disposedInventory,
-            otherEvents,
-            endingWarehouseBalance,
-            unknownEvents,
-            unfulfillableBalance,
-            source: "GET_LEDGER_SUMMARY_VIEW_DATA",
-            updatedAt: new Date()
-          },
-          $setOnInsert: {
-            createdAt: new Date()
-          }
-        },
-        upsert: true
+        update: exactDate
+          ? { $setOnInsert: { ...values, createdAt: new Date() } }
+          : { $set: values, $setOnInsert: { createdAt: new Date() } },
+        upsert: true,
+        ...(exactDate && { timestamps: false }),
       }
     });
 
@@ -506,7 +519,7 @@ async function processFcLedgerFile(filePath, { profileId, configId, sellerId, de
 
   if (bulkOps.length) await flush();
 
-  if (discoveredFcs.size) {
+  if (!exactDate && discoveredFcs.size) {
     try {
       await registerDiscoveredWarehouses(Array.from(discoveredFcs.values()));
 

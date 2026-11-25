@@ -9,6 +9,7 @@ let syncEvents = null;
 let spApiEvents = null;
 let snapshotEvents = null;
 let outOfStockAdsEvents = null;
+let fcInventoryLedgerEvents = null;
 let eventsConnection = null;
 
 function setupQueueEventListeners(eventsInstance, queueName) {
@@ -51,8 +52,8 @@ function setupQueueEventListeners(eventsInstance, queueName) {
 }
 
 function startQueueEventsObserver() {
-  if (rulesEvents && syncEvents && spApiEvents && snapshotEvents && outOfStockAdsEvents) {
-    return { rulesEvents, syncEvents, spApiEvents, snapshotEvents, outOfStockAdsEvents };
+  if (rulesEvents && syncEvents && spApiEvents && snapshotEvents && outOfStockAdsEvents && fcInventoryLedgerEvents) {
+    return { rulesEvents, syncEvents, spApiEvents, snapshotEvents, outOfStockAdsEvents, fcInventoryLedgerEvents };
   }
 
   eventsConnection = getEventsConnection();
@@ -79,16 +80,21 @@ function startQueueEventsObserver() {
     connection: eventsConnection,
     prefix: getBullMQPrefix(),
   });
+  fcInventoryLedgerEvents = new QueueEvents(QUEUES.FC_INVENTORY_LEDGER, {
+    connection: eventsConnection,
+    prefix: getBullMQPrefix(),
+  });
 
   setupQueueEventListeners(rulesEvents, QUEUES.RULES);
   setupQueueEventListeners(syncEvents, QUEUES.HOURLY_SYNC);
   setupQueueEventListeners(spApiEvents, QUEUES.SP_API);
   setupQueueEventListeners(snapshotEvents, QUEUES.ASIN_SNAPSHOT);
   setupQueueEventListeners(outOfStockAdsEvents, QUEUES.OUT_OF_STOCK_ADS);
+  setupQueueEventListeners(fcInventoryLedgerEvents, QUEUES.FC_INVENTORY_LEDGER);
 
   console.log(`[QueueEvents] Started observer on ${os.hostname()} (pid: ${process.pid})`);
 
-  return { rulesEvents, syncEvents, spApiEvents, snapshotEvents, outOfStockAdsEvents };
+  return { rulesEvents, syncEvents, spApiEvents, snapshotEvents, outOfStockAdsEvents, fcInventoryLedgerEvents };
 }
 
 async function closeQueueEventsObserver() {
@@ -112,6 +118,10 @@ async function closeQueueEventsObserver() {
   if (outOfStockAdsEvents) {
     promises.push(outOfStockAdsEvents.close());
     outOfStockAdsEvents = null;
+  }
+  if (fcInventoryLedgerEvents) {
+    promises.push(fcInventoryLedgerEvents.close());
+    fcInventoryLedgerEvents = null;
   }
   await Promise.allSettled(promises);
 

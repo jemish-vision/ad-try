@@ -78,3 +78,26 @@ export const ApiGetPerformanceDeclineAlerts = (data) => {
     .then((res) => res.data)
     .catch((err) => err?.response?.data || { isSuccess: false });
 };
+
+/** Hourly zero-impression ad blackout alerts detected via Amazon Marketing Stream. */
+export const ApiGetAdBlackoutAlerts = (data) => {
+  const token = localStorage.getItem("sellerToken") || authToken;
+  return axios
+    .post(`${api}getAdBlackoutAlerts`, data, {
+      headers: { ...headers, Authorization: `Bearer ${token}`, "x-skip-loader": true },
+      skipLoader: true,
+    })
+    .then((res) => res.data)
+    .catch((err) => err?.response?.data || { isSuccess: false });
+};
+
+export const ApiDismissAdBlackoutAlert = (data) => {
+  const token = localStorage.getItem("sellerToken") || authToken;
+  return axios
+    .post(`${api}dismissAdBlackoutAlert`, data, {
+      headers: { ...headers, Authorization: `Bearer ${token}`, "x-skip-loader": true },
+      skipLoader: true,
+    })
+    .then((res) => res.data)
+    .catch((err) => err?.response?.data || { isSuccess: false });
+};
