@@ -8447,5 +8447,9 @@
   "A+ Content banners are charged per generated image. Batch images are charged when Google returns them; failed batches are free.": "A+ 内容横幅按生成的图片计费。批量图片在 Google 返回时计费;失败的批次免费。",
   "How the credits split between AI Assistant, Optimize with AI, A+ Content and AI listing generation.": "积分在 AI 助手、“AI 优化”、A+ 内容和 AI 生成商品详情之间的分配。",
   "Uses AI credits: {{amount}} for the {{n}} images, plus the text.": "使用 AI 积分:{{n}} 张图片 {{amount}},另加文本。",
-  "Uses AI credits from your organization's monthly allowance.": "使用您组织每月额度中的 AI 积分。"
+  "Uses AI credits from your organization's monthly allowance.": "使用您组织每月额度中的 AI 积分。",
+  "Campaign AI Analysis": "广告活动 AI 分析",
+  "Analysis failed. Please try again.": "分析失败,请重试。",
+  "All AI features (AI Assistant, Optimize with AI, A+ Content, AI listing generation and Campaign AI Analysis) use credits from one monthly allowance shared by your whole organization.": "所有 AI 功能(AI 助手、“AI 优化”、A+ 内容、AI 生成商品详情和广告活动 AI 分析)共用整个组织的每月积分额度。",
+  "How the credits split between the AI features.": "积分在各项 AI 功能之间的分配。"
 }

@@ -71,4 +71,20 @@ async function releaseBackgroundHold(hold, reason) {
   }
 }
 
-module.exports = { imageCredits, holdForBackgroundJob, settleBackgroundHold, releaseBackgroundHold };
+/**
+ * The background work won't happen after all and the request will do it itself (e.g. A+ batch
+ * submission failed, images generated directly): move the hold onto the request's own hold.
+ * Returns true when the request is now covered.
+ */
+async function moveHoldToRequest(hold, req) {
+  if (!hold?.requestId) return true;
+  const target = req?.aiMeter?.hold;
+  if (!target) {
+    await releaseBackgroundHold(hold, 'Request not metered');
+    return true;
+  }
+  const moved = await service.transferHold(hold, target);
+  return moved > 0 || !(hold.amount > 0);
+}
+
+module.exports = { imageCredits, holdForBackgroundJob, settleBackgroundHold, releaseBackgroundHold, moveHoldToRequest };

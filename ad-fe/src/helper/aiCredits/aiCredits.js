@@ -10,6 +10,7 @@ export const FEATURE_LABELS = {
   LISTING_OPTIMIZATION: "Optimize with AI",
   LISTING_GENERATION: "AI listing generation",
   APLUS_CONTENT: "A+ Content",
+  CAMPAIGN_ANALYSIS: "Campaign AI Analysis",
 };
 
 /** A fresh id for one AI action; sent as X-AI-Request-Id so a repeated submit is never charged twice. */

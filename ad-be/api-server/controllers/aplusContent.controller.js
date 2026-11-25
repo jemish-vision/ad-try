@@ -24,7 +24,7 @@ const { sendNotificationToUser } = require("../helper/sendNotification");
 const { submitAPlusImageBatchJob, checkBatchJobStatus, saveBatchImageToDisk } = require("../helper/geminiBatch.helper");
 const { AiCreditsError } = require("../services/aiCredits/aiCredit.service");
 const { reserveAiCredits, creditErrorBody } = require("../services/aiCredits/withAiCredits");
-const { imageCredits, holdForBackgroundJob, settleBackgroundHold, releaseBackgroundHold } = require("../services/aiCredits/backgroundHolds");
+const { imageCredits, holdForBackgroundJob, settleBackgroundHold, releaseBackgroundHold, moveHoldToRequest } = require("../services/aiCredits/backgroundHolds");
 
 // Images generated per A+ document (matches generateAPlusModulesAI: 5 basic, 7 premium)
 const expectedAPlusImages = (type) => (type === "premium" ? 7 : 5);
@@ -353,6 +353,8 @@ function buildContentModulesFromImages(generatedImages) {
 }
 
 exports.createAIAPlusContent = async (req, res) => {
+    // AI credits held for batch images; returned in the catch below unless a batch job takes it over
+    let aiCreditHold = null;
     try {
         const { asin, prompt = "", generateImageOption = false, type = "basic", useBatch = true } = req.body;
 
@@ -393,11 +395,21 @@ exports.createAIAPlusContent = async (req, res) => {
 
         const productData = { title: summary?.itemName || "", brand: summary?.brand || "", description, bullets, images };
 
-        // AI credits: hold credits for the text, plus the images when they are generated in this request
-        // (batch images get their own hold below, settled when the batch finishes).
+        // AI credits: hold everything before any AI runs — the text, plus the images (5 basic / 7 premium).
+        // Direct images are held on the request; batch images on their own hold, settled when Google
+        // returns them. Not enough credits = nothing is generated.
         const isGenerateImage = generateImageOption === true || generateImageOption === "true";
-        const directImages = isGenerateImage && !useBatch ? expectedAPlusImages(type) : 0;
-        if (!(await reserveAiCredits(req, res, { extraCredits: await imageCredits(directImages) }))) return;
+        const useBatchImages = Boolean(useBatch) && isGenerateImage;
+        const imageHold = await imageCredits(isGenerateImage ? expectedAPlusImages(type) : 0);
+        if (!(await reserveAiCredits(req, res, { extraCredits: useBatchImages ? 0 : imageHold }))) return;
+        if (useBatchImages) {
+            try {
+                aiCreditHold = await holdForBackgroundJob(req, "APLUS_CONTENT", imageHold);
+            } catch (creditErr) {
+                if (!(creditErr instanceof AiCreditsError)) throw creditErr;
+                return res.status(200).json(creditErrorBody(creditErr));
+            }
+        }
 
         // GEMINI AI — generate image prompts (5 for basic, 7 for premium)
         const aiResult = await generateAPlusModulesAI({ asin, prompt, productData, type });
@@ -424,15 +436,6 @@ exports.createAIAPlusContent = async (req, res) => {
                 }
             }
 
-            // AI credits: hold the images' credits until the batch finishes
-            let aiCreditHold = null;
-            try {
-                aiCreditHold = await holdForBackgroundJob(req, "APLUS_CONTENT", await imageCredits(imageModules.length));
-            } catch (creditErr) {
-                if (!(creditErr instanceof AiCreditsError)) throw creditErr;
-                return res.status(200).json(creditErrorBody(creditErr));
-            }
-
             try {
                 const batchSubmission = await submitAPlusImageBatchJob({
                     imageModules,
@@ -452,6 +455,7 @@ exports.createAIAPlusContent = async (req, res) => {
                     productData: { title: productData.title, brand: productData.brand },
                     aiCreditHold,
                 });
+                aiCreditHold = null; // the batch job settles it now
 
                 return res.status(200).json({
                     isSuccess: true,
@@ -466,17 +470,25 @@ exports.createAIAPlusContent = async (req, res) => {
                     },
                 });
             } catch (batchErr) {
-                await releaseBackgroundHold(aiCreditHold, "Batch submission failed");
                 const apiErrMsg = batchErr?.response?.data?.error?.message || batchErr.message || "";
                 write_logs({ message: `Batch submission failed: ${apiErrMsg}`, log_type: "warn" });
 
                 if (apiErrMsg.includes("spending cap") || apiErrMsg.includes("quota") || batchErr?.response?.status === 429) {
+                    await releaseBackgroundHold(aiCreditHold, "Batch submission failed");
+                    aiCreditHold = null;
                     return res.status(203).json({
                         isSuccess: false,
                         message: `Google AI Studio spending cap exceeded: ${apiErrMsg || "Please check your project spend cap at https://ai.studio/spend"}`,
                     });
                 }
             }
+        }
+
+        // AI credits: images are generated right here after all (batch not used or not accepted):
+        // move the image hold onto this request so the images below stay covered.
+        if (aiCreditHold) {
+            await moveHoldToRequest(aiCreditHold, req);
+            aiCreditHold = null;
         }
 
         // DIRECT GENERATION FALLBACK
@@ -566,6 +578,7 @@ exports.createAIAPlusContent = async (req, res) => {
         });
 
     } catch (error) {
+        await releaseBackgroundHold(aiCreditHold, "A+ request failed"); // AI credits: nothing charged
         const detailedError =
             error?.response?.data?.errors?.[0]?.message ||
             error?.response?.data?.errors?.[0]?.description ||

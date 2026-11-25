@@ -8447,5 +8447,9 @@
   "A+ Content banners are charged per generated image. Batch images are charged when Google returns them; failed batches are free.": "A+コンテンツのバナーは生成画像1枚ごとに課金されます。バッチ画像はGoogleから返されたときに課金され、失敗したバッチは無料です。",
   "How the credits split between AI Assistant, Optimize with AI, A+ Content and AI listing generation.": "AIアシスタント、「AIで最適化」、A+コンテンツ、AIによるリスティング作成のクレジットの内訳。",
   "Uses AI credits: {{amount}} for the {{n}} images, plus the text.": "AIクレジットを使います: 画像 {{n}} 枚で {{amount}}、さらにテキスト分。",
-  "Uses AI credits from your organization's monthly allowance.": "組織の月間の割り当てからAIクレジットを使います。"
+  "Uses AI credits from your organization's monthly allowance.": "組織の月間の割り当てからAIクレジットを使います。",
+  "Campaign AI Analysis": "キャンペーンAI分析",
+  "Analysis failed. Please try again.": "分析に失敗しました。もう一度お試しください。",
+  "All AI features (AI Assistant, Optimize with AI, A+ Content, AI listing generation and Campaign AI Analysis) use credits from one monthly allowance shared by your whole organization.": "すべてのAI機能(AIアシスタント、「AIで最適化」、A+コンテンツ、AIによるリスティング作成、キャンペーンAI分析)は、組織全体で共有する月間の割り当てからクレジットを使います。",
+  "How the credits split between the AI features.": "AI機能ごとのクレジットの内訳。"
 }

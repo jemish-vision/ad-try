@@ -334,6 +334,7 @@ export async function AIPlacementAndTargetingAnalysis(data) {
                 tools: [],
             });
 
+            recordAiResponse("gemini", "gemini-3.8-flash", result.response); // AI credits: token usage
             return {
                 parsedContent: safeJsonParse(result.response.text())
             }
@@ -352,6 +353,7 @@ export async function AIPlacementAndTargetingAnalysis(data) {
                 messages,
                 response_format: { type: "json_object" }
             });
+            recordAiResponse("openai", "gpt-4o-mini", completion); // AI credits: token usage
 
             const jsonResponse = safeJsonParse(completion.choices[0].message.content ?? {});
 
@@ -459,6 +461,7 @@ export async function AISearchTermsAnalysis(data) {
                 tools: [],
             });
 
+            recordAiResponse("gemini", "gemini-3.8-flash", result.response); // AI credits: token usage
             return {
                 parsedContent: safeJsonParse(result.response.text())
             }
@@ -477,6 +480,7 @@ export async function AISearchTermsAnalysis(data) {
                 messages,
                 response_format: { type: "json_object" }
             });
+            recordAiResponse("openai", "gpt-4o-mini", completion); // AI credits: token usage
 
             const jsonResponse = safeJsonParse(completion.choices[0].message.content ?? {});
 

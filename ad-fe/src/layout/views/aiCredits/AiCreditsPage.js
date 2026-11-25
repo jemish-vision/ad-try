@@ -50,7 +50,7 @@ export default function AiCreditsPage() {
               {summary?.isDemo && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200/70 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/40">{t("Demo data")}</span>}
             </h1>
             <p className="text-[12.5px] text-slate-500 dark:text-slate-400 mt-0.5 mb-0">
-              {t("AI Assistant, Optimize with AI, A+ Content and AI listing generation use credits from one monthly allowance shared by your whole organization.")}
+              {t("All AI features (AI Assistant, Optimize with AI, A+ Content, AI listing generation and Campaign AI Analysis) use credits from one monthly allowance shared by your whole organization.")}
             </p>
           </div>
         </div>

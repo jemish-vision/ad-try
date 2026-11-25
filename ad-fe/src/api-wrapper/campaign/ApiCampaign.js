@@ -1,4 +1,5 @@
 import axios from "axios";
+import { aiRequestHeaders, handleAiCreditResponse } from "../../helper/aiCredits/aiCredits";
 
 const api = `${process.env.REACT_APP_API_BASE}/api/amazon/`;
 const apiConfig = `${process.env.REACT_APP_API_BASE}/api/config/`;
@@ -102,9 +103,11 @@ const ApiSaveCampaignNotifySetting = (data) => {
     .then(res => res.data).catch(res => res.data)
 }
 
+// Campaign AI Analysis uses AI credits
 const ApiAIAnalysis = (data) => {
-  return axios.post(`${api}AIAnalysis`, data, { headers })
-    .then(res => res.data).catch(res => res.data)
+  return axios.post(`${api}AIAnalysis`, data, { headers: { ...headers, ...aiRequestHeaders() } })
+    .then(res => res.data).catch(res => res?.response?.data || res.data)
+    .then(handleAiCreditResponse)
 }
 
 const ApiHourlyCampaignTracking = (data, options = {}) => {

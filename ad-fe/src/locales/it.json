@@ -8447,5 +8447,9 @@
   "A+ Content banners are charged per generated image. Batch images are charged when Google returns them; failed batches are free.": "I banner A+ Content si pagano per immagine generata. Le immagini in batch si addebitano quando Google le restituisce; i batch non riusciti sono gratuiti.",
   "How the credits split between AI Assistant, Optimize with AI, A+ Content and AI listing generation.": "Come si dividono i crediti tra Assistente IA, Ottimizza con IA, A+ Content e generazione schede con IA.",
   "Uses AI credits: {{amount}} for the {{n}} images, plus the text.": "Usa crediti IA: {{amount}} per le {{n}} immagini, più il testo.",
-  "Uses AI credits from your organization's monthly allowance.": "Usa i crediti IA dell'assegnazione mensile della tua organizzazione."
+  "Uses AI credits from your organization's monthly allowance.": "Usa i crediti IA dell'assegnazione mensile della tua organizzazione.",
+  "Campaign AI Analysis": "Analisi IA delle campagne",
+  "Analysis failed. Please try again.": "Analisi non riuscita. Riprova.",
+  "All AI features (AI Assistant, Optimize with AI, A+ Content, AI listing generation and Campaign AI Analysis) use credits from one monthly allowance shared by your whole organization.": "Tutte le funzioni IA (Assistente IA, Ottimizza con IA, A+ Content, generazione schede con IA e analisi IA delle campagne) usano i crediti di un'assegnazione mensile condivisa da tutta la tua organizzazione.",
+  "How the credits split between the AI features.": "Come si dividono i crediti tra le funzioni IA."
 }

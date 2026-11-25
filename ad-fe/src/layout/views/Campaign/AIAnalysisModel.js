@@ -1,4 +1,6 @@
 import moment from "moment";
+import AiCreditCostNote from "../../../helper/aiCredits/AiCreditCostNote";
+import { creditsExhaustedHtml, isCreditsExhausted } from "../../../helper/aiCredits/aiCredits";
 import { useContext, useEffect, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "../../../components/ui/dialog";
@@ -138,6 +140,10 @@ export default function AIAnalysisModal({
             if (res?.isSuccess) {
                 pushMessage(validModel, res?.result?.campaignAnalysis?.parsedContent?.html);
                 setAnalysisDone(true);
+            } else if (isCreditsExhausted(res)) {
+                pushMessage(validModel, creditsExhaustedHtml());
+            } else {
+                pushMessage(validModel, "❌ " + (res?.message || t("Analysis failed. Please try again.")));
             }
         } catch (err) {
             pushMessage(validModel, "❌ Analysis Failed: " + err.message);
@@ -388,6 +394,8 @@ export default function AIAnalysisModal({
                                 </div>
                             )}
                         </div>
+
+                        <AiCreditCostNote id="campaign-ai-credit-note" />
 
                         {/* Image Preview Area */}
                         {imageFile && (

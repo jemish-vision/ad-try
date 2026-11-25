@@ -33,6 +33,7 @@ const FEATURES = Object.freeze({
   LISTING_GENERATION: { key: 'LISTING_GENERATION', label: 'AI listing generation', reserve: 15 },
   // A+ text; generated images are held on top of this (creditsPerImage each)
   APLUS_CONTENT: { key: 'APLUS_CONTENT', label: 'A+ Content', reserve: 20 },
+  CAMPAIGN_ANALYSIS: { key: 'CAMPAIGN_ANALYSIS', label: 'Campaign AI Analysis', reserve: 15 },
 });
 
 const DEFAULT_SETTINGS = Object.freeze({
@@ -375,6 +376,27 @@ async function release(hold, reason, rawCalls = [], { status = 'RELEASED', now =
   return { released: true };
 }
 
+/**
+ * Move a hold's credits onto another running request's hold, without returning them to the
+ * wallet in between (so nothing else can take them). Used when background work falls back to
+ * running inside the request. Returns the credits moved (0 if the source was already closed).
+ */
+async function transferHold(fromHold, toHold, { now = new Date() } = {}) {
+  const from = await usageLogModel
+    .findOneAndUpdate({ requestId: fromHold.requestId, status: 'RESERVED' }, { $set: { status: 'RELEASED', failureReason: 'Moved to the request', settledAt: now } }, { new: false })
+    .lean();
+  if (!from) return 0;
+  const amount = from.reservedCredits || 0;
+  const to = await usageLogModel.findOneAndUpdate({ requestId: toHold.requestId, status: 'RESERVED' }, { $inc: { reservedCredits: amount } }, { new: true }).lean();
+  if (!to) {
+    // The target already finished: give the credits back instead
+    await walletModel.findOneAndUpdate({ _id: from.walletId }, { $inc: { reserved: -amount, balance: amount } }).lean();
+    return 0;
+  }
+  toHold.amount = round2((toHold.amount || 0) + amount);
+  return amount;
+}
+
 /** Return holds left by requests that never finished (e.g. the server restarted mid-request). */
 async function expireStaleHolds({ olderThanMinutes = STALE_HOLD_MINUTES, now = new Date(), limit = 500 } = {}) {
   const cutoff = new Date(now.getTime() - olderThanMinutes * 60 * 1000);
@@ -464,6 +486,7 @@ module.exports = {
   reserve,
   settle,
   release,
+  transferHold,
   expireStaleHolds,
   adjustCredits,
   setMonthlyLimitOverride,

@@ -1,4 +1,5 @@
 const { validateRoutePermission } = require("../middleware/routePermission");
+const { withAiCredits } = require("../services/aiCredits/withAiCredits");
 const { SYSTEM_PAGES, PAGE_ACTIONS } = require("../constants/permissions");
 const express = require("express");
 const router = express.Router();
@@ -168,7 +169,7 @@ router.post("/getLatestCampaignHistory", verifyToken, getLatestCampaignHistory);
 router.post("/getCampaignChartData", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY), AdTypeModels, allCampaignChart);
 
 router.post("/saveCampaignNotifySetting", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.UPDATE), saveCampaignNotifySetting);
-router.post("/AIAnalysis", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY), AIAnalysis);
+router.post("/AIAnalysis", verifyToken, validateRoutePermission(SYSTEM_PAGES.CAMPAIGNS, PAGE_ACTIONS.VIEW_ONLY), withAiCredits("CAMPAIGN_ANALYSIS", AIAnalysis));
 
 router.post("/hourlyCampaignTracking", verifyToken, hourlyCampaignTracking);
 router.post("/hourlyPlacementTracking", verifyToken, hourlyPlacementTracking);

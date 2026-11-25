@@ -250,3 +250,9 @@ describe("other AI features (A+ Content, listing generation)", () => {
     expect(screen.getByText(/Each AI-generated image \(A\+ Content\) = 10 credits\./)).toBeInTheDocument();
   });
 });
+
+test("Campaign AI Analysis is a named feature in the history filters", async () => {
+  render(<MemoryRouter><AiCreditsPage /></MemoryRouter>);
+  await screen.findByText("749.5");
+  expect(within(screen.getByLabelText("Feature")).getByRole("option", { name: "Campaign AI Analysis" })).toBeInTheDocument();
+});

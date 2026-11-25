@@ -8447,5 +8447,9 @@
   "A+ Content banners are charged per generated image. Batch images are charged when Google returns them; failed batches are free.": "A+ Content banners are charged per generated image. Batch images are charged when Google returns them; failed batches are free.",
   "How the credits split between AI Assistant, Optimize with AI, A+ Content and AI listing generation.": "How the credits split between AI Assistant, Optimize with AI, A+ Content and AI listing generation.",
   "Uses AI credits: {{amount}} for the {{n}} images, plus the text.": "Uses AI credits: {{amount}} for the {{n}} images, plus the text.",
-  "Uses AI credits from your organization's monthly allowance.": "Uses AI credits from your organization's monthly allowance."
+  "Uses AI credits from your organization's monthly allowance.": "Uses AI credits from your organization's monthly allowance.",
+  "Campaign AI Analysis": "Campaign AI Analysis",
+  "Analysis failed. Please try again.": "Analysis failed. Please try again.",
+  "All AI features (AI Assistant, Optimize with AI, A+ Content, AI listing generation and Campaign AI Analysis) use credits from one monthly allowance shared by your whole organization.": "All AI features (AI Assistant, Optimize with AI, A+ Content, AI listing generation and Campaign AI Analysis) use credits from one monthly allowance shared by your whole organization.",
+  "How the credits split between the AI features.": "How the credits split between the AI features."
 }

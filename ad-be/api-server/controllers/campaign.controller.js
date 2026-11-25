@@ -1,4 +1,5 @@
 const { runHistoricalAdsReportPhase } = require("../services/historicalAdsReportPhase.service");
+const { reserveAiCredits } = require("../services/aiCredits/withAiCredits");
 const moment = require("moment-timezone");
 const fs = require("fs");
 const mongoose = require("mongoose");
@@ -8293,6 +8294,9 @@ exports.AIAnalysis = async (req, res) => {
     }
 
     const profile = await profileSchema.findOne({ configId, profileId }).lean();
+
+    // AI credits: hold credits before the AI call (sends "out of credits" when the wallet is empty)
+    if (!(await reserveAiCredits(req, res))) return;
 
     if (findNegative) {
       const searchTermData = await getSearchTermData(

@@ -507,3 +507,52 @@ describe('image generation and background (batch) work', () => {
     assert.equal(walletOf().reserved, 0);
   });
 });
+
+describe('moving a batch hold onto the request (A+ fallback)', () => {
+  const fakeRes = () => {
+    const res = { statusCode: 200, body: null, status(c) { res.statusCode = c; return res; }, json(b) { res.body = b; return res; } };
+    return res;
+  };
+  const req = () => ({ organizationId: String(orgId), user: { _id: new mongoose.Types.ObjectId() }, headers: {}, body: {} });
+
+  test('the image credits stay held and cover images generated in the request', async () => {
+    await withAiCredits('APLUS_CONTENT', async (rq, rs) => {
+      await reserveAiCredits(rq, rs); // text: 20
+      const bg = await background.holdForBackgroundJob(rq, 'APLUS_CONTENT', 50); // images
+      assert.deepEqual([walletOf().reserved, walletOf().balance], [70, 930]);
+      assert.equal(await background.moveHoldToRequest(bg, rq), true);
+      // still held — nothing went back to the wallet in between
+      assert.deepEqual([walletOf().reserved, walletOf().balance], [70, 930]);
+      assert.equal(usageLogs.docs.find((l) => l.requestId === bg.requestId).status, 'RELEASED');
+      for (let i = 0; i < 5; i += 1) meterLib.recordAiUsage({ provider: 'gemini', model: 'img', images: 1 });
+      meterLib.recordAiUsage(call('gemini-3.8-flash', 3000, 500, 'gemini'));
+      return rs.json({ isSuccess: true });
+    })(req(), fakeRes());
+    // 50 images + 5 text = 55 charged, never below the hold
+    assert.deepEqual([walletOf().used, walletOf().reserved, walletOf().balance], [55, 0, 945]);
+  });
+
+  test('moving twice moves nothing the second time', async () => {
+    await withAiCredits('APLUS_CONTENT', async (rq, rs) => {
+      await reserveAiCredits(rq, rs);
+      const bg = await background.holdForBackgroundJob(rq, 'APLUS_CONTENT', 50);
+      assert.equal(await service.transferHold(bg, rq.aiMeter.hold), 50);
+      assert.equal(await service.transferHold(bg, rq.aiMeter.hold), 0);
+      return rs.json({ isSuccess: false }); // failed: everything returned
+    })(req(), fakeRes());
+    assert.deepEqual([walletOf().used, walletOf().reserved, walletOf().balance], [0, 0, 1000]);
+  });
+
+  test('if the request already finished, the moved credits go back to the wallet', async () => {
+    let bg;
+    let finishedHold;
+    await withAiCredits('APLUS_CONTENT', async (rq, rs) => {
+      await reserveAiCredits(rq, rs);
+      bg = await background.holdForBackgroundJob(rq, 'APLUS_CONTENT', 50);
+      finishedHold = rq.aiMeter.hold;
+      return rs.json({ isSuccess: false });
+    })(req(), fakeRes());
+    assert.equal(await service.transferHold(bg, finishedHold), 0);
+    assert.deepEqual([walletOf().reserved, walletOf().balance], [0, 1000]);
+  });
+});

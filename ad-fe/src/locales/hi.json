@@ -8447,5 +8447,9 @@
   "A+ Content banners are charged per generated image. Batch images are charged when Google returns them; failed batches are free.": "A+ Content बैनर का शुल्क प्रति बनी इमेज लगता है। बैच इमेज का शुल्क तब लगता है जब Google उन्हें लौटाता है; विफल बैच मुफ़्त हैं।",
   "How the credits split between AI Assistant, Optimize with AI, A+ Content and AI listing generation.": "AI असिस्टेंट, AI से ऑप्टिमाइज़ करें, A+ Content और AI लिस्टिंग निर्माण के बीच क्रेडिट का बँटवारा।",
   "Uses AI credits: {{amount}} for the {{n}} images, plus the text.": "AI क्रेडिट लगते हैं: {{n}} इमेज के लिए {{amount}}, साथ में टेक्स्ट।",
-  "Uses AI credits from your organization's monthly allowance.": "आपके संगठन के मासिक आवंटन से AI क्रेडिट लगते हैं।"
+  "Uses AI credits from your organization's monthly allowance.": "आपके संगठन के मासिक आवंटन से AI क्रेडिट लगते हैं।",
+  "Campaign AI Analysis": "कैंपेन AI विश्लेषण",
+  "Analysis failed. Please try again.": "विश्लेषण विफल रहा। कृपया फिर से कोशिश करें।",
+  "All AI features (AI Assistant, Optimize with AI, A+ Content, AI listing generation and Campaign AI Analysis) use credits from one monthly allowance shared by your whole organization.": "सभी AI सुविधाएँ (AI असिस्टेंट, AI से ऑप्टिमाइज़ करें, A+ Content, AI लिस्टिंग निर्माण और कैंपेन AI विश्लेषण) आपके पूरे संगठन के साझा मासिक आवंटन से क्रेडिट इस्तेमाल करती हैं।",
+  "How the credits split between the AI features.": "AI सुविधाओं के बीच क्रेडिट का बँटवारा।"
 }

@@ -70,3 +70,91 @@ describe('A+ batch job and AI credits', () => {
     assert.deepEqual(credit.released.map((r) => [r.hold.requestId, r.reason]), [['org:bg:1', 'Batch generation failed at Google']]);
   });
 });
+
+// ── createAIAPlusContent: credits are held before any AI runs ──
+class AiCreditsError extends Error { constructor(code) { super(code); this.code = code; } }
+
+function loadCreate({ walletCredits, batchError = null, textError = null }) {
+  const calls = [];
+  let held = 0;
+  const imageCredits = async (n) => n * 10;
+  const res = { statusCode: 200, body: null, status(c) { res.statusCode = c; return res; }, json(b) { res.body = b; return res; } };
+  const take = (n) => {
+    if (n > walletCredits - held) throw new AiCreditsError('AI_CREDITS_EXHAUSTED');
+    held += n;
+  };
+  const mocks = {
+    moment: require('moment-timezone'),
+    'p-limit': { default: () => (task) => task() },
+    axios: { get: async () => ({ headers: {}, data: Buffer.from('img') }) },
+    '../helper/retryHelper': { retryWithBackoff: (task) => task() },
+    '../models/aPlusBatchJob.model': { create: async (doc) => { calls.push(['batchJob', doc.aiCreditHold?.amount]); return { _id: 'job-1' }; } },
+    '../models/asinAPlusContent.model': { bulkWrite: async () => {} },
+    '../models/marketPlaceConfig.model': { findOne: () => ({ lean: async () => ({ endPoint: 'https://fixture.invalid', marketPlaceId: 'market' }) }) },
+    '../../winston/utility/logger': { write_logs: () => {} },
+    '../../winston/cronAutomation/logger': { cron_logs: () => {} },
+    '../helper/common': { getProfile: async () => ({ marketplaceStringId: 'market' }), getSPAccessToken: async () => ({ spAccessToken: 't' }) },
+    '../helper/amazonAxios': async () => ({ status: 200, data: { summaries: [{ itemName: 'Bottle' }], images: [{ images: [{ variant: 'MAIN', link: 'https://img', width: 10, height: 10 }] }], contentReferenceKey: 'content-1' } }),
+    '../helper/chatgpt': { generateAPlusModulesAI: async () => { calls.push(['ai:text']); if (textError) throw new Error(textError); return { _imageModules: [1, 2, 3, 4, 5].map((i) => ({ title: `M${i}`, prompt: 'p', size: '970x300' })) }; } },
+    '../helper/geminiBatch.helper': { submitAPlusImageBatchJob: async () => { calls.push(['batch:submit']); if (batchError) throw new Error(batchError); return { batchJobName: 'batches/1' }; } },
+    '../helper/generateAPlusImages': { generateAndUploadModuleImages: async () => { calls.push(['ai:images:direct']); return []; }, getAllVariationAsins: async () => ['B0FIXTURE'], addAsinsToAPlusContent: async () => {} },
+    '../services/aiCredits/aiCredit.service': { AiCreditsError },
+    '../services/aiCredits/withAiCredits': {
+      reserveAiCredits: async (_req, r, { extraCredits = 0 } = {}) => {
+        try { take(20 + extraCredits); calls.push(['hold:request', 20 + extraCredits]); return true; } catch (e) { r.status(200).json({ isSuccess: false, code: e.code }); return false; }
+      },
+      creditErrorBody: (e) => ({ isSuccess: false, code: e.code }),
+    },
+    '../services/aiCredits/backgroundHolds': {
+      imageCredits,
+      holdForBackgroundJob: async (_req, _f, amount) => { take(amount); calls.push(['hold:images', amount]); return { requestId: 'bg-1', amount }; },
+      releaseBackgroundHold: async (hold, reason) => { if (hold) { held -= hold.amount; calls.push(['release:images', reason]); } },
+      moveHoldToRequest: async (hold) => { calls.push(['move:images->request', hold.amount]); return true; },
+      settleBackgroundHold: async () => {},
+    },
+  };
+  const mod = { exports: {} };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../api-server/controllers/aplusContent.controller.js'), 'utf8'), {
+    module: mod, exports: mod.exports, require: (name) => mocks[name] || {}, process: { env: {} }, global: {}, setTimeout: (cb) => cb(), console, Buffer,
+  });
+  const run = () => mod.exports.createAIAPlusContent({ body: { asin: 'B0FIXTURE', profileId: 123, generateImageOption: true, type: 'basic' }, config: { configId: 'c1' } }, res);
+  return { run, calls, res, held: () => held };
+}
+
+describe('A+ create: credits held before any AI runs', () => {
+  const names = (calls) => calls.map((c) => c[0]);
+
+  test('25 credits (enough for the text, not the 5 images): refused before Gemini is called', async () => {
+    const { run, calls, res } = loadCreate({ walletCredits: 25 });
+    await run();
+    assert.deepEqual(names(calls), ['hold:request']);
+    assert.deepEqual([res.body.isSuccess, res.body.code], [false, 'AI_CREDITS_EXHAUSTED']);
+  });
+
+  test('enough credits: text and images are held, then the batch job takes the image hold', async () => {
+    const { run, calls, res } = loadCreate({ walletCredits: 100 });
+    await run();
+    assert.deepEqual(JSON.parse(JSON.stringify(calls)), [['hold:request', 20], ['hold:images', 50], ['ai:text'], ['batch:submit'], ['batchJob', 50]]);
+    assert.equal(res.body.isBatch, true);
+  });
+
+  test('batch submission fails: the image hold moves onto the request before images are generated directly', async () => {
+    const { run, calls } = loadCreate({ walletCredits: 100, batchError: 'Internal error' });
+    await run();
+    assert.deepEqual(names(calls), ['hold:request', 'hold:images', 'ai:text', 'batch:submit', 'move:images->request', 'ai:images:direct']);
+  });
+
+  test('spending-cap error: image hold returned, nothing generated', async () => {
+    const { run, calls, res } = loadCreate({ walletCredits: 100, batchError: 'spending cap exceeded' });
+    await run();
+    assert.deepEqual(names(calls), ['hold:request', 'hold:images', 'ai:text', 'batch:submit', 'release:images']);
+    assert.equal(res.statusCode, 203);
+  });
+
+  test('text generation throws: the image hold is returned', async () => {
+    const { run, calls, held } = loadCreate({ walletCredits: 100, textError: 'Gemini down' });
+    await run();
+    assert.deepEqual(names(calls), ['hold:request', 'hold:images', 'ai:text', 'release:images']);
+    assert.equal(held(), 20); // only the request hold is left; the wrapper returns it for the failed request
+  });
+});
