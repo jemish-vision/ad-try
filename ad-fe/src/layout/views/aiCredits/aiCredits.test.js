@@ -310,7 +310,8 @@ describe("other AI features (A+ Content, listing generation)", () => {
     const row = await screen.findByRole("row", { name: /gemini-image-batch/ });
     expect(within(row).getByText("A+ Content")).toBeInTheDocument();
     expect(within(row).getByText("5 images · Background job")).toBeInTheDocument();
-    expect(screen.getByText(/Each AI-generated image \(A\+ Content\) = 10 credits\./)).toBeInTheDocument();
+    // The token/image rate note was removed from the page (rates are in Super Admin → Settings)
+    expect(screen.queryByText(/How credits are counted|Each AI-generated image/)).not.toBeInTheDocument();
   });
 });
 

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Package, Plus, Pencil, Trash2, Receipt } from "lucide-react";
+import { Package, Plus, Pencil, Trash2, Receipt, Globe, MapPin } from "lucide-react";
 import Toast from "../../../../common/helper/toast/Toast";
 import { CustomModal } from "../../../../helper/modal/CustomModal";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../../components/ui/dialog";
@@ -14,9 +14,12 @@ import {
   ApiAdminDeleteAiCreditPackage,
   ApiAdminAiCreditPayments,
 } from "../../../../api-wrapper/ApiAiCredits";
+import { ApiDetectPricingCountry } from "../../../../api-wrapper/ApiPricingRegions";
+import { countryName } from "../../../../common/constants/countries";
 import { formatCredits } from "../../../../helper/aiCredits/aiCredits";
 import { Card, CardHeader, Pager, Select, PaymentsTable, PAYMENT_STATUS_OPTIONS, formatMoney } from "../aiCreditComponents";
 import { labelCls } from "./AiCreditAdminModals";
+import PackageRegionPricesModal from "./PackageRegionPricesModal";
 
 const PER_PAGE = 10;
 const CURRENCIES = ["USD", "EUR", "GBP", "INR", "AED", "SAR", "CAD", "AUD", "JPY"];
@@ -107,6 +110,11 @@ function PackageModal({ open, pkg, regions, onClose, onSave, saving }) {
             )}
           </div>
           {field("ai-pkg-description", t("Description (optional)"), <Input id="ai-pkg-description" value={form.description} maxLength={300} onChange={(e) => set("description", e.target.value)} placeholder={t("e.g. Best value for busy teams.")} />)}
+          {regions.length === 0 && (
+            <div className="text-[11.5px] text-slate-500 dark:text-slate-400" id="ai-pkg-no-regions-hint">
+              {t("No pricing regions yet. Add regions on the Plans page (Pricing Regions); credit packages use the same regions.")}
+            </div>
+          )}
           {regions.length > 0 && (
             <div id="ai-pkg-regional-prices">
               <div className={labelCls}>{t("Price per pricing region (optional)")}</div>
@@ -162,6 +170,27 @@ function PackageModal({ open, pkg, regions, onClose, onSave, saving }) {
   );
 }
 
+/**
+ * The country this browser is priced for, as the server sees it (Cloudflare header), and the region
+ * and currency that applies — so Super Admin can check what buyers there will be charged.
+ */
+export function DetectedCountryNote({ detected }) {
+  const { t, i18n } = useTranslation();
+  if (!detected) return null;
+  if (!detected.country) {
+    return <span className="text-amber-600 dark:text-amber-400">{t("Cloudflare country header not received — check the Cloudflare setup.")}</span>;
+  }
+  const where = t("Your country (Cloudflare): {{country}}", { country: `${countryName(detected.country, i18n.language)} (${detected.country})` });
+  return (
+    <span>
+      {where} ·{" "}
+      {detected.regionName
+        ? t("buyers here pay the {{region}} price in {{currency}}", { region: detected.regionName, currency: detected.currency })
+        : t("no pricing region, buyers here pay the default price")}
+    </span>
+  );
+}
+
 /** Super Admin: credit packages organizations can buy. */
 export default function CreditPackagesAdmin({ reloadKey }) {
   const { t, i18n } = useTranslation();
@@ -171,6 +200,12 @@ export default function CreditPackagesAdmin({ reloadKey }) {
   const [modal, setModal] = useState({ open: false, pkg: null });
   const [toDelete, setToDelete] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [regionPkg, setRegionPkg] = useState(null);
+  const [detected, setDetected] = useState(null);
+
+  useEffect(() => {
+    ApiDetectPricingCountry().then((res) => res?.isSuccess && setDetected(res.data));
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -207,6 +242,12 @@ export default function CreditPackagesAdmin({ reloadKey }) {
           </Button>
         }
       />
+      {detected && (
+        <div className="flex items-center gap-1.5 -mt-1 mb-3 text-[12px] text-slate-500 dark:text-slate-400" id="ai-pkg-detected-country">
+          <MapPin className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+          <DetectedCountryNote detected={detected} />
+        </div>
+      )}
       <div className="rounded-xl border border-slate-200/80 dark:border-white/[0.08] overflow-x-auto">
         <table className="w-full text-[12.5px] min-w-[860px]">
           <thead className="bg-slate-50 dark:bg-white/[0.04] text-slate-500 dark:text-slate-400">
@@ -222,7 +263,7 @@ export default function CreditPackagesAdmin({ reloadKey }) {
             ) : !data.packages.length ? (
               <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-400">{t("No credit packages yet. Add one so organizations can buy extra credits.")}</td></tr>
             ) : (
-              data.packages.map((p) => (
+              data.packages.map((p, index) => (
                 <tr key={p._id} className="hover:bg-slate-50/70 dark:hover:bg-white/[0.02]">
                   <td className="px-3 py-2.5">
                     <div className="font-semibold text-slate-900 dark:text-white">
@@ -250,6 +291,16 @@ export default function CreditPackagesAdmin({ reloadKey }) {
                   </td>
                   <td className="px-3 py-2.5">
                     <div className="flex justify-end gap-1.5">
+                      <button
+                        type="button"
+                        id={index === 0 ? "ai-pkg-region-prices" : undefined}
+                        className={iconBtn}
+                        title={t("Regional Prices")}
+                        aria-label={t("Regional Prices")}
+                        onClick={() => setRegionPkg(p)}
+                      >
+                        <Globe className="w-3.5 h-3.5" />
+                      </button>
                       <button type="button" className={iconBtn} title={t("Edit")} aria-label={t("Edit")} onClick={() => setModal({ open: true, pkg: p })}><Pencil className="w-3.5 h-3.5" /></button>
                       <button type="button" className={`${iconBtn} hover:!text-rose-600`} title={t("Delete")} aria-label={t("Delete")} onClick={() => setToDelete(p)}><Trash2 className="w-3.5 h-3.5" /></button>
                     </div>
@@ -268,6 +319,13 @@ export default function CreditPackagesAdmin({ reloadKey }) {
         saving={saving}
         onClose={() => setModal({ open: false, pkg: null })}
         onSave={(body) => run(body.packageId ? ApiAdminUpdateAiCreditPackage : ApiAdminCreateAiCreditPackage, body, () => setModal({ open: false, pkg: null }))}
+      />
+      <PackageRegionPricesModal
+        pkg={regionPkg}
+        regions={data.regions}
+        saving={saving}
+        onClose={() => setRegionPkg(null)}
+        onSave={(body) => run(ApiAdminUpdateAiCreditPackage, body, () => setRegionPkg(null))}
       />
       <CustomModal
         show={Boolean(toDelete)}

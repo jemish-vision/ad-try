@@ -1176,6 +1176,8 @@ Every AI feature — **AI Assistant**, **Optimize with AI**, **A+ Content**, **A
 - **Organizations**: Each organization's monthly allowance, usage, available and purchased credits. Add or remove credits (with a reason) or give an organization its own monthly allowance.
 - **Usage log**: Every AI request across all organizations.
 - **Credit packages**: Create the packages customers can buy — credits, default price and currency, an optional price per pricing region, "Most popular" badge, display order — and switch them on or off. Deleting a package hides it; past purchases are kept.
+
+**Currency is detected automatically**, the same way as plan prices: the buyer's country (from Cloudflare) picks their pricing region, and they see and pay that region's price in its currency. Set a package's region prices with the globe button (**Regional Prices**) on its row; regions left empty, and countries outside every region, pay the package's default price. The regions themselves are managed on the **Plans** page under **Pricing Regions**, which also lists each region's credit package prices. The line under the Credit packages title shows the country detected for your own browser and which price applies there.
 - **Payments**: Every purchase with its status (Paid, Pending, Failed, Cancelled) and the reason when it didn't go through.
 - **Settings**: Credits per 1,000 input/output tokens, per-model rates, credits per generated image, standard monthly credits and the credit-limit switch.
 

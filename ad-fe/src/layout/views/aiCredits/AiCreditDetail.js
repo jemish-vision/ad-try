@@ -91,15 +91,6 @@ export default function AiCreditDetail({ summary, loadUsage, loadTransactions, l
             />
           </div>
         </div>
-        {summary.rates && (
-          <p className="text-[11.5px] text-slate-500 dark:text-slate-400 mt-4 mb-0">
-            {t("How credits are counted: 1,000 input tokens = {{input}} credits, 1,000 output tokens = {{output}} credits (some AI models have their own rates). Failed requests and cached results are free.", {
-              input: formatCredits(summary.rates.inputCreditsPer1K, L),
-              output: formatCredits(summary.rates.outputCreditsPer1K, L),
-            })}
-            {summary.rates.creditsPerImage !== undefined && " " + t("Each AI-generated image (A+ Content) = {{n}} credits.", { n: formatCredits(summary.rates.creditsPerImage, L) })}
-          </p>
-        )}
       </Card>
 
       {afterBalance}

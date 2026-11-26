@@ -26,7 +26,13 @@ const fitColumns = (p) => p?.api?.sizeColumnsToFit?.();
 // Small lists: size the grid to its rows (no fixed 100vh grid with empty space), columns stretched to the width.
 const HEADER_PX = 52;
 const gridHeight = (rowHeights) => `${HEADER_PX + Math.max(rowHeights.reduce((a, b) => a + b, 0), 88) + 4}px`;
-const regionRowPx = (r) => Math.max(46, (r.prices?.length || 0) * 20 + 18, Math.ceil((r.countries?.length || 0) / 14) * 26 + 14);
+// AI credit packages priced in this region (their region prices are stored on the package)
+const creditPricesFor = (region, creditPackages) =>
+  (creditPackages || [])
+    .map((pkg) => ({ pkg, entry: (pkg.regionalPrices || []).find((r) => String(r.regionId) === String(region._id)) }))
+    .filter((x) => x.entry && x.entry.price > 0);
+const regionRowPx = (r, creditPackages) =>
+  Math.max(46, Math.max(r.prices?.length || 0, creditPricesFor(r, creditPackages).length) * 20 + 18, Math.ceil((r.countries?.length || 0) / 14) * 26 + 14);
 const compactGrid = {
   minHeight: "0",
   autoSizeStrategy: GRID_AUTO_SIZE,
@@ -44,6 +50,7 @@ const RegionalPricing = ({ refreshKey = 0, isDark = false, addRegionSignal = 0 }
   const lang = i18n.language;
   const [regions, setRegions] = useState([]);
   const [plans, setPlans] = useState([]);
+  const [creditPackages, setCreditPackages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modal, setModal] = useState({ open: false, region: null });
   const [saving, setSaving] = useState(false);
@@ -69,6 +76,7 @@ const RegionalPricing = ({ refreshKey = 0, isDark = false, addRegionSignal = 0 }
     if (res?.isSuccess) {
       setRegions(res.data || []);
       setPlans(res.plans || []);
+      setCreditPackages(res.creditPackages || []);
       setRegionTotal(res.totalRecords || 0);
     } else Toast.error(res?.message || t("Something went wrong"));
     setLoading(false);
@@ -156,8 +164,25 @@ const RegionalPricing = ({ refreshKey = 0, isDark = false, addRegionSignal = 0 }
         </div>
       ),
     },
+    {
+      headerName: t("AI Credit Package Prices"), field: "creditPackagePrices", width: 260, ...fixedGrid, wrapText: true, autoHeight: true,
+      cellRenderer: ({ data }) => {
+        if (!data) return null;
+        const rows = creditPricesFor(data, creditPackages);
+        if (!rows.length) return <span className="text-xs text-slate-400">{t("Default price")}</span>;
+        return (
+          <div className="flex flex-col py-1.5 text-xs leading-5">
+            {rows.map(({ pkg, entry }) => (
+              <span key={String(pkg._id)}>
+                <b>{pkg.name}</b>: {currencySymbol(data.currency)}{entry.price}
+              </span>
+            ))}
+          </div>
+        );
+      },
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [t, lang, plans]);
+  ], [t, lang, plans, creditPackages]);
 
   return (
     <>
@@ -226,7 +251,7 @@ const RegionalPricing = ({ refreshKey = 0, isDark = false, addRegionSignal = 0 }
               isCustomSaveColumns={true}
               customSaveColumnName={"Pricing Regions"}
               {...compactGrid}
-              height={gridHeight(regions.map(regionRowPx))}
+              height={gridHeight(regions.map((r) => regionRowPx(r, creditPackages)))}
             />
           </div>
         </div>

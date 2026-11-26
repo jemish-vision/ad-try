@@ -8290,7 +8290,6 @@
   "Unused credits don't carry over": "未使用のクレジットは繰り越されません",
   "Tokens this month": "今月のトークン",
   "{{input}} in · {{output}} out": "入力 {{input}} · 出力 {{output}}",
-  "How credits are counted: 1,000 input tokens = {{input}} credits, 1,000 output tokens = {{output}} credits (some AI models have their own rates). Failed requests and cached results are free.": "クレジットの計算方法: 入力トークン1,000 = {{input}} クレジット、出力トークン1,000 = {{output}} クレジット(一部のAIモデルは独自の料金)。失敗したリクエストとキャッシュされた結果は無料です。",
   "Credits used per day": "日別の使用クレジット",
   "{{from}} – today": "{{from}} – 今日",
   "By feature": "機能別",
@@ -8436,7 +8435,6 @@
   "Filter History": "履歴を絞り込む",
   "Show only one kind of entry, for example only adjustments.": "1種類の項目だけを表示します(例: 調整のみ)。",
   "AI listing generation": "AIによるリスティング作成",
-  "Each AI-generated image (A+ Content) = {{n}} credits.": "AIで生成した画像(A+コンテンツ)1枚 = {{n}} クレジット。",
   "AI Assistant, Optimize with AI, A+ Content and AI listing generation use credits from one monthly allowance shared by your whole organization.": "AIアシスタント、「AIで最適化」、A+コンテンツ、AIによるリスティング作成は、組織全体で共有する月間の割り当てからクレジットを使います。",
   "Credits per generated image": "生成画像1枚あたりのクレジット",
   "A+ Content banners are charged per image, not by tokens. A basic A+ document has 5 images, premium 7.": "A+コンテンツのバナーはトークンではなく画像1枚ごとに課金されます。ベーシックのA+は5枚、プレミアムは7枚です。",
@@ -8531,5 +8529,11 @@
   "AI Credit Package Deleted": "AIクレジットパックを削除",
   "AI Credit Purchase Started": "AIクレジットの購入を開始",
   "AI Credit Purchase Verified": "AIクレジットの購入を確認",
-  "AI Credit Purchase Cancelled": "AIクレジットの購入をキャンセル"
+  "AI Credit Purchase Cancelled": "AIクレジットの購入をキャンセル",
+  "Buyers see the price of the region their country belongs to, in that region's currency.": "購入者には、自国が属する地域の価格がその地域の通貨で表示されます。",
+  "No pricing regions yet. Add regions on the Plans page (Pricing Regions); credit packages use the same regions.": "価格地域がまだありません。プランページ（価格地域）で地域を追加してください。クレジットパッケージも同じ地域を使用します。",
+  "buyers here pay the {{region}} price in {{currency}}": "この国の購入者は {{region}} の価格を {{currency}} で支払います",
+  "no pricing region, buyers here pay the default price": "価格地域なし。この国の購入者はデフォルト価格を支払います",
+  "AI Credit Package Prices": "AIクレジットパッケージの価格",
+  "Set this package's price for each pricing region, like plan prices. Buyers are matched to a region by their country and pay in its currency; everyone else pays the default price.": "プランの価格と同様に、価格地域ごとにこのパッケージの価格を設定します。購入者は国によって地域に割り当てられ、その地域の通貨で支払います。それ以外の購入者はデフォルト価格を支払います。"
 }

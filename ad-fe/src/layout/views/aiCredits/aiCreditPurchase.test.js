@@ -2,6 +2,7 @@ import React from "react";
 import { fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import * as Api from "../../../api-wrapper/ApiAiCredits";
+import * as RegionApi from "../../../api-wrapper/ApiPricingRegions";
 import Toast from "../../../common/helper/toast/Toast";
 import BuyCreditsSection from "./BuyCreditsSection";
 import PurchaseResultBanner, { usePurchaseResult } from "./PurchaseResultBanner";
@@ -30,6 +31,7 @@ jest.mock("../../../api-wrapper/ApiAiCredits", () => ({
   ApiAdminDeleteAiCreditPackage: jest.fn(),
   ApiAdminAiCreditPayments: jest.fn(),
 }));
+jest.mock("../../../api-wrapper/ApiPricingRegions", () => ({ ApiDetectPricingCountry: jest.fn() }));
 jest.mock("../../../common/helper/toast/Toast", () => ({ __esModule: true, default: { success: jest.fn(), error: jest.fn() } }));
 jest.mock("recharts", () => {
   const Stub = ({ children }) => <div>{children}</div>;
@@ -208,6 +210,7 @@ describe("Super Admin: credit packages", () => {
     Api.ApiAdminCreateAiCreditPackage.mockResolvedValue({ isSuccess: true, message: "Credit package created" });
     Api.ApiAdminUpdateAiCreditPackage.mockResolvedValue({ isSuccess: true, message: "Credit package updated" });
     Api.ApiAdminDeleteAiCreditPackage.mockResolvedValue({ isSuccess: true, message: "Credit package deleted" });
+    RegionApi.ApiDetectPricingCountry.mockResolvedValue({ isSuccess: true, data: { country: "IN", cfHeaderPresent: true, regionName: "India", currency: "INR" } });
   });
 
   test("form validation", () => {
@@ -237,6 +240,54 @@ describe("Super Admin: credit packages", () => {
     await waitFor(() =>
       expect(Api.ApiAdminCreateAiCreditPackage).toHaveBeenCalledWith({ name: "Scale", description: "", credits: 6000, price: 79, currency: "USD", isActive: true, isPopular: false, sortOrder: 0, regionalPrices: [{ regionId: "r-in", price: 5999 }] }),
     );
+  });
+
+  test("shows the detected country and the price that applies there, like the Plans page", async () => {
+    render(<CreditPackagesAdmin reloadKey={0} />);
+    const note = await screen.findByText(/Your country \(Cloudflare\)/);
+    expect(note).toHaveTextContent("buyers here pay the India price in INR");
+  });
+
+  test("detected country outside every region pays the default price; a missing Cloudflare header is flagged", async () => {
+    RegionApi.ApiDetectPricingCountry.mockResolvedValueOnce({ isSuccess: true, data: { country: "US", cfHeaderPresent: true, regionName: null, currency: null } });
+    const { unmount } = render(<CreditPackagesAdmin reloadKey={0} />);
+    expect(await screen.findByText(/no pricing region, buyers here pay the default price/)).toBeInTheDocument();
+    unmount();
+    RegionApi.ApiDetectPricingCountry.mockResolvedValueOnce({ isSuccess: true, data: { country: null, cfHeaderPresent: false } });
+    render(<CreditPackagesAdmin reloadKey={0} />);
+    expect(await screen.findByText(/Cloudflare country header not received/)).toBeInTheDocument();
+  });
+
+  test("Regional Prices button: sets a package's price per region (blank = default price)", async () => {
+    const regions2 = [...regions, { _id: "r-eu", name: "Europe", currency: "EUR", countries: ["DE", "FR"], isActive: true }];
+    Api.ApiAdminAiCreditPackages.mockResolvedValue({ isSuccess: true, data: { packages: [pkg], regions: regions2 } });
+    render(<CreditPackagesAdmin reloadKey={0} />);
+    const row = await screen.findByRole("row", { name: /Growth/ });
+    fireEvent.click(within(row).getByRole("button", { name: "Regional Prices" }));
+    const india = await screen.findByLabelText("Price in INR for India");
+    expect(india).toHaveValue(1999);
+    fireEvent.change(india, { target: { value: "" } }); // back to the default price
+    fireEvent.change(screen.getByLabelText("Price in EUR for Europe"), { target: { value: "27" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save Prices/ }));
+    await waitFor(() => expect(Api.ApiAdminUpdateAiCreditPackage).toHaveBeenCalledWith({ packageId: "p2", regionalPrices: [{ regionId: "r-eu", price: 27 }] }));
+  });
+
+  test("Regional Prices: rejects a zero price and explains where regions come from when there are none", async () => {
+    render(<CreditPackagesAdmin reloadKey={0} />);
+    fireEvent.click(within(await screen.findByRole("row", { name: /Growth/ })).getByRole("button", { name: "Regional Prices" }));
+    fireEvent.change(await screen.findByLabelText("Price in INR for India"), { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save Prices/ }));
+    expect(await screen.findByText("Price must be greater than 0")).toBeInTheDocument();
+    expect(Api.ApiAdminUpdateAiCreditPackage).not.toHaveBeenCalled();
+  });
+
+  test("no pricing regions yet: the modal points to Plans → Pricing Regions and can't save", async () => {
+    Api.ApiAdminAiCreditPackages.mockResolvedValue({ isSuccess: true, data: { packages: [{ ...pkg, regionalPrices: [] }], regions: [] } });
+    render(<CreditPackagesAdmin reloadKey={0} />);
+    fireEvent.click(within(await screen.findByRole("row", { name: /Growth/ })).getByRole("button", { name: "Regional Prices" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/Add regions on the Plans page \(Pricing Regions\)/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /Save Prices/ })).toBeDisabled();
   });
 
   test("switches a package off and deletes one after confirming", async () => {

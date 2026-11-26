@@ -1,5 +1,5 @@
 import { tourRegistry } from '../TourRegistry';
-import { Sparkle, ChartLine, Buildings, MagnifyingGlass, ListBullets, GearSix, ToggleLeft, Cpu, Calculator, FloppyDisk, Image, Package, Plus, Receipt } from '@phosphor-icons/react';
+import { Sparkle, ChartLine, Buildings, MagnifyingGlass, ListBullets, GearSix, ToggleLeft, Cpu, Calculator, FloppyDisk, Image, Package, Plus, Receipt, Globe } from '@phosphor-icons/react';
 
 export const aiCreditsAdminTourConfig = {
     id: "ai-credits-admin",
@@ -12,6 +12,7 @@ export const aiCreditsAdminTourConfig = {
         { target: "#ai-credits-admin-tab-usage", icon: ListBullets, title: "Usage Log", content: "Click to see every AI request with its organization, user, model, tokens and cost.", requireClick: true },
         { target: "#ai-credits-admin-tab-packages", icon: Package, title: "Credit Packages", content: "Click to manage the credit packages organizations can buy: credits, price, regional prices and availability.", requireClick: true },
         { target: "#ai-pkg-add", icon: Plus, title: "Add a Package", content: "Create a package. Purchased credits never expire and are used after the monthly credits.", blockTargetInteraction: true },
+        { target: "#ai-pkg-region-prices", icon: Globe, title: "Regional Prices", content: "Set this package's price for each pricing region, like plan prices. Buyers are matched to a region by their country and pay in its currency; everyone else pays the default price.", blockTargetInteraction: true },
         { target: "#ai-credits-admin-tab-payments", icon: Receipt, title: "Payments", content: "Click to see every credit purchase and whether it was paid, is pending, failed or was cancelled.", requireClick: true },
         { target: "#ai-credits-admin-tab-settings", icon: GearSix, title: "Settings", content: "Click to set how tokens convert to credits.", requireClick: true },
         { target: "#ai-credit-enforcement", icon: ToggleLeft, title: "Enforce Credit Limits", content: "Turn off to let AI run without taking credits (usage is still recorded).", blockTargetInteraction: true },

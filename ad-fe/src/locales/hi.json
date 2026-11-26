@@ -8290,7 +8290,6 @@
   "Unused credits don't carry over": "बचे क्रेडिट आगे नहीं जाते",
   "Tokens this month": "इस महीने के टोकन",
   "{{input}} in · {{output}} out": "{{input}} इनपुट · {{output}} आउटपुट",
-  "How credits are counted: 1,000 input tokens = {{input}} credits, 1,000 output tokens = {{output}} credits (some AI models have their own rates). Failed requests and cached results are free.": "क्रेडिट कैसे गिने जाते हैं: 1,000 इनपुट टोकन = {{input}} क्रेडिट, 1,000 आउटपुट टोकन = {{output}} क्रेडिट (कुछ AI मॉडल की अपनी दरें हैं)। विफल अनुरोध और कैश किए परिणाम मुफ़्त हैं।",
   "Credits used per day": "प्रतिदिन इस्तेमाल क्रेडिट",
   "{{from}} – today": "{{from}} – आज",
   "By feature": "सुविधा के अनुसार",
@@ -8436,7 +8435,6 @@
   "Filter History": "इतिहास फ़िल्टर करें",
   "Show only one kind of entry, for example only adjustments.": "सिर्फ़ एक तरह की प्रविष्टियाँ दिखाएँ, जैसे सिर्फ़ समायोजन।",
   "AI listing generation": "AI लिस्टिंग निर्माण",
-  "Each AI-generated image (A+ Content) = {{n}} credits.": "हर AI से बनी इमेज (A+ Content) = {{n}} क्रेडिट।",
   "AI Assistant, Optimize with AI, A+ Content and AI listing generation use credits from one monthly allowance shared by your whole organization.": "AI असिस्टेंट, AI से ऑप्टिमाइज़ करें, A+ Content और AI लिस्टिंग निर्माण आपके पूरे संगठन के साझा मासिक आवंटन से क्रेडिट इस्तेमाल करते हैं।",
   "Credits per generated image": "प्रति बनी इमेज क्रेडिट",
   "A+ Content banners are charged per image, not by tokens. A basic A+ document has 5 images, premium 7.": "A+ Content बैनर का शुल्क प्रति इमेज लगता है, टोकन के अनुसार नहीं। बेसिक A+ दस्तावेज़ में 5 इमेज होती हैं, प्रीमियम में 7।",
@@ -8531,5 +8529,11 @@
   "AI Credit Package Deleted": "AI क्रेडिट पैकेज हटाया गया",
   "AI Credit Purchase Started": "AI क्रेडिट खरीद शुरू हुई",
   "AI Credit Purchase Verified": "AI क्रेडिट खरीद की पुष्टि हुई",
-  "AI Credit Purchase Cancelled": "AI क्रेडिट खरीद रद्द हुई"
+  "AI Credit Purchase Cancelled": "AI क्रेडिट खरीद रद्द हुई",
+  "Buyers see the price of the region their country belongs to, in that region's currency.": "खरीदारों को उनके देश के क्षेत्र की कीमत, उसी क्षेत्र की मुद्रा में दिखाई देती है।",
+  "No pricing regions yet. Add regions on the Plans page (Pricing Regions); credit packages use the same regions.": "अभी कोई मूल्य क्षेत्र नहीं है। प्लान पेज (मूल्य क्षेत्र) पर क्षेत्र जोड़ें; क्रेडिट पैकेज भी वही क्षेत्र इस्तेमाल करते हैं।",
+  "buyers here pay the {{region}} price in {{currency}}": "यहाँ के खरीदार {{region}} की कीमत {{currency}} में चुकाते हैं",
+  "no pricing region, buyers here pay the default price": "कोई मूल्य क्षेत्र नहीं, यहाँ के खरीदार डिफ़ॉल्ट कीमत चुकाते हैं",
+  "AI Credit Package Prices": "AI क्रेडिट पैकेज की कीमतें",
+  "Set this package's price for each pricing region, like plan prices. Buyers are matched to a region by their country and pay in its currency; everyone else pays the default price.": "प्लान की कीमतों की तरह, हर मूल्य क्षेत्र के लिए इस पैकेज की कीमत तय करें। खरीदारों को उनके देश के अनुसार क्षेत्र मिलता है और वे उसकी मुद्रा में भुगतान करते हैं; बाकी सभी डिफ़ॉल्ट कीमत चुकाते हैं।"
 }

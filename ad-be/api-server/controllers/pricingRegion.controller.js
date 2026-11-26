@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const { write_logs } = require("../../winston/utility/logger");
 const PricingRegion = require("../models/pricingRegion.model");
 const packageSchema = require("../models/packages.model");
+const aiCreditPackageModel = require("../models/aiCreditPackage.model");
 const organizationSchema = require("../models/organization.model");
 const { isCountryCode, clearRegionCache, getRequestCountry, getPricingContext } = require("../helper/regionalPricing");
 
@@ -64,12 +65,14 @@ exports.getRegions = async (req, res) => {
     const { pageNo, perPage, skip } = paging(req.body);
     const search = String(req.body?.search || "").trim();
     const filter = search ? { name: { $regex: escapeRegex(search), $options: "i" } } : {};
-    const [regions, totalRecords, plans] = await Promise.all([
+    const [regions, totalRecords, plans, creditPackages] = await Promise.all([
       PricingRegion.find(filter).sort({ name: 1 }).skip(skip).limit(perPage).lean(),
       PricingRegion.countDocuments(filter),
       packageSchema.find({}).select("name monthlyPrice yearlyPrice price currency isActive").sort({ price: 1 }).lean(),
+      // AI credit packages use the same regions; their region prices live on the package
+      aiCreditPackageModel.find({ isDeleted: { $ne: true } }).select("name credits price currency isActive regionalPrices").sort({ sortOrder: 1, credits: 1 }).lean(),
     ]);
-    return res.status(200).json({ isSuccess: true, data: regions, plans, totalRecords, currentPageNo: pageNo, totalPages: Math.ceil(totalRecords / perPage) });
+    return res.status(200).json({ isSuccess: true, data: regions, plans, creditPackages, totalRecords, currentPageNo: pageNo, totalPages: Math.ceil(totalRecords / perPage) });
   } catch (error) {
     return serverError(res, "getRegions", error, req);
   }
@@ -126,6 +129,8 @@ exports.deleteRegion = async (req, res) => {
     const { regionId } = req.body || {};
     if (!mongoose.Types.ObjectId.isValid(regionId)) return fail(res, "Invalid region");
     await PricingRegion.deleteOne({ _id: regionId });
+    // AI credit packages priced for this region go back to their default price there
+    await aiCreditPackageModel.updateMany({ "regionalPrices.regionId": regionId }, { $pull: { regionalPrices: { regionId: new mongoose.Types.ObjectId(String(regionId)) } } });
     clearRegionCache();
     return res.status(200).json({ isSuccess: true, message: "Region deleted" });
   } catch (error) {

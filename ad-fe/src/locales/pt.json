@@ -8291,7 +8291,6 @@
   "Unused credits don't carry over": "Créditos não usados não acumulam",
   "Tokens this month": "Tokens este mês",
   "{{input}} in · {{output}} out": "{{input}} entrada · {{output}} saída",
-  "How credits are counted: 1,000 input tokens = {{input}} credits, 1,000 output tokens = {{output}} credits (some AI models have their own rates). Failed requests and cached results are free.": "Como os créditos são contados: 1.000 tokens de entrada = {{input}} créditos, 1.000 tokens de saída = {{output}} créditos (alguns modelos de IA têm taxas próprias). Solicitações com falha e resultados em cache são gratuitos.",
   "Credits used per day": "Créditos usados por dia",
   "{{from}} – today": "{{from}} – hoje",
   "By feature": "Por recurso",
@@ -8437,7 +8436,6 @@
   "Filter History": "Filtrar histórico",
   "Show only one kind of entry, for example only adjustments.": "Mostre só um tipo de registro, por exemplo só ajustes.",
   "AI listing generation": "Geração de anúncios com IA",
-  "Each AI-generated image (A+ Content) = {{n}} credits.": "Cada imagem gerada por IA (A+ Content) = {{n}} créditos.",
   "AI Assistant, Optimize with AI, A+ Content and AI listing generation use credits from one monthly allowance shared by your whole organization.": "O Assistente de IA, Otimizar com IA, A+ Content e a geração de anúncios com IA usam créditos de uma cota mensal compartilhada por toda a sua organização.",
   "Credits per generated image": "Créditos por imagem gerada",
   "A+ Content banners are charged per image, not by tokens. A basic A+ document has 5 images, premium 7.": "Os banners de A+ Content são cobrados por imagem, não por tokens. Um documento A+ básico tem 5 imagens; o premium, 7.",
@@ -8532,5 +8530,11 @@
   "AI Credit Package Deleted": "Pacote de créditos de IA excluído",
   "AI Credit Purchase Started": "Compra de créditos de IA iniciada",
   "AI Credit Purchase Verified": "Compra de créditos de IA verificada",
-  "AI Credit Purchase Cancelled": "Compra de créditos de IA cancelada"
+  "AI Credit Purchase Cancelled": "Compra de créditos de IA cancelada",
+  "Buyers see the price of the region their country belongs to, in that region's currency.": "Os compradores veem o preço da região à qual o seu país pertence, na moeda dessa região.",
+  "No pricing regions yet. Add regions on the Plans page (Pricing Regions); credit packages use the same regions.": "Ainda não há regiões de preço. Adicione regiões na página Planos (Regiões de preço); os pacotes de créditos usam as mesmas regiões.",
+  "buyers here pay the {{region}} price in {{currency}}": "os compradores aqui pagam o preço de {{region}} em {{currency}}",
+  "no pricing region, buyers here pay the default price": "sem região de preço, os compradores aqui pagam o preço padrão",
+  "AI Credit Package Prices": "Preços dos pacotes de créditos de IA",
+  "Set this package's price for each pricing region, like plan prices. Buyers are matched to a region by their country and pay in its currency; everyone else pays the default price.": "Defina o preço deste pacote para cada região de preço, como nos planos. Os compradores são associados a uma região pelo país e pagam na moeda dela; os demais pagam o preço padrão."
 }

@@ -8290,7 +8290,6 @@
   "Unused credits don't carry over": "未用完的积分不结转",
   "Tokens this month": "本月 Token",
   "{{input}} in · {{output}} out": "输入 {{input}} · 输出 {{output}}",
-  "How credits are counted: 1,000 input tokens = {{input}} credits, 1,000 output tokens = {{output}} credits (some AI models have their own rates). Failed requests and cached results are free.": "积分计算方式:1,000 个输入 Token = {{input}} 积分,1,000 个输出 Token = {{output}} 积分(部分 AI 模型有单独费率)。失败的请求和缓存结果免费。",
   "Credits used per day": "每日已用积分",
   "{{from}} – today": "{{from}} – 今天",
   "By feature": "按功能",
@@ -8436,7 +8435,6 @@
   "Filter History": "筛选记录",
   "Show only one kind of entry, for example only adjustments.": "只显示一种记录,例如仅显示调整。",
   "AI listing generation": "AI 生成商品详情",
-  "Each AI-generated image (A+ Content) = {{n}} credits.": "每张 AI 生成的图片(A+ 内容)= {{n}} 积分。",
   "AI Assistant, Optimize with AI, A+ Content and AI listing generation use credits from one monthly allowance shared by your whole organization.": "AI 助手、“AI 优化”、A+ 内容和 AI 生成商品详情共用整个组织的每月积分额度。",
   "Credits per generated image": "每张生成图片的积分",
   "A+ Content banners are charged per image, not by tokens. A basic A+ document has 5 images, premium 7.": "A+ 内容横幅按图片计费,而不是按 Token。基础版 A+ 文档有 5 张图片,高级版有 7 张。",
@@ -8531,5 +8529,11 @@
   "AI Credit Package Deleted": "AI 积分套餐已删除",
   "AI Credit Purchase Started": "AI 积分购买已开始",
   "AI Credit Purchase Verified": "AI 积分购买已确认",
-  "AI Credit Purchase Cancelled": "AI 积分购买已取消"
+  "AI Credit Purchase Cancelled": "AI 积分购买已取消",
+  "Buyers see the price of the region their country belongs to, in that region's currency.": "买家会看到其所在国家所属地区的价格，并以该地区的货币显示。",
+  "No pricing regions yet. Add regions on the Plans page (Pricing Regions); credit packages use the same regions.": "尚无定价地区。请在“套餐”页面（定价地区）中添加地区；积分包使用相同的地区。",
+  "buyers here pay the {{region}} price in {{currency}}": "此处的买家以 {{currency}} 支付 {{region}} 的价格",
+  "no pricing region, buyers here pay the default price": "无定价地区，此处的买家支付默认价格",
+  "AI Credit Package Prices": "AI 积分包价格",
+  "Set this package's price for each pricing region, like plan prices. Buyers are matched to a region by their country and pay in its currency; everyone else pays the default price.": "像套餐价格一样，为每个定价地区设置此积分包的价格。买家按国家匹配到地区并以该地区货币付款；其他买家支付默认价格。"
 }
