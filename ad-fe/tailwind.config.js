@@ -73,5 +73,14 @@ module.exports = {
       },
     },
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [
+    require("tailwindcss-animate"),
+    // Container queries: lay out by the width of the nearest `.cq` element (e.g. a page next to the
+    // sidebar) instead of the window. Use `cq-md:grid-cols-4` etc. Registered smallest first so
+    // larger sizes win.
+    require("tailwindcss/plugin")(({ addUtilities, addVariant }) => {
+      addUtilities({ ".cq": { "container-type": "inline-size" } });
+      [["cq-sm", 560], ["cq-md", 720], ["cq-lg", 960], ["cq-xl", 1180]].forEach(([name, px]) => addVariant(name, `@container (min-width: ${px}px)`));
+    }),
+  ],
 }

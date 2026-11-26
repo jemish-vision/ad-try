@@ -132,7 +132,7 @@ export default function CustomPricingCard({ custom, packages = [], regions = [],
         }
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 cq-sm:grid-cols-2 cq-lg:grid-cols-4 gap-4">
         {field(
           "ai-custom-price",
           t("Price per credit"),

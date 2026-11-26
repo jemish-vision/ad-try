@@ -251,7 +251,7 @@ export default function CreditPackagesAdmin({ reloadKey }) {
           </div>
         )}
         <div className="rounded-xl border border-slate-200/80 dark:border-white/[0.08] overflow-x-auto">
-          <table className="w-full text-[12.5px] min-w-[860px]">
+          <table className="w-full text-[12.5px] min-w-[640px]">
             <thead className="bg-slate-50 dark:bg-white/[0.04] text-slate-500 dark:text-slate-400">
               <tr>
                 {[t("Package"), t("Credits"), t("Price"), t("Regional prices"), t("Status"), ""].map((c, i) => (

@@ -58,8 +58,8 @@ export default function CustomCreditsRow({ offer, canPurchase, buying, onBuy }) 
 
   return (
     <div id="ai-credits-custom" role="group" aria-labelledby="ai-credits-custom-title" className="mt-4 rounded-xl border border-dashed border-slate-300 dark:border-white/15 bg-slate-50/60 dark:bg-white/[0.02] px-4 py-4">
-      <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-        <div className="flex items-start gap-2.5 lg:w-[34%] min-w-0">
+      <div className="flex flex-col cq-lg:flex-row cq-lg:items-center gap-3 cq-lg:gap-4">
+        <div className="flex items-start gap-2.5 cq-lg:w-[32%] min-w-0">
           <SlidersHorizontal className="w-4 h-4 mt-0.5 shrink-0 text-blue-600 dark:text-sky-400" aria-hidden="true" />
           <div className="min-w-0">
             <div id="ai-credits-custom-title" className="text-[13px] font-bold text-slate-900 dark:text-white">{t("Need a different amount?")}</div>
@@ -69,56 +69,58 @@ export default function CustomCreditsRow({ offer, canPurchase, buying, onBuy }) 
           </div>
         </div>
 
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <button type="button" id="ai-credits-custom-minus" className={btn} aria-label={t("Fewer credits")} disabled={!canPurchase || credits <= offer.minCredits} onClick={() => nudge(-1)}>
-              <Minus className="w-4 h-4" />
-            </button>
-            <input
-              id="ai-credits-custom-amount"
-              type="number"
-              inputMode="numeric"
-              min={offer.minCredits}
-              max={offer.maxCredits}
-              step={1}
-              value={value}
-              disabled={!canPurchase}
-              aria-label={t("Number of credits")}
-              aria-invalid={Boolean(error)}
-              aria-describedby={error ? "ai-credits-custom-error" : undefined}
-              onChange={(e) => setValue(e.target.value)}
-              className={`h-9 w-full max-w-[180px] px-3 rounded-lg text-[14px] font-semibold tabular-nums bg-white dark:bg-slate-950 border text-slate-900 dark:text-white disabled:opacity-60 ${error ? "border-rose-400 dark:border-rose-500/70" : "border-slate-200 dark:border-white/10"}`}
-            />
-            <button type="button" id="ai-credits-custom-plus" className={btn} aria-label={t("More credits")} disabled={!canPurchase || credits >= offer.maxCredits} onClick={() => nudge(1)}>
-              <Plus className="w-4 h-4" />
-            </button>
-            <span className="text-[12px] font-semibold text-slate-500 dark:text-slate-400">{t("credits")}</span>
-          </div>
-          {error && (
-            <div id="ai-credits-custom-error" role="alert" className="text-[11.5px] text-rose-600 dark:text-rose-400 mt-1">
-              {error}
+        <div className="flex flex-1 flex-wrap items-center justify-between gap-x-4 gap-y-3 min-w-0">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <button type="button" id="ai-credits-custom-minus" className={btn} aria-label={t("Fewer credits")} disabled={!canPurchase || credits <= offer.minCredits} onClick={() => nudge(-1)}>
+                <Minus className="w-4 h-4" />
+              </button>
+              <input
+                id="ai-credits-custom-amount"
+                type="number"
+                inputMode="numeric"
+                min={offer.minCredits}
+                max={offer.maxCredits}
+                step={1}
+                value={value}
+                disabled={!canPurchase}
+                aria-label={t("Number of credits")}
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? "ai-credits-custom-error" : undefined}
+                onChange={(e) => setValue(e.target.value)}
+                className={`h-9 w-[120px] cq-sm:w-[150px] px-3 rounded-lg text-[14px] font-semibold tabular-nums bg-white dark:bg-slate-950 border text-slate-900 dark:text-white disabled:opacity-60 ${error ? "border-rose-400 dark:border-rose-500/70" : "border-slate-200 dark:border-white/10"}`}
+              />
+              <button type="button" id="ai-credits-custom-plus" className={btn} aria-label={t("More credits")} disabled={!canPurchase || credits >= offer.maxCredits} onClick={() => nudge(1)}>
+                <Plus className="w-4 h-4" />
+              </button>
+              <span className="text-[12px] font-semibold text-slate-500 dark:text-slate-400">{t("credits")}</span>
             </div>
-          )}
-        </div>
+            {error && (
+              <div id="ai-credits-custom-error" role="alert" className="text-[11.5px] text-rose-600 dark:text-rose-400 mt-1">
+                {error}
+              </div>
+            )}
+          </div>
 
-        <div className="flex items-center gap-3 lg:justify-end">
-          <div className="text-right">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{t("Total")}</div>
-            <div className="text-[18px] font-bold text-slate-900 dark:text-white tabular-nums" id="ai-credits-custom-total">
-              {total === null ? "—" : formatMoney(total, offer.currency, L)}
+          <div className="flex items-center gap-3 ml-auto">
+            <div className="text-right">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{t("Total")}</div>
+              <div className="text-[18px] font-bold text-slate-900 dark:text-white tabular-nums" id="ai-credits-custom-total">
+                {total === null ? "—" : formatMoney(total, offer.currency, L)}
+              </div>
             </div>
+            <button
+              type="button"
+              data-demo-block
+              id="ai-credits-buy-custom"
+              disabled={!canPurchase || Boolean(error) || Boolean(buying)}
+              onClick={() => onBuy(credits)}
+              className="h-9 px-4 rounded-lg text-[13px] font-semibold bg-[#2374F2] text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5 whitespace-nowrap"
+            >
+              {isBuying ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : null}
+              {isBuying ? t("Opening secure checkout...") : error ? t("Buy credits") : t("Buy {{n}} credits", { n: formatCredits(credits, L) })}
+            </button>
           </div>
-          <button
-            type="button"
-            data-demo-block
-            id="ai-credits-buy-custom"
-            disabled={!canPurchase || Boolean(error) || Boolean(buying)}
-            onClick={() => onBuy(credits)}
-            className="h-9 px-4 rounded-lg text-[13px] font-semibold bg-[#2374F2] text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5 whitespace-nowrap"
-          >
-            {isBuying ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : null}
-            {isBuying ? t("Opening secure checkout...") : error ? t("Buy credits") : t("Buy {{n}} credits", { n: formatCredits(credits, L) })}
-          </button>
         </div>
       </div>
     </div>

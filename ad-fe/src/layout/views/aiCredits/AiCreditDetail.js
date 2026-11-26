@@ -68,7 +68,7 @@ export default function AiCreditDetail({ summary, loadUsage, loadTransactions, l
   const L = i18n.language;
 
   return (
-    <div className="space-y-5">
+    <div className="cq space-y-5">
       {summary.enforcementEnabled === false && (
         <div className="flex items-start gap-2 rounded-xl border border-blue-200/70 dark:border-blue-800/40 bg-blue-50/70 dark:bg-blue-950/30 px-4 py-3 text-[12.5px] text-blue-800 dark:text-blue-200">
           <Info className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
@@ -78,9 +78,9 @@ export default function AiCreditDetail({ summary, loadUsage, loadTransactions, l
 
       {/* Balance + KPIs */}
       <Card id="ai-credits-balance">
-        <div className={`grid gap-5 ${compact ? "grid-cols-1" : "grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1.9fr)]"}`}>
+        <div className={`grid gap-5 ${compact ? "grid-cols-1" : "grid-cols-1 cq-xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1.9fr)]"}`}>
           <CreditMeter wallet={wallet} enforcementEnabled={summary.enforcementEnabled !== false} />
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" id="ai-credits-kpis">
+          <div className="grid grid-cols-2 cq-md:grid-cols-4 gap-3" id="ai-credits-kpis">
             <StatTile label={t("Used this month")} value={formatCredits(wallet.used, L)} sub={t("{{n}} AI requests", { n: summary.requestsThisPeriod || 0 })} />
             <StatTile label={t("Monthly allowance")} value={formatCredits(wallet.monthlyLimit, L)} sub={t(SOURCE_LABEL[wallet.limitSource] || "")} />
             <StatTile label={t("Next reset")} value={moment(wallet.nextResetAt).format("DD MMM")} sub={t("Unused monthly credits don't carry over; purchased credits do")} />
@@ -96,8 +96,8 @@ export default function AiCreditDetail({ summary, loadUsage, loadTransactions, l
       {afterBalance}
 
       {/* This month */}
-      <div className={`grid gap-5 ${compact ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-3"}`}>
-        <Card id="ai-credits-daily" className={compact ? "" : "lg:col-span-2"}>
+      <div className={`grid gap-5 ${compact ? "grid-cols-1" : "grid-cols-1 cq-lg:grid-cols-3"}`}>
+        <Card id="ai-credits-daily" className={compact ? "" : "cq-lg:col-span-2"}>
           <CardHeader icon={<BarChart3 className="w-3.5 h-3.5" />} title={t("Credits used per day")} subtitle={t("{{from}} – today", { from: moment(wallet.periodStart).format("DD MMM YYYY") })} />
           <DailyUsageChart byDay={summary.byDay} periodStart={wallet.periodStart} periodEnd={wallet.nextResetAt} />
         </Card>
@@ -126,7 +126,7 @@ export default function AiCreditDetail({ summary, loadUsage, loadTransactions, l
               ) : (
                 <Select id="ai-credits-type-filter" label={t("Type")} value={txs.filters.type || ""} onChange={(v) => txs.setFilter("type", v)} options={TX_TYPE_OPTIONS(t)} />
               )}
-              <div className="inline-flex rounded-lg border border-slate-200 dark:border-white/10 p-0.5 bg-slate-50 dark:bg-white/[0.03] order-first md:order-last" role="tablist">
+              <div className="inline-flex rounded-lg border border-slate-200 dark:border-white/10 p-0.5 bg-slate-50 dark:bg-white/[0.03] order-first cq-md:order-last" role="tablist">
                 {[
                   ["requests", t("AI requests")],
                   ["transactions", t("Credit history")],

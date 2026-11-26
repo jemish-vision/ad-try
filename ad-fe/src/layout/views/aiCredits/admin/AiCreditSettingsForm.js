@@ -118,8 +118,8 @@ export default function AiCreditSettingsForm({ settings, onSave, saving }) {
   };
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-3 gap-5" id="ai-credit-settings">
-      <div className="xl:col-span-2 space-y-5">
+    <div className="grid grid-cols-1 cq-xl:grid-cols-3 gap-5" id="ai-credit-settings">
+      <div className="cq-xl:col-span-2 space-y-5">
         <Card>
           <CardHeader icon={<Settings2 className="w-3.5 h-3.5" />} title={t("Credits & limits")} subtitle={t("Changes apply to new AI requests within a minute.")} />
           <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-200/80 dark:border-white/[0.08] px-4 py-3 mb-5">
@@ -129,7 +129,7 @@ export default function AiCreditSettingsForm({ settings, onSave, saving }) {
             </div>
             <Switch id="ai-credit-enforcement" checked={form.enforcementEnabled} onCheckedChange={(v) => set("enforcementEnabled", v)} aria-label={t("Enforce credit limits")} />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 cq-sm:grid-cols-2 gap-4">
             <Field id="ai-default-monthly" label={t("Standard monthly credits")} hint={t("For plans without their own AI credits. Set per plan on the Plans page.")} error={errors.defaultMonthlyCredits}>
               <Input id="ai-default-monthly" type="number" min="0" value={form.defaultMonthlyCredits} onChange={(e) => set("defaultMonthlyCredits", e.target.value)} />
             </Field>
@@ -162,14 +162,14 @@ export default function AiCreditSettingsForm({ settings, onSave, saving }) {
             <p className="text-[12.5px] text-slate-500 dark:text-slate-400 m-0">{t("Every model uses the default rates.")}</p>
           ) : (
             <div className="space-y-2.5">
-              <div className="hidden md:grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_32px] gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              <div className="hidden cq-sm:grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_32px] gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 <span>{t("Model")}</span>
                 <span>{t("Input / 1K")}</span>
                 <span>{t("Output / 1K")}</span>
                 <span />
               </div>
               {form.modelRates.map((r, i) => (
-                <div key={i} className="grid grid-cols-1 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_32px] gap-2 items-start">
+                <div key={i} className="grid grid-cols-1 cq-sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_32px] gap-2 items-start">
                   <div>
                     <Input aria-label={t("Model")} value={r.model} placeholder="gpt-4o-mini" onChange={(e) => setRate(i, "model", e.target.value)} />
                     {errors[`model.${i}`] && <div className="text-red-500 text-[12px] mt-1">{errors[`model.${i}`]}</div>}
@@ -193,7 +193,7 @@ export default function AiCreditSettingsForm({ settings, onSave, saving }) {
             title={t("Credits held per request")}
             subtitle={t("The hold is the most a request can charge. Rates above update the preview. Unused credits return after completion.")}
           />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 cq-sm:grid-cols-2 gap-3">
             {(settings.featureReservePlans || Object.entries(settings.featureReserves || {}).map(([key, amount]) => ({ key, amount }))).map((plan) => {
               const holdAmount = previewFeatureHold(form, plan);
               const modelLabel = plan.plans?.map(calls => calls.map(c => c.model).join(" + ")).join(" / ");
@@ -231,7 +231,7 @@ export default function AiCreditSettingsForm({ settings, onSave, saving }) {
         </div>
       </div>
 
-      <Card id="ai-credit-cost-preview" className="self-start xl:sticky xl:top-4">
+      <Card id="ai-credit-cost-preview" className="self-start cq-xl:sticky cq-xl:top-4">
         <CardHeader icon={<Calculator className="w-3.5 h-3.5" />} title={t("Cost preview")} subtitle={t("Test calculator only — uses the rates on the left.")} />
         <div className="space-y-3">
           <Field id="ai-preview-model" label={t("Test with model")}>

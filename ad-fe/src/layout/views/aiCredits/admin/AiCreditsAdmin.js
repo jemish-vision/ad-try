@@ -40,7 +40,7 @@ function Overview({ reloadKey }) {
   const { start, end } = { start: moment.utc().startOf("month"), end: moment.utc().startOf("month").add(1, "month") };
   return (
     <div className="space-y-5" id="ai-credit-admin-overview">
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 cq-sm:grid-cols-3 cq-xl:grid-cols-6 gap-3">
         <StatTile label={t("Credits used")} value={formatCredits(data.totals.credits, L)} sub={t("This month, all organizations")} />
         <StatTile label={t("AI requests")} value={data.totals.requests.toLocaleString(L)} sub={t("{{charged}} charged · {{failed}} not charged", { charged: data.totals.charged, failed: data.totals.failed })} />
         <StatTile label={t("Input tokens")} value={formatTokens(data.totals.inputTokens, L)} />
@@ -48,8 +48,8 @@ function Overview({ reloadKey }) {
         <StatTile label={t("Active wallets")} value={data.wallets.active.toLocaleString(L)} sub={t("{{used}} of {{allocated}} credits used", { used: formatCredits(data.wallets.used, L), allocated: formatCredits(data.wallets.allocated, L) })} />
         <StatTile label={t("Low or empty")} value={`${data.wallets.low} / ${data.wallets.exhausted}`} sub={t("Under 20% left / none left")} tone={data.wallets.exhausted ? "danger" : data.wallets.low ? "warning" : "default"} />
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <Card className="lg:col-span-2">
+      <div className="grid grid-cols-1 cq-lg:grid-cols-3 gap-5">
+        <Card className="cq-lg:col-span-2">
           <CardHeader icon={<BarChart3 className="w-3.5 h-3.5" />} title={t("Credits used per day")} subtitle={t("All organizations, this month")} />
           <DailyUsageChart byDay={data.byDay} periodStart={start.toISOString()} periodEnd={end.toISOString()} />
         </Card>
@@ -58,7 +58,7 @@ function Overview({ reloadKey }) {
           <FeatureBreakdown byFeature={data.byFeature} />
         </Card>
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 cq-xl:grid-cols-2 gap-5">
         <Card>
           <CardHeader icon={<Cpu className="w-3.5 h-3.5" />} title={t("By AI model")} subtitle={t("Top 10 by credits")} />
           <SimpleTable
@@ -270,18 +270,18 @@ export default function AiCreditsAdmin() {
   };
 
   return (
-    <div className="p-4 sm:p-6 pb-16 sm:pb-16 space-y-5" id="ai-credits-admin-page">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="flex items-start gap-3">
+    <div className="cq p-4 sm:p-6 pb-16 sm:pb-16 space-y-5" id="ai-credits-admin-page">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3 min-w-0">
           <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200/60 dark:border-blue-800/40 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
             <Sparkles className="w-4.5 h-4.5" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h1 className="text-[18px] font-bold text-slate-900 dark:text-white tracking-tight m-0">{t("AI Credit Management")}</h1>
             <p className="text-[12.5px] text-slate-500 dark:text-slate-400 mt-0.5 mb-0">{t("Token-to-credit rates, monthly allowances and AI usage for every organization. Wallets refill on the 1st of each month (UTC).")}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {settings && settings.enforcementEnabled === false && <span className="px-2 py-1 rounded-full text-[11.5px] font-semibold bg-amber-50 text-amber-700 border border-amber-200/70 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/40">{t("Limits paused")}</span>}
           <button type="button" id="ai-credits-admin-refresh" title={t("Refresh")} onClick={() => setReloadKey((k) => k + 1)} className="h-8 w-8 rounded-lg border border-slate-200 dark:border-white/10 flex items-center justify-center text-slate-500 hover:text-blue-600 bg-white dark:bg-slate-900">
             <RefreshCw className="w-3.5 h-3.5" />

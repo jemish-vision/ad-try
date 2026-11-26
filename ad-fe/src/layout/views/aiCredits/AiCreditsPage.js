@@ -53,13 +53,13 @@ export default function AiCreditsPage() {
 
   return (
     <div className="p-4 sm:p-6 pb-16 sm:pb-16 space-y-5" id="ai-credits-page">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="flex items-start gap-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3 min-w-0">
           <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200/60 dark:border-blue-800/40 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
             <Sparkles className="w-4.5 h-4.5" />
           </div>
-          <div>
-            <h1 className="text-[18px] font-bold text-slate-900 dark:text-white tracking-tight m-0 flex items-center gap-2">
+          <div className="min-w-0">
+            <h1 className="text-[18px] font-bold text-slate-900 dark:text-white tracking-tight m-0 flex items-center gap-2 flex-wrap">
               {t("AI Credits")}
               {summary?.isDemo && <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200/70 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/40">{t("Demo data")}</span>}
             </h1>

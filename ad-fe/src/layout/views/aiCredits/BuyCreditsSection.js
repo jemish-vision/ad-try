@@ -11,7 +11,8 @@ import CustomCreditsRow from "./CustomCreditsRow";
 export const goToCheckout = (url) => window.location.assign(url);
 
 // Fill the row: 3 packages → 3 columns, 4+ → 4 (static class names so Tailwind keeps them).
-const GRID_COLS = { 1: "max-w-md", 2: "sm:grid-cols-2", 3: "sm:grid-cols-2 lg:grid-cols-3", 4: "sm:grid-cols-2 xl:grid-cols-4" };
+// Widths are the space the page gets (container queries), not the window: the sidebar takes room too.
+const GRID_COLS = { 1: "max-w-md", 2: "cq-sm:grid-cols-2", 3: "cq-sm:grid-cols-2 cq-md:grid-cols-3", 4: "cq-sm:grid-cols-2 cq-lg:grid-cols-4" };
 
 /**
  * Credit packages the organization can buy, and (when Super Admin allows it) a custom amount row
