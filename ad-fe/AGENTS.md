@@ -14,10 +14,13 @@ Read this file before implementing any feature, page, route, modal, action, or A
 - Add matching translation keys to every locale file under `src/locales/`:
   `en.json`, `de.json`, `fr.json`, `es.json`, `it.json`, `pt.json`, `ja.json`, `zh.json`, `hi.json`.
 
-### 2. User Guide
-- Follow existing User Guide patterns and update documentation when adding new features, pages, workflows, or user-facing settings.
-- Update `userGuideSections` in `src/layout/views/userGuide/UserGuideContent.js` (and `src/layout/views/userGuide/UserGuide.js` / assets under `public/guide-images/` if needed).
-- If the task adds or modifies an interactive product tour or targeted element IDs/selectors, update the corresponding config under `src/tour/config/`.
+### 2. Guided Tour (Tour Guide)
+The **Guided Tour** is the step-by-step walkthrough opened from the "?" button in the page header. Keep it up to date whenever you add or change a page, feature, workflow, or user-facing setting.
+- **Tour config:** each page has a tour under `src/tour/config/` (e.g. `aiCreditsTour.js`) that exports `{ id, title, steps }` and calls `tourRegistry.register(...)`. Add steps to the page's existing tour; for a new page, create a new `<page>Tour.js` and import it in `src/tour/config/index.js`.
+- **Route → tour:** the "?" button only appears on routes listed in `routeToTourMap` in `src/helper/filter/Filter.js`. Map every new page route to its tour `id`.
+- **Steps:** `{ target: "#element-id", icon: <@phosphor-icons/react icon>, title, content, blockTargetInteraction: true }`. Use `requireClick: true` instead when the user must click the target (e.g. a tab) to reveal the next step. Order the steps in the page's visual flow.
+- **Targets:** give every targeted element a stable `id`. If you rename or remove an `id`, update the steps that point to it. Steps whose target isn't on the page are skipped automatically, so put essential steps on elements that are always rendered.
+- **Translations:** step `title` and `content` are translated with `t()` when shown, so add every new step `title`/`content` string as a key in all 9 locale files (see section 1).
 
 ### 3. Audit Logs
 - Ensure all relevant state-changing operations (create, update, delete, permission/setting/rule/bid/budget changes) maintain audit logs.
