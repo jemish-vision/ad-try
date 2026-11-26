@@ -435,7 +435,7 @@ describe('demo (mock) data', () => {
     assert.deepEqual(mock.summary(now), s1);
     assert.equal(s1.isDemo, true);
     assert.equal(s1.wallet.used, s1.byFeature.reduce((a, f) => Math.round((a + f.credits) * 100) / 100, 0));
-    assert.equal(s1.wallet.available, Math.round((s1.wallet.allocated - s1.wallet.used) * 100) / 100);
+    assert.equal(s1.wallet.available, Math.round((s1.wallet.allocated - s1.wallet.used + s1.wallet.purchasedBalance) * 100) / 100);
     const u = mock.usage({ perPage: 5, feature: 'AI_ASSISTANT' }, now);
     assert.equal(u.data.length, 5);
     assert.ok(u.data.every((r) => r.feature === 'AI_ASSISTANT'));

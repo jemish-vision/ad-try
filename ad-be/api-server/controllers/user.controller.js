@@ -1085,6 +1085,25 @@ exports.stripeWebhook = async (req, res) => {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
+  // AI credit purchases (one-off Checkout payments) — handled separately from plan subscriptions.
+  // Errors return 500 so Stripe retries; adding the credits is safe to repeat.
+  try {
+    const aiCredit = await require("../services/aiCredits/aiCreditPurchase.service").handleStripeEvent(event);
+    if (aiCredit.handled) {
+      req.auditChange = {
+        organizationId: event.data.object?.metadata?.organizationId,
+        resourceType: "ai credit payment",
+        resourceId: event.data.object?.metadata?.paymentId || event.id,
+        outcome: aiCredit.error ? "FAILURE" : "SUCCESS",
+        metadata: { providerEventId: event.id, providerEventType: event.type, paymentStatus: aiCredit.status },
+      };
+      return res.json({ received: true });
+    }
+  } catch (err) {
+    write_logs({ message: `[stripeWebhook] AI credit event ${event.type} failed: ${err.message}`, log_type: "error" });
+    return res.status(500).json({ error: "Webhook processing failed" });
+  }
+
   try {
     const payload = event.data.object;
     const stripeSubscriptionId = typeof payload.subscription === "string" ? payload.subscription :

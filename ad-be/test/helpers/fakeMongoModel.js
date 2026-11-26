@@ -6,7 +6,7 @@
  * completion in one step, so concurrent callers interleave between operations exactly like
  * separate MongoDB commands would. Supports what the AI credit code uses:
  * create, findOne, findById, find (sort/skip/limit/select), countDocuments,
- * findOneAndUpdate ($set, $inc, $setOnInsert, upsert, new), unique indexes.
+ * findOneAndUpdate / updateOne ($set, $inc, $push, $setOnInsert, upsert, new), unique indexes.
  */
 const mongoose = require('mongoose');
 
@@ -52,6 +52,7 @@ function applyUpdate(doc, update = {}, isInsert = false) {
   if (plain) return Object.assign(doc, clone(update));
   for (const [k, v] of Object.entries(update.$set || {})) doc[k] = clone(v);
   for (const [k, v] of Object.entries(update.$inc || {})) doc[k] = (Number(doc[k]) || 0) + v;
+  for (const [k, v] of Object.entries(update.$push || {})) doc[k] = [...(Array.isArray(doc[k]) ? doc[k] : []), clone(v)];
   if (isInsert) for (const [k, v] of Object.entries(update.$setOnInsert || {})) doc[k] = clone(v);
   return doc;
 }
@@ -134,6 +135,13 @@ function createFakeModel(name, { unique = [], defaults = {} } = {}) {
       Object.assign(d, after, { updatedAt: new Date() });
       return clone(opts.new ? d : before);
     }),
+    async updateOne(filter, update) {
+      await tick();
+      const d = docs.find((x) => matches(x, filter));
+      if (!d) return { matchedCount: 0, modifiedCount: 0 };
+      Object.assign(d, applyUpdate(clone(d), update), { updatedAt: new Date() });
+      return { matchedCount: 1, modifiedCount: 1 };
+    },
     async createIndexes() {},
     async aggregate() {
       return [];

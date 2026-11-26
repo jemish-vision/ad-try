@@ -17,6 +17,8 @@ import {
   FEATURE_OPTIONS,
   USAGE_STATUS_OPTIONS,
   TX_TYPE_OPTIONS,
+  PaymentsTable,
+  PAYMENT_STATUS_OPTIONS,
 } from "./aiCreditComponents";
 
 const PER_PAGE = 10;
@@ -49,11 +51,17 @@ function usePagedList(load, deps) {
  * Everything about one organization's AI credits: balance, this month's usage, and history.
  * Used on the user's AI Credits page and in Super Admin's organization view.
  */
-export default function AiCreditDetail({ summary, loadUsage, loadTransactions, reloadKey = 0, compact = false }) {
+const NO_PAYMENTS = async () => ({ isSuccess: true, data: [], totalRecords: 0 });
+
+/**
+ * loadPayments: pass to show the credit purchases tab (organization owner, Super Admin).
+ */
+export default function AiCreditDetail({ summary, loadUsage, loadTransactions, loadPayments, afterBalance = null, reloadKey = 0, compact = false }) {
   const { t, i18n } = useTranslation();
   const [tab, setTab] = useState("requests");
   const usage = usePagedList(loadUsage, [reloadKey]);
   const txs = usePagedList(loadTransactions, [reloadKey]);
+  const pays = usePagedList(loadPayments || NO_PAYMENTS, [reloadKey, Boolean(loadPayments)]);
 
   if (!summary?.wallet) return null;
   const { wallet } = summary;
@@ -75,7 +83,7 @@ export default function AiCreditDetail({ summary, loadUsage, loadTransactions, r
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" id="ai-credits-kpis">
             <StatTile label={t("Used this month")} value={formatCredits(wallet.used, L)} sub={t("{{n}} AI requests", { n: summary.requestsThisPeriod || 0 })} />
             <StatTile label={t("Monthly allowance")} value={formatCredits(wallet.monthlyLimit, L)} sub={t(SOURCE_LABEL[wallet.limitSource] || "")} />
-            <StatTile label={t("Next reset")} value={moment(wallet.nextResetAt).format("DD MMM")} sub={t("Unused credits don't carry over")} />
+            <StatTile label={t("Next reset")} value={moment(wallet.nextResetAt).format("DD MMM")} sub={t("Unused monthly credits don't carry over; purchased credits do")} />
             <StatTile
               label={t("Tokens this month")}
               value={formatTokens(summary.tokensThisPeriod?.total, L)}
@@ -94,6 +102,8 @@ export default function AiCreditDetail({ summary, loadUsage, loadTransactions, r
         )}
       </Card>
 
+      {afterBalance}
+
       {/* This month */}
       <div className={`grid gap-5 ${compact ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-3"}`}>
         <Card id="ai-credits-daily" className={compact ? "" : "lg:col-span-2"}>
@@ -111,13 +121,14 @@ export default function AiCreditDetail({ summary, loadUsage, loadTransactions, r
         <CardHeader
           icon={<History className="w-3.5 h-3.5" />}
           title={t("History")}
-          subtitle={tab === "requests" ? t("Every AI request, its tokens and what it cost.") : t("Monthly allowances, usage, month closes and adjustments.")}
+          subtitle={tab === "requests" ? t("Every AI request, its tokens and what it cost.") : tab === "payments" ? t("Credit packages bought online, with their payment status.") : t("Monthly allowances, purchases, usage, month closes and adjustments.")}
           right={
             <>
               <div className="inline-flex rounded-lg border border-slate-200 dark:border-white/10 p-0.5 bg-slate-50 dark:bg-white/[0.03]" role="tablist">
                 {[
                   ["requests", t("AI requests")],
                   ["transactions", t("Credit history")],
+                  ...(loadPayments ? [["payments", t("Payments")]] : []),
                 ].map(([k, label]) => (
                   <button
                     key={k}
@@ -137,6 +148,8 @@ export default function AiCreditDetail({ summary, loadUsage, loadTransactions, r
                   <Select id="ai-credits-feature-filter" label={t("Feature")} value={usage.filters.feature || ""} onChange={(v) => usage.setFilter("feature", v)} options={FEATURE_OPTIONS(t)} />
                   <Select id="ai-credits-status-filter" label={t("Status")} value={usage.filters.status || ""} onChange={(v) => usage.setFilter("status", v)} options={USAGE_STATUS_OPTIONS(t)} />
                 </>
+              ) : tab === "payments" ? (
+                <Select id="ai-credits-payment-filter" label={t("Status")} value={pays.filters.status || ""} onChange={(v) => pays.setFilter("status", v)} options={PAYMENT_STATUS_OPTIONS(t)} />
               ) : (
                 <Select id="ai-credits-type-filter" label={t("Type")} value={txs.filters.type || ""} onChange={(v) => txs.setFilter("type", v)} options={TX_TYPE_OPTIONS(t)} />
               )}
@@ -147,6 +160,11 @@ export default function AiCreditDetail({ summary, loadUsage, loadTransactions, r
           <>
             <UsageTable rows={usage.data} loading={usage.loading} />
             <Pager pageNo={usage.pageNo} perPage={PER_PAGE} total={usage.totalRecords} onPage={usage.setPageNo} />
+          </>
+        ) : tab === "payments" ? (
+          <>
+            <PaymentsTable rows={pays.data} loading={pays.loading} />
+            <Pager pageNo={pays.pageNo} perPage={PER_PAGE} total={pays.totalRecords} onPage={pays.setPageNo} />
           </>
         ) : (
           <>

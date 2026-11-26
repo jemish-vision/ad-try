@@ -16,12 +16,15 @@ import { formatCredits, formatTokens, creditLevel } from "../../../../helper/aiC
 import { Card, CardHeader, StatTile, DailyUsageChart, FeatureBreakdown, UsageTable, Pager, Select, FEATURE_OPTIONS, USAGE_STATUS_OPTIONS } from "../aiCreditComponents";
 import { AdjustCreditsModal, MonthlyLimitModal, OrganizationCreditsModal } from "./AiCreditAdminModals";
 import AiCreditSettingsForm from "./AiCreditSettingsForm";
+import CreditPackagesAdmin, { PaymentsLog } from "./CreditPackagesAdmin";
 
 const PER_PAGE = 10;
 const TABS = [
   ["overview", "Overview"],
   ["organizations", "Organizations"],
   ["usage", "Usage log"],
+  ["packages", "Credit packages"],
+  ["payments", "Payments"],
   ["settings", "Settings"],
 ];
 const SOURCE = { PLAN: "Plan", OVERRIDE: "Custom", DEFAULT: "Standard" };
@@ -152,19 +155,19 @@ function Organizations({ reloadKey, settings, onChanged }) {
         }
       />
       <div className="rounded-xl border border-slate-200/80 dark:border-white/[0.08] overflow-x-auto">
-        <table className="w-full text-[12.5px] min-w-[980px]">
+        <table className="w-full text-[12.5px] min-w-[1060px]">
           <thead className="bg-slate-50 dark:bg-white/[0.04] text-slate-500 dark:text-slate-400">
             <tr>
-              {[t("Organization"), t("Plan"), t("Monthly allowance"), t("Used this month"), t("Available"), t("Next reset"), t("Last used"), ""].map((c, i) => (
-                <th key={i} className={`px-3 py-2.5 font-semibold whitespace-nowrap ${i >= 2 && i <= 4 ? "text-right" : "text-left"}`}>{c}</th>
+              {[t("Organization"), t("Plan"), t("Monthly allowance"), t("Used this month"), t("Available"), t("Purchased"), t("Next reset"), t("Last used"), ""].map((c, i) => (
+                <th key={i} className={`px-3 py-2.5 font-semibold whitespace-nowrap ${i >= 2 && i <= 5 ? "text-right" : "text-left"}`}>{c}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-white/5 text-slate-700 dark:text-slate-200">
             {loading && !res.data.length ? (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-slate-400" role="status">{t("Loading...")}</td></tr>
+              <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-400" role="status">{t("Loading...")}</td></tr>
             ) : !res.data.length ? (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-slate-400">{t("No organizations found.")}</td></tr>
+              <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-400">{t("No organizations found.")}</td></tr>
             ) : (
               res.data.map((o) => {
                 const level = creditLevel(o);
@@ -182,6 +185,7 @@ function Organizations({ reloadKey, settings, onChanged }) {
                       <div className="mt-1 h-1.5 w-24 ml-auto rounded-full bg-slate-100 dark:bg-white/[0.06] overflow-hidden"><div className={`h-full rounded-full ${bar[level]}`} style={{ width: `${pct}%` }} /></div>
                     </td>
                     <td className={`px-3 py-2.5 text-right tabular-nums font-semibold ${level === "empty" ? "text-rose-600 dark:text-rose-400" : level === "low" ? "text-amber-600 dark:text-amber-400" : ""}`}>{formatCredits(o.available, L)}</td>
+                    <td className={`px-3 py-2.5 text-right tabular-nums ${o.purchasedBalance > 0 ? "text-violet-700 dark:text-violet-300 font-semibold" : "text-slate-400"}`} title={o.lifetimePurchased ? t("{{n}} bought in total", { n: formatCredits(o.lifetimePurchased, L) }) : undefined}>{o.purchasedBalance > 0 ? formatCredits(o.purchasedBalance, L) : "—"}</td>
                     <td className="px-3 py-2.5 whitespace-nowrap">{moment(o.nextResetAt).format("DD MMM YYYY")}</td>
                     <td className="px-3 py-2.5 whitespace-nowrap">{o.lastUsedAt ? moment(o.lastUsedAt).fromNow() : t("Never")}</td>
                     <td className="px-3 py-2.5">
@@ -296,6 +300,8 @@ export default function AiCreditsAdmin() {
       {tab === "overview" && <Overview reloadKey={reloadKey} />}
       {tab === "organizations" && <Organizations reloadKey={reloadKey} settings={settings} onChanged={() => {}} />}
       {tab === "usage" && <UsageLog reloadKey={reloadKey} />}
+      {tab === "packages" && <CreditPackagesAdmin reloadKey={reloadKey} />}
+      {tab === "payments" && <PaymentsLog reloadKey={reloadKey} />}
       {tab === "settings" && <AiCreditSettingsForm settings={settings} saving={saving} onSave={saveSettings} />}
     </div>
   );

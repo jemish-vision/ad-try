@@ -81,7 +81,8 @@ function summary(now = new Date()) {
   const allocated = Math.max(MONTHLY, Math.ceil(used / 100) * 100 + 200);
   const tokens = byFeature.reduce((a, f) => ({ input: a.input + f.inputTokens, output: a.output + f.outputTokens }), { input: 0, output: 0 });
   return {
-    wallet: { organizationId: null, monthlyLimit: allocated, limitSource: 'PLAN', monthlyLimitOverride: null, allocated, used, reserved: 0, available: round2(allocated - used), periodStart: start, nextResetAt: end, lastResetAt: start, lastUsedAt: reqs[0]?.createdAt || null },
+    // Demo: a "Growth" pack (2,000 credits) bought earlier this month, 350 of it already spent
+    wallet: { organizationId: null, monthlyLimit: allocated, limitSource: 'PLAN', monthlyLimitOverride: null, allocated, used, monthlyUsed: used, monthlyAvailable: round2(allocated - used), purchasedBalance: 1650, purchasedUsed: 350, lifetimePurchased: 2000, reserved: 0, available: round2(allocated - used + 1650), periodStart: start, nextResetAt: end, lastResetAt: start, lastUsedAt: reqs[0]?.createdAt || null },
     usagePct: round2((used / allocated) * 100),
     tokensThisPeriod: { input: tokens.input, output: tokens.output, total: tokens.input + tokens.output },
     requestsThisPeriod: reqs.length,
@@ -123,4 +124,25 @@ function transactions(body = {}, now = new Date()) {
   return paged(all, body);
 }
 
-module.exports = { summary, usage, transactions };
+const PACKAGES = [
+  { _id: 'demo-pack-1', name: 'Starter', description: 'For occasional extra AI work.', credits: 500, price: 9, currency: 'USD', isPopular: false },
+  { _id: 'demo-pack-2', name: 'Growth', description: 'Best value for busy teams.', credits: 2000, price: 29, currency: 'USD', isPopular: true },
+  { _id: 'demo-pack-3', name: 'Scale', description: 'For heavy A+ Content and analysis.', credits: 6000, price: 79, currency: 'USD', isPopular: false },
+];
+
+function packages() {
+  return PACKAGES.map((p) => ({ ...p, pricePerCredit: Math.round((p.price / p.credits) * 10000) / 10000 }));
+}
+
+function payments(body = {}, now = new Date()) {
+  const day = (n) => new Date(now.getTime() - n * 86400000);
+  let rows = [
+    { _id: 'demo-pay-1', createdAt: day(3), packageName: 'Growth', credits: 2000, amount: 29, currency: 'USD', status: 'PAID', paidAt: day(3), creditedAt: day(3), failureReason: null, user: { _id: 'demo-u', name: 'Demo Owner' } },
+    { _id: 'demo-pay-2', createdAt: day(12), packageName: 'Starter', credits: 500, amount: 9, currency: 'USD', status: 'CANCELLED', paidAt: null, creditedAt: null, failureReason: 'Cancelled by the buyer', user: { _id: 'demo-u', name: 'Demo Owner' } },
+    { _id: 'demo-pay-3', createdAt: day(20), packageName: 'Starter', credits: 500, amount: 9, currency: 'USD', status: 'FAILED', paidAt: null, creditedAt: null, failureReason: 'The payment failed', user: { _id: 'demo-u', name: 'Demo Owner' } },
+  ];
+  if (body.status) rows = rows.filter((r) => r.status === body.status);
+  return { ...paged(rows, body), canView: true };
+}
+
+module.exports = { summary, usage, transactions, packages, payments };

@@ -69,7 +69,7 @@ const routeEvents = require('./auditRouteEvents').events;
 const events = Object.freeze([...new Set([...coreEvents, ...routeEvents])]);
 const catalog = Object.freeze(events.map(event => Object.freeze({
   event,
-  label: event.toLowerCase().split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '),
+  label: event.toLowerCase().split('_').map(word => (word === 'ai' ? 'AI' : word.charAt(0).toUpperCase() + word.slice(1))).join(' '),
   category: /^(USER|GOOGLE_USER|PASSWORD|CSRF|AUTH|TWO_FACTOR)/.test(event) ? 'Authentication'
     : /RULE|RECOMMENDATION/.test(event) ? 'Automation'
     : /^(CONFIG|SELLER_CONFIG|SELLER_CONNECTION|PROFILE)/.test(event) ? 'Accounts'

@@ -2,9 +2,9 @@ const mongoose = require("mongoose");
 
 /**
  * One AI credit wallet per organization. All team members draw from it.
- * Balance for the current period = allocated - used - reserved (stored as `balance`).
+ * Spendable = monthly credits left (allocated - used) + purchased credits left - reserved (stored as `balance`).
  *  - allocated: monthly allowance granted at the last reset, plus admin adjustments this period
- *  - used: credits charged for finished AI requests this period
+ *  - used: monthly credits charged for finished AI requests this period (purchased usage: purchasedUsed)
  *  - reserved: credits held for AI requests that are still running
  */
 const aiCreditWalletSchema = new mongoose.Schema(
@@ -19,7 +19,12 @@ const aiCreditWalletSchema = new mongoose.Schema(
     allocated: { type: Number, default: 0 },
     used: { type: Number, default: 0 },
     reserved: { type: Number, default: 0 },
-    balance: { type: Number, default: 0 }, // allocated - used - reserved, kept in step by every update
+    // Total spendable = (allocated - used) + purchasedBalance - reserved, kept in step by every update
+    balance: { type: Number, default: 0 },
+    // Purchased credits left. They never expire and survive the monthly reset; spent after the monthly credits.
+    purchasedBalance: { type: Number, default: 0 },
+    purchasedUsed: { type: Number, default: 0 }, // purchased credits spent this period (reporting)
+    lifetimePurchased: { type: Number, default: 0 },
     // Lifetime totals, for reporting
     lifetimeUsed: { type: Number, default: 0 },
     lifetimeInputTokens: { type: Number, default: 0 },

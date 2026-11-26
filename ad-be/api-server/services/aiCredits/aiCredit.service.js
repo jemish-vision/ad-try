@@ -65,6 +65,8 @@ class AiCreditsError extends Error {
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const round4 = (n) => Math.round((Number(n) || 0) * 10000) / 10000;
 const toObjectId = (id) => (id instanceof mongoose.Types.ObjectId ? id : new mongoose.Types.ObjectId(String(id)));
+// Value to match a field in an update filter; null also matches wallets created before the field existed
+const sameAs = (v) => (v === undefined ? null : v);
 const isDuplicateKey = (err) => err && (err.code === 11000 || /E11000/.test(String(err.message)));
 
 // ── Indexes (autoIndex is off for the app connection: create once, lazily) ──
@@ -266,7 +268,7 @@ async function createWallet(orgId, settings, now) {
   const { start, end } = monthPeriod(now);
   const { limit, source } = await resolveMonthlyLimit(orgId, null, settings);
   try {
-    const w = await walletModel.create({ organizationId: orgId, periodStart: start, periodEnd: end, monthlyLimit: limit, limitSource: source, allocated: limit, used: 0, reserved: 0, balance: limit, lastResetAt: now });
+    const w = await walletModel.create({ organizationId: orgId, periodStart: start, periodEnd: end, monthlyLimit: limit, limitSource: source, allocated: limit, used: 0, reserved: 0, balance: limit, purchasedBalance: 0, purchasedUsed: 0, lastResetAt: now });
     const wallet = typeof w.toObject === 'function' ? w.toObject() : w;
     await writeTransaction({ organizationId: orgId, walletId: wallet._id, type: 'ALLOCATION', credits: limit, balanceAfter: limit, periodStart: start, note: 'Monthly allowance', dedupeKey: `alloc:${orgId}:${start.toISOString()}` });
     return wallet;
@@ -289,14 +291,17 @@ async function rollOver(wallet, settings, now) {
     const reserved = round2(current.reserved);
     const updated = await walletModel
       .findOneAndUpdate(
-        { _id: current._id, periodEnd: current.periodEnd, reserved: current.reserved, used: current.used, allocated: current.allocated },
-        { $set: { periodStart: start, periodEnd: end, monthlyLimit: limit, limitSource: source, allocated: limit, used: 0, balance: round2(limit - reserved), lastResetAt: now } },
+        { _id: current._id, periodEnd: current.periodEnd, reserved: current.reserved, used: current.used, allocated: current.allocated, purchasedBalance: sameAs(current.purchasedBalance) },
+        // Purchased credits are kept: only the monthly part is replaced
+        { $set: { periodStart: start, periodEnd: end, monthlyLimit: limit, limitSource: source, allocated: limit, used: 0, purchasedUsed: 0, balance: round2(limit + (current.purchasedBalance || 0) - reserved), lastResetAt: now } },
         { new: true }
       )
       .lean();
     if (updated) {
-      const unused = round2(current.allocated - current.used - current.reserved);
-      await writeTransaction({ organizationId: current.organizationId, walletId: current._id, type: 'RESET', credits: -Math.max(0, unused), balanceAfter: 0, periodStart: current.periodStart, note: `Period closed: ${round2(current.used)} of ${round2(current.allocated)} credits used`, dedupeKey: `reset:${current.organizationId}:${start.toISOString()}` });
+      // Only unused monthly credits expire; purchased credits carry over
+      const unused = round2(current.allocated - current.used);
+      const carried = round2(current.purchasedBalance || 0);
+      await writeTransaction({ organizationId: current.organizationId, walletId: current._id, type: 'RESET', credits: -Math.max(0, unused), balanceAfter: round2(carried - reserved), periodStart: current.periodStart, note: `Period closed: ${round2(current.used)} of ${round2(current.allocated)} monthly credits used${carried > 0 ? `; ${carried} purchased credits carried over` : ''}`, dedupeKey: `reset:${current.organizationId}:${start.toISOString()}` });
       await writeTransaction({ organizationId: current.organizationId, walletId: current._id, type: 'ALLOCATION', credits: limit, balanceAfter: updated.balance, periodStart: start, note: 'Monthly allowance', dedupeKey: `alloc:${current.organizationId}:${start.toISOString()}` });
       return updated;
     }
@@ -324,7 +329,12 @@ function walletView(w) {
     limitSource: w.limitSource,
     monthlyLimitOverride: w.monthlyLimitOverride ?? null,
     allocated: round2(w.allocated),
-    used: round2(w.used),
+    used: round2((w.used || 0) + (w.purchasedUsed || 0)), // all credits spent this period
+    monthlyUsed: round2(w.used),
+    monthlyAvailable: round2(Math.max(0, (w.allocated || 0) - (w.used || 0))),
+    purchasedBalance: round2(Math.max(0, w.purchasedBalance || 0)),
+    purchasedUsed: round2(w.purchasedUsed || 0),
+    lifetimePurchased: round2(w.lifetimePurchased || 0),
     reserved: round2(w.reserved),
     available: round2(Math.max(0, w.balance)),
     periodStart: w.periodStart,
@@ -369,6 +379,63 @@ async function reserve({ organizationId, userId = null, feature, requestId, amou
 }
 
 /**
+ * Monthly credits are spent first, then purchased credits. Returns { fromMonthly, fromPurchased }.
+ */
+function splitCharge(wallet, credits) {
+  const monthlyLeft = Math.max(0, round2((wallet.allocated || 0) - (wallet.used || 0)));
+  const fromMonthly = Math.min(credits, monthlyLeft);
+  const fromPurchased = Math.min(round2(credits - fromMonthly), Math.max(0, round2(wallet.purchasedBalance || 0)));
+  // Anything neither bucket covers (only after an admin removed credits mid-request) counts as monthly
+  return { fromMonthly: round2(credits - fromPurchased), fromPurchased: round2(fromPurchased) };
+}
+
+/**
+ * Release a request's hold and charge its cost, split monthly-first. The split depends on the
+ * wallet's current buckets, so the update only applies if they haven't changed since they were
+ * read (retried); the total balance change is the same whatever the split.
+ */
+async function chargeWallet(walletId, { held, credits, $inc: extraInc = {}, now }) {
+  const common = { reserved: -held, balance: round2(held - credits), lifetimeUsed: credits, ...extraInc };
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const w = await walletModel.findById(walletId).lean();
+    if (!w) return null;
+    const { fromMonthly, fromPurchased } = splitCharge(w, credits);
+    const updated = await walletModel
+      .findOneAndUpdate(
+        { _id: walletId, used: w.used, allocated: w.allocated, purchasedBalance: sameAs(w.purchasedBalance) },
+        { $inc: { ...common, used: fromMonthly, purchasedBalance: -fromPurchased, purchasedUsed: fromPurchased }, $set: { lastUsedAt: now } },
+        { new: true }
+      )
+      .lean();
+    if (updated) return updated;
+  }
+  // Heavy contention: charge it all as monthly use (the total stays exact)
+  return walletModel.findOneAndUpdate({ _id: walletId }, { $inc: { ...common, used: credits }, $set: { lastUsedAt: now } }, { new: true }).lean();
+}
+
+/**
+ * Add purchased credits to an organization's wallet. Idempotent per payment: the ledger row's
+ * dedupeKey is written first, so a webhook and the success page racing each other add them once.
+ * Returns the wallet view, or null when this payment was already credited.
+ */
+async function addPurchasedCredits({ organizationId, credits, paymentId, packageName, userId = null, now = new Date() }) {
+  const amount = round2(credits);
+  if (!(amount > 0)) throw new AiCreditsError('INVALID_PURCHASE', 'Purchased credits must be greater than 0.');
+  const wallet = await getWallet(organizationId, { now });
+  let txId;
+  try {
+    const tx = await transactionModel.create({ organizationId: wallet.organizationId, walletId: wallet._id, type: 'PURCHASE', credits: amount, balanceAfter: null, periodStart: wallet.periodStart, paymentId: paymentId ? toObjectId(paymentId) : null, userId: userId ? toObjectId(userId) : null, note: packageName ? `Bought "${packageName}"` : 'Bought credits', dedupeKey: `purchase:${paymentId}` });
+    txId = tx._id;
+  } catch (err) {
+    if (isDuplicateKey(err)) return null; // already credited
+    throw err;
+  }
+  const updated = await walletModel.findOneAndUpdate({ _id: wallet._id }, { $inc: { purchasedBalance: amount, balance: amount, lifetimePurchased: amount } }, { new: true }).lean();
+  if (txId && typeof transactionModel.updateOne === 'function') await transactionModel.updateOne({ _id: txId }, { $set: { balanceAfter: round2(updated.balance) } });
+  return walletView(updated);
+}
+
+/**
  * Charge measured usage up to the confirmed hold and return any unused credits.
  * Safe to call more than once: only the first call changes anything.
  */
@@ -390,16 +457,12 @@ async function settle(hold, rawCalls = [], { now = new Date() } = {}) {
     ).lean();
   }
 
-  const wallet = await walletModel
-    .findOneAndUpdate(
-      { _id: hold.walletId },
-      {
-        $inc: { reserved: -log.reservedCredits, used: credits, balance: round2(log.reservedCredits - credits), lifetimeUsed: credits, lifetimeInputTokens: priced.inputTokens, lifetimeOutputTokens: priced.outputTokens },
-        $set: { lastUsedAt: now },
-      },
-      { new: true }
-    )
-    .lean();
+  const wallet = await chargeWallet(hold.walletId, {
+    held: log.reservedCredits,
+    credits,
+    $inc: { lifetimeInputTokens: priced.inputTokens, lifetimeOutputTokens: priced.outputTokens },
+    now,
+  });
   if (credits > 0) {
     await writeTransaction({ organizationId: hold.organizationId, walletId: hold.walletId, type: 'DEDUCTION', credits: -credits, balanceAfter: wallet ? round2(wallet.balance) : null, feature: hold.feature, requestId: hold.requestId, userId: hold.userId ? toObjectId(hold.userId) : null, note: `${priced.images ? `${priced.images} images, ` : ''}${priced.totalTokens} tokens (${priced.models.join(', ') || 'AI'})`, dedupeKey: `deduct:${hold.requestId}` });
   }
@@ -537,6 +600,8 @@ module.exports = {
   settle,
   release,
   transferHold,
+  addPurchasedCredits,
+  splitCharge,
   expireStaleHolds,
   adjustCredits,
   setMonthlyLimitOverride,

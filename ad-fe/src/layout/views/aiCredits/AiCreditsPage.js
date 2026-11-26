@@ -1,13 +1,18 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Sparkles, RefreshCw, AlertTriangle } from "lucide-react";
-import { ApiGetAiCreditSummary, ApiGetAiCreditUsage, ApiGetAiCreditTransactions } from "../../../api-wrapper/ApiAiCredits";
-import { AI_CREDITS_CHANGED } from "../../../helper/aiCredits/aiCredits";
+import { ApiGetAiCreditSummary, ApiGetAiCreditUsage, ApiGetAiCreditTransactions, ApiGetAiCreditPayments } from "../../../api-wrapper/ApiAiCredits";
+import { AI_CREDITS_CHANGED, notifyAiCreditsChanged } from "../../../helper/aiCredits/aiCredits";
 import AiCreditDetail from "./AiCreditDetail";
+import BuyCreditsSection from "./BuyCreditsSection";
+import PurchaseResultBanner, { usePurchaseResult } from "./PurchaseResultBanner";
 
 /** User panel: the organization's AI credit wallet, this month's usage and history. */
 export default function AiCreditsPage() {
   const { t } = useTranslation();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -36,6 +41,15 @@ export default function AiCreditsPage() {
     load();
     setReloadKey((k) => k + 1);
   };
+
+  // Back from Stripe Checkout (?purchase=success|cancelled): confirm the payment, then clean the URL
+  const purchaseResult = usePurchaseResult(location.search, {
+    onDone: (result) => {
+      if (result?.status === "PAID") notifyAiCreditsChanged();
+      setReloadKey((k) => k + 1);
+      navigate(location.pathname, { replace: true });
+    },
+  });
 
   return (
     <div className="p-4 sm:p-6 pb-16 sm:pb-16 space-y-5" id="ai-credits-page">
@@ -83,7 +97,17 @@ export default function AiCreditsPage() {
       ) : !summary ? (
         <p className="text-[13px] text-slate-500 dark:text-slate-400">{t("Select an organization to see its AI credits.")}</p>
       ) : (
-        <AiCreditDetail summary={summary} loadUsage={ApiGetAiCreditUsage} loadTransactions={ApiGetAiCreditTransactions} reloadKey={reloadKey} />
+        <>
+          <PurchaseResultBanner result={purchaseResult} />
+          <AiCreditDetail
+            summary={summary}
+            loadUsage={ApiGetAiCreditUsage}
+            loadTransactions={ApiGetAiCreditTransactions}
+            loadPayments={summary.canViewPayments ? ApiGetAiCreditPayments : undefined}
+            reloadKey={reloadKey}
+            afterBalance={<BuyCreditsSection />}
+          />
+        </>
       )}
     </div>
   );

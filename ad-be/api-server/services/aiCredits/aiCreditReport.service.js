@@ -19,7 +19,7 @@ const page = (body = {}, max = 100) => {
 // "Low" = under 20% of the month's credits left (same rule as the frontend's creditLevel)
 const LOW_BALANCE_SHARE = 0.2;
 const VALID_STATUSES = ['RESERVED', 'SETTLED', 'RELEASED', 'EXPIRED'];
-const VALID_TX_TYPES = ['ALLOCATION', 'RESET', 'DEDUCTION', 'ADJUSTMENT'];
+const VALID_TX_TYPES = ['ALLOCATION', 'RESET', 'DEDUCTION', 'ADJUSTMENT', 'PURCHASE'];
 
 function dateRange(body = {}) {
   const range = {};
@@ -169,9 +169,11 @@ async function listOrganizationWallets(body = {}) {
       limitSource: w?.monthlyLimitOverride !== null && w?.monthlyLimitOverride !== undefined ? 'OVERRIDE' : planLimit !== null ? 'PLAN' : 'DEFAULT',
       monthlyLimitOverride: w?.monthlyLimitOverride ?? null,
       allocated: round2(w && !stale ? w.allocated : fallbackLimit),
-      used: round2(w && !stale ? w.used : 0),
+      used: round2(w && !stale ? (w.used || 0) + (w.purchasedUsed || 0) : 0),
       reserved: round2(w?.reserved || 0),
-      available: round2(Math.max(0, w && !stale ? w.balance : fallbackLimit - (w?.reserved || 0))),
+      available: round2(Math.max(0, w && !stale ? w.balance : fallbackLimit + (w?.purchasedBalance || 0) - (w?.reserved || 0))),
+      purchasedBalance: round2(Math.max(0, w?.purchasedBalance || 0)),
+      lifetimePurchased: round2(w?.lifetimePurchased || 0),
       nextResetAt: w && !stale ? w.periodEnd : service.monthPeriod().end,
       lastUsedAt: w?.lastUsedAt || null,
       lifetimeUsed: round2(w?.lifetimeUsed || 0),

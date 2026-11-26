@@ -19,7 +19,13 @@ jest.mock("../../../api-wrapper/ApiAiCredits", () => ({
   ApiGetAiCreditSummary: jest.fn(),
   ApiGetAiCreditUsage: jest.fn(),
   ApiGetAiCreditTransactions: jest.fn(),
+  ApiGetAiCreditPackages: jest.fn(() => Promise.resolve({ isSuccess: true, data: { packages: [], canPurchase: false } })),
+  ApiGetAiCreditPayments: jest.fn(() => Promise.resolve({ isSuccess: true, data: [], totalRecords: 0 })),
+  ApiPurchaseAiCredits: jest.fn(),
+  ApiVerifyAiCreditPurchase: jest.fn(),
+  ApiCancelAiCreditPurchase: jest.fn(),
 }));
+jest.mock("../../../common/helper/toast/Toast", () => ({ __esModule: true, default: { success: jest.fn(), error: jest.fn() } }));
 jest.mock("recharts", () => {
   const Stub = ({ children }) => <div>{children}</div>;
   return { ResponsiveContainer: Stub, BarChart: Stub, Bar: () => null, XAxis: () => null, YAxis: () => null, CartesianGrid: () => null, Tooltip: () => null };
@@ -52,6 +58,8 @@ beforeEach(() => {
   Api.ApiGetAiCreditSummary.mockResolvedValue({ isSuccess: true, data: summary() });
   Api.ApiGetAiCreditUsage.mockResolvedValue({ isSuccess: true, data: [usageRow], totalRecords: 1 });
   Api.ApiGetAiCreditTransactions.mockResolvedValue({ isSuccess: true, data: [txRow], totalRecords: 1 });
+  Api.ApiGetAiCreditPackages.mockResolvedValue({ isSuccess: true, data: { packages: [], canPurchase: false } });
+  Api.ApiGetAiCreditPayments.mockResolvedValue({ isSuccess: true, data: [], totalRecords: 0 });
 });
 
 describe("helpers", () => {

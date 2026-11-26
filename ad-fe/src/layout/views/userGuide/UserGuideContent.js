@@ -57,7 +57,7 @@ The dashboard includes a **multi-metric trend chart** (Sales, Spend, ACoS, ROAS,
 The **Top Products** grid is a sortable, filterable AG Grid table showing per-product metrics including Title, ASIN, SKU and AI-driven labels like **Scale**, **Optimize**, **Fix Listing**, or **Stop Ads**.
 
 ### Hourly Ad Blackouts
-The **Hourly Ad Blackouts** widget monitors your live **Amazon Marketing Stream** hourly traffic (`sp-traffic`, `sb-traffic`, `sd-traffic`) and alerts you within the hour when an active campaign or ad group suddenly drops to **0 impressions** during an hour that normally receives traffic.
+The **Hourly Ad Blackouts** widget monitors your live **Amazon Marketing Stream** hourly traffic (\`sp-traffic\`, \`sb-traffic\`, \`sd-traffic\`) and alerts you within the hour when an active campaign or ad group suddenly drops to **0 impressions** during an hour that normally receives traffic.
 - **False-Alarm Protection:** Evaluates each completed hour only when the entity averaged at least 100 impressions in that same hour-of-day over the prior 7 days and the profile's Marketing Stream is actively receiving events.
 - **On-Demand Root Cause Diagnostics:** Checks live Amazon Ads serving-status fields, SB/SD creative moderation reviews, portfolio caps, SP-API Buy Box ownership, listing suppression/ineligibility issues, and automated rule pauses—explaining the exact cause in plain words.
 - **Auto-Resolution & Dismiss:** Alerts resolve automatically once impressions resume or the ad is intentionally paused, and can be dismissed directly from the dashboard card.
@@ -1130,6 +1130,58 @@ An **AI-Powered Chatbot** widget is now available on all pages for subscribed us
 - **Interactive Messaging**: Chat with an AI assistant that can escalate to human support when needed via an integrated conversation flow.
 - **Ticket Creation**: When the AI cannot resolve an issue, the chatbot can create a support ticket automatically, with optional CC email fields.
 - **Ticket Case Log**: View previously created support tickets, their status (open, pending, resolved), and timestamps directly from the chatbot.
+    `
+  },
+  {
+    id: "ai-credits",
+    title: "34. AI Credits",
+    icon: "AutoAwesome",
+    color: "#2374F2",
+    role: "client",
+    content: `
+### One AI Credit Wallet for Your Organization
+![AI Credits page](/guide-images/ai_credits_page.png)
+Every AI feature — **AI Assistant**, **Optimize with AI**, **A+ Content**, **AI listing generation** and **Campaign AI Analysis** — uses credits from one wallet shared by everyone in your organization. Open it from your profile menu → **AI Credits**, or click the credit badge shown next to any AI feature.
+
+**How credits work**:
+- **Monthly credits**: Your plan gives your organization a monthly allowance. It refills on the 1st of every month (UTC); unused monthly credits don't carry over.
+- **Purchased credits**: Credits you buy never expire, are kept at every monthly reset, and are used only after the monthly credits run out.
+- **What a request costs**: Text AI is charged by tokens (input and output), A+ Content images per image. Failed requests and cached results are free.
+- **Running out**: When no credits are left, AI features pause until the next refill or until more credits are bought.
+
+**Buying more credits** (organization owner):
+- In **Buy more credits**, pick a package and click **Buy** — you pay securely on Stripe in your country's currency.
+- The credits are added as soon as the payment is confirmed. Card payments are instant; bank payments are added when they clear.
+- If you cancel the checkout, nothing is charged. Team members see the packages but only the owner can buy.
+
+**History**:
+- **AI requests**: every AI request, who ran it, the AI model, input/output tokens and the credits charged.
+- **Credit history**: monthly allowances, purchases, usage, month closes and adjustments.
+- **Payments** (owner): every purchase with its status — Paid, Pending, Failed or Cancelled.
+    `
+  },
+  {
+    id: "ai-credit-management",
+    title: "29. AI Credit Management",
+    icon: "AutoAwesome",
+    color: "#2374F2",
+    role: "superadmin",
+    content: `
+### Managing AI Credits Across Organizations
+![AI Credit Management](/guide-images/ai_credit_management.png)
+**AI Credit Management** in the Super Admin sidebar controls how AI usage is charged and lets you sell extra credits.
+
+**Tabs**:
+- **Overview**: Credits and tokens used this month across all organizations, by feature and AI model, and the top organizations.
+- **Organizations**: Each organization's monthly allowance, usage, available and purchased credits. Add or remove credits (with a reason) or give an organization its own monthly allowance.
+- **Usage log**: Every AI request across all organizations.
+- **Credit packages**: Create the packages customers can buy — credits, default price and currency, an optional price per pricing region, "Most popular" badge, display order — and switch them on or off. Deleting a package hides it; past purchases are kept.
+- **Payments**: Every purchase with its status (Paid, Pending, Failed, Cancelled) and the reason when it didn't go through.
+- **Settings**: Credits per 1,000 input/output tokens, per-model rates, credits per generated image, standard monthly credits and the credit-limit switch.
+
+**Monthly allowance per plan**: set **AI credits / month** on each plan in **Plans**.
+
+**Payments are safe to retry**: credits for a payment are added only once, whether Stripe's webhook or the buyer's return to the app confirms it first. The Stripe webhook must send the checkout.session.completed, checkout.session.async_payment_succeeded, checkout.session.async_payment_failed, checkout.session.expired and payment_intent.payment_failed events.
     `
   },
 ];

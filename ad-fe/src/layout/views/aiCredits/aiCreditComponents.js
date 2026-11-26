@@ -57,7 +57,9 @@ export const StatTile = ({ id, label, value, sub, tone = "default" }) => {
 export function CreditMeter({ wallet, enforcementEnabled = true }) {
   const { t, i18n } = useTranslation();
   const level = enforcementEnabled ? creditLevel(wallet) : "ok";
-  const pct = wallet.allocated > 0 ? Math.min(100, (wallet.used / wallet.allocated) * 100) : 0;
+  const monthlyUsed = wallet.monthlyUsed ?? wallet.used;
+  const pct = wallet.allocated > 0 ? Math.min(100, (monthlyUsed / wallet.allocated) * 100) : 0;
+  const purchased = wallet.purchasedBalance || 0;
   const bar = { ok: "bg-[#2374F2]", low: "bg-amber-500", empty: "bg-rose-500" }[level];
   const daysLeft = Math.max(0, Math.ceil(moment(wallet.nextResetAt).diff(moment(), "days", true)));
   return (
@@ -67,8 +69,20 @@ export function CreditMeter({ wallet, enforcementEnabled = true }) {
         <span className={`text-[40px] leading-none font-extrabold tabular-nums ${level === "empty" ? "text-rose-600 dark:text-rose-400" : level === "low" ? "text-amber-600 dark:text-amber-400" : "text-slate-900 dark:text-white"}`}>
           {formatCredits(wallet.available, i18n.language)}
         </span>
-        <span className="text-[14px] text-slate-500 dark:text-slate-400">/ {formatCredits(wallet.allocated, i18n.language)}</span>
+        {!purchased && <span className="text-[14px] text-slate-500 dark:text-slate-400">/ {formatCredits(wallet.allocated, i18n.language)}</span>}
       </div>
+      {purchased > 0 && (
+        <div className="flex flex-wrap gap-2 mt-2.5" id="ai-credits-buckets">
+          <span className="inline-flex items-center gap-1.5 h-6 px-2 rounded-md bg-blue-50 dark:bg-blue-950/40 text-[11.5px] text-blue-700 dark:text-blue-300">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#2374F2]" aria-hidden="true" />
+            {t("Monthly: {{left}} of {{total}} left", { left: formatCredits(wallet.monthlyAvailable ?? Math.max(0, wallet.allocated - monthlyUsed), i18n.language), total: formatCredits(wallet.allocated, i18n.language) })}
+          </span>
+          <span className="inline-flex items-center gap-1.5 h-6 px-2 rounded-md bg-violet-50 dark:bg-violet-950/40 text-[11.5px] text-violet-700 dark:text-violet-300">
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-500" aria-hidden="true" />
+            {t("Purchased: {{n}} (never expire)", { n: formatCredits(purchased, i18n.language) })}
+          </span>
+        </div>
+      )}
       <div
         className="mt-3 h-2.5 rounded-full bg-slate-100 dark:bg-white/[0.06] overflow-hidden"
         role="progressbar"
@@ -80,7 +94,7 @@ export function CreditMeter({ wallet, enforcementEnabled = true }) {
         <div className={`h-full rounded-full ${bar}`} style={{ width: `${pct}%` }} />
       </div>
       <div className="flex justify-between gap-2 flex-wrap text-[12px] text-slate-500 dark:text-slate-400 mt-1.5">
-        <span>{t("{{used}} used ({{pct}}%)", { used: formatCredits(wallet.used, i18n.language), pct: Math.round(pct) })}</span>
+        <span>{purchased > 0 ? t("{{used}} monthly credits used ({{pct}}%)", { used: formatCredits(monthlyUsed, i18n.language), pct: Math.round(pct) }) : t("{{used}} used ({{pct}}%)", { used: formatCredits(monthlyUsed, i18n.language), pct: Math.round(pct) })}</span>
         <span>{t("Refills on {{date}} · in {{days}} days", { date: moment(wallet.nextResetAt).format("DD MMM YYYY"), days: daysLeft })}</span>
       </div>
       {level === "empty" && <p className="mt-2 mb-0 text-[12px] font-medium text-rose-600 dark:text-rose-400">{t("AI features are paused until the credits refill or an administrator adds more.")}</p>}
@@ -207,6 +221,7 @@ const TX = {
   RESET: { label: "Month closed" },
   DEDUCTION: { label: "AI usage" },
   ADJUSTMENT: { label: "Admin adjustment" },
+  PURCHASE: { label: "Purchased credits" },
 };
 
 const th = "text-left font-semibold px-3 py-2.5 whitespace-nowrap";
@@ -322,3 +337,63 @@ export const USAGE_STATUS_OPTIONS = (t) => [
 ];
 export const FEATURE_OPTIONS = (t) => [{ value: "", label: t("All features") }, ...Object.entries(FEATURE_LABELS).map(([value, label]) => ({ value, label: t(label) }))];
 export const TX_TYPE_OPTIONS = (t) => [{ value: "", label: t("All types") }, ...Object.entries(TX).map(([value, v]) => ({ value, label: t(v.label) }))];
+
+const PAYMENT_STATUS = {
+  PAID: { label: "Paid", cls: "text-emerald-700 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-950/40", icon: CheckCircle2 },
+  PENDING: { label: "Pending", cls: "text-blue-700 bg-blue-50 dark:text-blue-300 dark:bg-blue-950/40", icon: Clock },
+  FAILED: { label: "Failed", cls: "text-rose-700 bg-rose-50 dark:text-rose-300 dark:bg-rose-950/40", icon: XCircle },
+  CANCELLED: { label: "Cancelled", cls: "text-slate-600 bg-slate-100 dark:text-slate-300 dark:bg-white/[0.06]", icon: Hourglass },
+};
+export const PAYMENT_STATUS_OPTIONS = (t) => [{ value: "", label: t("All statuses") }, ...Object.entries(PAYMENT_STATUS).map(([value, v]) => ({ value, label: t(v.label) }))];
+
+export const formatMoney = (amount, currency, locale) => {
+  try {
+    return new Intl.NumberFormat(locale || undefined, { style: "currency", currency: currency || "USD" }).format(Number(amount) || 0);
+  } catch (_) {
+    return `${currency || ""} ${Number(amount || 0).toFixed(2)}`;
+  }
+};
+
+export const PaymentStatusPill = ({ status, title }) => {
+  const { t } = useTranslation();
+  const s = PAYMENT_STATUS[status] || PAYMENT_STATUS.PENDING;
+  const Icon = s.icon;
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap ${s.cls}`} title={title || undefined}>
+      <Icon className="w-3 h-3" aria-hidden="true" />
+      {t(s.label)}
+    </span>
+  );
+};
+
+/** Credit purchases: when, package, credits, amount, status (and organization / buyer for Super Admin). */
+export function PaymentsTable({ rows = [], loading, showOrganization = false }) {
+  const { t, i18n } = useTranslation();
+  const cols = [
+    { key: "when", label: t("Date") },
+    ...(showOrganization ? [{ key: "org", label: t("Organization") }] : []),
+    { key: "pkg", label: t("Package") },
+    { key: "by", label: t("Bought by") },
+    { key: "credits", label: t("Credits"), right: true },
+    { key: "amount", label: t("Amount"), right: true },
+    { key: "status", label: t("Status") },
+  ];
+  return (
+    <TableShell loading={loading} empty={!rows.length} cols={cols} emptyText={t("No credit purchases yet.")} minWidth={showOrganization ? 880 : 760}>
+      {rows.map((p) => (
+        <tr key={p._id} className="hover:bg-slate-50/70 dark:hover:bg-white/[0.02]">
+          <td className={`${td} whitespace-nowrap`}>{moment(p.createdAt).format("DD MMM YYYY, hh:mm A")}</td>
+          {showOrganization && <td className={td}>{p.organization?.name || "—"}</td>}
+          <td className={`${td} font-medium`}>{p.packageName || "—"}</td>
+          <td className={`${td} whitespace-nowrap`}>{p.user?.name || "—"}</td>
+          <td className={`${td} text-right tabular-nums`}>{formatCredits(p.credits, i18n.language)}</td>
+          <td className={`${td} text-right tabular-nums font-semibold`}>{formatMoney(p.amount, p.currency, i18n.language)}</td>
+          <td className={td}>
+            <PaymentStatusPill status={p.status} title={p.failureReason} />
+            {p.failureReason && p.status !== "PAID" && <div className="text-[10.5px] text-slate-500 dark:text-slate-400 mt-0.5 max-w-[220px] truncate" title={p.failureReason}>{p.failureReason}</div>}
+          </td>
+        </tr>
+      ))}
+    </TableShell>
+  );
+}
