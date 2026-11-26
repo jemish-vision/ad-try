@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Loader2, SlidersHorizontal } from "lucide-react";
+import { Loader2, Minus, Plus, SlidersHorizontal } from "lucide-react";
 import { formatCredits } from "../../../helper/aiCredits/aiCredits";
 import { formatMoney } from "./aiCreditComponents";
 
@@ -49,6 +49,12 @@ export default function CustomCreditsRow({ offer, canPurchase, buying, onBuy }) 
   const credits = Number(value);
   const total = error ? null : customTotal(credits, offer.pricePerCredit, offer.currency);
   const isBuying = buying === "custom";
+  // - / + change the amount by 1 credit, kept within the limits
+  const nudge = (by) => {
+    const base = Number.isFinite(credits) && String(value).trim() !== "" ? Math.round(credits) : defaultCustomAmount(offer);
+    setValue(String(Math.min(offer.maxCredits, Math.max(offer.minCredits, base + by))));
+  };
+  const btn = "h-9 w-9 shrink-0 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 inline-flex items-center justify-center hover:text-blue-600 dark:hover:text-sky-400 disabled:opacity-40 disabled:cursor-not-allowed";
 
   return (
     <div id="ai-credits-custom" role="group" aria-labelledby="ai-credits-custom-title" className="mt-4 rounded-xl border border-dashed border-slate-300 dark:border-white/15 bg-slate-50/60 dark:bg-white/[0.02] px-4 py-4">
@@ -65,6 +71,9 @@ export default function CustomCreditsRow({ offer, canPurchase, buying, onBuy }) 
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
+            <button type="button" id="ai-credits-custom-minus" className={btn} aria-label={t("Fewer credits")} disabled={!canPurchase || credits <= offer.minCredits} onClick={() => nudge(-1)}>
+              <Minus className="w-4 h-4" />
+            </button>
             <input
               id="ai-credits-custom-amount"
               type="number"
@@ -78,8 +87,11 @@ export default function CustomCreditsRow({ offer, canPurchase, buying, onBuy }) 
               aria-invalid={Boolean(error)}
               aria-describedby={error ? "ai-credits-custom-error" : undefined}
               onChange={(e) => setValue(e.target.value)}
-              className={`h-9 w-full max-w-[200px] px-3 rounded-lg text-[14px] font-semibold tabular-nums bg-white dark:bg-slate-950 border text-slate-900 dark:text-white disabled:opacity-60 ${error ? "border-rose-400 dark:border-rose-500/70" : "border-slate-200 dark:border-white/10"}`}
+              className={`h-9 w-full max-w-[180px] px-3 rounded-lg text-[14px] font-semibold tabular-nums bg-white dark:bg-slate-950 border text-slate-900 dark:text-white disabled:opacity-60 ${error ? "border-rose-400 dark:border-rose-500/70" : "border-slate-200 dark:border-white/10"}`}
             />
+            <button type="button" id="ai-credits-custom-plus" className={btn} aria-label={t("More credits")} disabled={!canPurchase || credits >= offer.maxCredits} onClick={() => nudge(1)}>
+              <Plus className="w-4 h-4" />
+            </button>
             <span className="text-[12px] font-semibold text-slate-500 dark:text-slate-400">{t("credits")}</span>
           </div>
           {error && (

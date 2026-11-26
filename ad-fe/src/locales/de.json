@@ -8566,5 +8566,7 @@
   "{{package}} in {{region}}: {{price}} per credit": "{{package}} in {{region}}: {{price}} pro Credit",
   "{{package}}: {{price}} per credit": "{{package}}: {{price}} pro Credit",
   "credit": "Credit",
-  "Let buyers choose their own number of credits: set the price per credit, the minimum and maximum, and optional prices per pricing region.": "Käufer können ihre eigene Anzahl an Credits wählen: Legen Sie den Preis pro Credit, Minimum und Maximum sowie optionale Preise je Preisregion fest."
+  "Let buyers choose their own number of credits: set the price per credit, the minimum and maximum, and optional prices per pricing region.": "Käufer können ihre eigene Anzahl an Credits wählen: Legen Sie den Preis pro Credit, Minimum und Maximum sowie optionale Preise je Preisregion fest.",
+  "Fewer credits": "Weniger Credits",
+  "More credits": "Mehr Credits"
 }

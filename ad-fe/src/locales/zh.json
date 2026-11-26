@@ -8566,5 +8566,7 @@
   "{{package}} in {{region}}: {{price}} per credit": "{{package}}（{{region}}）：每积分 {{price}}",
   "{{package}}: {{price}} per credit": "{{package}}：每积分 {{price}}",
   "credit": "积分",
-  "Let buyers choose their own number of credits: set the price per credit, the minimum and maximum, and optional prices per pricing region.": "允许买家自行选择积分数量：设置每积分的价格、最小值和最大值，以及各定价地区的可选价格。"
+  "Let buyers choose their own number of credits: set the price per credit, the minimum and maximum, and optional prices per pricing region.": "允许买家自行选择积分数量：设置每积分的价格、最小值和最大值，以及各定价地区的可选价格。",
+  "Fewer credits": "减少积分",
+  "More credits": "增加积分"
 }

@@ -143,7 +143,34 @@ describe("Need a different amount? (custom credits)", () => {
     expect(await amountBox()).toHaveValue(1000);
     expect(within(row).getByText("$19.00")).toBeInTheDocument();
     expect(within(row).queryByText(/per credit|steps? of/i)).not.toBeInTheDocument(); // total only, no step
-    expect(within(row).queryByRole("button", { name: /More credits|Fewer credits/ })).not.toBeInTheDocument();
+  });
+
+  test("- and + change the amount by 1 credit and stop at the limits", async () => {
+    withOffer({ custom: { ...OFFER, minCredits: 999, maxCredits: 1001 } });
+    render(<BuyCreditsSection redirect={jest.fn()} />);
+    const box = await amountBox();
+    expect(box).toHaveValue(1000);
+    fireEvent.click(screen.getByRole("button", { name: "More credits" }));
+    expect(box).toHaveValue(1001);
+    expect(screen.getByText("$19.02")).toBeInTheDocument(); // 1,001 x 0.019 = 19.019
+    expect(screen.getByRole("button", { name: "More credits" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Fewer credits" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fewer credits" }));
+    expect(box).toHaveValue(999);
+    expect(screen.getByRole("button", { name: "Fewer credits" })).toBeDisabled();
+  });
+
+  test("- / + bring an out-of-range or empty amount back inside the limits", async () => {
+    withOffer();
+    render(<BuyCreditsSection redirect={jest.fn()} />);
+    const box = await amountBox();
+    fireEvent.change(box, { target: { value: "60000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Fewer credits" }));
+    expect(box).toHaveValue(50000);
+    fireEvent.change(box, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "More credits" }));
+    expect(box).toHaveValue(1001);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   test("owner types any amount, sees the total and buys it: only the number of credits is sent", async () => {
@@ -189,6 +216,8 @@ describe("Need a different amount? (custom credits)", () => {
     withOffer({ canPurchase: false, isDemo: true });
     render(<BuyCreditsSection redirect={jest.fn()} />);
     expect(await amountBox()).toBeDisabled();
+    expect(screen.getByRole("button", { name: "More credits" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Fewer credits" })).toBeDisabled();
     const buy = screen.getByRole("button", { name: "Buy 1,000 credits" });
     expect(buy).toBeDisabled();
     expect(buy).toHaveAttribute("data-demo-block");

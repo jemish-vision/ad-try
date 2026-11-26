@@ -8566,5 +8566,7 @@
   "{{package}} in {{region}}: {{price}} per credit": "{{package}}（{{region}}）: 1 クレジットあたり {{price}}",
   "{{package}}: {{price}} per credit": "{{package}}: 1 クレジットあたり {{price}}",
   "credit": "クレジット",
-  "Let buyers choose their own number of credits: set the price per credit, the minimum and maximum, and optional prices per pricing region.": "購入者が好きなクレジット数を選べるようにします。1 クレジットあたりの価格、最小・最大、価格地域ごとの任意の価格を設定します。"
+  "Let buyers choose their own number of credits: set the price per credit, the minimum and maximum, and optional prices per pricing region.": "購入者が好きなクレジット数を選べるようにします。1 クレジットあたりの価格、最小・最大、価格地域ごとの任意の価格を設定します。",
+  "Fewer credits": "クレジットを減らす",
+  "More credits": "クレジットを増やす"
 }
