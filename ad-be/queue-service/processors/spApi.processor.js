@@ -94,6 +94,12 @@ function createSpApiProcessor() {
           break;
         }
 
+        case SP_API_TASKS.APLUS_BATCH_POLL: {
+          const { cronProcessPendingAPlusBatchJobs } = require("../../api-server/controllers/aplusContent.controller");
+          result = await cronProcessPendingAPlusBatchJobs();
+          break;
+        }
+
         case SP_API_TASKS.ACCOUNT_DATA_CLEANUP: {
           const { cronDeleteExpiredAccountsData } = require("../../api-server/services/accountDataCleanup.service");
           result = await cronDeleteExpiredAccountsData();

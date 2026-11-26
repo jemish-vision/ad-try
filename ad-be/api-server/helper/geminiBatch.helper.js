@@ -95,11 +95,12 @@ exports.submitAPlusImageBatchJob = async ({ imageModules = [], productRef = null
       log_type: "info",
     });
 
+    const immediateResponses = extractBatchResponses(res.data);
     return {
       batchJobName,
       rawResponse: res.data,
-      isImmediate: Boolean(res.data?.response?.responses || res.data?.responses),
-      responses: res.data?.response?.responses || res.data?.responses || null,
+      isImmediate: immediateResponses.length > 0,
+      responses: immediateResponses.length ? immediateResponses : null,
     };
   } catch (error) {
     write_logs({
@@ -125,25 +126,43 @@ exports.checkBatchJobStatus = async (batchJobName) => {
   const data = res.data;
 
   const state = data?.metadata?.state || data?.state || data?.status || "BATCH_STATE_RUNNING";
+  const responses = extractBatchResponses(data);
   const isCompleted =
     state === "BATCH_STATE_SUCCEEDED" ||
     state === "SUCCEEDED" ||
     state === "COMPLETED" ||
-    Boolean(data?.response?.responses || data?.responses);
+    Boolean(data?.done && !data?.error) ||
+    responses.length > 0;
   const isFailed =
     state === "BATCH_STATE_FAILED" ||
     state === "FAILED" ||
     state === "BATCH_STATE_CANCELLED" ||
-    state === "CANCELLED";
+    state === "CANCELLED" ||
+    Boolean(data?.error);
 
   return {
     state,
     isCompleted,
     isFailed,
     error: data?.error?.message || data?.metadata?.error?.message || null,
-    responses: data?.response?.responses || data?.responses || data?.output?.responses || [],
+    responses,
   };
 };
+
+exports.extractBatchResponses = extractBatchResponses;
+
+function extractBatchResponses(data) {
+  const inline =
+    data?.response?.inlinedResponses?.inlinedResponses ||
+    data?.response?.inlinedResponses ||
+    data?.metadata?.output?.inlinedResponses?.inlinedResponses ||
+    data?.metadata?.output?.inlinedResponses ||
+    data?.output?.inlinedResponses?.inlinedResponses ||
+    data?.output?.inlinedResponses;
+  if (Array.isArray(inline)) return inline;
+  const legacy = data?.response?.responses || data?.responses || data?.output?.responses;
+  return Array.isArray(legacy) ? legacy : [];
+}
 
 /**
  * Processes completed batch image data and saves it locally

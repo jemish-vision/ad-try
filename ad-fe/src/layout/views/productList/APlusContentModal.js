@@ -462,6 +462,10 @@ export default function APlusContentModal({
       module.standardImageTextOverlay
     ) {
       const data = module.standardImageTextOverlay;
+      const headline = data.block?.headline?.value?.trim();
+      const bodyLines = (data.block?.body?.textList || [])
+        .map((line) => line?.value?.trim())
+        .filter(Boolean);
       return (
         <div key={index} className="apc-module apc-module-overlay">
           <div className="apc-overlay-container">
@@ -474,17 +478,12 @@ export default function APlusContentModal({
                   )})`,
                 }}
               >
-                <div
-                  className={`apc-overlay-content ${data.overlayColorType === "DARK" ? "dark" : "light"
-                    }`}
-                >
-                  {data.block?.headline?.value && (
-                    <h2>{data.block.headline.value}</h2>
-                  )}
-                  {data.block?.body?.textList?.[0]?.value && (
-                    <p>{data.block.body.textList[0].value}</p>
-                  )}
-                </div>
+                {(headline || bodyLines.length > 0) && (
+                  <div className={`apc-overlay-content ${data.overlayColorType === "DARK" ? "dark" : "light"}`}>
+                    {headline && <h2>{headline}</h2>}
+                    {bodyLines.map((line, lineIndex) => <p key={lineIndex}>{line}</p>)}
+                  </div>
+                )}
               </div>
             )}
           </div>

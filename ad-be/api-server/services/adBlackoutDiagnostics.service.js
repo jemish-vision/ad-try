@@ -8,12 +8,24 @@ const SP_OFFER_CACHE_TTL = 180; // 3 minutes, protects SP-API 0.5 req/s quota
 const LISTING_CACHE_TTL = 180;
 const HEALTHY_SERVING_STATUSES = new Set([
   "CAMPAIGN_STATUS_ENABLED",
+  "CAMPAIGN_STATUS_ENABLED_DETAIL",
   "AD_GROUP_STATUS_ENABLED",
+  "AD_GROUP_STATUS_ENABLED_DETAIL",
   "AD_STATUS_ENABLED",
+  "AD_STATUS_ENABLED_DETAIL",
+  "AD_STATUS_LIVE",
+  "AD_STATUS_LIVE_DETAIL",
   "TARGET_STATUS_ENABLED",
+  "TARGET_STATUS_ENABLED_DETAIL",
   "KEYWORD_STATUS_ENABLED",
+  "KEYWORD_STATUS_ENABLED_DETAIL",
   "PORTFOLIO_STATUS_ENABLED",
+  "PORTFOLIO_STATUS_ENABLED_DETAIL",
   "ADVERTISER_STATUS_ENABLED",
+  "ADVERTISER_STATUS_ENABLED_DETAIL",
+  "CAMPAIGN_STATUS_ELIGIBLE",
+  "AD_GROUP_STATUS_ELIGIBLE",
+  "AD_STATUS_ELIGIBLE",
   "ACCOUNT_ENABLED",
   "ENABLED",
   "DELIVERING",
@@ -26,6 +38,20 @@ const HEALTHY_SERVING_STATUSES = new Set([
   "ELIGIBLE",
 ]);
 
+const BENIGN_SEVERITIES = new Set(["INFO", "NONE", "OK"]);
+
+function selectEffectiveEntities(entities = []) {
+  if (!Array.isArray(entities) || !entities.length) {
+    return { active: [], allPaused: false };
+  }
+  const enabled = entities.filter((e) => String(e?.state || "").toUpperCase() === "ENABLED");
+  const hasPaused = entities.some((e) => ["PAUSED", "ARCHIVED"].includes(String(e?.state || "").toUpperCase()));
+  return {
+    active: enabled.length ? enabled : entities,
+    allPaused: !enabled.length && hasPaused,
+  };
+}
+
 function extractServingStrings(entity) {
   if (!entity || typeof entity !== "object") return [];
   const out = [];
@@ -37,8 +63,8 @@ function extractServingStrings(entity) {
   if (Array.isArray(details)) {
     for (const d of details) {
       if (d?.name) out.push(String(d.name).toUpperCase());
-      if (d?.severity) out.push(String(d.severity).toUpperCase());
-      if (d?.helpUrl) out.push(String(d.helpUrl));
+      const sev = d?.severity ? String(d.severity).toUpperCase() : "";
+      if (sev && !BENIGN_SEVERITIES.has(sev)) out.push(sev);
     }
   }
   const reasons = entity.moderationReasons || ext.moderationReasons || [];
@@ -316,10 +342,9 @@ async function fetchLiveAdsDiagnostics({ profile, tokens, adType, campaignId, ad
         ).catch(() => null);
         const agList = agListRes?.data?.adGroups || [];
         if (agList.length > 0) {
-          const hasEnabledAg = agList.some((ag) => String(ag.state || "").toUpperCase() === "ENABLED");
-          const hasPausedAg = agList.some((ag) => ["PAUSED", "ARCHIVED"].includes(String(ag.state || "").toUpperCase()));
-          if (!hasEnabledAg && hasPausedAg) result.allAdGroupsPaused = true;
-          for (const ag of agList) result.servingSignals.push(...extractServingStrings(ag));
+          const { active: activeAgs, allPaused } = selectEffectiveEntities(agList);
+          if (allPaused) result.allAdGroupsPaused = true;
+          for (const ag of activeAgs) result.servingSignals.push(...extractServingStrings(ag));
         }
       }
 
@@ -337,12 +362,9 @@ async function fetchLiveAdsDiagnostics({ profile, tokens, adType, campaignId, ad
         })
       );
       const spAds = adRes?.data?.productAds || [];
-      if (spAds.length > 0) {
-        const hasEnabledAd = spAds.some((ad) => String(ad.state || "").toUpperCase() === "ENABLED");
-        const hasPausedAd = spAds.some((ad) => ["PAUSED", "ARCHIVED"].includes(String(ad.state || "").toUpperCase()));
-        if (!hasEnabledAd && hasPausedAd) result.allProductAdsPaused = true;
-      }
-      for (const ad of spAds) {
+      const { active: activeSpAds, allPaused: allSpAdsPaused } = selectEffectiveEntities(spAds);
+      if (allSpAdsPaused) result.allProductAdsPaused = true;
+      for (const ad of activeSpAds) {
         const cleanAsin = ad.asin ? String(ad.asin).trim() : null;
         if (cleanAsin) {
           result.asins.push(cleanAsin);
@@ -374,12 +396,9 @@ async function fetchLiveAdsDiagnostics({ profile, tokens, adType, campaignId, ad
         includeExtendedDataFields: true,
         maxResults: 25,
       });
-      if (ads.length > 0) {
-        const hasEnabledAd = ads.some((ad) => String(ad.state || "").toUpperCase() === "ENABLED");
-        const hasPausedAd = ads.some((ad) => ["PAUSED", "ARCHIVED"].includes(String(ad.state || "").toUpperCase()));
-        if (!hasEnabledAd && hasPausedAd) result.allProductAdsPaused = true;
-      }
-      for (const ad of ads) {
+      const { active: activeSbAds, allPaused: allSbAdsPaused } = selectEffectiveEntities(ads);
+      if (allSbAdsPaused) result.allProductAdsPaused = true;
+      for (const ad of activeSbAds) {
         const sigs = extractServingStrings(ad);
         result.servingSignals.push(...sigs);
         result.creatives.push({
@@ -417,14 +436,13 @@ async function fetchLiveAdsDiagnostics({ profile, tokens, adType, campaignId, ad
         })
       ).catch(() => null);
       const sdAdGroups = Array.isArray(sdAgRes?.data) ? sdAgRes.data : [];
+      const { active: activeSdAgs, allPaused: allSdAgsPaused } = selectEffectiveEntities(sdAdGroups);
       if (adGroupId && sdAdGroups[0]) {
         result.adGroupState = sdAdGroups[0].state || null;
-      } else if (!adGroupId && sdAdGroups.length > 0) {
-        const hasEnabledAg = sdAdGroups.some((ag) => String(ag.state || "").toUpperCase() === "ENABLED");
-        const hasPausedAg = sdAdGroups.some((ag) => ["PAUSED", "ARCHIVED"].includes(String(ag.state || "").toUpperCase()));
-        if (!hasEnabledAg && hasPausedAg) result.allAdGroupsPaused = true;
+      } else if (!adGroupId && allSdAgsPaused) {
+        result.allAdGroupsPaused = true;
       }
-      for (const ag of sdAdGroups) result.servingSignals.push(...extractServingStrings(ag));
+      for (const ag of adGroupId ? sdAdGroups : activeSdAgs) result.servingSignals.push(...extractServingStrings(ag));
 
       const sdProdRes = await retryWithBackoff(() =>
         amazonAxios({
@@ -435,23 +453,20 @@ async function fetchLiveAdsDiagnostics({ profile, tokens, adType, campaignId, ad
         })
       ).catch(() => null);
       const sdProductAds = Array.isArray(sdProdRes?.data) ? sdProdRes.data : [];
-      if (sdProductAds.length > 0) {
-        const hasEnabledAd = sdProductAds.some((ad) => String(ad.state || "").toUpperCase() === "ENABLED");
-        const hasPausedAd = sdProductAds.some((ad) => ["PAUSED", "ARCHIVED"].includes(String(ad.state || "").toUpperCase()));
-        if (!hasEnabledAd && hasPausedAd) result.allProductAdsPaused = true;
-        for (const ad of sdProductAds) {
-          const cleanAsin = ad.asin ? String(ad.asin).trim() : null;
-          if (cleanAsin) {
-            result.asins.push(cleanAsin);
-            if (ad.sku && !result.skuByAsin[cleanAsin]) result.skuByAsin[cleanAsin] = String(ad.sku).trim();
-          }
-          result.servingSignals.push(...extractServingStrings(ad));
+      const { active: activeSdAds, allPaused: allSdAdsPaused } = selectEffectiveEntities(sdProductAds);
+      if (allSdAdsPaused) result.allProductAdsPaused = true;
+      for (const ad of activeSdAds) {
+        const cleanAsin = ad.asin ? String(ad.asin).trim() : null;
+        if (cleanAsin) {
+          result.asins.push(cleanAsin);
+          if (ad.sku && !result.skuByAsin[cleanAsin]) result.skuByAsin[cleanAsin] = String(ad.sku).trim();
         }
+        result.servingSignals.push(...extractServingStrings(ad));
       }
 
       const sdAdGroupIds = adGroupId
         ? [adGroupId]
-        : sdAdGroups.map((ag) => ag.adGroupId).filter(Boolean).slice(0, 5);
+        : activeSdAgs.map((ag) => ag.adGroupId).filter(Boolean).slice(0, 5);
       for (const targetAgId of sdAdGroupIds) {
         const sdCreatives = await fetchSDCreativesList(profile, tokens, targetAgId);
         for (const cr of sdCreatives) {
@@ -621,6 +636,7 @@ async function fetchSpApiDiagnostics({ profile, spConfig, marketplaceConfig, asi
 }
 
 module.exports = {
+  selectEffectiveEntities,
   extractServingStrings,
   classifyBlackoutReason,
   fetchLiveAdsDiagnostics,

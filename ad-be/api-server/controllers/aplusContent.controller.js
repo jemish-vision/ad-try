@@ -352,11 +352,50 @@ function buildContentModulesFromImages(generatedImages) {
     });
 }
 
+const APLUS_MARKETPLACE_LOCALES = new Map(Object.entries({
+    AE: "en-AE", AU: "en-AU", BE: "fr-BE", BR: "pt-BR", CA: "en-CA",
+    DE: "de-DE", EG: "ar-AE", ES: "es-ES", FR: "fr-FR", GB: "en-GB",
+    IE: "en-IE", IN: "en-IN", IT: "it-IT", JP: "ja-JP", MX: "es-MX",
+    NL: "nl-NL", PL: "pl-PL", SA: "en-AE", SE: "sv-SE", SG: "en-SG",
+    TR: "tr-TR", UK: "en-GB", US: "en-US", ZA: "en-ZA",
+}));
+
+function marketplaceAPlusLocale(marketplace, profile) {
+    const countryCode = marketplace?.countryCode || profile?.countryCode;
+    const locale = APLUS_MARKETPLACE_LOCALES.get(countryCode);
+    if (!locale) throw new Error("A+ Content locale is not configured for this marketplace.");
+    return locale;
+}
+
+function buildGeneratedAPlusPayload(asin, locale, images) {
+    return {
+        contentDocument: {
+            name: `AI A+ ${asin} (${locale})`,
+            contentType: "EBC",
+            locale,
+            contentModuleList: buildContentModulesFromImages(images),
+        },
+    };
+}
+
+async function getExistingAPlusLocale({ endPoint, marketplaceId, contentReferenceKey, token, configId, profileId }) {
+    const response = await retryWithBackoff(() => amazonAxios({
+        method: "get",
+        url: `${endPoint}/aplus/2020-11-01/contentDocuments/${encodeURIComponent(contentReferenceKey)}`,
+        params: { marketplaceId, includedDataSet: "CONTENTS" },
+        headers: { "x-amz-access-token": token },
+        meta: { configId, tokenKey: "spAccessToken", sp: true, profileId },
+    }));
+    const locale = response?.data?.contentRecord?.contentDocument?.locale?.replace("_", "-");
+    if (!locale) throw new Error("Amazon did not return the existing A+ Content locale.");
+    return locale;
+}
+
 exports.createAIAPlusContent = async (req, res) => {
     // AI credits held for batch images; returned in the catch below unless a batch job takes it over
     let aiCreditHold = null;
     try {
-        const { asin, prompt = "", generateImageOption = false, type = "basic", useBatch = true } = req.body;
+        const { asin, prompt = "", generateImageOption = false, type = "basic", useBatch = false } = req.body;
 
         const configId = req?.config?.configId;
         const profileId = Number(req?.body?.profileId);
@@ -375,6 +414,8 @@ exports.createAIAPlusContent = async (req, res) => {
         const marketplaceConfig = await marketPlaceConfigSchema.findOne({ marketPlaceId: profile?.marketplaceStringId }).lean();
         if (!marketplaceConfig) return res.status(203).json({ isSuccess: false, message: "Marketplace config not found" });
         const { endPoint, marketPlaceId } = marketplaceConfig;
+        const locale = marketplaceAPlusLocale(marketplaceConfig, profile);
+        const storedLocale = locale.replace("-", "_");
 
         // FETCH PRODUCT DATA
         const productConfig = {
@@ -504,15 +545,7 @@ exports.createAIAPlusContent = async (req, res) => {
             type,
         });
 
-        // CREATE PAYLOAD WITH ZERO CONTENT (PURE IMAGES)
-        const payload = {
-            contentDocument: {
-                name: `AI A+ ${asin} (en-IN)`,
-                contentType: "EBC",
-                locale: "en-IN",
-                contentModuleList: buildContentModulesFromImages(generatedImages)
-            }
-        };
+        const payload = buildGeneratedAPlusPayload(asin, locale, generatedImages);
 
         // AMAZON CREATE API
         const createConfig = {
@@ -537,7 +570,7 @@ exports.createAIAPlusContent = async (req, res) => {
                     profileId,
                     asin: singleAsin,
                     contentReferenceKey,
-                    locale: "en_IN",
+                    locale: storedLocale,
                     marketplaceId: marketPlaceId,
                 },
                 update: {
@@ -546,7 +579,7 @@ exports.createAIAPlusContent = async (req, res) => {
                         profileId,
                         marketplaceId: marketPlaceId,
                         asin: singleAsin,
-                        locale: "en_IN",
+                        locale: storedLocale,
                         contentType: payload?.contentDocument?.contentType || "EBC",
                         contentSubType: payload?.contentDocument?.contentSubType || "",
                         contentReferenceKey,
@@ -630,6 +663,10 @@ exports.editAIAPlusContent = async (req, res) => {
         const marketplaceConfig = await marketPlaceConfigSchema.findOne({ marketPlaceId: profile?.marketplaceStringId }).lean();
         if (!marketplaceConfig) return res.status(203).json({ isSuccess: false, message: "Marketplace config not found" });
         const { endPoint, marketPlaceId } = marketplaceConfig;
+        const locale = await getExistingAPlusLocale({
+            endPoint, marketplaceId: marketPlaceId, contentReferenceKey, token, configId, profileId,
+        });
+        const storedLocale = locale.replace("-", "_");
 
         // FETCH PRODUCT DATA
         const productConfig = {
@@ -670,15 +707,7 @@ exports.editAIAPlusContent = async (req, res) => {
             type
         });
 
-        // CREATE PAYLOAD WITH ZERO CONTENT (PURE IMAGES)
-        const payload = {
-            contentDocument: {
-                name: `AI A+ ${asin} (en-IN)`,
-                contentType: "EBC",
-                locale: "en-IN",
-                contentModuleList: buildContentModulesFromImages(generatedImages)
-            }
-        };
+        const payload = buildGeneratedAPlusPayload(asin, locale, generatedImages);
 
         // AMAZON UPDATE API
         const updateConfig = {
@@ -702,7 +731,7 @@ exports.editAIAPlusContent = async (req, res) => {
                     profileId,
                     asin: singleAsin,
                     contentReferenceKey,
-                    locale: "en_IN",
+                    locale: storedLocale,
                     marketplaceId: marketPlaceId,
                 },
                 update: {
@@ -711,7 +740,7 @@ exports.editAIAPlusContent = async (req, res) => {
                         profileId,
                         marketplaceId: marketPlaceId,
                         asin: singleAsin,
-                        locale: "en_IN",
+                        locale: storedLocale,
                         contentReferenceKey,
                         contentName: payload?.contentDocument?.name || "",
                         contentStatus: updateRes?.data?.status || "DRAFT",
@@ -927,6 +956,10 @@ exports.cronProcessPendingAPlusBatchJobs = async () => {
 
                 const marketplaceConfig = await marketPlaceConfigSchema.findOne({ marketPlaceId: marketplaceId }).lean();
                 const endPoint = marketplaceConfig?.endPoint;
+                const locale = job.contentReferenceKey
+                    ? await getExistingAPlusLocale({ endPoint, marketplaceId, contentReferenceKey: job.contentReferenceKey, token, configId, profileId })
+                    : marketplaceAPlusLocale(marketplaceConfig);
+                const storedLocale = locale.replace("-", "_");
 
                 const generatedImages = [];
                 let imagesFromGoogle = 0;
@@ -935,10 +968,9 @@ exports.cronProcessPendingAPlusBatchJobs = async () => {
                     const rawResponse = responses[i];
                     const candParts = rawResponse?.response?.candidates?.[0]?.content?.parts || rawResponse?.candidates?.[0]?.content?.parts || [];
                     const img = candParts.find((p) => p?.inlineData?.data);
-                    if (img?.inlineData?.data) imagesFromGoogle += 1;
-
                     let localPath = null;
                     if (img?.inlineData?.data) {
+                        imagesFromGoogle += 1;
                         try {
                             localPath = await saveBatchImageToDisk({
                                 base64Data: img.inlineData.data,
@@ -974,15 +1006,16 @@ exports.cronProcessPendingAPlusBatchJobs = async () => {
                     });
                 }
 
-                // 3. Build and Publish Amazon A+ Document
-                const payload = {
-                    contentDocument: {
-                        name: `AI A+ ${asin} (en-IN)`,
-                        contentType: "EBC",
-                        locale: "en-IN",
-                        contentModuleList: buildContentModulesFromImages(generatedImages),
-                    },
-                };
+                if (imagesFromGoogle === 0) {
+                    job.status = "FAILED";
+                    job.error = "Google Gemini batch completed without image data";
+                    await job.save();
+                    await releaseBackgroundHold(job.aiCreditHold, job.error);
+                    cron_logs({ message: `A+ Batch Job ${job._id} failed: ${job.error}`, log_type: "error" });
+                    continue;
+                }
+
+                const payload = buildGeneratedAPlusPayload(asin, locale, generatedImages);
 
                 let contentReferenceKey = job.contentReferenceKey;
                 let amazonRes;
@@ -1019,7 +1052,7 @@ exports.cronProcessPendingAPlusBatchJobs = async () => {
                             profileId,
                             asin: singleAsin,
                             contentReferenceKey,
-                            locale: "en_IN",
+                            locale: storedLocale,
                             marketplaceId,
                         },
                         update: {
@@ -1028,7 +1061,7 @@ exports.cronProcessPendingAPlusBatchJobs = async () => {
                                 profileId,
                                 marketplaceId,
                                 asin: singleAsin,
-                                locale: "en_IN",
+                                locale: storedLocale,
                                 contentType: "EBC",
                                 contentReferenceKey,
                                 contentName: payload.contentDocument.name,

@@ -26,7 +26,7 @@ function loadController({ batchStatus, images }) {
     '../models/aPlusBatchJob.model': { find: () => ({ sort: () => ({ limit: async () => [job] }) }) },
     '../models/asinAPlusContent.model': { bulkWrite: async () => {} },
     '../models/adNotification.model': { create: async () => {} },
-    '../models/marketPlaceConfig.model': { findOne: () => ({ lean: async () => ({ endPoint: 'https://fixture.invalid' }) }) },
+    '../models/marketPlaceConfig.model': { findOne: () => ({ lean: async () => ({ endPoint: 'https://fixture.invalid', countryCode: 'IN' }) }) },
     '../../winston/cronAutomation/logger': { cron_logs: () => {} },
     '../../winston/utility/logger': { write_logs: () => {} },
     '../helper/common': { getSPAccessToken: async () => ({ spAccessToken: 't' }) },
@@ -69,6 +69,14 @@ describe('A+ batch job and AI credits', () => {
     assert.equal(credit.settled.length, 0);
     assert.deepEqual(credit.released.map((r) => [r.hold.requestId, r.reason]), [['org:bg:1', 'Batch generation failed at Google']]);
   });
+
+  test('completed batch with no images fails and returns the whole hold', async () => {
+    const { controller, job, credit } = loadController({ batchStatus: 'COMPLETED', images: 0 });
+    await controller.cronProcessPendingAPlusBatchJobs();
+    assert.equal(job.status, 'FAILED');
+    assert.equal(credit.settled.length, 0);
+    assert.deepEqual(credit.released.map((r) => [r.hold.requestId, r.reason]), [['org:bg:1', 'Google Gemini batch completed without image data']]);
+  });
 });
 
 // ── createAIAPlusContent: credits are held before any AI runs ──
@@ -90,7 +98,7 @@ function loadCreate({ walletCredits, batchError = null, textError = null }) {
     '../helper/retryHelper': { retryWithBackoff: (task) => task() },
     '../models/aPlusBatchJob.model': { create: async (doc) => { calls.push(['batchJob', doc.aiCreditHold?.amount]); return { _id: 'job-1' }; } },
     '../models/asinAPlusContent.model': { bulkWrite: async () => {} },
-    '../models/marketPlaceConfig.model': { findOne: () => ({ lean: async () => ({ endPoint: 'https://fixture.invalid', marketPlaceId: 'market' }) }) },
+    '../models/marketPlaceConfig.model': { findOne: () => ({ lean: async () => ({ endPoint: 'https://fixture.invalid', marketPlaceId: 'market', countryCode: 'IN' }) }) },
     '../../winston/utility/logger': { write_logs: () => {} },
     '../../winston/cronAutomation/logger': { cron_logs: () => {} },
     '../helper/common': { getProfile: async () => ({ marketplaceStringId: 'market' }), getSPAccessToken: async () => ({ spAccessToken: 't' }) },
@@ -117,7 +125,7 @@ function loadCreate({ walletCredits, batchError = null, textError = null }) {
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../api-server/controllers/aplusContent.controller.js'), 'utf8'), {
     module: mod, exports: mod.exports, require: (name) => mocks[name] || {}, process: { env: {} }, global: {}, setTimeout: (cb) => cb(), console, Buffer,
   });
-  const run = () => mod.exports.createAIAPlusContent({ body: { asin: 'B0FIXTURE', profileId: 123, generateImageOption: true, type: 'basic' }, config: { configId: 'c1' } }, res);
+  const run = () => mod.exports.createAIAPlusContent({ body: { asin: 'B0FIXTURE', profileId: 123, generateImageOption: true, type: 'basic', useBatch: true }, config: { configId: 'c1' } }, res);
   return { run, calls, res, held: () => held };
 }
 

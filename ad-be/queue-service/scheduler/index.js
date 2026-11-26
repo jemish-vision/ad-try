@@ -130,6 +130,26 @@ async function loadSchedules() {
     desired.add(resolveMigratedSchedule(def.cronName)?.task);
     registerSchedule({ cronName: def.cronName, cronExpression: def.cronExpression(), isActive: true });
   }
+
+  // Ensure default schedule for polling pending Gemini A+ batch jobs every 5 minutes unless disabled in DB
+  const hasAplusBatchPoll = cronDocs.some((job) => {
+    const k = job.cronName?.toLowerCase().replace(/[^a-z0-9]/g, "");
+    return k === "aplusbatchpoll" || k === "aplusbatchjobs";
+  });
+  if (!hasAplusBatchPoll) {
+    const disabledBatchDoc = await cronJobSchema.exists({
+      cronName: { $in: ["APlusBatchPoll", "APlus Batch Poll", "APlus Batch Jobs"] },
+      isActive: false,
+    });
+    if (!disabledBatchDoc) {
+      desired.add(resolveMigratedSchedule("APlusBatchPoll")?.task);
+      registerSchedule({
+        cronName: "APlusBatchPoll",
+        cronExpression: process.env.APLUS_BATCH_POLL_CRON || "0 */5 * * * *",
+        isActive: true,
+      });
+    }
+  }
   for (const [task, { job }] of activeCronJobs) {
     if (desired.has(task)) continue;
     job.stop();

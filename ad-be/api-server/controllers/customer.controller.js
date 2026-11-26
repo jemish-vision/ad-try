@@ -1926,6 +1926,7 @@ exports.customChatBot = async (req, res) => {
         });
 
         if (chatResult?.error) req.aiMeter?.markFailed(chatResult.error.code || chatResult.error.message || 'Chat error');
+        await req.aiMeter?.finalize?.(res);
         sendEvent('done', {
           replyMessage: chatResult?.replyMessage || 'Here is your requested report.',
           report: chatResult?.report || null,
@@ -1950,6 +1951,7 @@ exports.customChatBot = async (req, res) => {
       });
 
       if (chatResult?.error) req.aiMeter?.markFailed(chatResult.error.code || chatResult.error.message || 'Chat error');
+      await req.aiMeter?.finalize?.(res);
       if (chatResult) {
         return res.status(200).send({
           replyMessage: chatResult.replyMessage || 'Here is your requested report.',

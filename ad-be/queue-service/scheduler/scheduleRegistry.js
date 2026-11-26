@@ -38,6 +38,8 @@ const CRON_NAME_MAP = Object.freeze({
   "brandanalytics": { queue: QUEUES.SP_API, task: SP_API_TASKS.BRAND_ANALYTICS_REPORT, family: "sp-api" },
   "competitoranalysis": { queue: QUEUES.SP_API, task: SP_API_TASKS.COMPETITOR_ANALYSIS, family: "sp-api" },
   "apluscontentsync": { queue: QUEUES.SP_API, task: SP_API_TASKS.APLUS_CONTENT_SYNC, family: "sp-api" },
+  "aplusbatchpoll": { queue: QUEUES.SP_API, task: SP_API_TASKS.APLUS_BATCH_POLL, family: "sp-api" },
+  "aplusbatchjobs": { queue: QUEUES.SP_API, task: SP_API_TASKS.APLUS_BATCH_POLL, family: "sp-api" },
   "accountdatacleanup": { queue: QUEUES.SP_API, task: SP_API_TASKS.ACCOUNT_DATA_CLEANUP, family: "sp-api" },
   "reportfilecleanup": { queue: QUEUES.SP_API, task: SP_API_TASKS.REPORT_FILE_CLEANUP, family: "sp-api" },
   "transactionsreconciliation": { queue: QUEUES.SP_API, task: SP_API_TASKS.TRANSACTIONS_RECONCILIATION, family: "sp-api" },

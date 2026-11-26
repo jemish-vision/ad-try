@@ -75,16 +75,47 @@ function createAdBlackoutController({
       };
 
       const statusMode = VALID_STATUSES.has(rawStatus) ? rawStatus : "ACTIVE";
-      const listFilter = {
+      const activeEntityAgg = await alertModel.aggregate([
+        { $match: { ...baseScope, status: "ACTIVE" } },
+        {
+          $group: {
+            _id: {
+              adType: "$adType",
+              entityLevel: "$entityLevel",
+              campaignId: "$campaignId",
+              adGroupId: "$adGroupId",
+            },
+          },
+        },
+      ]);
+      const activeEntityClauses = (activeEntityAgg || [])
+        .map((r) => r?._id)
+        .filter((k) => k && typeof k === "object" && k.campaignId != null)
+        .map((k) => ({
+          adType: k.adType,
+          entityLevel: k.entityLevel,
+          campaignId: k.campaignId,
+          adGroupId: k.adGroupId ?? null,
+        }));
+
+      const resolvedTodayFilter = {
         ...baseScope,
-        ...(statusMode === "ALL" ? { status: { $in: ["ACTIVE", "RESOLVED"] } } : { status: statusMode }),
-        ...(reasonCode ? { reasonCode } : {}),
-        ...(statusMode === "RESOLVED" ? { resolvedAt: { $gte: todayStart } } : {}),
+        status: "RESOLVED",
+        resolvedAt: { $gte: todayStart },
+        ...(activeEntityClauses.length ? { $nor: activeEntityClauses } : {}),
       };
+      const listFilter =
+        statusMode === "RESOLVED"
+          ? { ...resolvedTodayFilter, ...(reasonCode ? { reasonCode } : {}) }
+          : {
+              ...baseScope,
+              ...(statusMode === "ALL" ? { status: { $in: ["ACTIVE", "RESOLVED"] } } : { status: statusMode }),
+              ...(reasonCode ? { reasonCode } : {}),
+            };
 
       const [activeCount, resolvedTodayCount, totalRecords, docs, reasonAgg] = await Promise.all([
         alertModel.countDocuments({ ...baseScope, status: "ACTIVE" }),
-        alertModel.countDocuments({ ...baseScope, status: "RESOLVED", resolvedAt: { $gte: todayStart } }),
+        alertModel.countDocuments(resolvedTodayFilter),
         alertModel.countDocuments(listFilter),
         alertModel
           .find(listFilter)

@@ -34,6 +34,7 @@ function createMeter({ feature, requestId, organizationId, userId }) {
     failed: false,
     failureReason: null,
     pendingReserve: null,
+    finalizedPromise: null,
     /**
      * Hold credits for this request (once). Throws AiCreditsError when the wallet can't cover it.
      * opts.amount: hold this many credits instead of the feature's default (e.g. text + N images).
@@ -58,6 +59,10 @@ function createMeter({ feature, requestId, organizationId, userId }) {
       meter.failed = true;
       if (!meter.failureReason) meter.failureReason = String(reason || 'Request failed').slice(0, 300);
     },
+    /** Settle or release once (idempotent — safe to call before streaming `done` AND in `finally`). */
+    finalize(res) {
+      return finalize(meter, res);
+    },
   };
   return meter;
 }
@@ -67,18 +72,25 @@ function responseFailed(res) {
 }
 
 async function finalize(meter, res) {
-  if (!meter.hold) return null;
-  try {
-    if (meter.failed || responseFailed(res)) {
-      return await service.release(meter.hold, meter.failureReason || `HTTP ${res.statusCode}`, meter.calls);
+  if (meter.finalizedPromise) return meter.finalizedPromise;
+  meter.finalizedPromise = (async () => {
+    if (meter.pendingReserve && !meter.hold) {
+      try { await meter.pendingReserve; } catch (_) {}
     }
-    if (!meter.calls.length) return await service.release(meter.hold, 'No AI used', meter.calls);
-    return await service.settle(meter.hold, meter.calls);
-  } catch (err) {
-    // Never fail the user's request over metering; the stale-hold sweep returns any stuck hold.
-    write_logs({ message: `[aiCredits] finalize failed for ${meter.requestId}: ${err.message}`, log_type: 'error' });
-    return null;
-  }
+    if (!meter.hold) return null;
+    try {
+      if (meter.failed || responseFailed(res)) {
+        return await service.release(meter.hold, meter.failureReason || `HTTP ${res.statusCode}`, meter.calls);
+      }
+      if (!meter.calls.length) return await service.release(meter.hold, 'No AI used', meter.calls);
+      return await service.settle(meter.hold, meter.calls);
+    } catch (err) {
+      // Never fail the user's request over metering; the stale-hold sweep returns any stuck hold.
+      write_logs({ message: `[aiCredits] finalize failed for ${meter.requestId}: ${err.message}`, log_type: 'error' });
+      return null;
+    }
+  })();
+  return meter.finalizedPromise;
 }
 
 function withAiCredits(feature, handler) {

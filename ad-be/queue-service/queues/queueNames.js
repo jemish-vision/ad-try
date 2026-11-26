@@ -42,6 +42,7 @@ const SP_API_TASKS = Object.freeze({
   BRAND_ANALYTICS_REPORT: "brand-analytics-report",
   COMPETITOR_ANALYSIS: "competitor-analysis",
   APLUS_CONTENT_SYNC: "aplus-content-sync",
+  APLUS_BATCH_POLL: "aplus-batch-poll",
   ACCOUNT_DATA_CLEANUP: "account-data-cleanup",
   REPORT_FILE_CLEANUP: "report-file-cleanup",
   TRANSACTIONS_RECONCILIATION: "transactions-reconciliation",

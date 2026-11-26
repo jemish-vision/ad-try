@@ -114,10 +114,26 @@ export function useAiCredits({ enabled = true } = {}) {
 
   useEffect(() => {
     if (!enabled) return undefined;
+    let alive = true;
+    let settleTimer = null;
+
+    const syncAfterChange = async (force, attempt = 0) => {
+      const d = await refresh(force);
+      if (!alive) return;
+      if (force && (d?.wallet?.reserved || 0) > 0 && attempt < 2) {
+        clearTimeout(settleTimer);
+        settleTimer = setTimeout(() => syncAfterChange(true, attempt + 1), 450);
+      }
+    };
+
     refresh(false);
-    const onChange = () => refresh(true);
+    const onChange = () => syncAfterChange(true, 0);
     window.addEventListener(AI_CREDITS_CHANGED, onChange);
-    return () => window.removeEventListener(AI_CREDITS_CHANGED, onChange);
+    return () => {
+      alive = false;
+      clearTimeout(settleTimer);
+      window.removeEventListener(AI_CREDITS_CHANGED, onChange);
+    };
   }, [enabled, refresh]);
 
   return { data, wallet: data?.wallet || null, loading, refresh };

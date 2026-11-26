@@ -8498,6 +8498,11 @@ select:not(.ant-select-selector):not(.ag-theme-alpine select):not(.form-select) 
 .route-transition-wrapper {
   animation: iq-route-fade-in 0.22s ease-out forwards;
   width: 100%;
+  min-height: 100%;
+  height: auto;
+}
+
+.route-transition-wrapper:has(.ai-assistant-page) {
   height: 100%;
 }
 

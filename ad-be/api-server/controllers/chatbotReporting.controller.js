@@ -98,6 +98,8 @@ function createChatController({
       });
 
       if (result.error) {
+        req.aiMeter?.markFailed(result.error.code || result.error.message || 'Chat error');
+        await req.aiMeter?.finalize?.(res);
         return res.status(result.error.statusCode || 500).json({
           isSuccess: false,
           error: result.error,
@@ -105,6 +107,7 @@ function createChatController({
         });
       }
 
+      await req.aiMeter?.finalize?.(res);
       return res.status(200).json({
         isSuccess: true,
         ...result,

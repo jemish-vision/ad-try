@@ -9,6 +9,7 @@ import { AdjustCreditsModal, MonthlyLimitModal } from "./admin/AiCreditAdminModa
 import { __resetAiCreditCache, creditLevel, creditsExhaustedHtml, handleAiCreditResponse, isCreditsExhausted, newAiRequestId, notifyAiCreditsChanged, AI_CREDITS_CHANGED } from "../../../helper/aiCredits/aiCredits";
 import AiCreditCostNote from "../../../helper/aiCredits/AiCreditCostNote";
 
+let mockLastTooltipContent = null;
 jest.mock("react-dom/test-utils", () => ({ ...jest.requireActual("react-dom/test-utils"), act: require("react").act }));
 jest.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (s, v) => String(s).replace(/\{\{(\w+)\}\}/g, (_, k) => (v?.[k] ?? `{{${k}}}`)), i18n: { language: "en" } }),
@@ -23,7 +24,12 @@ jest.mock("recharts", () => {
   const Stub = ({ children }) => <div>{children}</div>;
   return { ResponsiveContainer: Stub, BarChart: Stub, Bar: () => null, XAxis: () => null, YAxis: () => null, CartesianGrid: () => null, Tooltip: () => null };
 });
-jest.mock("../../../components/ui/AppTooltip", () => ({ AppTooltip: ({ children }) => children }));
+jest.mock("../../../components/ui/AppTooltip", () => ({
+  AppTooltip: ({ children, text }) => {
+    mockLastTooltipContent = text;
+    return children;
+  },
+}));
 
 const wallet = (over = {}) => ({ monthlyLimit: 1000, limitSource: "PLAN", allocated: 1000, used: 250.5, reserved: 0, available: 749.5, periodStart: "2026-11-01T00:00:00.000Z", nextResetAt: "2026-12-01T00:00:00.000Z", ...over });
 const summary = (over = {}) => ({
@@ -92,6 +98,34 @@ describe("AiCreditBadge", () => {
     Api.ApiGetAiCreditSummary.mockResolvedValueOnce({ isSuccess: true, data: summary({ wallet: { available: 500 } }) });
     await act(async () => notifyAiCreditsChanged());
     expect(await screen.findByText("500 credits left")).toBeInTheDocument();
+  });
+
+  test("re-polls when settled hold is still pending so badge and hover tooltip stay fresh", async () => {
+    mockLastTooltipContent = null;
+    Api.ApiGetAiCreditSummary
+      .mockResolvedValueOnce({ isSuccess: true, data: summary({ wallet: { allocated: 500, used: 0, reserved: 0, available: 500 } }) })
+      .mockResolvedValueOnce({ isSuccess: true, data: summary({ wallet: { allocated: 500, used: 0, reserved: 2.2, available: 497.8 } }) })
+      .mockResolvedValueOnce({ isSuccess: true, data: summary({ wallet: { allocated: 500, used: 2.93, reserved: 0, available: 497.07 } }) });
+
+    renderBadge();
+    expect(await screen.findByText("500 credits left")).toBeInTheDocument();
+
+    jest.useFakeTimers();
+    try {
+      await act(async () => { notifyAiCreditsChanged(); });
+      expect(screen.getByText("497.8 credits left")).toBeInTheDocument();
+
+      await act(async () => {
+        jest.advanceTimersByTime(450);
+        await Promise.resolve();
+      });
+      expect(screen.getByText("497.07 credits left")).toBeInTheDocument();
+
+      const tip = render(<>{mockLastTooltipContent}</>);
+      expect(tip.getByText("2.93 of 500 used")).toBeInTheDocument();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test("hidden when the wallet can't be loaded", async () => {
@@ -180,6 +214,27 @@ describe("Super Admin settings", () => {
     expect(screen.getByText("A+ Content images: basic (5) = 60 credits, premium (7) = 84 credits, plus the text.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Save settings/ }));
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ enforcementEnabled: false, outputCreditsPer1K: 5, creditsPerImage: 12, modelRates: [{ model: "gpt-4o-mini", inputCreditsPer1K: 0.2, outputCreditsPer1K: 0.8 }, { model: "claude-", inputCreditsPer1K: 1, outputCreditsPer1K: 5 }] }));
+    expect(onSave.mock.calls[0][0]).not.toHaveProperty("featureReserves");
+  });
+
+  test("credits held per request updates dynamically as rates change", () => {
+    const featureReservePlans = [
+      { key: "AI_ASSISTANT", plans: [[{ model: "claude-haiku-5-5", inputTokens: 35000, outputTokens: 4000 }]], amount: 51 },
+      { key: "LISTING_GENERATION", plans: [[{ model: "gpt-4o-mini", inputTokens: 5000, outputTokens: 3000 }]], amount: 3.4 },
+    ];
+    render(<AiCreditSettingsForm settings={{ ...settings, featureReservePlans }} onSave={jest.fn()} saving={false} />);
+    expect(document.getElementById("ai-reserve-AI_ASSISTANT")).toHaveTextContent("51 credits");
+    expect(document.getElementById("ai-reserve-LISTING_GENERATION")).toHaveTextContent("3.4 credits");
+    fireEvent.change(screen.getByLabelText("Credits per 1,000 output tokens"), { target: { value: "2" } });
+    expect(document.getElementById("ai-reserve-AI_ASSISTANT")).toHaveTextContent("43 credits");
+  });
+
+  test("cost preview dropdown switches tested model cleanly", () => {
+    render(<AiCreditSettingsForm settings={settings} onSave={jest.fn()} saving={false} />);
+    expect(document.getElementById("ai-preview-cost")).toHaveTextContent("14 credits");
+    fireEvent.change(screen.getByLabelText("Test with model"), { target: { value: "gpt-4o-mini" } });
+    expect(document.getElementById("ai-preview-model")).toHaveValue("gpt-4o-mini");
+    expect(document.getElementById("ai-preview-cost")).toHaveTextContent("2.8 credits");
   });
 
   test("invalid input blocks saving", () => {

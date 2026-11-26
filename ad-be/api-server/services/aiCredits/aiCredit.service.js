@@ -82,10 +82,37 @@ function ensureIndexes() {
 let settingsCache = null;
 let settingsCachedAt = 0;
 
+function activeAssistantModel() {
+  const provider = String(process.env.AI_PROVIDER || 'anthropic').toLowerCase().trim();
+  if (provider === 'openai') return process.env.OPENAI_MODEL || 'gpt-4o';
+  if (provider === 'gemini') return process.env.GEMINI_TEXT_MODEL || process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+  return process.env.ANTHROPIC_MODEL || 'claude-haiku-5-5';
+}
+
+function dynamicReservePlans(feature) {
+  switch (feature) {
+    case 'AI_ASSISTANT':
+      return [[{ model: activeAssistantModel(), inputTokens: 35000, outputTokens: 4000 }]];
+    case 'LISTING_OPTIMIZATION':
+      return [[
+        { model: 'gemini-3.8-flash', inputTokens: 8000, outputTokens: 4000 },
+        { model: 'gpt-4o-mini', inputTokens: 2000, outputTokens: 1000 },
+      ]];
+    case 'LISTING_GENERATION':
+      return [[{ model: 'gpt-4o-mini', inputTokens: 5000, outputTokens: 3000 }]];
+    case 'APLUS_CONTENT':
+      return [[{ model: process.env.GEMINI_TEXT_MODEL || 'gemini-3.8-flash', inputTokens: 6000, outputTokens: 5000 }]];
+    case 'CAMPAIGN_ANALYSIS':
+      return ['gemini-3.8-flash', 'gpt-4o-mini'].map(model => [{ model, inputTokens: 15000, outputTokens: 3000 }]);
+    default:
+      return [];
+  }
+}
+
 function normalizeSettings(doc) {
   const s = { ...DEFAULT_SETTINGS, ...(doc || {}) };
   const reserves = s.featureReserves instanceof Map ? Object.fromEntries(s.featureReserves) : { ...(s.featureReserves || {}) };
-  return {
+  const base = {
     enforcementEnabled: s.enforcementEnabled !== false,
     defaultMonthlyCredits: Number(s.defaultMonthlyCredits) || 0,
     inputCreditsPer1K: Number(s.inputCreditsPer1K) || 0,
@@ -93,9 +120,15 @@ function normalizeSettings(doc) {
     minimumChargePerRequest: Number(s.minimumChargePerRequest) || 0,
     creditsPerImage: Number.isFinite(Number(s.creditsPerImage)) && s.creditsPerImage !== null ? Number(s.creditsPerImage) : DEFAULT_SETTINGS.creditsPerImage,
     modelRates: (s.modelRates || []).map((r) => ({ model: String(r.model), inputCreditsPer1K: Number(r.inputCreditsPer1K) || 0, outputCreditsPer1K: Number(r.outputCreditsPer1K) || 0 })),
-    featureReserves: Object.fromEntries(Object.values(FEATURES).map((f) => [f.key, Number.isFinite(Number(reserves[f.key])) && reserves[f.key] !== null ? Number(reserves[f.key]) : f.reserve])),
     updatedAt: s.updatedAt || null,
   };
+  const featureReservePlans = Object.values(FEATURES).map(({ key, reserve }) => {
+    const plans = dynamicReservePlans(key);
+    const override = reserves[key] != null && Number.isFinite(Number(reserves[key])) ? round2(reserves[key]) : null;
+    const amount = override ?? (plans.length ? Math.max(...plans.map(calls => priceCalls(calls, base).credits)) : reserve);
+    return { key, plans, override, amount };
+  });
+  return { ...base, featureReservePlans, featureReserves: Object.fromEntries(featureReservePlans.map(({ key, amount }) => [key, amount])) };
 }
 
 async function getSettings({ fresh = false } = {}) {
@@ -151,7 +184,19 @@ async function updateSettings(input, actorId) {
   if (input.modelRates !== undefined) {
     $set.modelRates = input.modelRates.map((r) => ({ model: String(r.model).trim(), inputCreditsPer1K: round4(r.inputCreditsPer1K), outputCreditsPer1K: round4(r.outputCreditsPer1K) }));
   }
-  if (input.featureReserves !== undefined) $set.featureReserves = { ...current.featureReserves, ...Object.fromEntries(Object.entries(input.featureReserves).map(([k, v]) => [k, round2(v)])) };
+  if (input.featureReserves !== undefined) {
+    const entries = Object.entries(input.featureReserves || {});
+    if (!entries.length) {
+      $set.featureReserves = {};
+    } else {
+      const existingRaw = (await settingModel.findOne({ key: 'global' }).lean())?.featureReserves;
+      const prevMap = existingRaw instanceof Map ? Object.fromEntries(existingRaw) : { ...(existingRaw || {}) };
+      $set.featureReserves = {
+        ...prevMap,
+        ...Object.fromEntries(entries.map(([k, v]) => [k, round2(v)])),
+      };
+    }
+  }
   await ensureIndexes();
   await settingModel.findOneAndUpdate({ key: 'global' }, { $set, $setOnInsert: { key: 'global' } }, { upsert: true, new: true }).lean();
   return getSettings({ fresh: true });
@@ -324,21 +369,26 @@ async function reserve({ organizationId, userId = null, feature, requestId, amou
 }
 
 /**
- * Charge a finished request for the tokens it used and return the rest of the hold.
+ * Charge measured usage up to the confirmed hold and return any unused credits.
  * Safe to call more than once: only the first call changes anything.
  */
 async function settle(hold, rawCalls = [], { now = new Date() } = {}) {
   const settings = await getSettings();
   const priced = priceCalls(rawCalls, settings);
-  const credits = hold.enforced ? priced.credits : 0;
-  const log = await usageLogModel
-    .findOneAndUpdate(
-      { requestId: hold.requestId, status: 'RESERVED' },
-      { $set: { status: 'SETTLED', credits: priced.credits, inputTokens: priced.inputTokens, outputTokens: priced.outputTokens, totalTokens: priced.totalTokens, images: priced.images, models: priced.models, calls: priced.calls, settledAt: now } },
+  const scope = { requestId: hold.requestId, status: 'RESERVED' };
+  let log;
+  let credits;
+  while (!log) {
+    const current = await usageLogModel.findOne(scope).lean();
+    if (!current) return { charged: false, duplicate: true, credits: 0 };
+    credits = current.enforced !== false ? Math.min(priced.credits, current.reservedCredits) : 0;
+    // A background image hold can move onto this request between the read and settlement.
+    log = await usageLogModel.findOneAndUpdate(
+      { ...scope, reservedCredits: current.reservedCredits },
+      { $set: { status: 'SETTLED', credits, meteredCredits: priced.credits, inputTokens: priced.inputTokens, outputTokens: priced.outputTokens, totalTokens: priced.totalTokens, images: priced.images, models: priced.models, calls: priced.calls, settledAt: now } },
       { new: true }
-    )
-    .lean();
-  if (!log) return { charged: false, duplicate: true, credits: 0 };
+    ).lean();
+  }
 
   const wallet = await walletModel
     .findOneAndUpdate(
@@ -353,7 +403,7 @@ async function settle(hold, rawCalls = [], { now = new Date() } = {}) {
   if (credits > 0) {
     await writeTransaction({ organizationId: hold.organizationId, walletId: hold.walletId, type: 'DEDUCTION', credits: -credits, balanceAfter: wallet ? round2(wallet.balance) : null, feature: hold.feature, requestId: hold.requestId, userId: hold.userId ? toObjectId(hold.userId) : null, note: `${priced.images ? `${priced.images} images, ` : ''}${priced.totalTokens} tokens (${priced.models.join(', ') || 'AI'})`, dedupeKey: `deduct:${hold.requestId}` });
   }
-  return { charged: credits > 0, credits, ...priced, wallet: walletView(wallet) };
+  return { ...priced, charged: credits > 0, credits, meteredCredits: priced.credits, wallet: walletView(wallet) };
 }
 
 /**

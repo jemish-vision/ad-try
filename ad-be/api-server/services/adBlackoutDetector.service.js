@@ -40,11 +40,11 @@ const AD_TYPE_MODELS = {
 
 const toObjectId = (id) => (id instanceof mongoose.Types.ObjectId ? id : new mongoose.Types.ObjectId(String(id)));
 
-function getTargetHourSlot(now = new Date(), timezone = "UTC") {
+function getTargetHourSlot(now = new Date(), timezone = "UTC", offsetHours = 1) {
   const tz = timezone || "UTC";
   const current = moment(now).tz(tz);
-  const target = current.clone().subtract(1, "hour");
-  const prevTarget = current.clone().subtract(2, "hours");
+  const target = current.clone().subtract(offsetHours, "hours");
+  const prevTarget = current.clone().subtract(offsetHours + 1, "hours");
   const reportDate = target.format("YYYY-MM-DD");
   const hourPrefix = target.format("HH");
   const startTime = `${hourPrefix}:00`;
@@ -338,56 +338,19 @@ async function loadCampaignAsinsAndSkus({ configId, profileId, adType, campaignI
     })
     .select("asins sku adGroupId status")
     .lean();
-  return docs;
+  const enabledDocs = docs.filter((d) => String(d.status || "").toUpperCase() === "ENABLED");
+  return enabledDocs.length ? enabledDocs : docs;
 }
 
-/**
- * Full hourly blackout evaluation entry point for a single Amazon profile.
- */
-async function evaluateProfileBlackouts({ configId, profileId, scheduledFor = new Date(), dryRun = false, deps = {} } = {}) {
-  const objConfigId = toObjectId(configId);
-  const numProfileId = Number(profileId);
-  const now = new Date(scheduledFor);
-
-  const profile = deps.getProfile ? await deps.getProfile(objConfigId, numProfileId) : await getProfile(objConfigId, numProfileId);
-  if (!profile) return { skipped: true, reason: "PROFILE_NOT_FOUND" };
-
-  const slot = getTargetHourSlot(now, profile.timezone || "UTC");
-  const streamCheck = deps.checkStreamHealth
-    ? await deps.checkStreamHealth({ configId: objConfigId, profileId: numProfileId, slot, now })
-    : await checkProfileStreamHealth({ configId: objConfigId, profileId: numProfileId, slot, now });
-
-  const [{ enabledCampaigns, enabledAdGroups }, activeAlerts, dismissedRecent] = await Promise.all([
-    deps.loadEnabledEntities ? deps.loadEnabledEntities(objConfigId, numProfileId) : loadEnabledEntities(objConfigId, numProfileId),
-    adBlackoutAlertSchema.find({ configId: objConfigId, profileId: numProfileId, status: "ACTIVE" }).lean(),
-    adBlackoutAlertSchema
-      .find({
-        configId: objConfigId,
-        profileId: numProfileId,
-        status: "DISMISSED",
-        dismissedAt: { $gte: new Date(now.getTime() - 12 * 3600 * 1000) },
-      })
-      .select("entityLevel adType campaignId adGroupId dismissedAt")
-      .lean(),
-  ]);
-
-  const recentlyDismissedKeys = new Set(
-    dismissedRecent.map((d) =>
-      d.entityLevel === "CAMPAIGN"
-        ? `CAMPAIGN:${d.adType}:${Number(d.campaignId)}`
-        : `AD_GROUP:${d.adType}:${Number(d.campaignId)}:${Number(d.adGroupId)}`
-    )
-  );
-
-  // Aggregate target-hour actuals + 7d same-hour baselines + 7d totals
-  const [hourlyActuals, hourlyBaselines, totals7d, prevHourActuals] = deps.queryHourlyStats
-    ? await deps.queryHourlyStats({ configId: objConfigId, profileId: numProfileId, slot })
+async function fetchSlotHourlyData({ configId, profileId, slot, deps }) {
+  return deps.queryHourlyStats
+    ? await deps.queryHourlyStats({ configId, profileId, slot })
     : await Promise.all([
         keywordsHourlyPerformanceSchema.aggregate([
           {
             $match: {
-              configId: objConfigId,
-              profileId: numProfileId,
+              configId,
+              profileId,
               reportDate: slot.reportDate,
               startTime: { $regex: `^${slot.hourPrefix}:` },
             },
@@ -403,8 +366,8 @@ async function evaluateProfileBlackouts({ configId, profileId, scheduledFor = ne
         keywordsHourlyPerformanceSchema.aggregate([
           {
             $match: {
-              configId: objConfigId,
-              profileId: numProfileId,
+              configId,
+              profileId,
               reportDate: { $gte: slot.baselineFrom, $lte: slot.baselineTo },
               startTime: { $regex: `^${slot.hourPrefix}:` },
             },
@@ -434,8 +397,8 @@ async function evaluateProfileBlackouts({ configId, profileId, scheduledFor = ne
         keywordsHourlyPerformanceSchema.aggregate([
           {
             $match: {
-              configId: objConfigId,
-              profileId: numProfileId,
+              configId,
+              profileId,
               reportDate: { $gte: slot.baselineFrom, $lte: slot.baselineTo },
             },
           },
@@ -452,8 +415,8 @@ async function evaluateProfileBlackouts({ configId, profileId, scheduledFor = ne
         keywordsHourlyPerformanceSchema.aggregate([
           {
             $match: {
-              configId: objConfigId,
-              profileId: numProfileId,
+              configId,
+              profileId,
               reportDate: slot.prevReportDate,
               startTime: { $regex: `^${slot.prevHourPrefix}:` },
             },
@@ -467,20 +430,63 @@ async function evaluateProfileBlackouts({ configId, profileId, scheduledFor = ne
           { $project: { _id: 0, adType: "$_id.type", campaignId: "$_id.campaignId", adGroupId: "$_id.adGroupId", impressions: 1 } },
         ]),
       ]);
+}
 
-  const prevCampImpr = new Map();
-  const prevAgImpr = new Map();
-  for (const row of prevHourActuals || []) {
+function buildPositiveEntitySet(hourlyActuals = []) {
+  const positive = new Set();
+  for (const row of hourlyActuals) {
     const type = String(row.adType || row.type || "").toUpperCase();
     const cId = Number(row.campaignId);
     const agId = row.adGroupId != null ? Number(row.adGroupId) : null;
     const impr = Number(row.impressions || 0);
-    if (!type || !Number.isFinite(cId)) continue;
-    prevCampImpr.set(`${type}:${cId}`, (prevCampImpr.get(`${type}:${cId}`) || 0) + impr);
-    if (Number.isFinite(agId)) prevAgImpr.set(`${type}:${cId}:${agId}`, (prevAgImpr.get(`${type}:${cId}:${agId}`) || 0) + impr);
+    if (!type || !Number.isFinite(cId) || impr <= 0) continue;
+    positive.add(`CAMPAIGN:${type}:${cId}`);
+    if (Number.isFinite(agId)) positive.add(`AD_GROUP:${type}:${cId}:${agId}`);
   }
+  return positive;
+}
 
-  // Also resolve any existing ACTIVE alert that later received impressions in its firstBlackoutHour..currentDate
+/**
+ * Full hourly blackout evaluation entry point for a single Amazon profile.
+ */
+async function evaluateProfileBlackouts({ configId, profileId, scheduledFor = new Date(), dryRun = false, deps = {} } = {}) {
+  const objConfigId = toObjectId(configId);
+  const numProfileId = Number(profileId);
+  const now = new Date(scheduledFor);
+
+  const profile = deps.getProfile ? await deps.getProfile(objConfigId, numProfileId) : await getProfile(objConfigId, numProfileId);
+  if (!profile) return { skipped: true, reason: "PROFILE_NOT_FOUND" };
+
+  const tz = profile.timezone || "UTC";
+  let slot = getTargetHourSlot(now, tz, 1);
+  const streamCheck = deps.checkStreamHealth
+    ? await deps.checkStreamHealth({ configId: objConfigId, profileId: numProfileId, slot, now })
+    : await checkProfileStreamHealth({ configId: objConfigId, profileId: numProfileId, slot, now });
+
+  const [{ enabledCampaigns, enabledAdGroups }, initialActiveAlerts, dismissedRecent] = await Promise.all([
+    deps.loadEnabledEntities ? deps.loadEnabledEntities(objConfigId, numProfileId) : loadEnabledEntities(objConfigId, numProfileId),
+    adBlackoutAlertSchema.find({ configId: objConfigId, profileId: numProfileId, status: "ACTIVE" }).lean(),
+    adBlackoutAlertSchema
+      .find({
+        configId: objConfigId,
+        profileId: numProfileId,
+        status: "DISMISSED",
+        dismissedAt: { $gte: new Date(now.getTime() - 12 * 3600 * 1000) },
+      })
+      .select("entityLevel adType campaignId adGroupId dismissedAt")
+      .lean(),
+  ]);
+
+  let activeAlerts = initialActiveAlerts;
+  const recentlyDismissedKeys = new Set(
+    dismissedRecent.map((d) =>
+      d.entityLevel === "CAMPAIGN"
+        ? `CAMPAIGN:${d.adType}:${Number(d.campaignId)}`
+        : `AD_GROUP:${d.adType}:${Number(d.campaignId)}:${Number(d.adGroupId)}`
+    )
+  );
+
+  // Resolve any existing ACTIVE alert that later received impressions in its firstBlackoutHour..currentDate
   if (!dryRun && activeAlerts.length && !deps.queryHourlyStats) {
     const resolvedByLateTraffic = [];
     for (const alert of activeAlerts) {
@@ -494,21 +500,30 @@ async function evaluateProfileBlackouts({ configId, profileId, scheduledFor = ne
         ...(alert.entityLevel === "AD_GROUP" && alert.adGroupId != null ? { adGroupId: Number(alert.adGroupId) } : {}),
         impressions: { $gt: 0 },
         $or: [
-          { reportDate: firstDate, startTime: { $gte: firstTime.slice(0, 2) } },
+          { reportDate: firstDate, startTime: { $gte: `${firstTime.slice(0, 2)}:00` } },
           { reportDate: { $gt: firstDate, $lte: slot.currentDate } },
         ],
       });
       if (hadLateImpr) resolvedByLateTraffic.push(alert);
     }
     if (resolvedByLateTraffic.length) {
+      const resolvedIds = new Set(resolvedByLateTraffic.map((a) => String(a._id)));
       await adBlackoutAlertSchema.updateMany(
         { _id: { $in: resolvedByLateTraffic.map((a) => a._id) }, status: "ACTIVE" },
         { $set: { status: "RESOLVED", resolvedAt: now, lastCheckedHour: slot.hourKey } }
       );
+      activeAlerts = activeAlerts.filter((a) => !resolvedIds.has(String(a._id)));
     }
   }
 
-  const evalResult = evaluateZeroImpressionEntities({
+  let [hourlyActuals, hourlyBaselines, totals7d, prevHourActuals] = await fetchSlotHourlyData({
+    configId: objConfigId,
+    profileId: numProfileId,
+    slot,
+    deps,
+  });
+
+  let evalResult = evaluateZeroImpressionEntities({
     slot,
     streamHealthy: streamCheck.healthy,
     enabledCampaigns,
@@ -520,37 +535,103 @@ async function evaluateProfileBlackouts({ configId, profileId, scheduledFor = ne
     recentlyDismissedKeys,
   });
 
+  let resolvedCount = 0;
+  // Auto-resolve active alerts whose traffic returned or entity was paused on the latest slot
+  if (!dryRun && evalResult.alertsToResolve.length) {
+    const resolvedIds = new Set(evalResult.alertsToResolve.map((a) => String(a._id)));
+    await adBlackoutAlertSchema.updateMany(
+      { _id: { $in: evalResult.alertsToResolve.map((a) => a._id) }, status: "ACTIVE" },
+      { $set: { status: "RESOLVED", resolvedAt: now, lastCheckedHour: slot.hourKey } }
+    );
+    resolvedCount += evalResult.alertsToResolve.length;
+    activeAlerts = activeAlerts.filter((a) => !resolvedIds.has(String(a._id)));
+  }
+
+  // If the most recent hour (now - 1h) stream batch hasn't finished arriving yet, fall back once to (now - 2h)
+  // while ignoring entities that already showed impressions in the partial (now - 1h) stream.
+  let recoveredInNewerPartialHour = new Set();
+  if (evalResult.skippedReason === "TARGET_HOUR_STREAM_INCOMPLETE") {
+    recoveredInNewerPartialHour = buildPositiveEntitySet(hourlyActuals);
+    const prevSlot = getTargetHourSlot(now, tz, 2);
+    const [prevActuals, prevBaselines, prevTotals7d, prev2Actuals] = await fetchSlotHourlyData({
+      configId: objConfigId,
+      profileId: numProfileId,
+      slot: prevSlot,
+      deps,
+    });
+    const prevEval = evaluateZeroImpressionEntities({
+      slot: prevSlot,
+      streamHealthy: streamCheck.healthy,
+      enabledCampaigns,
+      enabledAdGroups,
+      hourlyActuals: prevActuals,
+      hourlyBaselines: prevBaselines,
+      totals7d: prevTotals7d,
+      activeAlerts,
+      recentlyDismissedKeys,
+    });
+    if (!prevEval.skippedReason) {
+      slot = prevSlot;
+      hourlyActuals = prevActuals;
+      hourlyBaselines = prevBaselines;
+      totals7d = prevTotals7d;
+      prevHourActuals = prev2Actuals;
+      evalResult = prevEval;
+      if (!dryRun && evalResult.alertsToResolve.length) {
+        await adBlackoutAlertSchema.updateMany(
+          { _id: { $in: evalResult.alertsToResolve.map((a) => a._id) }, status: "ACTIVE" },
+          { $set: { status: "RESOLVED", resolvedAt: now, lastCheckedHour: slot.hourKey } }
+        );
+        resolvedCount += evalResult.alertsToResolve.length;
+      }
+    }
+  }
+
+  const prevCampImpr = new Map();
+  const prevAgImpr = new Map();
+  for (const row of prevHourActuals || []) {
+    const type = String(row.adType || row.type || "").toUpperCase();
+    const cId = Number(row.campaignId);
+    const agId = row.adGroupId != null ? Number(row.adGroupId) : null;
+    const impr = Number(row.impressions || 0);
+    if (!type || !Number.isFinite(cId)) continue;
+    prevCampImpr.set(`${type}:${cId}`, (prevCampImpr.get(`${type}:${cId}`) || 0) + impr);
+    if (Number.isFinite(agId)) prevAgImpr.set(`${type}:${cId}:${agId}`, (prevAgImpr.get(`${type}:${cId}:${agId}`) || 0) + impr);
+  }
+
+  const filterCandidate = (c) => {
+    const key =
+      c.entityLevel === "AD_GROUP"
+        ? `AD_GROUP:${c.adType}:${Number(c.campaignId)}:${Number(c.adGroupId)}`
+        : `CAMPAIGN:${c.adType}:${Number(c.campaignId)}`;
+    return !recoveredInNewerPartialHour.has(key);
+  };
+  const zeroCampaigns = evalResult.zeroCampaigns.filter(filterCandidate);
+  const zeroAdGroups = evalResult.zeroAdGroups.filter(filterCandidate);
+
   if (dryRun) {
     return {
       dryRun: true,
       slot: slot.hourKey,
       skippedReason: evalResult.skippedReason,
       toResolve: evalResult.alertsToResolve.length,
-      zeroCampaigns: evalResult.zeroCampaigns.length,
-      zeroAdGroups: evalResult.zeroAdGroups.length,
+      zeroCampaigns: zeroCampaigns.length,
+      zeroAdGroups: zeroAdGroups.length,
     };
-  }
-
-  // 1. Auto-resolve alerts whose traffic returned or entity was paused
-  if (evalResult.alertsToResolve.length) {
-    await adBlackoutAlertSchema.updateMany(
-      { _id: { $in: evalResult.alertsToResolve.map((a) => a._id) }, status: "ACTIVE" },
-      { $set: { status: "RESOLVED", resolvedAt: now, lastCheckedHour: slot.hourKey } }
-    );
   }
 
   if (evalResult.skippedReason) {
     return {
       skipped: true,
       reason: evalResult.skippedReason,
-      resolvedCount: evalResult.alertsToResolve.length,
+      resolvedCount,
       slot: slot.hourKey,
     };
   }
 
-  const candidates = [...evalResult.zeroCampaigns, ...evalResult.zeroAdGroups];
+  const candidates = [...zeroCampaigns, ...zeroAdGroups];
   if (!candidates.length) {
-    return { status: "COMPLETED", slot: slot.hourKey, activeAlerts: 0, resolvedCount: evalResult.alertsToResolve.length };
+    return { status: "COMPLETED", slot: slot.hourKey, activeAlerts: 0, resolvedCount };
   }
 
   // 2. Load credentials & marketplace config once if we have flagged entities
@@ -577,7 +658,7 @@ async function evaluateProfileBlackouts({ configId, profileId, scheduledFor = ne
       ? await deps.fetchLiveAdsDiagnostics({ profile, tokens, adType: item.adType, campaignId: item.campaignId, adGroupId: item.adGroupId || null, portfolioId: item.portfolioId })
       : await fetchLiveAdsDiagnostics({ profile, tokens, adType: item.adType, campaignId: item.campaignId, adGroupId: item.adGroupId || null, portfolioId: item.portfolioId });
 
-    const allAsins = [...new Set([...(liveAds.asins || []), ...localAsins])];
+    const allAsins = liveAds.asins?.length ? [...new Set(liveAds.asins)] : localAsins;
     const [productMetadata, rulePauseInfo, oobToday] = await Promise.all([
       allAsins.length
         ? deps.fetchAdsProductEligibility
@@ -654,13 +735,10 @@ async function evaluateProfileBlackouts({ configId, profileId, scheduledFor = ne
 
     // If Amazon reports the ad is healthy & serving and no fault was found in Buy Box,
     // creatives, listings, rules, portfolio, or budget, require 2 consecutive zero hours
-    // before raising an UNKNOWN_SERVING_HALT alert (and resolve any stale single-hour one).
+    // before raising an UNKNOWN_SERVING_HALT alert (delete any unconfirmed single-hour one rather than marking it recovered).
     if (diagnosis.reasonCode === "UNKNOWN_SERVING_HALT" && diagnosis.reasonParams?.amazonReportsHealthy && prevImpr > 0) {
       if (existing) {
-        await adBlackoutAlertSchema.updateOne(
-          { _id: existing._id, status: "ACTIVE" },
-          { $set: { status: "RESOLVED", resolvedAt: now, lastCheckedHour: slot.hourKey } }
-        );
+        await adBlackoutAlertSchema.deleteOne({ _id: existing._id, status: "ACTIVE" });
       }
       continue;
     }
@@ -697,7 +775,7 @@ async function evaluateProfileBlackouts({ configId, profileId, scheduledFor = ne
     slot: slot.hourKey,
     detectedNew,
     updatedActive,
-    resolvedCount: evalResult.alertsToResolve.length,
+    resolvedCount,
   };
 }
 

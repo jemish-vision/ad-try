@@ -18,8 +18,9 @@ stub("api-server/helper/rateLimiter.js", {});
 stub("api-server/helper/amazonAxios.js", async () => ({ status: 200, data: {} }));
 stub("winston/utility/logger.js", { write_logs: () => {} });
 
-const { classifyBlackoutReason, extractServingStrings } = require("../api-server/services/adBlackoutDiagnostics.service");
-const { getTargetHourSlot, evaluateZeroImpressionEntities } = require("../api-server/services/adBlackoutDetector.service");
+const { classifyBlackoutReason, extractServingStrings, selectEffectiveEntities } = require("../api-server/services/adBlackoutDiagnostics.service");
+const { getTargetHourSlot, evaluateZeroImpressionEntities, evaluateProfileBlackouts } = require("../api-server/services/adBlackoutDetector.service");
+const adBlackoutAlertSchema = require("../api-server/models/adBlackoutAlert.model");
 const { createAdBlackoutController, sanitizeAlert } = require("../api-server/controllers/adBlackout.controller");
 const { SYNC_TASKS, QUEUES } = require("../queue-service/queues/queueNames");
 const { generateJobId } = require("../queue-service/contracts/jobId");
@@ -367,4 +368,137 @@ test("classifyBlackoutReason handles YYYYMMDD endDate, positive BUY_BOX_ELIGIBLE
     allAdGroupsPaused: true,
   });
   assert.equal(pausedGroups.reasonCode, "CAMPAIGN_OR_ADGROUP_PAUSED");
+});
+
+test("Amazon v3 *_DETAIL / AD_STATUS_LIVE signals and paused siblings do not flag false unhealthy servingStatus", () => {
+  const { active: effectiveAds, allPaused } = selectEffectiveEntities([
+    {
+      adId: "1",
+      state: "ENABLED",
+      asin: "B0FV8QPNRQ",
+      extendedData: { servingStatus: "AD_STATUS_LIVE", servingStatusDetails: [{ name: "AD_STATUS_LIVE_DETAIL", severity: "INFO", helpUrl: "https://example.com" }] },
+    },
+    {
+      adId: "2",
+      state: "PAUSED",
+      asin: "B0FV8QCV5W",
+      extendedData: { servingStatus: "AD_PAUSED", servingStatusDetails: [{ name: "AD_PAUSED_DETAIL" }] },
+    },
+  ]);
+  assert.equal(allPaused, false);
+  assert.deepEqual(effectiveAds.map((a) => a.adId), ["1"]);
+
+  const signals = [
+    ...extractServingStrings({ extendedData: { servingStatus: "CAMPAIGN_STATUS_ENABLED", servingStatusDetails: [{ name: "CAMPAIGN_STATUS_ENABLED_DETAIL" }] } }),
+    ...extractServingStrings({ extendedData: { servingStatus: "AD_GROUP_STATUS_ENABLED", servingStatusDetails: [{ name: "AD_GROUP_STATUS_ENABLED_DETAIL" }] } }),
+    ...extractServingStrings(effectiveAds[0]),
+  ];
+  const diag = classifyBlackoutReason({
+    campaignName: "A-5261-Men-Pant-Track-Urvashi-Wed",
+    campaignState: "ENABLED",
+    servingSignals: signals,
+    asins: ["B0FV8QPNRQ"],
+  });
+  assert.equal(diag.reasonCode, "UNKNOWN_SERVING_HALT");
+  assert.equal(diag.reasonParams.amazonReportsHealthy, true);
+  assert.equal(diag.reasonParams.rawServingStatus, null);
+  assert.deepEqual(diag.reasonParams.rawReasons, []);
+
+  const allPausedResult = selectEffectiveEntities([
+    { adId: "2", state: "PAUSED" },
+    { adId: "3", state: "ARCHIVED" },
+  ]);
+  assert.equal(allPausedResult.allPaused, true);
+  assert.equal(allPausedResult.active.length, 2);
+});
+
+test("evaluateProfileBlackouts falls back to previous complete hour when target hour stream is incomplete", async () => {
+  const origFind = adBlackoutAlertSchema.find;
+  adBlackoutAlertSchema.find = () => ({
+    select: () => ({ lean: async () => [] }),
+    lean: async () => [],
+  });
+
+  try {
+    const res = await evaluateProfileBlackouts({
+      configId: new mongoose.Types.ObjectId(),
+      profileId: 2376610121042864,
+      scheduledFor: new Date("2026-11-25T11:36:00Z"), // 17:06 IST -> primary 16:00, fallback 15:00
+      dryRun: true,
+      deps: {
+        getProfile: async () => ({ profileId: 2376610121042864, timezone: "Asia/Kolkata" }),
+        checkStreamHealth: async () => ({ healthy: true }),
+        loadEnabledEntities: async () => ({
+          enabledCampaigns: [
+            { adType: "SP", campaignId: 100, name: "Healthy Camp" },
+            { adType: "SP", campaignId: 200, name: "Blackout Camp" },
+          ],
+          enabledAdGroups: [],
+        }),
+        queryHourlyStats: async ({ slot }) => {
+          const baselines = [
+            { adType: "SP", campaignId: 100, avgHourlyImpressions: 1000 },
+            { adType: "SP", campaignId: 200, avgHourlyImpressions: 200 },
+          ];
+          const totals = [
+            { adType: "SP", campaignId: 100, impressions: 50000, sales: 1000, spend: 100 },
+            { adType: "SP", campaignId: 200, impressions: 10000, sales: 500, spend: 50 },
+          ];
+          if (slot.hourPrefix === "16") {
+            // Incomplete (<25% of 1200)
+            return [[{ adType: "SP", campaignId: 100, impressions: 50 }], baselines, totals, []];
+          }
+          // Complete 15:00 hour where campaign 200 dropped to 0
+          return [[{ adType: "SP", campaignId: 100, impressions: 1000 }], baselines, totals, []];
+        },
+      },
+    });
+    assert.equal(res.slot, "2026-11-25 15:00");
+    assert.equal(res.skippedReason, null);
+    assert.equal(res.zeroCampaigns, 1);
+  } finally {
+    adBlackoutAlertSchema.find = origFind;
+  }
+});
+
+test("getAdBlackoutAlerts excludes currently ACTIVE entities from Resolved Today filter and count", async () => {
+  const capturedCounts = [];
+  let capturedListFilter = null;
+  const mockAlertModel = {
+    aggregate: async (pipeline) => {
+      if (pipeline.some((s) => s.$group && s.$group._id && typeof s.$group._id === "object")) {
+        return [{ _id: { adType: "SP", entityLevel: "CAMPAIGN", campaignId: 286306248753746, adGroupId: null } }];
+      }
+      return [{ _id: "UNKNOWN_SERVING_HALT", count: 1 }];
+    },
+    countDocuments: async (filter) => {
+      capturedCounts.push(filter);
+      return filter.status === "ACTIVE" ? 1 : 0;
+    },
+    find: (filter) => {
+      capturedListFilter = filter;
+      return {
+        sort: () => ({ skip: () => ({ limit: () => ({ lean: async () => [] }) }) }),
+      };
+    },
+  };
+  const mockProfileModel = {
+    findOne: () => ({ select: () => ({ lean: async () => ({ timezone: "Asia/Kolkata" }) }) }),
+  };
+  const controller = createAdBlackoutController({ alertModel: mockAlertModel, profileModel: mockProfileModel });
+  const res = {
+    body: null,
+    status() { return this; },
+    send(p) { this.body = p; return p; },
+  };
+  await controller.getAdBlackoutAlerts(
+    { config: { configId: "698180fcc241e002c2b6f153" }, body: { profileId: 2376610121042864, status: "RESOLVED", page: 1, limit: 6 } },
+    res
+  );
+  assert.equal(res.body.isSuccess, true);
+  assert.equal(res.body.data.summary.activeCount, 1);
+  assert.equal(res.body.data.summary.resolvedTodayCount, 0);
+  const resolvedCountFilter = capturedCounts.find((f) => f.status === "RESOLVED");
+  assert.deepEqual(resolvedCountFilter.$nor, [{ adType: "SP", entityLevel: "CAMPAIGN", campaignId: 286306248753746, adGroupId: null }]);
+  assert.deepEqual(capturedListFilter.$nor, [{ adType: "SP", entityLevel: "CAMPAIGN", campaignId: 286306248753746, adGroupId: null }]);
 });

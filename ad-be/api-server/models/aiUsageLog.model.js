@@ -31,6 +31,7 @@ const aiUsageLogSchema = new mongoose.Schema(
     failureReason: { type: String, default: null },
     reservedCredits: { type: Number, default: 0 },
     credits: { type: Number, default: 0 }, // charged
+    meteredCredits: { type: Number }, // usage priced before the hold cap
     inputTokens: { type: Number, default: 0 },
     outputTokens: { type: Number, default: 0 },
     totalTokens: { type: Number, default: 0 },

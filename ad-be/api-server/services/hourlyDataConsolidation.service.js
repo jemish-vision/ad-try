@@ -19,6 +19,8 @@ function getHourlyWindow(hourStr) {
   return { startTime, endTime };
 }
 
+const hourlyWindows = Array.from({ length: 24 }, (_, hour) => getHourlyWindow(hour));
+
 /**
  * Consolidates sub-hourly (second/minute) performance records for a single date into hourly buckets.
  *
@@ -32,10 +34,8 @@ async function consolidateDateHourly(reportDate, options = {}) {
 
   try {
     // 1. Check if there are any unaggregated raw records for this date
-    const rawCount = await keywordsHourlyPerformanceSchema.countDocuments({
-      reportDate,
-      isHourlyAggregated: { $ne: true },
-    });
+    const rawFilter = { reportDate, isHourlyAggregated: { $ne: true } };
+    const rawCount = await keywordsHourlyPerformanceSchema.countDocuments(rawFilter);
 
     if (rawCount === 0) {
       return {
@@ -52,11 +52,33 @@ async function consolidateDateHourly(reportDate, options = {}) {
       log_type: "info",
     });
 
-    // 2. Clean up any partial isHourlyAggregated: true records for this date from a previous aborted run
-    await keywordsHourlyPerformanceSchema.deleteMany({
+    // AMS already writes full-hour windows. Reinserting them before deleting the
+    // originals collides with the stream identity index.
+    if (!(await keywordsHourlyPerformanceSchema.exists({ ...rawFilter, $nor: hourlyWindows }))) {
+      const result = await keywordsHourlyPerformanceSchema.updateMany(
+        { ...rawFilter, $or: hourlyWindows },
+        { $set: { isHourlyAggregated: true } },
+        { timestamps: false }
+      );
+      if (await keywordsHourlyPerformanceSchema.exists(rawFilter)) {
+        throw new Error(`Unconsolidated records remain for ${reportDate} after marking full-hour rows.`);
+      }
+      const hourlyCount = result.modifiedCount;
+      cron_logs({
+        message: `[HourlyDataConsolidation] Marked ${hourlyCount} existing hourly records for ${reportDate}`,
+        log_type: "info",
+      });
+      return { success: true, reportDate, rawCount, hourlyCount, savingsPct: "0.0" };
+    }
+
+    // Legacy compaction cannot tell a partial retry from previously completed
+    // totals. Keep both sets intact when a date cannot be rebuilt from raw rows alone.
+    if (await keywordsHourlyPerformanceSchema.exists({
       reportDate,
-      isHourlyAggregated: true,
-    });
+      $or: [{ isHourlyAggregated: true }, { startTime: { $in: hourlyWindows.map(window => window.startTime) } }],
+    })) {
+      throw new Error(`Hourly or previously consolidated rows coexist with legacy data for ${reportDate}; legacy compaction was skipped.`);
+    }
 
     // 3. Aggregate all records for this date by (configId, profileId, marketplaceId, reportDate, campaignId, adGroupId, keywordId, placement, type, hour)
     const pipeline = [
@@ -172,10 +194,7 @@ async function consolidateDateHourly(reportDate, options = {}) {
     }
 
     // 5. Delete raw unaggregated records for this date
-    await keywordsHourlyPerformanceSchema.deleteMany({
-      reportDate,
-      isHourlyAggregated: { $ne: true },
-    });
+    await keywordsHourlyPerformanceSchema.deleteMany(rawFilter);
 
     const savingsPct =
       rawCount > 0
@@ -274,6 +293,7 @@ async function cronConsolidateHourlyData(options = {}) {
         resultSummary.totalRawCount += dateResult.rawCount;
         resultSummary.totalHourlyCount += dateResult.hourlyCount;
       } else {
+        resultSummary.success = false;
         resultSummary.errors.push(`${date}: ${dateResult.error}`);
       }
     }

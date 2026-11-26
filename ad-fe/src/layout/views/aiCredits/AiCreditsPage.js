@@ -38,7 +38,7 @@ export default function AiCreditsPage() {
   };
 
   return (
-    <div className="p-4 sm:p-6 space-y-5" id="ai-credits-page">
+    <div className="p-4 sm:p-6 pb-16 sm:pb-16 space-y-5" id="ai-credits-page">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="flex items-start gap-3">
           <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200/60 dark:border-blue-800/40 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">

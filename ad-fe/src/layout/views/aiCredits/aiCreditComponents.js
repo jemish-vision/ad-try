@@ -179,13 +179,13 @@ export function Pager({ pageNo, perPage, total, onPage }) {
   );
 }
 
-export const Select = ({ id, value, onChange, options, label }) => (
+export const Select = ({ id, value, onChange, options, label, className = "" }) => (
   <select
     id={id}
     aria-label={label}
     value={value}
     onChange={(e) => onChange(e.target.value)}
-    className="h-8 px-2.5 rounded-lg text-[12px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 outline-none focus:border-blue-400"
+    className={`h-8 px-2.5 rounded-lg text-[12px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 outline-none focus:border-blue-400 ${className}`.trim()}
   >
     {options.map((o) => (
       <option key={o.value} value={o.value}>

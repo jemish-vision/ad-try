@@ -144,6 +144,7 @@ const ApiCustomChatBotStream = async ({ data, signal, onStatus, onReport, onToke
           } else if (eventType === "error") {
             isDoneDispatched = true;
             onError?.(parsed);
+            notifyAiCreditsChanged();
           }
         } catch (_) {}
       }

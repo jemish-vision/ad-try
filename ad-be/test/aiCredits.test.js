@@ -141,8 +141,8 @@ describe('wallet', () => {
 
   test('hold, then charge actual tokens: balance, used, ledger and usage log line up', async () => {
     const hold = await service.reserve({ organizationId: orgId, userId: new mongoose.Types.ObjectId(), feature: 'AI_ASSISTANT', requestId: 'r1', now: NOV });
-    assert.equal(hold.amount, 20);
-    assert.deepEqual([walletOf().balance, walletOf().reserved], [980, 20]);
+    assert.equal(hold.amount, 51);
+    assert.deepEqual([walletOf().balance, walletOf().reserved], [949, 51]);
 
     const r = await service.settle(hold, [call('claude-x', 12000, 900, 'anthropic')]);
     assert.equal(r.credits, 15.6);
@@ -157,7 +157,8 @@ describe('wallet', () => {
 
   test('settling the same request twice charges once', async () => {
     const hold = await service.reserve({ organizationId: orgId, feature: 'AI_ASSISTANT', requestId: 'r2', now: NOV });
-    await Promise.all([service.settle(hold, [call('m', 5000, 0)]), service.settle(hold, [call('m', 5000, 0)]), service.release(hold, 'x')]);
+    await Promise.all([service.settle(hold, [call('m', 5000, 0)]), service.settle(hold, [call('m', 5000, 0)])]);
+    assert.deepEqual(await service.release(hold, 'x'), { released: false });
     assert.equal(walletOf().used, 5);
     assert.equal(walletOf().balance, 995);
     assert.equal(transactions.docs.filter((t) => t.type === 'DEDUCTION').length, 1);
@@ -174,8 +175,8 @@ describe('wallet', () => {
 
   test('not enough credits: request is refused with the wallet state', async () => {
     await service.getWallet(orgId, { now: NOV });
-    await service.adjustCredits({ organizationId: orgId, credits: -990, note: 'test', now: NOV }); // 10 left, hold is 20
-    await assert.rejects(service.reserve({ organizationId: orgId, feature: 'AI_ASSISTANT', requestId: 'r4', now: NOV }), (e) => e.code === 'AI_CREDITS_EXHAUSTED' && e.statusCode === 402 && e.details.wallet.available === 10 && e.details.required === 20);
+    await service.adjustCredits({ organizationId: orgId, credits: -990, note: 'test', now: NOV }); // 10 left, hold is 51
+    await assert.rejects(service.reserve({ organizationId: orgId, feature: 'AI_ASSISTANT', requestId: 'r4', now: NOV }), (e) => e.code === 'AI_CREDITS_EXHAUSTED' && e.statusCode === 402 && e.details.wallet.available === 10 && e.details.required === 51);
     assert.equal(usageLogs.docs.length, 0);
   });
 
@@ -189,17 +190,17 @@ describe('wallet', () => {
 
   test('concurrent requests cannot overspend: 10 requests, credits for 5', async () => {
     await service.getWallet(orgId, { now: NOV });
-    await service.adjustCredits({ organizationId: orgId, credits: -900, note: 'leave 100', now: NOV });
+    await service.adjustCredits({ organizationId: orgId, credits: -745, note: 'leave 255', now: NOV }); // 5 × 51
     const results = await Promise.allSettled(Array.from({ length: 10 }, (_, i) => service.reserve({ organizationId: orgId, feature: 'AI_ASSISTANT', requestId: `c${i}`, now: NOV })));
     assert.equal(results.filter((r) => r.status === 'fulfilled').length, 5);
     assert.ok(results.filter((r) => r.status === 'rejected').every((r) => r.reason.code === 'AI_CREDITS_EXHAUSTED'));
-    assert.deepEqual([walletOf().balance, walletOf().reserved], [0, 100]);
+    assert.deepEqual([walletOf().balance, walletOf().reserved], [0, 255]);
   });
 
   test('a repeated request id is refused and its hold returned', async () => {
     await service.reserve({ organizationId: orgId, feature: 'AI_ASSISTANT', requestId: 'same', now: NOV });
     await assert.rejects(service.reserve({ organizationId: orgId, feature: 'AI_ASSISTANT', requestId: 'same', now: NOV }), { code: 'DUPLICATE_AI_REQUEST' });
-    assert.deepEqual([walletOf().balance, walletOf().reserved], [980, 20]);
+    assert.deepEqual([walletOf().balance, walletOf().reserved], [949, 51]);
   });
 
   test('enforcement off: never blocks or charges, but usage is still tracked', async () => {
@@ -211,20 +212,36 @@ describe('wallet', () => {
     await service.settle(hold, [call('m', 3000, 0)]);
     assert.deepEqual([walletOf().balance, walletOf().used], [0, 0]);
     const log = usageLogs.docs[0];
-    assert.deepEqual([log.enforced, log.credits, log.inputTokens], [false, 3, 3000]);
+    assert.deepEqual([log.enforced, log.credits, log.meteredCredits, log.inputTokens], [false, 0, 3, 3000]);
+  });
+
+  test('settlement caps all features at the confirmed hold and records full metered cost', async () => {
+    await service.updateSettings({ modelRates: [{ model: 'claude-haiku-5-5', inputCreditsPer1K: 0.1, outputCreditsPer1K: 0.5 }] });
+    const features = Object.keys(service.FEATURES);
+    await service.adjustCredits({ organizationId: orgId, credits: -989, note: 'Leave exactly five holds', now: NOV });
+    const holds = await Promise.all(features.map(feature => service.reserve({
+      organizationId: orgId, feature, requestId: feature, amount: 2.2, now: NOV,
+    })));
+    const settled = await Promise.all(holds.map(hold => service.settle(
+      { ...hold, amount: 100 }, [call('claude-haiku-5-5', 22132, 1433, 'anthropic')], { now: NOV },
+    )));
+    for (const result of settled) assert.deepEqual([result.credits, result.meteredCredits], [2.2, 2.93]);
+    assert.deepEqual([service.walletView(walletOf()).available, walletOf().used, service.walletView(walletOf()).reserved], [0, 11, 0]);
+    assert.equal(transactions.docs.filter(row => row.type === 'DEDUCTION' && row.credits === -2.2).length, features.length);
+    assert.ok(usageLogs.docs.every(row => row.credits === 2.2 && row.meteredCredits === 2.93));
   });
 });
 
 describe('monthly reset', () => {
   test('a new month closes the old period and grants the allowance again', async () => {
     const hold = await service.reserve({ organizationId: orgId, feature: 'AI_ASSISTANT', requestId: 'n1', now: NOV });
-    await service.settle(hold, [call('m', 100000, 0)]); // 100 credits
+    await service.settle(hold, [call('m', 50000, 0)]); // 50 credits
     const w = service.walletView(await service.getWallet(orgId, { now: DEC }));
     assert.deepEqual([w.allocated, w.used, w.available], [1000, 0, 1000]);
     assert.equal(new Date(w.periodStart).toISOString(), '2026-12-01T00:00:00.000Z');
     assert.equal(new Date(w.nextResetAt).toISOString(), '2027-01-01T00:00:00.000Z');
     const reset = transactions.docs.find((t) => t.type === 'RESET');
-    assert.equal(reset.credits, -900); // 900 unused credits expired
+    assert.equal(reset.credits, -950); // 950 unused credits expired
     assert.deepEqual(txTypes(), ['ALLOCATION', 'DEDUCTION', 'RESET', 'ALLOCATION']);
   });
 
@@ -238,7 +255,7 @@ describe('monthly reset', () => {
   test('a request running across the reset is charged to the new month', async () => {
     const hold = await service.reserve({ organizationId: orgId, feature: 'AI_ASSISTANT', requestId: 'x1', now: NOV });
     await service.getWallet(orgId, { now: DEC });
-    assert.deepEqual([walletOf().balance, walletOf().reserved], [980, 20]); // hold carried over
+    assert.deepEqual([walletOf().balance, walletOf().reserved], [949, 51]); // hold carried over
     await service.settle(hold, [call('m', 10000, 0)]);
     assert.deepEqual([walletOf().balance, walletOf().used, walletOf().reserved], [990, 10, 0]);
   });
@@ -295,9 +312,29 @@ describe('Super Admin actions', () => {
     assert.deepEqual(service.validateSettingsInput({ inputCreditsPer1K: -1, modelRates: [{ model: 'a', inputCreditsPer1K: 1, outputCreditsPer1K: 1 }, { model: 'A', inputCreditsPer1K: 1, outputCreditsPer1K: 1 }], featureReserves: { NOPE: 1 } }), ['inputCreditsPer1K must be 0 or more', 'modelRates has "A" twice', 'Unknown feature NOPE']);
     await assert.rejects(service.updateSettings({ outputCreditsPer1K: 'x' }), { code: 'INVALID_SETTINGS' });
     const s = await service.updateSettings({ inputCreditsPer1K: 0.5, modelRates: [{ model: ' gpt-4o ', inputCreditsPer1K: 2, outputCreditsPer1K: 6 }], featureReserves: { LISTING_OPTIMIZATION: 40 } });
-    assert.deepEqual([s.inputCreditsPer1K, s.outputCreditsPer1K, s.modelRates[0].model, s.featureReserves.LISTING_OPTIMIZATION, s.featureReserves.AI_ASSISTANT], [0.5, 4, 'gpt-4o', 40, 20]);
+    assert.deepEqual([s.inputCreditsPer1K, s.outputCreditsPer1K, s.modelRates[0].model, s.featureReserves.LISTING_OPTIMIZATION, s.featureReserves.AI_ASSISTANT], [0.5, 4, 'gpt-4o', 40, 33.5]);
     const hold = await service.reserve({ organizationId: orgId, feature: 'LISTING_OPTIMIZATION', requestId: 'cfg', now: NOV });
     assert.equal(hold.amount, 40);
+
+    // Clearing featureReserves reverts all holds to dynamic worst-case estimation covering multi-turn calls
+    const cleared = await service.updateSettings({
+      modelRates: [
+        { model: 'claude-haiku-5-5', inputCreditsPer1K: 0.1, outputCreditsPer1K: 0.5 },
+        { model: 'gpt-4o-mini', inputCreditsPer1K: 0.15, outputCreditsPer1K: 0.6 },
+        { model: 'gemini-3.8-flash', inputCreditsPer1K: 0.75, outputCreditsPer1K: 3.75 },
+      ],
+      featureReserves: {},
+    });
+    assert.equal(cleared.featureReserves.AI_ASSISTANT, 5.5);
+    assert.equal(cleared.featureReserves.LISTING_GENERATION, 2.55);
+    assert.equal(cleared.featureReserves.LISTING_OPTIMIZATION, 21.9);
+    assert.equal(cleared.featureReserves.APLUS_CONTENT, 23.25);
+    assert.equal(cleared.featureReserves.CAMPAIGN_ANALYSIS, 22.5);
+    const dynHold = await service.reserve({ organizationId: orgId, feature: 'AI_ASSISTANT', requestId: 'dyn1', now: NOV });
+    assert.equal(dynHold.amount, 5.5);
+    const settled = await service.settle(dynHold, [call('claude-haiku-5-5', 22132, 1433, 'anthropic')]);
+    assert.equal(settled.credits, 2.93);
+    assert.ok(dynHold.amount >= settled.credits);
   });
 });
 
@@ -344,6 +381,19 @@ describe('withAiCredits route wrapper', () => {
       return rs.json({ isSuccess: true });
     })(req(), fakeRes());
     assert.deepEqual([walletOf().used, usageLogs.docs[0].models[0]], [4, 'claude-haiku-5-5']); // 2 + 0.5×4
+  });
+
+  test('meter.finalize(res) settles before SSE done and stays idempotent in finally', async () => {
+    let beforeDoneState = null;
+    await withAiCredits('AI_ASSISTANT', async (rq, rs) => {
+      await rq.aiMeter.reserve();
+      meterLib.recordAiUsage(call('claude-haiku-5-5', 22132, 1433, 'anthropic'));
+      await rq.aiMeter.finalize(rs);
+      beforeDoneState = { used: walletOf().used, reserved: walletOf().reserved, balance: walletOf().balance };
+      return rs.json({ isSuccess: true });
+    })(req(), fakeRes());
+    assert.deepEqual(beforeDoneState, { used: 27.86, reserved: 0, balance: 972.14 });
+    assert.equal(transactions.docs.filter((t) => t.type === 'DEDUCTION').length, 1);
   });
 
   test('the same X-AI-Request-Id twice is charged once', async () => {
@@ -426,7 +476,7 @@ describe('image generation and background (batch) work', () => {
   test('reserveAiCredits holds the feature default plus extra credits (text + direct images)', async () => {
     await withAiCredits('APLUS_CONTENT', async (rq, rs) => {
       assert.equal(await reserveAiCredits(rq, rs, { extraCredits: await background.imageCredits(5) }), true);
-      assert.equal(walletOf().reserved, 70); // 20 + 5 × 10
+      assert.equal(walletOf().reserved, 76); // 26 + 5 × 10
       for (let i = 0; i < 5; i += 1) meterLib.recordAiUsage({ provider: 'gemini', model: 'img', images: 1 });
       meterLib.recordAiUsage(call('gemini-3.8-flash', 4000, 1000, 'gemini'));
       return rs.json({ isSuccess: true });
@@ -517,12 +567,12 @@ describe('moving a batch hold onto the request (A+ fallback)', () => {
 
   test('the image credits stay held and cover images generated in the request', async () => {
     await withAiCredits('APLUS_CONTENT', async (rq, rs) => {
-      await reserveAiCredits(rq, rs); // text: 20
+      await reserveAiCredits(rq, rs); // text: 26
       const bg = await background.holdForBackgroundJob(rq, 'APLUS_CONTENT', 50); // images
-      assert.deepEqual([walletOf().reserved, walletOf().balance], [70, 930]);
+      assert.deepEqual([walletOf().reserved, walletOf().balance], [76, 924]);
       assert.equal(await background.moveHoldToRequest(bg, rq), true);
       // still held — nothing went back to the wallet in between
-      assert.deepEqual([walletOf().reserved, walletOf().balance], [70, 930]);
+      assert.deepEqual([walletOf().reserved, walletOf().balance], [76, 924]);
       assert.equal(usageLogs.docs.find((l) => l.requestId === bg.requestId).status, 'RELEASED');
       for (let i = 0; i < 5; i += 1) meterLib.recordAiUsage({ provider: 'gemini', model: 'img', images: 1 });
       meterLib.recordAiUsage(call('gemini-3.8-flash', 3000, 500, 'gemini'));

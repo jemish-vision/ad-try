@@ -69,7 +69,7 @@ function RequireAuth() {
     const allowedNames = pagePermission.map(p => p.pageName);
 
     // Always allow basic pages
-    const alwaysAllow = ["User Guide", "Profile", "Purchase Plans", "Update Subscription", "Plans", "Warehouse Details", "Warehouse Inventory", "Product Performance", "MFN to FBA", "API Capacity & Usage"];
+    const alwaysAllow = ["User Guide", "Profile", "AI Credits", "Purchase Plans", "Update Subscription", "Plans", "Warehouse Details", "Warehouse Inventory", "Product Performance", "MFN to FBA", "API Capacity & Usage"];
 
     // Find current route config
     const currentRoute = routes.find(r =>

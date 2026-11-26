@@ -5,14 +5,16 @@ import { Input } from "../../../../components/ui/input";
 import { Switch } from "../../../../components/ui/switch";
 import { Button } from "../../../../components/ui/button";
 import { FEATURE_LABELS, formatCredits } from "../../../../helper/aiCredits/aiCredits";
-import { Card, CardHeader } from "../aiCreditComponents";
+import { Card, CardHeader, Select } from "../aiCreditComponents";
 import { labelCls } from "./AiCreditAdminModals";
 
 const num = (v) => (v === "" || v === null || v === undefined ? NaN : Number(v));
 const nonNeg = (v) => Number.isFinite(num(v)) && num(v) >= 0;
+const round4 = (v) => Math.round(v * 10000) / 10000;
+const round2 = (v) => Math.round(v * 100) / 100;
 
 /** Same rule as the server: longest matching model prefix, else the default rates. */
-export function previewCost(form, model, inputTokens, outputTokens) {
+function previewCall(form, model, inputTokens, outputTokens) {
   const m = String(model || "").toLowerCase();
   let rate = { input: num(form.inputCreditsPer1K) || 0, output: num(form.outputCreditsPer1K) || 0 };
   let best = "";
@@ -23,18 +25,19 @@ export function previewCost(form, model, inputTokens, outputTokens) {
       rate = { input: num(r.inputCreditsPer1K) || 0, output: num(r.outputCreditsPer1K) || 0 };
     }
   }
-  const cost = (inputTokens / 1000) * rate.input + (outputTokens / 1000) * rate.output;
+  return round4((inputTokens / 1000) * round4(rate.input) + (outputTokens / 1000) * round4(rate.output));
+}
+
+export function previewCost(form, model, inputTokens, outputTokens) {
+  const cost = previewCall(form, model, inputTokens, outputTokens);
   const min = num(form.minimumChargePerRequest) || 0;
-  return Math.round(Math.max(cost, min) * 100) / 100;
+  return round2(Math.max(cost, round4(min)));
 }
 
 export function validateSettings(form, t) {
   const errors = {};
   ["defaultMonthlyCredits", "inputCreditsPer1K", "outputCreditsPer1K", "minimumChargePerRequest", "creditsPerImage"].forEach((k) => {
     if (!nonNeg(form[k])) errors[k] = t("Enter 0 or more");
-  });
-  Object.entries(form.featureReserves || {}).forEach(([k, v]) => {
-    if (!nonNeg(v)) errors[`reserve.${k}`] = t("Enter 0 or more");
   });
   const seen = new Set();
   (form.modelRates || []).forEach((r, i) => {
@@ -45,6 +48,19 @@ export function validateSettings(form, t) {
     if (!nonNeg(r.inputCreditsPer1K) || !nonNeg(r.outputCreditsPer1K)) errors[`modelRate.${i}`] = t("Enter 0 or more");
   });
   return errors;
+}
+
+const DEFAULT_PREVIEW_MODELS = ["claude-haiku-5-5", "gpt-4o-mini", "gemini-3.8-flash", "gpt-4o"];
+
+export function previewFeatureHold(form, { plans = [], amount = 0, override = null }) {
+  if (form.enforcementEnabled === false) return 0;
+  if (override !== null) return override;
+  if (!plans.length) return amount;
+  const min = round4(num(form.minimumChargePerRequest) || 0);
+  return Math.max(...plans.map(calls => {
+    const total = calls.reduce((sum, { model, inputTokens, outputTokens }) => sum + previewCall(form, model, inputTokens, outputTokens), 0);
+    return round2(Math.max(total, min));
+  }));
 }
 
 const Field = ({ id, label, hint, error, children }) => (
@@ -70,13 +86,17 @@ export default function AiCreditSettingsForm({ settings, onSave, saving }) {
       outputCreditsPer1K: String(settings.outputCreditsPer1K ?? ""),
       minimumChargePerRequest: String(settings.minimumChargePerRequest ?? 0),
       creditsPerImage: String(settings.creditsPerImage ?? 10),
-      featureReserves: Object.fromEntries(Object.entries(settings.featureReserves || {}).map(([k, v]) => [k, String(v)])),
       modelRates: (settings.modelRates || []).map((r) => ({ model: r.model, inputCreditsPer1K: String(r.inputCreditsPer1K), outputCreditsPer1K: String(r.outputCreditsPer1K) })),
     });
     setErrors({});
   }, [settings]);
 
-  const preview = useMemo(() => (form ? previewCost(form, sample.model, Number(sample.input) || 0, Number(sample.output) || 0) : 0), [form, sample]);
+  const previewModels = useMemo(() => {
+    const configured = (form?.modelRates || []).map((r) => String(r.model || "").trim()).filter(Boolean);
+    return [...new Set([...configured, ...DEFAULT_PREVIEW_MODELS])];
+  }, [form]);
+  const selectedPreviewModel = previewModels.includes(sample.model) ? sample.model : previewModels[0] || "";
+  const preview = useMemo(() => (form ? previewCost(form, selectedPreviewModel, Number(sample.input) || 0, Number(sample.output) || 0) : 0), [form, selectedPreviewModel, sample.input, sample.output]);
   if (!form) return null;
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -93,7 +113,6 @@ export default function AiCreditSettingsForm({ settings, onSave, saving }) {
       outputCreditsPer1K: Number(form.outputCreditsPer1K),
       minimumChargePerRequest: Number(form.minimumChargePerRequest),
       creditsPerImage: Number(form.creditsPerImage),
-      featureReserves: Object.fromEntries(Object.entries(form.featureReserves).map(([k, v]) => [k, Number(v)])),
       modelRates: form.modelRates.map((r) => ({ model: r.model.trim(), inputCreditsPer1K: Number(r.inputCreditsPer1K), outputCreditsPer1K: Number(r.outputCreditsPer1K) })),
     });
   };
@@ -170,13 +189,37 @@ export default function AiCreditSettingsForm({ settings, onSave, saving }) {
         </Card>
 
         <Card id="ai-credit-reserves">
-          <CardHeader title={t("Credits held per request")} subtitle={t("Held while a request runs and returned after it is charged its real cost. A request needs at least this much to start.")} />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {Object.entries(form.featureReserves).map(([k, v]) => (
-              <Field key={k} id={`ai-reserve-${k}`} label={t(FEATURE_LABELS[k] || k)} error={errors[`reserve.${k}`]}>
-                <Input id={`ai-reserve-${k}`} type="number" min="0" value={v} onChange={(e) => set("featureReserves", { ...form.featureReserves, [k]: e.target.value })} />
-              </Field>
-            ))}
+          <CardHeader
+            title={t("Credits held per request")}
+            subtitle={t("The hold is the most a request can charge. Rates above update the preview. Unused credits return after completion.")}
+          />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {(settings.featureReservePlans || Object.entries(settings.featureReserves || {}).map(([key, amount]) => ({ key, amount }))).map((plan) => {
+              const holdAmount = previewFeatureHold(form, plan);
+              const modelLabel = plan.plans?.map(calls => calls.map(c => c.model).join(" + ")).join(" / ");
+              return (
+                <div
+                  key={plan.key}
+                  id={`ai-reserve-${plan.key}`}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200/80 dark:border-white/[0.08] bg-slate-50/70 dark:bg-white/[0.03] px-3.5 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <div className="text-[12.5px] font-semibold text-slate-800 dark:text-slate-100 truncate">
+                      {t(FEATURE_LABELS[plan.key] || plan.key)}
+                    </div>
+                    <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate">{modelLabel}</div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-[13px] font-bold text-slate-900 dark:text-white tabular-nums">
+                      {t("{{amount}} credits", { amount: formatCredits(holdAmount, i18n.language) })}
+                    </div>
+                    {plan.key === "APLUS_CONTENT" && form.enforcementEnabled && (
+                      <div className="text-[10.5px] text-slate-500 dark:text-slate-400">{t("+ generated images")}</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </Card>
 
@@ -189,10 +232,17 @@ export default function AiCreditSettingsForm({ settings, onSave, saving }) {
       </div>
 
       <Card id="ai-credit-cost-preview" className="self-start xl:sticky xl:top-4">
-        <CardHeader icon={<Calculator className="w-3.5 h-3.5" />} title={t("Cost preview")} subtitle={t("What one request costs with the settings above.")} />
+        <CardHeader icon={<Calculator className="w-3.5 h-3.5" />} title={t("Cost preview")} subtitle={t("Test calculator only — uses the rates on the left.")} />
         <div className="space-y-3">
-          <Field id="ai-preview-model" label={t("Model")}>
-            <Input id="ai-preview-model" value={sample.model} onChange={(e) => setSample((s) => ({ ...s, model: e.target.value }))} />
+          <Field id="ai-preview-model" label={t("Test with model")}>
+            <Select
+              id="ai-preview-model"
+              label={t("Test with model")}
+              value={selectedPreviewModel}
+              onChange={(v) => setSample((s) => ({ ...s, model: v }))}
+              options={previewModels.map((m) => ({ value: m, label: m }))}
+              className="w-full h-9 px-3 text-[13px] font-mono"
+            />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field id="ai-preview-in" label={t("Input tokens")}>
