@@ -20,6 +20,7 @@ import { formatCredits } from "../../../../helper/aiCredits/aiCredits";
 import { Card, CardHeader, Pager, Select, PaymentsTable, PAYMENT_STATUS_OPTIONS, formatMoney } from "../aiCreditComponents";
 import { labelCls } from "./AiCreditAdminModals";
 import PackageRegionPricesModal from "./PackageRegionPricesModal";
+import CustomPricingCard from "./CustomPricingCard";
 
 const PER_PAGE = 10;
 const CURRENCIES = ["USD", "EUR", "GBP", "INR", "AED", "SAR", "CAD", "AUD", "JPY"];
@@ -195,7 +196,7 @@ export function DetectedCountryNote({ detected }) {
 export default function CreditPackagesAdmin({ reloadKey }) {
   const { t, i18n } = useTranslation();
   const L = i18n.language;
-  const [data, setData] = useState({ packages: [], regions: [] });
+  const [data, setData] = useState({ packages: [], regions: [], custom: null });
   const [loading, setLoading] = useState(false);
   const [modal, setModal] = useState({ open: false, pkg: null });
   const [toDelete, setToDelete] = useState(null);
@@ -231,116 +232,119 @@ export default function CreditPackagesAdmin({ reloadKey }) {
   const iconBtn = "h-7 w-7 rounded-lg border border-slate-200 dark:border-white/10 flex items-center justify-center text-slate-500 hover:text-blue-600 bg-white dark:bg-slate-900";
 
   return (
-    <Card id="ai-credit-admin-packages">
-      <CardHeader
-        icon={<Package className="w-3.5 h-3.5" />}
-        title={t("Credit packages")}
-        subtitle={t("Extra credits organizations can buy. Purchased credits never expire and are used after the monthly credits.")}
-        right={
-          <Button type="button" id="ai-pkg-add" className="btn-premium-primary h-8 text-[12px]" onClick={() => setModal({ open: true, pkg: null })}>
-            <Plus className="w-3.5 h-3.5 mr-1" /> {t("Add package")}
-          </Button>
-        }
-      />
-      {detected && (
-        <div className="flex items-center gap-1.5 -mt-1 mb-3 text-[12px] text-slate-500 dark:text-slate-400" id="ai-pkg-detected-country">
-          <MapPin className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-          <DetectedCountryNote detected={detected} />
+    <div className="space-y-5">
+      <Card id="ai-credit-admin-packages">
+        <CardHeader
+          icon={<Package className="w-3.5 h-3.5" />}
+          title={t("Credit packages")}
+          subtitle={t("Extra credits organizations can buy. Purchased credits never expire and are used after the monthly credits.")}
+          right={
+            <Button type="button" id="ai-pkg-add" className="btn-premium-primary h-8 text-[12px]" onClick={() => setModal({ open: true, pkg: null })}>
+              <Plus className="w-3.5 h-3.5 mr-1" /> {t("Add package")}
+            </Button>
+          }
+        />
+        {detected && (
+          <div className="flex items-center gap-1.5 -mt-1 mb-3 text-[12px] text-slate-500 dark:text-slate-400" id="ai-pkg-detected-country">
+            <MapPin className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            <DetectedCountryNote detected={detected} />
+          </div>
+        )}
+        <div className="rounded-xl border border-slate-200/80 dark:border-white/[0.08] overflow-x-auto">
+          <table className="w-full text-[12.5px] min-w-[860px]">
+            <thead className="bg-slate-50 dark:bg-white/[0.04] text-slate-500 dark:text-slate-400">
+              <tr>
+                {[t("Package"), t("Credits"), t("Price"), t("Regional prices"), t("Status"), ""].map((c, i) => (
+                  <th key={i} className={`px-3 py-2.5 font-semibold whitespace-nowrap ${i === 1 || i === 2 ? "text-right" : "text-left"}`}>{c}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-white/5 text-slate-700 dark:text-slate-200">
+              {loading && !data.packages.length ? (
+                <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-400" role="status">{t("Loading...")}</td></tr>
+              ) : !data.packages.length ? (
+                <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-400">{t("No credit packages yet. Add one so organizations can buy extra credits.")}</td></tr>
+              ) : (
+                data.packages.map((p, index) => (
+                  <tr key={p._id} className="hover:bg-slate-50/70 dark:hover:bg-white/[0.02]">
+                    <td className="px-3 py-2.5">
+                      <div className="font-semibold text-slate-900 dark:text-white">
+                        {p.name}
+                        {p.isPopular && <span className="ml-2 px-1.5 py-0.5 rounded text-[10.5px] font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">{t("Most popular")}</span>}
+                      </div>
+                      {p.description && <div className="text-[11.5px] text-slate-500 dark:text-slate-400 truncate max-w-[280px]">{p.description}</div>}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">{formatCredits(p.credits, L)}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums font-semibold">{formatMoney(p.price, p.currency, L)}</td>
+                    <td className="px-3 py-2.5 text-[12px]">
+                      {(p.regionalPrices || []).length
+                        ? p.regionalPrices.map((r) => {
+                            const region = regionName(r.regionId);
+                            return region ? <div key={String(r.regionId)}>{region.name}: <b>{formatMoney(r.price, region.currency, L)}</b></div> : null;
+                          })
+                        : <span className="text-slate-400">{t("Default price everywhere")}</span>}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <Switch
+                        checked={p.isActive !== false}
+                        onCheckedChange={(v) => run(ApiAdminUpdateAiCreditPackage, { packageId: p._id, isActive: v })}
+                        aria-label={t("Available to buy")}
+                      />
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex justify-end gap-1.5">
+                        <button
+                          type="button"
+                          id={index === 0 ? "ai-pkg-region-prices" : undefined}
+                          className={iconBtn}
+                          title={t("Regional Prices")}
+                          aria-label={t("Regional Prices")}
+                          onClick={() => setRegionPkg(p)}
+                        >
+                          <Globe className="w-3.5 h-3.5" />
+                        </button>
+                        <button type="button" className={iconBtn} title={t("Edit")} aria-label={t("Edit")} onClick={() => setModal({ open: true, pkg: p })}><Pencil className="w-3.5 h-3.5" /></button>
+                        <button type="button" className={`${iconBtn} hover:!text-rose-600`} title={t("Delete")} aria-label={t("Delete")} onClick={() => setToDelete(p)}><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
-      )}
-      <div className="rounded-xl border border-slate-200/80 dark:border-white/[0.08] overflow-x-auto">
-        <table className="w-full text-[12.5px] min-w-[860px]">
-          <thead className="bg-slate-50 dark:bg-white/[0.04] text-slate-500 dark:text-slate-400">
-            <tr>
-              {[t("Package"), t("Credits"), t("Price"), t("Regional prices"), t("Status"), ""].map((c, i) => (
-                <th key={i} className={`px-3 py-2.5 font-semibold whitespace-nowrap ${i === 1 || i === 2 ? "text-right" : "text-left"}`}>{c}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-white/5 text-slate-700 dark:text-slate-200">
-            {loading && !data.packages.length ? (
-              <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-400" role="status">{t("Loading...")}</td></tr>
-            ) : !data.packages.length ? (
-              <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-400">{t("No credit packages yet. Add one so organizations can buy extra credits.")}</td></tr>
-            ) : (
-              data.packages.map((p, index) => (
-                <tr key={p._id} className="hover:bg-slate-50/70 dark:hover:bg-white/[0.02]">
-                  <td className="px-3 py-2.5">
-                    <div className="font-semibold text-slate-900 dark:text-white">
-                      {p.name}
-                      {p.isPopular && <span className="ml-2 px-1.5 py-0.5 rounded text-[10.5px] font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">{t("Most popular")}</span>}
-                    </div>
-                    {p.description && <div className="text-[11.5px] text-slate-500 dark:text-slate-400 truncate max-w-[280px]">{p.description}</div>}
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{formatCredits(p.credits, L)}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums font-semibold">{formatMoney(p.price, p.currency, L)}</td>
-                  <td className="px-3 py-2.5 text-[12px]">
-                    {(p.regionalPrices || []).length
-                      ? p.regionalPrices.map((r) => {
-                          const region = regionName(r.regionId);
-                          return region ? <div key={String(r.regionId)}>{region.name}: <b>{formatMoney(r.price, region.currency, L)}</b></div> : null;
-                        })
-                      : <span className="text-slate-400">{t("Default price everywhere")}</span>}
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <Switch
-                      checked={p.isActive !== false}
-                      onCheckedChange={(v) => run(ApiAdminUpdateAiCreditPackage, { packageId: p._id, isActive: v })}
-                      aria-label={t("Available to buy")}
-                    />
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <div className="flex justify-end gap-1.5">
-                      <button
-                        type="button"
-                        id={index === 0 ? "ai-pkg-region-prices" : undefined}
-                        className={iconBtn}
-                        title={t("Regional Prices")}
-                        aria-label={t("Regional Prices")}
-                        onClick={() => setRegionPkg(p)}
-                      >
-                        <Globe className="w-3.5 h-3.5" />
-                      </button>
-                      <button type="button" className={iconBtn} title={t("Edit")} aria-label={t("Edit")} onClick={() => setModal({ open: true, pkg: p })}><Pencil className="w-3.5 h-3.5" /></button>
-                      <button type="button" className={`${iconBtn} hover:!text-rose-600`} title={t("Delete")} aria-label={t("Delete")} onClick={() => setToDelete(p)}><Trash2 className="w-3.5 h-3.5" /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
 
-      <PackageModal
-        open={modal.open}
-        pkg={modal.pkg}
-        regions={data.regions}
-        saving={saving}
-        onClose={() => setModal({ open: false, pkg: null })}
-        onSave={(body) => run(body.packageId ? ApiAdminUpdateAiCreditPackage : ApiAdminCreateAiCreditPackage, body, () => setModal({ open: false, pkg: null }))}
-      />
-      <PackageRegionPricesModal
-        pkg={regionPkg}
-        regions={data.regions}
-        saving={saving}
-        onClose={() => setRegionPkg(null)}
-        onSave={(body) => run(ApiAdminUpdateAiCreditPackage, body, () => setRegionPkg(null))}
-      />
-      <CustomModal
-        show={Boolean(toDelete)}
-        onHide={() => setToDelete(null)}
-        title={t("Delete credit package")}
-        subtitle={toDelete?.name}
-        icon="delete"
-        iconVariant="danger"
-        message={t("Organizations can no longer buy this package. Past purchases and their credits are not affected.")}
-        actions={[
-          { label: t("Cancel"), cancel: true, icon: "close", onClick: () => setToDelete(null) },
-          { label: t("Delete"), variant: "danger", icon: "delete", onClick: () => run(ApiAdminDeleteAiCreditPackage, { packageId: toDelete._id }, () => setToDelete(null)) },
-        ]}
-      />
-    </Card>
+        <PackageModal
+          open={modal.open}
+          pkg={modal.pkg}
+          regions={data.regions}
+          saving={saving}
+          onClose={() => setModal({ open: false, pkg: null })}
+          onSave={(body) => run(body.packageId ? ApiAdminUpdateAiCreditPackage : ApiAdminCreateAiCreditPackage, body, () => setModal({ open: false, pkg: null }))}
+        />
+        <PackageRegionPricesModal
+          pkg={regionPkg}
+          regions={data.regions}
+          saving={saving}
+          onClose={() => setRegionPkg(null)}
+          onSave={(body) => run(ApiAdminUpdateAiCreditPackage, body, () => setRegionPkg(null))}
+        />
+        <CustomModal
+          show={Boolean(toDelete)}
+          onHide={() => setToDelete(null)}
+          title={t("Delete credit package")}
+          subtitle={toDelete?.name}
+          icon="delete"
+          iconVariant="danger"
+          message={t("Organizations can no longer buy this package. Past purchases and their credits are not affected.")}
+          actions={[
+            { label: t("Cancel"), cancel: true, icon: "close", onClick: () => setToDelete(null) },
+            { label: t("Delete"), variant: "danger", icon: "delete", onClick: () => run(ApiAdminDeleteAiCreditPackage, { packageId: toDelete._id }, () => setToDelete(null)) },
+          ]}
+        />
+      </Card>
+      <CustomPricingCard custom={data.custom} packages={data.packages} regions={data.regions} onSaved={load} />
+    </div>
   );
 }
 

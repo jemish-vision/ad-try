@@ -134,10 +134,16 @@ function packages() {
   return PACKAGES.map((p) => ({ ...p, pricePerCredit: Math.round((p.price / p.credits) * 10000) / 10000 }));
 }
 
+/** Demo custom amount offer: a little above the package rates, so packages stay the better deal. */
+function customOffer() {
+  return { ratePer1K: 19, currency: 'USD', minCredits: 100, maxCredits: 50000, step: 50 };
+}
+
 function payments(body = {}, now = new Date()) {
   const day = (n) => new Date(now.getTime() - n * 86400000);
   let rows = [
     { _id: 'demo-pay-1', createdAt: day(3), packageName: 'Growth', credits: 2000, amount: 29, currency: 'USD', status: 'PAID', paidAt: day(3), creditedAt: day(3), failureReason: null, user: { _id: 'demo-u', name: 'Demo Owner' } },
+    { _id: 'demo-pay-4', createdAt: day(7), kind: 'CUSTOM', packageName: 'Custom amount', credits: 1250, amount: 23.75, currency: 'USD', status: 'PAID', paidAt: day(7), creditedAt: day(7), failureReason: null, user: { _id: 'demo-u', name: 'Demo Owner' } },
     { _id: 'demo-pay-2', createdAt: day(12), packageName: 'Starter', credits: 500, amount: 9, currency: 'USD', status: 'CANCELLED', paidAt: null, creditedAt: null, failureReason: 'Cancelled by the buyer', user: { _id: 'demo-u', name: 'Demo Owner' } },
     { _id: 'demo-pay-3', createdAt: day(20), packageName: 'Starter', credits: 500, amount: 9, currency: 'USD', status: 'FAILED', paidAt: null, creditedAt: null, failureReason: 'The payment failed', user: { _id: 'demo-u', name: 'Demo Owner' } },
   ];
@@ -145,4 +151,4 @@ function payments(body = {}, now = new Date()) {
   return { ...paged(rows, body), canView: true };
 }
 
-module.exports = { summary, usage, transactions, packages, payments };
+module.exports = { summary, usage, transactions, packages, customOffer, payments };

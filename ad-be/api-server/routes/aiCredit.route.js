@@ -30,6 +30,7 @@ router.post("/admin/packages", verifyToken, requireSuperAdmin, c.adminListPackag
 router.post("/admin/packages/create", verifyToken, requireSuperAdmin, c.adminCreatePackage);
 router.post("/admin/packages/update", verifyToken, requireSuperAdmin, c.adminUpdatePackage);
 router.post("/admin/packages/delete", verifyToken, requireSuperAdmin, c.adminDeletePackage);
+router.post("/admin/custom-pricing/update", verifyToken, requireSuperAdmin, c.adminUpdateCustomPricing);
 router.post("/admin/payments", verifyToken, requireSuperAdmin, c.adminPayments);
 
 module.exports = router;

@@ -10,6 +10,30 @@ const modelRateSchema = new mongoose.Schema(
   { _id: false }
 );
 
+/**
+ * Buying a custom number of credits (instead of a package): one flat price per 1,000 credits,
+ * optionally a different rate per pricing region (charged in the region's currency).
+ */
+const customRegionRateSchema = new mongoose.Schema(
+  {
+    regionId: { type: mongoose.Schema.Types.ObjectId, ref: "pricingRegion", required: true },
+    ratePer1K: { type: Number, min: 0, required: true },
+  },
+  { _id: false }
+);
+const customPurchaseSchema = new mongoose.Schema(
+  {
+    enabled: { type: Boolean, default: false },
+    ratePer1K: { type: Number, min: 0, default: 0 }, // price of 1,000 credits in `currency`
+    currency: { type: String, uppercase: true, trim: true, default: "USD" },
+    minCredits: { type: Number, min: 1, default: 100 },
+    maxCredits: { type: Number, min: 1, default: 50000 },
+    step: { type: Number, min: 1, default: 50 }, // amounts must be a multiple of this
+    regionalRates: { type: [customRegionRateSchema], default: [] },
+  },
+  { _id: false }
+);
+
 const aiCreditSettingSchema = new mongoose.Schema(
   {
     key: { type: String, default: "global" },
@@ -22,6 +46,7 @@ const aiCreditSettingSchema = new mongoose.Schema(
     modelRates: { type: [modelRateSchema], default: [] },
     // Credits held while a request runs; the request needs at least this much available.
     featureReserves: { type: Map, of: Number, default: {} },
+    customPurchase: { type: customPurchaseSchema, default: () => ({}) },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "user", default: null },
   },
   { timestamps: true, versionKey: false }

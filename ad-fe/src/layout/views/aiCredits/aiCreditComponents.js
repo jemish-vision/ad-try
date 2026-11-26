@@ -384,7 +384,7 @@ export function PaymentsTable({ rows = [], loading, showOrganization = false }) 
         <tr key={p._id} className="hover:bg-slate-50/70 dark:hover:bg-white/[0.02]">
           <td className={`${td} whitespace-nowrap`}>{moment(p.createdAt).format("DD MMM YYYY, hh:mm A")}</td>
           {showOrganization && <td className={td}>{p.organization?.name || "—"}</td>}
-          <td className={`${td} font-medium`}>{p.packageName || "—"}</td>
+          <td className={`${td} font-medium`}>{p.kind === "CUSTOM" ? t("Custom amount") : p.packageName || "—"}</td>
           <td className={`${td} whitespace-nowrap`}>{p.user?.name || "—"}</td>
           <td className={`${td} text-right tabular-nums`}>{formatCredits(p.credits, i18n.language)}</td>
           <td className={`${td} text-right tabular-nums font-semibold`}>{formatMoney(p.amount, p.currency, i18n.language)}</td>

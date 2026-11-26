@@ -12,8 +12,11 @@ const aiCreditPaymentSchema = new mongoose.Schema(
   {
     organizationId: { type: mongoose.Schema.Types.ObjectId, ref: "organization", required: true },
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "user", required: true },
-    packageId: { type: mongoose.Schema.Types.ObjectId, ref: "aiCreditPackage", required: true },
-    packageName: { type: String, trim: true },
+    // PACKAGE: a credit package; CUSTOM: a custom number of credits at the per-1,000 rate
+    kind: { type: String, enum: ["PACKAGE", "CUSTOM"], default: "PACKAGE" },
+    packageId: { type: mongoose.Schema.Types.ObjectId, ref: "aiCreditPackage", default: null },
+    packageName: { type: String, trim: true }, // "Custom amount" for CUSTOM
+    ratePer1K: { type: Number, default: null }, // CUSTOM: the rate charged (payment currency)
     credits: { type: Number, required: true },
     amount: { type: Number, required: true }, // major units, e.g. 19.99
     currency: { type: String, uppercase: true, required: true },

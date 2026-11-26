@@ -159,8 +159,8 @@ const notAllowed = (res, message) => res.status(200).json({ isSuccess: false, co
 
 exports.getCreditPackages = async (req, res) => {
   try {
-    const packages = isDemo(req) ? mock.packages() : await purchase.listPackagesForBuyer(req);
-    return res.status(200).json({ isSuccess: true, data: { packages, canPurchase: canPurchase(req), isDemo: isDemo(req) } });
+    const offer = isDemo(req) ? { packages: mock.packages(), custom: mock.customOffer() } : await purchase.offerForBuyer(req);
+    return res.status(200).json({ isSuccess: true, data: { ...offer, canPurchase: canPurchase(req), isDemo: isDemo(req) } });
   } catch (err) {
     return fail(res, err, "getCreditPackages");
   }
@@ -172,9 +172,11 @@ exports.purchaseCredits = async (req, res) => {
     if (!canPurchase(req)) return notAllowed(res, "Only the organization owner can buy AI credits.");
     const orgId = orgOf(req);
     if (!validOrgId(orgId)) return res.status(200).json({ isSuccess: false, message: "No organization selected" });
-    const { packageId } = req.body || {};
-    const result = await purchase.startCheckout({ organizationId: orgId, userId: req.user?._id, packageId, req });
-    auditChange(req, { resourceType: "ai credit payment", resourceId: result.paymentId, organizationId: orgId, metadata: { packageId } });
+    // { packageId } buys a package; { credits } buys a custom number of credits
+    const { packageId, credits } = req.body || {};
+    const custom = credits !== undefined && credits !== null;
+    const result = await purchase.startCheckout({ organizationId: orgId, userId: req.user?._id, ...(custom ? { customCredits: credits } : { packageId }), req });
+    auditChange(req, { resourceType: "ai credit payment", resourceId: result.paymentId, organizationId: orgId, metadata: custom ? { customCredits: Number(credits) } : { packageId } });
     return res.status(200).json({ isSuccess: true, data: { url: result.url, paymentId: result.paymentId } });
   } catch (err) {
     return fail(res, err, "purchaseCredits");
@@ -248,6 +250,16 @@ exports.adminUpdatePackage = async (req, res) => {
     return res.status(200).json({ isSuccess: true, message: "Credit package updated", data: after });
   } catch (err) {
     return fail(res, err, "adminUpdatePackage");
+  }
+};
+
+exports.adminUpdateCustomPricing = async (req, res) => {
+  try {
+    const { before, after } = await purchase.updateCustomPricing(req.body || {}, req.user?._id);
+    auditChange(req, { resourceType: "ai credit custom pricing", resourceId: "global", previousValue: before, newValue: after });
+    return res.status(200).json({ isSuccess: true, message: "Custom amount pricing saved", data: after });
+  } catch (err) {
+    return fail(res, err, "adminUpdateCustomPricing");
   }
 };
 

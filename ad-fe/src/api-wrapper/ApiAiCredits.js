@@ -33,4 +33,5 @@ export const ApiAdminAiCreditPackages = () => post("admin/packages");
 export const ApiAdminCreateAiCreditPackage = (data) => post("admin/packages/create", data, { loader: true });
 export const ApiAdminUpdateAiCreditPackage = (data) => post("admin/packages/update", data, { loader: true });
 export const ApiAdminDeleteAiCreditPackage = (data) => post("admin/packages/delete", data, { loader: true });
+export const ApiAdminUpdateAiCreditCustomPricing = (data) => post("admin/custom-pricing/update", data, { loader: true });
 export const ApiAdminAiCreditPayments = (data) => post("admin/payments", data);

@@ -1151,6 +1151,7 @@ Every AI feature — **AI Assistant**, **Optimize with AI**, **A+ Content**, **A
 
 **Buying more credits** (organization owner):
 - In **Buy more credits**, pick a package and click **Buy** — you pay securely on Stripe in your country's currency.
+- **Need a different amount?** Under the packages, enter any number of credits within the limits shown (for example 100 to 50,000, in steps of 50) or use the − / + buttons. The total updates as you type; click **Buy N credits** to pay on Stripe. The price is the custom rate for your region.
 - The credits are added as soon as the payment is confirmed. Card payments are instant; bank payments are added when they clear.
 - If you cancel the checkout, nothing is charged. Team members see the packages but only the owner can buy.
 
@@ -1176,6 +1177,7 @@ Every AI feature — **AI Assistant**, **Optimize with AI**, **A+ Content**, **A
 - **Organizations**: Each organization's monthly allowance, usage, available and purchased credits. Add or remove credits (with a reason) or give an organization its own monthly allowance.
 - **Usage log**: Every AI request across all organizations.
 - **Credit packages**: Create the packages customers can buy — credits, default price and currency, an optional price per pricing region, "Most popular" badge, display order — and switch them on or off. Deleting a package hides it; past purchases are kept.
+- **Custom amount** (under the packages): let buyers choose their own number of credits. Turn on **Allow custom amounts**, set the **price per 1,000 credits** and currency, the **minimum**, **maximum** and **step** (amounts must be a multiple of the step; defaults 100 / 50,000 / 50), and optionally a rate per pricing region. An example total is shown as you type. A warning lists any package that would cost more per credit than the custom amount, so you can keep packages the better deal. Saving is refused if the smallest amount would be below Stripe's minimum charge.
 
 **Currency is detected automatically**, the same way as plan prices: the buyer's country (from Cloudflare) picks their pricing region, and they see and pay that region's price in its currency. Set a package's region prices with the globe button (**Regional Prices**) on its row; regions left empty, and countries outside every region, pay the package's default price. The regions themselves are managed on the **Plans** page under **Pricing Regions**, which also lists each region's credit package prices. The line under the Credit packages title shows the country detected for your own browser and which price applies there.
 - **Payments**: Every purchase with its status (Paid, Pending, Failed, Cancelled) and the reason when it didn't go through.

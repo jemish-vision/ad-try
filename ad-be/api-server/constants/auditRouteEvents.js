@@ -181,6 +181,7 @@ const modules = {
     "/admin/packages/create": "AI_CREDIT_PACKAGE_CREATED",
     "/admin/packages/update": "AI_CREDIT_PACKAGE_UPDATED",
     "/admin/packages/delete": "AI_CREDIT_PACKAGE_DELETED",
+    "/admin/custom-pricing/update": "AI_CREDIT_CUSTOM_PRICING_UPDATED",
     "/purchase": "AI_CREDIT_PURCHASE_STARTED",
     "/purchase/verify": "AI_CREDIT_PURCHASE_VERIFIED",
     "/purchase/cancel": "AI_CREDIT_PURCHASE_CANCELLED",

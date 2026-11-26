@@ -11,11 +11,15 @@
  *
  * Other outcomes: async_payment_failed → FAILED; expired or cancelled by the buyer → CANCELLED;
  * a declined card keeps the payment PENDING (the buyer can retry on the same checkout page).
+ *
+ * What is bought: a credit package, or a custom number of credits at a flat price per 1,000 credits
+ * (Super Admin setting, optional rate per pricing region). Either way the price is worked out here.
  */
 const mongoose = require('mongoose');
 const packageModel = require('../../models/aiCreditPackage.model');
 const paymentModel = require('../../models/aiCreditPayment.model');
 const regionModel = require('../../models/pricingRegion.model');
+const settingModel = require('../../models/aiCreditSetting.model');
 const userModel = require('../../models/user.model');
 const pricing = require('../../helper/regionalPricing');
 const credits = require('./aiCredit.service');
@@ -123,11 +127,12 @@ async function deletePackage(packageId, actorId) {
 }
 
 async function listPackagesForAdmin() {
-  const [packages, regions] = await Promise.all([
+  const [packages, regions, custom] = await Promise.all([
     packageModel.find({ isDeleted: { $ne: true } }).sort({ sortOrder: 1, credits: 1 }).lean(),
     regionModel.find({}).select('name currency countries isActive').sort({ name: 1 }).lean(),
+    getCustomPricing(),
   ]);
-  return { packages, regions };
+  return { packages, regions, custom };
 }
 
 /** The price a visitor pays for a package: their region's price when set, else the default. */
@@ -159,6 +164,145 @@ async function listPackagesForBuyer(req) {
   return packages.map((p) => packageView(p, priceForPackage(p, ctx)));
 }
 
+// ── Custom amount ────────────────────────────────────────────────────────────
+const CUSTOM_NAME = 'Custom amount';
+const CUSTOM_DEFAULTS = { enabled: false, ratePer1K: 0, currency: 'USD', minCredits: 100, maxCredits: 50000, step: 50, regionalRates: [] };
+const CUSTOM_MAX_CREDITS = 1000000;
+
+// Stripe's minimum charge per currency, major units (https://docs.stripe.com/currencies#minimum-and-maximum-charge-amounts).
+// Currencies not listed are left to Stripe, which refuses the checkout if the amount is too small.
+const STRIPE_MINIMUM = {
+  USD: 0.5, EUR: 0.5, GBP: 0.3, INR: 0.5, AUD: 0.5, CAD: 0.5, NZD: 0.5, SGD: 0.5, CHF: 0.5, BRL: 0.5,
+  AED: 2, SAR: 2, PLN: 2, RON: 2, MYR: 2, DKK: 2.5, NOK: 3, SEK: 3, HKD: 4, MXN: 10, THB: 10, CZK: 15, JPY: 50, HUF: 175,
+};
+const stripeMinimum = (currency) => STRIPE_MINIMUM[String(currency || '').toUpperCase()] || 0;
+
+/** Price of `credits` at `ratePer1K`, rounded to the currency's smallest unit (₹0.01, ¥1 …). */
+function customAmount(credits, ratePer1K, currency) {
+  return pricing.fromMinorUnits(pricing.toMinorUnits((Number(credits) / 1000) * Number(ratePer1K), currency), currency);
+}
+
+function normalizeCustom(raw) {
+  const c = { ...CUSTOM_DEFAULTS, ...(raw || {}) };
+  return {
+    enabled: Boolean(c.enabled),
+    ratePer1K: Number(c.ratePer1K) || 0,
+    currency: String(c.currency || 'USD').toUpperCase(),
+    minCredits: Number(c.minCredits) || CUSTOM_DEFAULTS.minCredits,
+    maxCredits: Number(c.maxCredits) || CUSTOM_DEFAULTS.maxCredits,
+    step: Number(c.step) || CUSTOM_DEFAULTS.step,
+    regionalRates: (c.regionalRates || []).map((r) => ({ regionId: String(r.regionId), ratePer1K: Number(r.ratePer1K) || 0 })),
+  };
+}
+
+async function getCustomPricing() {
+  const doc = await settingModel.findOne({ key: 'global' }).lean();
+  return normalizeCustom(doc?.customPurchase);
+}
+
+/** Rate and currency a visitor pays: their region's rate when set, else the default rate. */
+function customRateFor(custom, { region, country } = {}) {
+  const entry = region ? custom.regionalRates.find((r) => String(r.regionId) === String(region._id)) : null;
+  if (entry && entry.ratePer1K > 0) {
+    return { ratePer1K: entry.ratePer1K, currency: String(region.currency).toUpperCase(), regionId: String(region._id), regionName: region.name, country: country || null };
+  }
+  return { ratePer1K: custom.ratePer1K, currency: custom.currency, regionId: null, regionName: null, country: country || null };
+}
+
+const isWhole = (n) => Number.isInteger(Number(n)) && String(n).trim() !== '';
+
+function validateCustomInput(input = {}, regionsById = new Map()) {
+  const errors = [];
+  const enabled = Boolean(input.enabled);
+  const rate = Number(input.ratePer1K);
+  if (!Number.isFinite(rate) || rate < 0) errors.push('Price per 1,000 credits must be 0 or more');
+  else if (enabled && !(rate > 0)) errors.push('Set a price per 1,000 credits before turning custom amounts on');
+  if (!/^[A-Za-z]{3}$/.test(String(input.currency || ''))) errors.push('Currency must be a 3-letter code');
+  const min = Number(input.minCredits);
+  const max = Number(input.maxCredits);
+  const step = Number(input.step);
+  if (!isWhole(input.step) || step < 1) errors.push('Step must be a whole number of 1 or more');
+  if (!isWhole(input.minCredits) || min < 1) errors.push('Minimum must be a whole number of 1 or more');
+  if (!isWhole(input.maxCredits) || max < min) errors.push('Maximum must be a whole number not below the minimum');
+  else if (max > CUSTOM_MAX_CREDITS) errors.push(`Maximum can't be more than ${CUSTOM_MAX_CREDITS.toLocaleString('en-US')} credits`);
+  if (step >= 1 && isWhole(input.step) && ((min >= 1 && min % step) || (max >= 1 && max % step))) errors.push('Minimum and maximum must be multiples of the step');
+  const rates = input.regionalRates === undefined ? [] : input.regionalRates;
+  if (!Array.isArray(rates)) errors.push('regionalRates must be a list');
+  else {
+    const seen = new Set();
+    rates.forEach((r, i) => {
+      if (!isId(r?.regionId)) errors.push(`regionalRates[${i}].regionId is invalid`);
+      else if (seen.has(String(r.regionId))) errors.push('regionalRates has a region twice');
+      seen.add(String(r?.regionId));
+      if (!(Number(r?.ratePer1K) > 0)) errors.push(`regionalRates[${i}].ratePer1K must be greater than 0`);
+    });
+  }
+  // The smallest amount must still be a charge Stripe accepts, in every currency it can be bought in
+  if (!errors.length && enabled) {
+    const check = (ratePer1K, currency, where) => {
+      const smallest = customAmount(min, ratePer1K, currency);
+      const floor = stripeMinimum(currency);
+      if (floor && smallest < floor) errors.push(`${where}: ${min} credits would cost ${smallest} ${currency}, below Stripe's minimum charge of ${floor} ${currency}. Raise the rate or the minimum.`);
+    };
+    check(rate, String(input.currency).toUpperCase(), 'Default price');
+    rates.forEach((r) => {
+      const region = regionsById.get(String(r.regionId));
+      if (region) check(Number(r.ratePer1K), String(region.currency).toUpperCase(), region.name);
+    });
+  }
+  return errors;
+}
+
+/** Super Admin: replace the custom amount settings. Returns { before, after }. */
+async function updateCustomPricing(input = {}, actorId) {
+  const regions = await regionModel.find({}).select('name currency').lean();
+  const errors = validateCustomInput(input, new Map(regions.map((r) => [String(r._id), r])));
+  if (errors.length) throw new AiCreditsError('INVALID_CUSTOM_PRICING', errors.join('; '));
+  const before = await getCustomPricing();
+  const customPurchase = {
+    enabled: Boolean(input.enabled),
+    ratePer1K: round2(input.ratePer1K),
+    currency: String(input.currency).toUpperCase(),
+    minCredits: Number(input.minCredits),
+    maxCredits: Number(input.maxCredits),
+    step: Number(input.step),
+    regionalRates: (input.regionalRates || []).map((r) => ({ regionId: toObjectId(r.regionId), ratePer1K: round2(r.ratePer1K) })),
+  };
+  const doc = await settingModel.findOneAndUpdate(
+    { key: 'global' },
+    { $set: { customPurchase, updatedBy: actorId ? toObjectId(actorId) : null } },
+    { upsert: true, new: true }
+  ).lean();
+  return { before, after: normalizeCustom(doc?.customPurchase) };
+}
+
+/** What a buyer can choose for a custom amount (null when turned off). */
+function customOfferView(custom, ctx) {
+  if (!custom.enabled) return null;
+  const rate = customRateFor(custom, ctx);
+  if (!(rate.ratePer1K > 0)) return null;
+  return { ratePer1K: rate.ratePer1K, currency: rate.currency, minCredits: custom.minCredits, maxCredits: custom.maxCredits, step: custom.step };
+}
+
+/** Checks a requested custom amount; throws INVALID_AMOUNT with what's allowed. */
+function checkCustomCredits(custom, value) {
+  const n = Number(value);
+  const range = `Choose between ${custom.minCredits.toLocaleString('en-US')} and ${custom.maxCredits.toLocaleString('en-US')} credits`;
+  if (!isWhole(value) || n < custom.minCredits || n > custom.maxCredits) throw new AiCreditsError('INVALID_AMOUNT', `${range}.`);
+  if (n % custom.step) throw new AiCreditsError('INVALID_AMOUNT', `${range}, in steps of ${custom.step.toLocaleString('en-US')}.`);
+  return n;
+}
+
+/** Packages and the custom amount offer, priced for the visitor's country (one region lookup). */
+async function offerForBuyer(req) {
+  const ctx = await pricing.getPricingContext(null, req);
+  const [packages, custom] = await Promise.all([
+    packageModel.find({ isActive: true, isDeleted: { $ne: true } }).sort({ sortOrder: 1, credits: 1 }).lean(),
+    getCustomPricing(),
+  ]);
+  return { packages: packages.map((p) => packageView(p, priceForPackage(p, ctx))), custom: customOfferView(custom, ctx) };
+}
+
 // ── Checkout ─────────────────────────────────────────────────────────────────
 const event = (type, source, detail) => ({ type, at: new Date(), source, ...(detail ? { detail: String(detail).slice(0, 300) } : {}) });
 
@@ -168,22 +312,40 @@ async function findOrCreateCustomer(email) {
   return stripe().customers.create({ email });
 }
 
+/** What is being bought, priced for the visitor: a package, or a custom number of credits. */
+async function purchaseItem({ packageId, customCredits, ctx }) {
+  if (customCredits !== undefined && customCredits !== null) {
+    const custom = await getCustomPricing();
+    if (!custom.enabled) throw new AiCreditsError('CUSTOM_UNAVAILABLE', 'Buying a custom amount of credits is not available right now.');
+    const amount = checkCustomCredits(custom, customCredits);
+    const rate = customRateFor(custom, ctx);
+    if (!(rate.ratePer1K > 0)) throw new AiCreditsError('CUSTOM_UNAVAILABLE', 'Buying a custom amount of credits is not available right now.');
+    const price = customAmount(amount, rate.ratePer1K, rate.currency);
+    const floor = stripeMinimum(rate.currency);
+    if (floor && price < floor) throw new AiCreditsError('AMOUNT_TOO_SMALL', 'This amount is below the smallest payment we can take. Choose more credits.');
+    return { kind: 'CUSTOM', packageId: null, name: CUSTOM_NAME, credits: amount, price, currency: rate.currency, regionId: rate.regionId, country: rate.country, ratePer1K: rate.ratePer1K };
+  }
+  if (!isId(packageId)) throw new AiCreditsError('PACKAGE_NOT_FOUND', 'Package not found');
+  const pkg = await packageModel.findOne({ _id: packageId, isActive: true, isDeleted: { $ne: true } }).lean();
+  if (!pkg) throw new AiCreditsError('PACKAGE_NOT_FOUND', 'This credit package is no longer available.');
+  const priced = priceForPackage(pkg, ctx);
+  if (!(priced.price > 0)) throw new AiCreditsError('PACKAGE_NOT_FOUND', 'This credit package has no price for your region.');
+  return { kind: 'PACKAGE', packageId: pkg._id, name: pkg.name, credits: pkg.credits, price: priced.price, currency: priced.currency, regionId: priced.regionId, country: priced.country, ratePer1K: null };
+}
+
 /**
- * Start buying a package: PENDING payment + Stripe Checkout session. The price is worked out here
- * from the package and the visitor's region — never taken from the browser.
+ * Start a purchase: PENDING payment + Stripe Checkout session. The price is worked out here from the
+ * package (or the custom amount rate) and the visitor's region — never taken from the browser.
+ * Pass packageId for a package, or customCredits for a custom number of credits.
  */
-async function startCheckout({ organizationId, userId, packageId, req, frontendUrl = process.env.FRONTEND_REDIRECT_URL }) {
+async function startCheckout({ organizationId, userId, packageId, customCredits, req, frontendUrl = process.env.FRONTEND_REDIRECT_URL }) {
   const appUrl = String(frontendUrl || '').trim().replace(/\/+$/, '');
   if (!/^https?:\/\//i.test(appUrl)) {
     write_logs({ message: '[aiCredits] FRONTEND_REDIRECT_URL is missing or not an http(s) URL; cannot start a checkout', log_type: 'error' });
     throw new AiCreditsError('PAYMENT_UNAVAILABLE', 'Payment could not be started. Please try again later.');
   }
-  if (!isId(packageId)) throw new AiCreditsError('PACKAGE_NOT_FOUND', 'Package not found');
-  const pkg = await packageModel.findOne({ _id: packageId, isActive: true, isDeleted: { $ne: true } }).lean();
-  if (!pkg) throw new AiCreditsError('PACKAGE_NOT_FOUND', 'This credit package is no longer available.');
   const ctx = await pricing.getPricingContext(null, req);
-  const priced = priceForPackage(pkg, ctx);
-  if (!(priced.price > 0)) throw new AiCreditsError('PACKAGE_NOT_FOUND', 'This credit package has no price for your region.');
+  const item = await purchaseItem({ packageId, customCredits, ctx });
   const user = await userModel.findById(userId).select('email').lean();
   if (!user?.email) throw new AiCreditsError('INVALID_PURCHASE', 'Your account has no email address.');
 
@@ -193,18 +355,20 @@ async function startCheckout({ organizationId, userId, packageId, req, frontendU
   const payment = await paymentModel.create({
     organizationId: toObjectId(organizationId),
     userId: toObjectId(userId),
-    packageId: pkg._id,
-    packageName: pkg.name,
-    credits: pkg.credits,
-    amount: priced.price,
-    currency: priced.currency,
-    country: priced.country,
-    regionId: priced.regionId ? toObjectId(priced.regionId) : null,
+    kind: item.kind,
+    packageId: item.packageId,
+    packageName: item.name,
+    credits: item.credits,
+    ratePer1K: item.ratePer1K,
+    amount: item.price,
+    currency: item.currency,
+    country: item.country,
+    regionId: item.regionId ? toObjectId(item.regionId) : null,
     status: 'PENDING',
     events: [event('CHECKOUT_CREATED', 'api')],
   });
   const paymentId = String(payment._id);
-  const metadata = { kind: KIND, paymentId, organizationId: String(organizationId), packageId: String(pkg._id), userId: String(userId), credits: String(pkg.credits) };
+  const metadata = { kind: KIND, purchase: item.kind.toLowerCase(), paymentId, organizationId: String(organizationId), packageId: item.packageId ? String(item.packageId) : '', userId: String(userId), credits: String(item.credits) };
 
   try {
     const customer = await findOrCreateCustomer(user.email);
@@ -216,9 +380,9 @@ async function startCheckout({ organizationId, userId, packageId, req, frontendU
         {
           quantity: 1,
           price_data: {
-            currency: priced.currency.toLowerCase(),
-            unit_amount: pricing.toMinorUnits(priced.price, priced.currency),
-            product_data: { name: `${pkg.name} — ${pkg.credits.toLocaleString('en-US')} AI credits`, metadata: { packageId: String(pkg._id) } },
+            currency: item.currency.toLowerCase(),
+            unit_amount: pricing.toMinorUnits(item.price, item.currency),
+            product_data: { name: `${item.name} — ${item.credits.toLocaleString('en-US')} AI credits`, metadata: { purchase: item.kind.toLowerCase(), packageId: item.packageId ? String(item.packageId) : '' } },
           },
         },
       ],
@@ -364,6 +528,7 @@ function paymentView(p) {
   return {
     _id: p._id,
     createdAt: p.createdAt,
+    kind: p.kind || 'PACKAGE',
     packageName: p.packageName,
     credits: p.credits,
     amount: p.amount,
@@ -409,6 +574,12 @@ module.exports = {
   listPackagesForAdmin,
   listPackagesForBuyer,
   priceForPackage,
+  offerForBuyer,
+  getCustomPricing,
+  updateCustomPricing,
+  validateCustomInput,
+  customAmount,
+  stripeMinimum,
   startCheckout,
   fulfill,
   sessionMatches,
