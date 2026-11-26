@@ -66,10 +66,11 @@ export default function BuyCreditsSection({ redirect = goToCheckout }) {
             <div className="mt-1 text-[24px] font-extrabold text-slate-900 dark:text-white tabular-nums">
               {formatCredits(p.credits, i18n.language)} <span className="text-[13px] font-semibold text-slate-500 dark:text-slate-400">{t("credits")}</span>
             </div>
-            <div className="text-[18px] font-bold text-slate-800 dark:text-slate-100 tabular-nums">{formatMoney(p.price, p.currency, i18n.language)}</div>
-            <div className="text-[11.5px] text-slate-500 dark:text-slate-400 mt-0.5">
-              {t("{{price}} per 1,000 credits", { price: formatMoney((p.price / p.credits) * 1000, p.currency, i18n.language) })}
-              {p.pricePerCredit === cheapest && data.packages.length > 1 && <span className="ml-1.5 font-semibold text-emerald-600 dark:text-emerald-400">· {t("Best value")}</span>}
+            <div className="flex items-center gap-2">
+              <span className="text-[18px] font-bold text-slate-800 dark:text-slate-100 tabular-nums">{formatMoney(p.price, p.currency, i18n.language)}</span>
+              {p.pricePerCredit === cheapest && data.packages.length > 1 && (
+                <span className="px-1.5 py-0.5 rounded-md text-[10.5px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">{t("Best value")}</span>
+              )}
             </div>
             {p.description && <p className="text-[12px] text-slate-500 dark:text-slate-400 mt-2 mb-0">{p.description}</p>}
             <div className="flex-1" />
@@ -87,7 +88,6 @@ export default function BuyCreditsSection({ redirect = goToCheckout }) {
           </div>
         ))}
       </div>
-      <p className="text-[11.5px] text-slate-500 dark:text-slate-400 mt-3.5 mb-0">{t("Payments are processed securely by Stripe. Prices include the currency for your country.")}</p>
     </Card>
   );
 }

@@ -72,7 +72,8 @@ describe("Buy more credits", () => {
     expect(cards).toHaveLength(2);
     expect(within(cards[1]).getByText("Most popular")).toBeInTheDocument();
     expect(within(cards[1]).getByText(/Best value/)).toBeInTheDocument();
-    expect(within(cards[1]).getByText("$14.50 per 1,000 credits", { exact: false })).toBeInTheDocument();
+    expect(within(cards[1]).queryByText(/per 1,000 credits/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/processed securely by Stripe/)).not.toBeInTheDocument();
     fireEvent.click(within(cards[1]).getByRole("button", { name: "Buy for $29.00" }));
     await waitFor(() => expect(redirect).toHaveBeenCalledWith("https://checkout.stripe.com/c/cs_1"));
     expect(Api.ApiPurchaseAiCredits).toHaveBeenCalledWith({ packageId: "p2" });
