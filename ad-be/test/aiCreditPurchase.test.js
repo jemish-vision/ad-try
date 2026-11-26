@@ -396,32 +396,47 @@ describe('buying credits with Stripe', () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe('custom amount of credits', () => {
-  const CUSTOM = { enabled: true, ratePer1K: 19, currency: 'USD', minCredits: 100, maxCredits: 50000, step: 50, regionalRates: [] };
+  const CUSTOM = { enabled: true, pricePerCredit: 0.019, currency: 'USD', minCredits: 100, maxCredits: 50000, regionalRates: [] };
+  const OFFER = { pricePerCredit: 0.019, currency: 'USD', minCredits: 100, maxCredits: 50000 };
   const setCustom = (over = {}) => purchase.updateCustomPricing({ ...CUSTOM, ...over }, userId);
   const buyCustom = (credits, country = 'US') => purchase.startCheckout({ organizationId: orgId, userId, customCredits: credits, req: req(country), frontendUrl: 'https://app.test' });
 
-  test('price = credits / 1,000 x rate, rounded to the currency (zero-decimal currencies too)', () => {
-    assert.equal(purchase.customAmount(1250, 19, 'USD'), 23.75);
-    assert.equal(purchase.customAmount(150, 2833.3, 'JPY'), 425);
-    assert.equal(purchase.customAmount(333, 1.005, 'EUR'), 0.33);
+  test('price = credits x price per credit, rounded to the currency (zero-decimal currencies too)', () => {
+    assert.equal(purchase.customAmount(1250, 0.019, 'USD'), 23.75);
+    assert.equal(purchase.customAmount(150, 2.8333, 'JPY'), 425);
+    assert.equal(purchase.customAmount(333, 0.001005, 'EUR'), 0.33);
+    assert.equal(purchase.customAmount(150, 1.1, 'USD'), 165);
   });
 
-  test('settings validation: rate, limits as multiples of the step, Stripe minimum charge', async () => {
+  test('settings validation: price, limits, Stripe minimum charge (no step)', async () => {
     const bad = (over) => purchase.validateCustomInput({ ...CUSTOM, ...over });
     assert.deepEqual(bad({}), []);
-    assert.match(bad({ ratePer1K: 0 }).join(), /Set a price per 1,000 credits/);
-    assert.deepEqual(bad({ ratePer1K: 0, enabled: false }), []); // can be saved switched off
-    assert.match(bad({ minCredits: 120 }).join(), /multiples of the step/);
+    assert.deepEqual(bad({ minCredits: 123, maxCredits: 4567 }), []); // any whole numbers
+    assert.match(bad({ pricePerCredit: 0 }).join(), /Set a price per credit/);
+    assert.deepEqual(bad({ pricePerCredit: 0, enabled: false }), []); // can be saved switched off
     assert.match(bad({ maxCredits: 50 }).join(), /not below the minimum/);
-    assert.match(bad({ step: 0 }).join(), /Step must be/);
     assert.match(bad({ minCredits: 12.5 }).join(), /Minimum must be a whole number/);
     assert.match(bad({ maxCredits: 2000000 }).join(), /can't be more than 1,000,000/);
-    assert.match(bad({ ratePer1K: 1 }).join(), /100 credits would cost 0.1 USD, below Stripe's minimum charge of 0.5 USD/);
+    assert.match(bad({ pricePerCredit: 0.001 }).join(), /100 credits would cost 0.1 USD, below Stripe's minimum charge of 0.5 USD/);
     const india = await regions.create({ name: 'India', currency: 'INR', countries: ['IN'], isActive: true });
     const byId = new Map([[String(india._id), india]]);
-    assert.match(purchase.validateCustomInput({ ...CUSTOM, regionalRates: [{ regionId: india._id, ratePer1K: 2 }] }, byId).join(), /India: 100 credits would cost 0.2 INR/);
-    assert.match(purchase.validateCustomInput({ ...CUSTOM, regionalRates: [{ regionId: india._id, ratePer1K: 0 }] }, byId).join(), /ratePer1K must be greater than 0/);
-    await assert.rejects(setCustom({ ratePer1K: 0 }), { code: 'INVALID_CUSTOM_PRICING' });
+    assert.match(purchase.validateCustomInput({ ...CUSTOM, regionalRates: [{ regionId: india._id, pricePerCredit: 0.002 }] }, byId).join(), /India: 100 credits would cost 0.2 INR/);
+    assert.match(purchase.validateCustomInput({ ...CUSTOM, regionalRates: [{ regionId: india._id, pricePerCredit: 0 }] }, byId).join(), /pricePerCredit must be greater than 0/);
+    await assert.rejects(setCustom({ pricePerCredit: 0 }), { code: 'INVALID_CUSTOM_PRICING' });
+  });
+
+  test('fractions of a cent per credit are kept', async () => {
+    const { after } = await setCustom({ pricePerCredit: 0.0145 });
+    assert.equal(after.pricePerCredit, 0.0145);
+  });
+
+  test('settings saved as a price per 1,000 credits are read as a price per credit', async () => {
+    await settings.findOneAndUpdate({ key: 'global' }, { $set: { customPurchase: { enabled: true, ratePer1K: 1100, currency: 'USD', minCredits: 100, maxCredits: 5000, step: 50, regionalRates: [] } } }, { upsert: true });
+    const custom = await purchase.getCustomPricing();
+    assert.deepEqual([custom.pricePerCredit, custom.step], [1.1, undefined]);
+    assert.deepEqual((await purchase.offerForBuyer(req())).custom, { pricePerCredit: 1.1, currency: 'USD', minCredits: 100, maxCredits: 5000 });
+    const { paymentId } = await buyCustom(150); // no step any more: 150 is fine
+    assert.equal(paymentDoc(paymentId).amount, 165);
   });
 
   test('switched off (the default): no offer, and a custom checkout is refused', async () => {
@@ -430,12 +445,12 @@ describe('custom amount of credits', () => {
     assert.deepEqual([payments.docs.length, stripe.created.length], [0, 0]);
   });
 
-  test('buyers get the offer in their region currency; others get the default rate', async () => {
+  test('buyers get the offer in their region currency; others get the default price', async () => {
     const india = await regions.create({ name: 'India', currency: 'INR', countries: ['IN'], isActive: true });
-    await setCustom({ regionalRates: [{ regionId: india._id, ratePer1K: 1600 }] });
+    await setCustom({ regionalRates: [{ regionId: india._id, pricePerCredit: 1.6 }] });
     pricing.clearRegionCache();
-    assert.deepEqual((await purchase.offerForBuyer(req('US'))).custom, { ratePer1K: 19, currency: 'USD', minCredits: 100, maxCredits: 50000, step: 50 });
-    assert.deepEqual((await purchase.offerForBuyer(req('IN'))).custom, { ratePer1K: 1600, currency: 'INR', minCredits: 100, maxCredits: 50000, step: 50 });
+    assert.deepEqual((await purchase.offerForBuyer(req('US'))).custom, OFFER);
+    assert.deepEqual((await purchase.offerForBuyer(req('IN'))).custom, { ...OFFER, pricePerCredit: 1.6, currency: 'INR' });
     assert.equal((await purchase.offerForBuyer(req('US'))).packages.length, 1);
   });
 
@@ -443,7 +458,7 @@ describe('custom amount of credits', () => {
     await setCustom();
     const { sessionId, paymentId } = await buyCustom(1250);
     const p = paymentDoc(paymentId);
-    assert.deepEqual([p.kind, p.packageId, p.packageName, p.credits, p.ratePer1K, p.amount, p.currency, p.status], ['CUSTOM', null, 'Custom amount', 1250, 19, 23.75, 'USD', 'PENDING']);
+    assert.deepEqual([p.kind, p.packageId, p.packageName, p.credits, p.pricePerCredit, p.amount, p.currency, p.status], ['CUSTOM', null, 'Custom amount', 1250, 0.019, 23.75, 'USD', 'PENDING']);
     const params = stripe.created[0];
     assert.deepEqual([params.line_items[0].price_data.unit_amount, params.line_items[0].price_data.currency], [2375, 'usd']);
     assert.equal(params.line_items[0].price_data.product_data.name, 'Custom amount — 1,250 AI credits');
@@ -458,35 +473,37 @@ describe('custom amount of credits', () => {
     assert.deepEqual([history.data[0].kind, history.data[0].packageName], ['CUSTOM', 'Custom amount']);
   });
 
-  test('regional rate is charged in the region currency', async () => {
+  test('regional price is charged in the region currency', async () => {
     const india = await regions.create({ name: 'India', currency: 'INR', countries: ['IN'], isActive: true });
-    await setCustom({ regionalRates: [{ regionId: india._id, ratePer1K: 1600 }] });
+    await setCustom({ regionalRates: [{ regionId: india._id, pricePerCredit: 1.6 }] });
     pricing.clearRegionCache();
     const { paymentId } = await buyCustom(1000, 'IN');
     assert.deepEqual([paymentDoc(paymentId).amount, paymentDoc(paymentId).currency, String(paymentDoc(paymentId).regionId)], [1600, 'INR', String(india._id)]);
     assert.equal(stripe.created[0].line_items[0].price_data.unit_amount, 160000);
   });
 
-  test('amounts outside the limits or off the step are refused before any payment is created', async () => {
+  test('any whole number inside the limits can be bought; anything else is refused before a payment exists', async () => {
     await setCustom();
-    for (const n of [50, 50050, 1025, 12.5, 'abc', '', -100]) {
+    const { paymentId } = await buyCustom(1037);
+    assert.equal(paymentDoc(paymentId).amount, 19.7); // 1,037 x 0.019 = 19.703 → $19.70
+    for (const n of [99, 50001, 12.5, 'abc', '', -100]) {
       await assert.rejects(buyCustom(n), { code: 'INVALID_AMOUNT' }, String(n));
     }
-    await assert.rejects(buyCustom(1025), { message: 'Choose between 100 and 50,000 credits, in steps of 50.' });
-    assert.deepEqual([payments.docs.length, stripe.created.length], [0, 0]);
+    await assert.rejects(buyCustom(99), { message: 'Choose a whole number of credits between 100 and 50,000.' });
+    assert.deepEqual([payments.docs.length, stripe.created.length], [1, 1]);
   });
 
   test("an amount below Stripe's minimum charge is refused", async () => {
-    // Saved before the minimum check existed, or a region rate this low: still never sent to Stripe
-    await settings.findOneAndUpdate({ key: 'global' }, { $set: { customPurchase: { ...CUSTOM, ratePer1K: 1 } } }, { upsert: true });
+    // A price saved before the minimum check existed: still never sent to Stripe
+    await settings.findOneAndUpdate({ key: 'global' }, { $set: { customPurchase: { ...CUSTOM, pricePerCredit: 0.001 } } }, { upsert: true });
     await assert.rejects(buyCustom(100), { code: 'AMOUNT_TOO_SMALL' });
     assert.equal(stripe.created.length, 0);
   });
 
-  test('Super Admin sees the custom settings with the packages; deleting a region is handled by the regions screen', async () => {
+  test('Super Admin sees the custom settings with the packages', async () => {
     await setCustom();
     const admin = await purchase.listPackagesForAdmin();
-    assert.deepEqual([admin.custom.enabled, admin.custom.ratePer1K, admin.custom.step], [true, 19, 50]);
+    assert.deepEqual([admin.custom.enabled, admin.custom.pricePerCredit, admin.custom.maxCredits, admin.custom.step], [true, 0.019, 50000, undefined]);
   });
 });
 
@@ -495,11 +512,11 @@ describe('custom amount (controller)', () => {
   const res = () => { const r = { statusCode: 200, status(c) { r.statusCode = c; return r; }, json(b) { r.body = b; return r; } }; return r; };
   const reqAs = (role, body, extra = {}) => ({ organizationId: String(orgId), user: { _id: userId }, role: { roleName: role }, headers: { 'cf-ipcountry': 'US' }, body, ...extra });
 
-  beforeEach(() => purchase.updateCustomPricing({ enabled: true, ratePer1K: 19, currency: 'USD', minCredits: 100, maxCredits: 50000, step: 50 }, userId));
+  beforeEach(() => purchase.updateCustomPricing({ enabled: true, pricePerCredit: 0.019, currency: 'USD', minCredits: 100, maxCredits: 50000 }, userId));
 
   test('the price sent by the browser is ignored', async () => {
     const r = res();
-    await controller.purchaseCredits(reqAs('ADMIN', { credits: 1000, price: 0.01, amount: 0.01 }), r);
+    await controller.purchaseCredits(reqAs('ADMIN', { credits: 1000, price: 0.01, amount: 0.01, pricePerCredit: 0.00001 }), r);
     assert.equal(r.body.isSuccess, true);
     assert.equal(stripe.created[0].line_items[0].price_data.unit_amount, 1900);
   });
@@ -516,10 +533,10 @@ describe('custom amount (controller)', () => {
   test('packages endpoint returns the custom offer; demo shows a sample offer', async () => {
     const k = res();
     await controller.getCreditPackages(reqAs('ADMIN', {}), k);
-    assert.deepEqual(k.body.data.custom, { ratePer1K: 19, currency: 'USD', minCredits: 100, maxCredits: 50000, step: 50 });
+    assert.deepEqual(k.body.data.custom, { pricePerCredit: 0.019, currency: 'USD', minCredits: 100, maxCredits: 50000 });
     const d = res();
     await controller.getCreditPackages(reqAs('ADMIN', {}, { isMockTestingUser: true }), d);
-    assert.equal(d.body.data.custom.currency, 'USD');
+    assert.deepEqual([d.body.data.custom.currency, d.body.data.custom.pricePerCredit], ['USD', 0.019]);
     const pay = res();
     await controller.getMyPayments(reqAs('ADMIN', {}, { isMockTestingUser: true }), pay);
     assert.ok(pay.body.data.some((row) => row.kind === 'CUSTOM'));
@@ -527,14 +544,14 @@ describe('custom amount (controller)', () => {
 
   test('saving custom pricing is audited with before and after', async () => {
     const r = res();
-    const rq = reqAs('SUPER_ADMIN', { enabled: true, ratePer1K: 21, currency: 'usd', minCredits: 200, maxCredits: 10000, step: 100 });
+    const rq = reqAs('SUPER_ADMIN', { enabled: true, pricePerCredit: 0.021, currency: 'usd', minCredits: 200, maxCredits: 10000 });
     await controller.adminUpdateCustomPricing(rq, r);
     assert.equal(r.body.isSuccess, true);
-    assert.deepEqual([rq.auditChange.previousValue.ratePer1K, rq.auditChange.newValue.ratePer1K, rq.auditChange.newValue.currency], [19, 21, 'USD']);
+    assert.deepEqual([rq.auditChange.previousValue.pricePerCredit, rq.auditChange.newValue.pricePerCredit, rq.auditChange.newValue.currency], [0.019, 0.021, 'USD']);
     const { eventForRoute } = require('../api-server/constants/auditRouteEvents');
     assert.equal(eventForRoute('POST', '/api/ai-credits/admin/custom-pricing/update'), 'AI_CREDIT_CUSTOM_PRICING_UPDATED');
     const bad = res();
-    await controller.adminUpdateCustomPricing(reqAs('SUPER_ADMIN', { enabled: true, ratePer1K: 0, currency: 'USD', minCredits: 100, maxCredits: 1000, step: 50 }), bad);
+    await controller.adminUpdateCustomPricing(reqAs('SUPER_ADMIN', { enabled: true, pricePerCredit: 0, currency: 'USD', minCredits: 100, maxCredits: 1000 }), bad);
     assert.deepEqual([bad.body.isSuccess, bad.body.code], [false, 'INVALID_CUSTOM_PRICING']);
   });
 });

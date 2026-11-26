@@ -48,7 +48,7 @@ beforeEach(() => {
   state.regions = [{ _id: india, name: 'India', currency: 'INR', countries: ['IN'], prices: [] }];
   state.plans = [{ _id: new mongoose.Types.ObjectId(), name: 'Pro', price: 49 }];
   state.creditPackages = [{ _id: new mongoose.Types.ObjectId(), name: 'Starter', credits: 50, price: 30, currency: 'USD', regionalPrices: [{ regionId: india, price: 2499 }] }];
-  state.settings = { customPurchase: { enabled: true, ratePer1K: 19, currency: 'USD', regionalRates: [{ regionId: india, ratePer1K: 1600 }] } };
+  state.settings = { customPurchase: { enabled: true, pricePerCredit: 0.019, currency: 'USD', regionalRates: [{ regionId: india, pricePerCredit: 1.6 }] } };
 });
 
 describe('Pricing Regions list and AI credit packages', () => {
@@ -60,7 +60,14 @@ describe('Pricing Regions list and AI credit packages', () => {
     assert.deepEqual(r.body.creditPackages[0].regionalPrices.map((p) => p.price), [2499]);
     const [, filter] = calls.find(([name]) => name === 'creditPackage.find');
     assert.deepEqual(filter, { isDeleted: { $ne: true } });
-    assert.deepEqual([r.body.creditCustomPricing.ratePer1K, r.body.creditCustomPricing.regionalRates[0].ratePer1K], [19, 1600]);
+    assert.deepEqual([r.body.creditCustomPricing.pricePerCredit, r.body.creditCustomPricing.regionalRates[0].pricePerCredit], [0.019, 1.6]);
+  });
+
+  test('custom amount settings saved per 1,000 credits are listed per credit', async () => {
+    state.settings = { customPurchase: { enabled: true, ratePer1K: 1100, currency: 'USD', regionalRates: [{ regionId: state.regions[0]._id, ratePer1K: 1600 }] } };
+    const r = res();
+    await controller.getRegions({ body: {} }, r);
+    assert.deepEqual([r.body.creditCustomPricing.pricePerCredit, r.body.creditCustomPricing.regionalRates[0].pricePerCredit], [1.1, 1.6]);
   });
 
   test('custom amount pricing is only listed when it is switched on', async () => {

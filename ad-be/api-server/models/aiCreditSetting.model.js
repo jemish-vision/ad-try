@@ -11,24 +11,26 @@ const modelRateSchema = new mongoose.Schema(
 );
 
 /**
- * Buying a custom number of credits (instead of a package): one flat price per 1,000 credits,
- * optionally a different rate per pricing region (charged in the region's currency).
+ * Buying a custom number of credits (instead of a package) at a price per credit, optionally a
+ * different price per pricing region (charged in the region's currency).
+ * ratePer1K: price per 1,000 credits, only in settings saved before prices were per credit.
  */
 const customRegionRateSchema = new mongoose.Schema(
   {
     regionId: { type: mongoose.Schema.Types.ObjectId, ref: "pricingRegion", required: true },
-    ratePer1K: { type: Number, min: 0, required: true },
+    pricePerCredit: { type: Number, min: 0 },
+    ratePer1K: { type: Number, min: 0 }, // older settings only
   },
   { _id: false }
 );
 const customPurchaseSchema = new mongoose.Schema(
   {
     enabled: { type: Boolean, default: false },
-    ratePer1K: { type: Number, min: 0, default: 0 }, // price of 1,000 credits in `currency`
+    pricePerCredit: { type: Number, min: 0, default: 0 }, // price of one credit in `currency`, e.g. 0.019
+    ratePer1K: { type: Number, min: 0 }, // older settings only
     currency: { type: String, uppercase: true, trim: true, default: "USD" },
     minCredits: { type: Number, min: 1, default: 100 },
     maxCredits: { type: Number, min: 1, default: 50000 },
-    step: { type: Number, min: 1, default: 50 }, // amounts must be a multiple of this
     regionalRates: { type: [customRegionRateSchema], default: [] },
   },
   { _id: false }

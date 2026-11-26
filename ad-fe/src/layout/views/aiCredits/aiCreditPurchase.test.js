@@ -116,51 +116,53 @@ describe("Buy more credits", () => {
 });
 
 describe("Need a different amount? (custom credits)", () => {
-  const OFFER = { ratePer1K: 19, currency: "USD", minCredits: 100, maxCredits: 50000, step: 50 };
+  const OFFER = { pricePerCredit: 0.019, currency: "USD", minCredits: 100, maxCredits: 50000 };
   const withOffer = (over = {}) =>
     Api.ApiGetAiCreditPackages.mockResolvedValue({ isSuccess: true, data: { packages: PACKAGES, canPurchase: true, custom: OFFER, ...over } });
   const amountBox = () => screen.findByRole("spinbutton", { name: "Number of credits" });
 
-  test("totals use the same rounding as the server, per currency", () => {
-    expect(customTotal(1250, 19, "USD")).toBe(23.75);
-    expect(customTotal(150, 2833.3, "JPY")).toBe(425);
-    expect(customTotal(333, 1.005, "EUR")).toBe(0.33);
+  test("totals = credits x price per credit, rounded like the server, per currency", () => {
+    expect(customTotal(1250, 0.019, "USD")).toBe(23.75);
+    expect(customTotal(150, 1.1, "USD")).toBe(165);
+    expect(customTotal(150, 2.8333, "JPY")).toBe(425);
+    expect(customTotal(333, 0.001005, "EUR")).toBe(0.33);
     expect(defaultCustomAmount(OFFER)).toBe(1000);
     expect(defaultCustomAmount({ ...OFFER, minCredits: 5000 })).toBe(5000);
+    expect(defaultCustomAmount({ ...OFFER, maxCredits: 500 })).toBe(500);
     const t = (k, v) => k.replace(/\{\{(\w+)\}\}/g, (_, x) => v[x]);
-    expect(customAmountError("1000", OFFER, t, "en-US")).toBeNull();
+    expect(customAmountError("1037", OFFER, t, "en-US")).toBeNull(); // any whole number, no step
     expect(customAmountError("1000.5", OFFER, t, "en-US")).toBe("Enter a whole number of credits.");
   });
 
   test("shown as a separate row under the packages; starts at 1,000 credits with the total", async () => {
     withOffer();
     render(<BuyCreditsSection redirect={jest.fn()} />);
-    const row = (await screen.findByText("Need a different amount?")).closest("#ai-credits-custom");
-    expect(row).not.toBeNull();
+    const row = await screen.findByRole("group", { name: "Need a different amount?" });
     expect(screen.getAllByTestId("ai-credit-package")).toHaveLength(2); // packages still listed above
-    expect(within(row).getByText("Buy any amount from 100 to 50,000 credits, in steps of 50.")).toBeInTheDocument();
+    expect(within(row).getByText("Buy any amount from 100 to 50,000 credits.")).toBeInTheDocument();
     expect(await amountBox()).toHaveValue(1000);
     expect(within(row).getByText("$19.00")).toBeInTheDocument();
-    expect(within(row).queryByText(/per 1,000/)).not.toBeInTheDocument(); // total only
+    expect(within(row).queryByText(/per credit|steps? of/i)).not.toBeInTheDocument(); // total only, no step
+    expect(within(row).queryByRole("button", { name: /More credits|Fewer credits/ })).not.toBeInTheDocument();
   });
 
-  test("owner types an amount, sees the total and buys it: only the number of credits is sent", async () => {
+  test("owner types any amount, sees the total and buys it: only the number of credits is sent", async () => {
     withOffer();
     const redirect = jest.fn();
     Api.ApiPurchaseAiCredits.mockResolvedValue({ isSuccess: true, data: { url: "https://checkout.stripe.com/c/cs_9", paymentId: "pay9" } });
     render(<BuyCreditsSection redirect={redirect} />);
-    fireEvent.change(await amountBox(), { target: { value: "1250" } });
-    expect(screen.getByText("$23.75")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Buy 1,250 credits" }));
+    fireEvent.change(await amountBox(), { target: { value: "1037" } });
+    expect(screen.getByText("$19.70")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Buy 1,037 credits" }));
     await waitFor(() => expect(redirect).toHaveBeenCalledWith("https://checkout.stripe.com/c/cs_9"));
-    expect(Api.ApiPurchaseAiCredits).toHaveBeenCalledWith({ credits: 1250 });
+    expect(Api.ApiPurchaseAiCredits).toHaveBeenCalledWith({ credits: 1037 });
   });
 
-  test("amounts outside the limits or off the step can't be bought", async () => {
+  test("amounts outside the limits or not whole can't be bought", async () => {
     withOffer();
     render(<BuyCreditsSection redirect={jest.fn()} />);
     const box = await amountBox();
-    for (const [value, message] of [["50", "Minimum 100 credits."], ["60000", "Maximum 50,000 credits."], ["1025", "Choose a multiple of 50 credits."], ["", "Enter a whole number of credits."]]) {
+    for (const [value, message] of [["50", "Minimum 100 credits."], ["60000", "Maximum 50,000 credits."], ["150.5", "Enter a whole number of credits."], ["", "Enter a whole number of credits."]]) {
       fireEvent.change(box, { target: { value } });
       expect(screen.getByRole("alert")).toHaveTextContent(message);
       expect(screen.getByRole("button", { name: "Buy credits" })).toBeDisabled();
@@ -169,22 +171,8 @@ describe("Need a different amount? (custom credits)", () => {
     expect(Api.ApiPurchaseAiCredits).not.toHaveBeenCalled();
   });
 
-  test("- and + move by the step and stop at the limits", async () => {
-    withOffer({ custom: { ...OFFER, minCredits: 900, maxCredits: 1100, step: 100 } });
-    render(<BuyCreditsSection redirect={jest.fn()} />);
-    const box = await amountBox();
-    expect(box).toHaveValue(1000);
-    fireEvent.click(screen.getByRole("button", { name: "More credits" }));
-    expect(box).toHaveValue(1100);
-    expect(screen.getByRole("button", { name: "More credits" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Fewer credits" }));
-    fireEvent.click(screen.getByRole("button", { name: "Fewer credits" }));
-    expect(box).toHaveValue(900);
-    expect(screen.getByRole("button", { name: "Fewer credits" })).toBeDisabled();
-  });
-
   test("regional offer is shown in the region currency", async () => {
-    withOffer({ custom: { ...OFFER, ratePer1K: 1600, currency: "INR" } });
+    withOffer({ custom: { ...OFFER, pricePerCredit: 1.6, currency: "INR" } });
     render(<BuyCreditsSection redirect={jest.fn()} />);
     await amountBox();
     expect(screen.getByText("₹1,600.00")).toBeInTheDocument();
@@ -214,78 +202,106 @@ describe("Need a different amount? (custom credits)", () => {
   });
 });
 
+describe("Best value tag", () => {
+  test("only compares packages in the same currency ($50 and ₹50 are not both best value)", async () => {
+    Api.ApiGetAiCreditPackages.mockResolvedValue({
+      isSuccess: true,
+      data: {
+        canPurchase: true,
+        packages: [
+          { _id: "u1", name: "Starter", credits: 50, price: 50, currency: "USD", pricePerCredit: 1 },
+          { _id: "i1", name: "Starter", credits: 50, price: 50, currency: "INR", pricePerCredit: 1 },
+        ],
+      },
+    });
+    render(<BuyCreditsSection redirect={jest.fn()} />);
+    await screen.findAllByTestId("ai-credit-package");
+    expect(screen.queryByText("Best value")).not.toBeInTheDocument();
+  });
+
+  test("marks the cheapest per credit within a currency", async () => {
+    render(<BuyCreditsSection redirect={jest.fn()} />);
+    const cards = await screen.findAllByTestId("ai-credit-package");
+    expect(within(cards[1]).getByText("Best value")).toBeInTheDocument();
+    expect(within(cards[0]).queryByText("Best value")).not.toBeInTheDocument();
+  });
+});
+
 describe("Super Admin: custom amount settings", () => {
   const regions = [{ _id: "r-in", name: "India", currency: "INR", countries: ["IN"], isActive: true }];
   const packages = [{ _id: "p2", name: "Growth", credits: 2000, price: 29, currency: "USD", isActive: true, regionalPrices: [{ regionId: "r-in", price: 1999 }] }];
+  const SAVED = { enabled: true, pricePerCredit: 0.019, currency: "USD", minCredits: 100, maxCredits: 50000, regionalRates: [] };
   const t = (k) => k;
 
   beforeEach(() => {
     Api.ApiAdminUpdateAiCreditCustomPricing.mockResolvedValue({ isSuccess: true, message: "Custom amount pricing saved" });
   });
 
-  test("form validation matches the server rules", () => {
-    const ok = { enabled: true, ratePer1K: "19", currency: "USD", minCredits: "100", maxCredits: "50000", step: "50", regionalRates: {} };
+  test("form validation matches the server rules (no step)", () => {
+    const ok = { enabled: true, pricePerCredit: "0.019", currency: "USD", minCredits: "100", maxCredits: "50000", regionalRates: {} };
     expect(validateCustomForm(ok, t)).toEqual({});
-    expect(validateCustomForm({ ...ok, ratePer1K: "" }, t)).toEqual({ ratePer1K: "Set a price per 1,000 credits before turning custom amounts on" });
-    expect(validateCustomForm({ ...ok, ratePer1K: "", enabled: false }, t)).toEqual({});
-    expect(validateCustomForm({ ...ok, minCredits: "120" }, t)).toEqual({ step: "Minimum and maximum must be multiples of the step" });
+    expect(validateCustomForm({ ...ok, minCredits: "123", maxCredits: "4567" }, t)).toEqual({});
+    expect(validateCustomForm({ ...ok, pricePerCredit: "" }, t)).toEqual({ pricePerCredit: "Set a price per credit before turning custom amounts on" });
+    expect(validateCustomForm({ ...ok, pricePerCredit: "", enabled: false }, t)).toEqual({});
     expect(validateCustomForm({ ...ok, maxCredits: "50" }, t)).toEqual({ maxCredits: "Maximum must be a whole number not below the minimum" });
+    expect(validateCustomForm({ ...ok, minCredits: "1.5" }, t)).toEqual({ minCredits: "Minimum must be a whole number of 1 or more" });
     expect(validateCustomForm({ ...ok, regionalRates: { "r-in": "0" } }, t)).toEqual({ "region.r-in": "Price must be greater than 0" });
   });
 
   test("warns when a custom amount would be cheaper per credit than a package (same currency only)", () => {
-    const form = { ratePer1K: "10", currency: "USD", regionalRates: { "r-in": "2000" } };
-    expect(cheaperThanPackages(form, packages, regions)).toEqual([{ name: "Growth", region: null, per1K: 14.5, currency: "USD" }]);
-    expect(cheaperThanPackages({ ...form, ratePer1K: "19", regionalRates: { "r-in": "900" } }, packages, regions)).toEqual([{ name: "Growth", region: "India", per1K: 999.5, currency: "INR" }]);
+    const form = { pricePerCredit: "0.01", currency: "USD", regionalRates: { "r-in": "2" } };
+    expect(cheaperThanPackages(form, packages, regions)).toEqual([{ name: "Growth", region: null, perCredit: 0.0145, currency: "USD" }]);
+    expect(cheaperThanPackages({ ...form, pricePerCredit: "0.019", regionalRates: { "r-in": "0.9" } }, packages, regions)).toEqual([{ name: "Growth", region: "India", perCredit: 0.9995, currency: "INR" }]);
     expect(cheaperThanPackages({ ...form, currency: "EUR" }, packages, regions)).toEqual([]);
   });
 
-  test("turns custom amounts on with a regional rate and saves numbers", async () => {
+  test("turns custom amounts on with a regional price per credit and saves numbers", async () => {
     const onSaved = jest.fn();
-    render(<CustomPricingCard custom={{ enabled: false, ratePer1K: 0, currency: "USD", minCredits: 100, maxCredits: 50000, step: 50, regionalRates: [] }} packages={packages} regions={regions} onSaved={onSaved} />);
+    render(<CustomPricingCard custom={{ ...SAVED, enabled: false, pricePerCredit: 0 }} packages={packages} regions={regions} onSaved={onSaved} />);
+    expect(screen.queryByLabelText("Step")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("switch", { name: "Allow custom amounts" }));
-    fireEvent.change(screen.getByLabelText("Price per 1,000 credits"), { target: { value: "19" } });
+    fireEvent.change(screen.getByLabelText("Price per credit"), { target: { value: "0.019" } });
     expect(screen.getByText("Example: 1,000 credits = $19.00")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Price per 1,000 credits in INR for India"), { target: { value: "1600" } });
+    fireEvent.change(screen.getByLabelText("Price per credit in INR for India"), { target: { value: "1.6" } });
     expect(screen.queryByText(/would cost less per credit/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Save custom amount/ }));
     await waitFor(() =>
-      expect(Api.ApiAdminUpdateAiCreditCustomPricing).toHaveBeenCalledWith({ enabled: true, ratePer1K: 19, currency: "USD", minCredits: 100, maxCredits: 50000, step: 50, regionalRates: [{ regionId: "r-in", ratePer1K: 1600 }] }),
+      expect(Api.ApiAdminUpdateAiCreditCustomPricing).toHaveBeenCalledWith({ enabled: true, pricePerCredit: 0.019, currency: "USD", minCredits: 100, maxCredits: 50000, regionalRates: [{ regionId: "r-in", pricePerCredit: 1.6 }] }),
     );
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(Toast.success).toHaveBeenCalledWith("Custom amount pricing saved");
   });
 
-  test("shows the cheaper-than-package warning and blocks saving invalid limits", async () => {
-    render(<CustomPricingCard custom={{ enabled: true, ratePer1K: 10, currency: "USD", minCredits: 100, maxCredits: 50000, step: 50, regionalRates: [] }} packages={packages} regions={regions} />);
-    expect(screen.getByRole("status")).toHaveTextContent("Growth: $14.50 per 1,000 credits");
-    fireEvent.change(screen.getByLabelText("Minimum credits"), { target: { value: "120" } });
+  test("shows the cheaper-than-package warning with per-credit prices and blocks invalid limits", async () => {
+    render(<CustomPricingCard custom={{ ...SAVED, pricePerCredit: 0.01 }} packages={packages} regions={regions} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Growth: $0.0145 per credit");
+    fireEvent.change(screen.getByLabelText("Maximum credits"), { target: { value: "50" } });
     fireEvent.click(screen.getByRole("button", { name: /Save custom amount/ }));
-    expect(await screen.findByText("Minimum and maximum must be multiples of the step")).toBeInTheDocument();
+    expect(await screen.findByText("Maximum must be a whole number not below the minimum")).toBeInTheDocument();
     expect(Api.ApiAdminUpdateAiCreditCustomPricing).not.toHaveBeenCalled();
   });
 
   test("server refusal (e.g. below Stripe's minimum charge) is shown", async () => {
     Api.ApiAdminUpdateAiCreditCustomPricing.mockResolvedValue({ isSuccess: false, message: "Default price: 100 credits would cost 0.1 USD, below Stripe's minimum charge of 0.5 USD." });
-    render(<CustomPricingCard custom={{ enabled: true, ratePer1K: 1, currency: "USD", minCredits: 100, maxCredits: 50000, step: 50, regionalRates: [] }} packages={[]} regions={[]} />);
+    render(<CustomPricingCard custom={{ ...SAVED, pricePerCredit: 0.001 }} packages={[]} regions={[]} />);
     fireEvent.click(screen.getByRole("button", { name: /Save custom amount/ }));
     await waitFor(() => expect(Toast.error).toHaveBeenCalledWith(expect.stringMatching(/Stripe's minimum charge/)));
   });
 
-  test("appears under the packages on the Credit packages tab", async () => {
+  test("appears under the packages on the Credit packages tab and keeps unsaved edits on reload", async () => {
     // A fresh copy per call, like a real API response
-    Api.ApiAdminAiCreditPackages.mockImplementation(async () => ({ isSuccess: true, data: { packages, regions, custom: { enabled: true, ratePer1K: 19, currency: "USD", minCredits: 100, maxCredits: 50000, step: 50, regionalRates: [] } } }));
+    Api.ApiAdminAiCreditPackages.mockImplementation(async () => ({ isSuccess: true, data: { packages, regions, custom: { ...SAVED } } }));
     RegionApi.ApiDetectPricingCountry.mockResolvedValue({ isSuccess: true, data: { country: "US", cfHeaderPresent: true } });
     render(<CreditPackagesAdmin reloadKey={0} />);
     await screen.findByRole("row", { name: /Growth/ });
-    await waitFor(() => expect(screen.getByLabelText("Price per 1,000 credits")).toHaveValue(19));
+    await waitFor(() => expect(screen.getByLabelText("Price per credit")).toHaveValue(0.019));
     expect(screen.getByRole("switch", { name: "Allow custom amounts" })).toBeChecked();
     // Reloading the packages (e.g. after switching one off) keeps unsaved custom edits
     Api.ApiAdminUpdateAiCreditPackage.mockResolvedValue({ isSuccess: true, message: "Credit package updated" });
-    fireEvent.change(screen.getByLabelText("Price per 1,000 credits"), { target: { value: "21" } });
+    fireEvent.change(screen.getByLabelText("Price per credit"), { target: { value: "0.021" } });
     fireEvent.click(within(screen.getByRole("row", { name: /Growth/ })).getByRole("switch", { name: "Available to buy" }));
     await waitFor(() => expect(Api.ApiAdminAiCreditPackages).toHaveBeenCalledTimes(2));
-    expect(screen.getByLabelText("Price per 1,000 credits")).toHaveValue(21);
+    expect(screen.getByLabelText("Price per credit")).toHaveValue(0.021);
   });
 });
 

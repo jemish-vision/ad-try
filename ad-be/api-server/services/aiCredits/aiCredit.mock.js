@@ -136,7 +136,7 @@ function packages() {
 
 /** Demo custom amount offer: a little above the package rates, so packages stay the better deal. */
 function customOffer() {
-  return { ratePer1K: 19, currency: 'USD', minCredits: 100, maxCredits: 50000, step: 50 };
+  return { pricePerCredit: 0.019, currency: 'USD', minCredits: 100, maxCredits: 50000 };
 }
 
 function payments(body = {}, now = new Date()) {

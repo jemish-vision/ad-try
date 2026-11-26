@@ -45,7 +45,16 @@ export default function BuyCreditsSection({ redirect = goToCheckout }) {
 
   const buy = (pkg) => startCheckout(pkg._id, { packageId: pkg._id });
   const buyCustom = (credits) => startCheckout("custom", { credits });
-  const cheapest = Math.min(...packages.map((p) => p.pricePerCredit ?? Infinity));
+  // "Best value": the lowest price per credit among packages in the same currency (never compare $ with ₹)
+  const byCurrency = packages.reduce((acc, p) => {
+    const c = String(p.currency || "").toUpperCase();
+    (acc[c] = acc[c] || []).push(p);
+    return acc;
+  }, {});
+  const isBestValue = (p) => {
+    const same = byCurrency[String(p.currency || "").toUpperCase()] || [];
+    return same.length > 1 && p.pricePerCredit === Math.min(...same.map((x) => x.pricePerCredit ?? Infinity));
+  };
 
   return (
     <Card id="ai-credits-buy">
@@ -75,7 +84,7 @@ export default function BuyCreditsSection({ redirect = goToCheckout }) {
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[18px] font-bold text-slate-800 dark:text-slate-100 tabular-nums">{formatMoney(p.price, p.currency, i18n.language)}</span>
-                {p.pricePerCredit === cheapest && packages.length > 1 && (
+                {isBestValue(p) && (
                   <span className="px-1.5 py-0.5 rounded-md text-[10.5px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">{t("Best value")}</span>
                 )}
               </div>

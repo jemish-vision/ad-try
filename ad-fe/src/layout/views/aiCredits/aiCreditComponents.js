@@ -354,6 +354,16 @@ export const formatMoney = (amount, currency, locale) => {
   }
 };
 
+/** A price per credit, which can be a fraction of a cent: $0.019, ₹1.10, ¥3 (up to 6 decimals). */
+export const formatUnitPrice = (amount, currency, locale) => {
+  try {
+    const base = new Intl.NumberFormat(locale || undefined, { style: "currency", currency: currency || "USD" }).resolvedOptions();
+    return new Intl.NumberFormat(locale || undefined, { style: "currency", currency: currency || "USD", minimumFractionDigits: base.minimumFractionDigits, maximumFractionDigits: 6 }).format(Number(amount) || 0);
+  } catch (_) {
+    return `${currency || ""} ${Number(amount || 0)}`;
+  }
+};
+
 export const PaymentStatusPill = ({ status, title }) => {
   const { t } = useTranslation();
   const s = PAYMENT_STATUS[status] || PAYMENT_STATUS.PENDING;

@@ -75,7 +75,11 @@ exports.getRegions = async (req, res) => {
       aiCreditSettingModel.findOne({ key: "global" }).select("customPurchase").lean(),
     ]);
     const cp = creditSettings?.customPurchase;
-    const creditCustomPricing = cp?.enabled ? { ratePer1K: cp.ratePer1K, currency: cp.currency, regionalRates: cp.regionalRates || [] } : null;
+    // Price per credit (settings saved before that stored a price per 1,000 credits)
+    const perCredit = (row) => (row?.pricePerCredit != null ? row.pricePerCredit : (Number(row?.ratePer1K) || 0) / 1000);
+    const creditCustomPricing = cp?.enabled
+      ? { pricePerCredit: perCredit(cp), currency: cp.currency, regionalRates: (cp.regionalRates || []).map((r) => ({ regionId: r.regionId, pricePerCredit: perCredit(r) })) }
+      : null;
     return res.status(200).json({ isSuccess: true, data: regions, plans, creditPackages, creditCustomPricing, totalRecords, currentPageNo: pageNo, totalPages: Math.ceil(totalRecords / perPage) });
   } catch (error) {
     return serverError(res, "getRegions", error, req);

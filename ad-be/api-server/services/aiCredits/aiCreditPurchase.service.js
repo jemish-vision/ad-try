@@ -165,9 +165,12 @@ async function listPackagesForBuyer(req) {
 }
 
 // ── Custom amount ────────────────────────────────────────────────────────────
+// Buyers choose any whole number of credits between a minimum and maximum, at a price per credit.
 const CUSTOM_NAME = 'Custom amount';
-const CUSTOM_DEFAULTS = { enabled: false, ratePer1K: 0, currency: 'USD', minCredits: 100, maxCredits: 50000, step: 50, regionalRates: [] };
+const CUSTOM_DEFAULTS = { enabled: false, pricePerCredit: 0, currency: 'USD', minCredits: 100, maxCredits: 50000, regionalRates: [] };
 const CUSTOM_MAX_CREDITS = 1000000;
+const PRICE_DECIMALS = 6; // a credit can cost a fraction of a cent, e.g. $0.019
+const roundPrice = (n) => Math.round((Number(n) || 0) * 10 ** PRICE_DECIMALS) / 10 ** PRICE_DECIMALS;
 
 // Stripe's minimum charge per currency, major units (https://docs.stripe.com/currencies#minimum-and-maximum-charge-amounts).
 // Currencies not listed are left to Stripe, which refuses the checkout if the amount is too small.
@@ -177,21 +180,23 @@ const STRIPE_MINIMUM = {
 };
 const stripeMinimum = (currency) => STRIPE_MINIMUM[String(currency || '').toUpperCase()] || 0;
 
-/** Price of `credits` at `ratePer1K`, rounded to the currency's smallest unit (₹0.01, ¥1 …). */
-function customAmount(credits, ratePer1K, currency) {
-  return pricing.fromMinorUnits(pricing.toMinorUnits((Number(credits) / 1000) * Number(ratePer1K), currency), currency);
+/** Price of `credits` at `pricePerCredit`, rounded to the currency's smallest unit (₹0.01, ¥1 …). */
+function customAmount(credits, pricePerCredit, currency) {
+  return pricing.fromMinorUnits(pricing.toMinorUnits(Number(credits) * Number(pricePerCredit), currency), currency);
 }
+
+// Settings saved before prices were per credit stored a price per 1,000 credits (ratePer1K)
+const perCredit = (row) => (row?.pricePerCredit !== undefined && row?.pricePerCredit !== null ? Number(row.pricePerCredit) || 0 : roundPrice((Number(row?.ratePer1K) || 0) / 1000));
 
 function normalizeCustom(raw) {
   const c = { ...CUSTOM_DEFAULTS, ...(raw || {}) };
   return {
     enabled: Boolean(c.enabled),
-    ratePer1K: Number(c.ratePer1K) || 0,
+    pricePerCredit: perCredit(raw || {}),
     currency: String(c.currency || 'USD').toUpperCase(),
     minCredits: Number(c.minCredits) || CUSTOM_DEFAULTS.minCredits,
     maxCredits: Number(c.maxCredits) || CUSTOM_DEFAULTS.maxCredits,
-    step: Number(c.step) || CUSTOM_DEFAULTS.step,
-    regionalRates: (c.regionalRates || []).map((r) => ({ regionId: String(r.regionId), ratePer1K: Number(r.ratePer1K) || 0 })),
+    regionalRates: (c.regionalRates || []).map((r) => ({ regionId: String(r.regionId), pricePerCredit: perCredit(r) })),
   };
 }
 
@@ -200,13 +205,13 @@ async function getCustomPricing() {
   return normalizeCustom(doc?.customPurchase);
 }
 
-/** Rate and currency a visitor pays: their region's rate when set, else the default rate. */
+/** Price per credit and currency a visitor pays: their region's price when set, else the default. */
 function customRateFor(custom, { region, country } = {}) {
   const entry = region ? custom.regionalRates.find((r) => String(r.regionId) === String(region._id)) : null;
-  if (entry && entry.ratePer1K > 0) {
-    return { ratePer1K: entry.ratePer1K, currency: String(region.currency).toUpperCase(), regionId: String(region._id), regionName: region.name, country: country || null };
+  if (entry && entry.pricePerCredit > 0) {
+    return { pricePerCredit: entry.pricePerCredit, currency: String(region.currency).toUpperCase(), regionId: String(region._id), regionName: region.name, country: country || null };
   }
-  return { ratePer1K: custom.ratePer1K, currency: custom.currency, regionId: null, regionName: null, country: country || null };
+  return { pricePerCredit: custom.pricePerCredit, currency: custom.currency, regionId: null, regionName: null, country: country || null };
 }
 
 const isWhole = (n) => Number.isInteger(Number(n)) && String(n).trim() !== '';
@@ -214,18 +219,15 @@ const isWhole = (n) => Number.isInteger(Number(n)) && String(n).trim() !== '';
 function validateCustomInput(input = {}, regionsById = new Map()) {
   const errors = [];
   const enabled = Boolean(input.enabled);
-  const rate = Number(input.ratePer1K);
-  if (!Number.isFinite(rate) || rate < 0) errors.push('Price per 1,000 credits must be 0 or more');
-  else if (enabled && !(rate > 0)) errors.push('Set a price per 1,000 credits before turning custom amounts on');
+  const price = Number(input.pricePerCredit);
+  if (!Number.isFinite(price) || price < 0) errors.push('Price per credit must be 0 or more');
+  else if (enabled && !(price > 0)) errors.push('Set a price per credit before turning custom amounts on');
   if (!/^[A-Za-z]{3}$/.test(String(input.currency || ''))) errors.push('Currency must be a 3-letter code');
   const min = Number(input.minCredits);
   const max = Number(input.maxCredits);
-  const step = Number(input.step);
-  if (!isWhole(input.step) || step < 1) errors.push('Step must be a whole number of 1 or more');
   if (!isWhole(input.minCredits) || min < 1) errors.push('Minimum must be a whole number of 1 or more');
   if (!isWhole(input.maxCredits) || max < min) errors.push('Maximum must be a whole number not below the minimum');
   else if (max > CUSTOM_MAX_CREDITS) errors.push(`Maximum can't be more than ${CUSTOM_MAX_CREDITS.toLocaleString('en-US')} credits`);
-  if (step >= 1 && isWhole(input.step) && ((min >= 1 && min % step) || (max >= 1 && max % step))) errors.push('Minimum and maximum must be multiples of the step');
   const rates = input.regionalRates === undefined ? [] : input.regionalRates;
   if (!Array.isArray(rates)) errors.push('regionalRates must be a list');
   else {
@@ -234,20 +236,20 @@ function validateCustomInput(input = {}, regionsById = new Map()) {
       if (!isId(r?.regionId)) errors.push(`regionalRates[${i}].regionId is invalid`);
       else if (seen.has(String(r.regionId))) errors.push('regionalRates has a region twice');
       seen.add(String(r?.regionId));
-      if (!(Number(r?.ratePer1K) > 0)) errors.push(`regionalRates[${i}].ratePer1K must be greater than 0`);
+      if (!(Number(r?.pricePerCredit) > 0)) errors.push(`regionalRates[${i}].pricePerCredit must be greater than 0`);
     });
   }
   // The smallest amount must still be a charge Stripe accepts, in every currency it can be bought in
   if (!errors.length && enabled) {
-    const check = (ratePer1K, currency, where) => {
-      const smallest = customAmount(min, ratePer1K, currency);
+    const check = (pricePerCredit, currency, where) => {
+      const smallest = customAmount(min, pricePerCredit, currency);
       const floor = stripeMinimum(currency);
-      if (floor && smallest < floor) errors.push(`${where}: ${min} credits would cost ${smallest} ${currency}, below Stripe's minimum charge of ${floor} ${currency}. Raise the rate or the minimum.`);
+      if (floor && smallest < floor) errors.push(`${where}: ${min} credits would cost ${smallest} ${currency}, below Stripe's minimum charge of ${floor} ${currency}. Raise the price or the minimum.`);
     };
-    check(rate, String(input.currency).toUpperCase(), 'Default price');
+    check(price, String(input.currency).toUpperCase(), 'Default price');
     rates.forEach((r) => {
       const region = regionsById.get(String(r.regionId));
-      if (region) check(Number(r.ratePer1K), String(region.currency).toUpperCase(), region.name);
+      if (region) check(Number(r.pricePerCredit), String(region.currency).toUpperCase(), region.name);
     });
   }
   return errors;
@@ -261,12 +263,11 @@ async function updateCustomPricing(input = {}, actorId) {
   const before = await getCustomPricing();
   const customPurchase = {
     enabled: Boolean(input.enabled),
-    ratePer1K: round2(input.ratePer1K),
+    pricePerCredit: roundPrice(input.pricePerCredit),
     currency: String(input.currency).toUpperCase(),
     minCredits: Number(input.minCredits),
     maxCredits: Number(input.maxCredits),
-    step: Number(input.step),
-    regionalRates: (input.regionalRates || []).map((r) => ({ regionId: toObjectId(r.regionId), ratePer1K: round2(r.ratePer1K) })),
+    regionalRates: (input.regionalRates || []).map((r) => ({ regionId: toObjectId(r.regionId), pricePerCredit: roundPrice(r.pricePerCredit) })),
   };
   const doc = await settingModel.findOneAndUpdate(
     { key: 'global' },
@@ -280,16 +281,16 @@ async function updateCustomPricing(input = {}, actorId) {
 function customOfferView(custom, ctx) {
   if (!custom.enabled) return null;
   const rate = customRateFor(custom, ctx);
-  if (!(rate.ratePer1K > 0)) return null;
-  return { ratePer1K: rate.ratePer1K, currency: rate.currency, minCredits: custom.minCredits, maxCredits: custom.maxCredits, step: custom.step };
+  if (!(rate.pricePerCredit > 0)) return null;
+  return { pricePerCredit: rate.pricePerCredit, currency: rate.currency, minCredits: custom.minCredits, maxCredits: custom.maxCredits };
 }
 
 /** Checks a requested custom amount; throws INVALID_AMOUNT with what's allowed. */
 function checkCustomCredits(custom, value) {
   const n = Number(value);
-  const range = `Choose between ${custom.minCredits.toLocaleString('en-US')} and ${custom.maxCredits.toLocaleString('en-US')} credits`;
-  if (!isWhole(value) || n < custom.minCredits || n > custom.maxCredits) throw new AiCreditsError('INVALID_AMOUNT', `${range}.`);
-  if (n % custom.step) throw new AiCreditsError('INVALID_AMOUNT', `${range}, in steps of ${custom.step.toLocaleString('en-US')}.`);
+  if (!isWhole(value) || n < custom.minCredits || n > custom.maxCredits) {
+    throw new AiCreditsError('INVALID_AMOUNT', `Choose a whole number of credits between ${custom.minCredits.toLocaleString('en-US')} and ${custom.maxCredits.toLocaleString('en-US')}.`);
+  }
   return n;
 }
 
@@ -319,18 +320,18 @@ async function purchaseItem({ packageId, customCredits, ctx }) {
     if (!custom.enabled) throw new AiCreditsError('CUSTOM_UNAVAILABLE', 'Buying a custom amount of credits is not available right now.');
     const amount = checkCustomCredits(custom, customCredits);
     const rate = customRateFor(custom, ctx);
-    if (!(rate.ratePer1K > 0)) throw new AiCreditsError('CUSTOM_UNAVAILABLE', 'Buying a custom amount of credits is not available right now.');
-    const price = customAmount(amount, rate.ratePer1K, rate.currency);
+    if (!(rate.pricePerCredit > 0)) throw new AiCreditsError('CUSTOM_UNAVAILABLE', 'Buying a custom amount of credits is not available right now.');
+    const price = customAmount(amount, rate.pricePerCredit, rate.currency);
     const floor = stripeMinimum(rate.currency);
     if (floor && price < floor) throw new AiCreditsError('AMOUNT_TOO_SMALL', 'This amount is below the smallest payment we can take. Choose more credits.');
-    return { kind: 'CUSTOM', packageId: null, name: CUSTOM_NAME, credits: amount, price, currency: rate.currency, regionId: rate.regionId, country: rate.country, ratePer1K: rate.ratePer1K };
+    return { kind: 'CUSTOM', packageId: null, name: CUSTOM_NAME, credits: amount, price, currency: rate.currency, regionId: rate.regionId, country: rate.country, pricePerCredit: rate.pricePerCredit };
   }
   if (!isId(packageId)) throw new AiCreditsError('PACKAGE_NOT_FOUND', 'Package not found');
   const pkg = await packageModel.findOne({ _id: packageId, isActive: true, isDeleted: { $ne: true } }).lean();
   if (!pkg) throw new AiCreditsError('PACKAGE_NOT_FOUND', 'This credit package is no longer available.');
   const priced = priceForPackage(pkg, ctx);
   if (!(priced.price > 0)) throw new AiCreditsError('PACKAGE_NOT_FOUND', 'This credit package has no price for your region.');
-  return { kind: 'PACKAGE', packageId: pkg._id, name: pkg.name, credits: pkg.credits, price: priced.price, currency: priced.currency, regionId: priced.regionId, country: priced.country, ratePer1K: null };
+  return { kind: 'PACKAGE', packageId: pkg._id, name: pkg.name, credits: pkg.credits, price: priced.price, currency: priced.currency, regionId: priced.regionId, country: priced.country, pricePerCredit: null };
 }
 
 /**
@@ -359,7 +360,7 @@ async function startCheckout({ organizationId, userId, packageId, customCredits,
     packageId: item.packageId,
     packageName: item.name,
     credits: item.credits,
-    ratePer1K: item.ratePer1K,
+    pricePerCredit: item.pricePerCredit,
     amount: item.price,
     currency: item.currency,
     country: item.country,

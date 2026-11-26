@@ -32,7 +32,7 @@ const creditPricesFor = (region, creditPackages) =>
     .map((pkg) => ({ pkg, entry: (pkg.regionalPrices || []).find((r) => String(r.regionId) === String(region._id)) }))
     .filter((x) => x.entry && x.entry.price > 0);
 // Custom amount rate for this region (credit purchases of any size), when set
-const customRateFor = (region, custom) => (custom?.regionalRates || []).find((r) => String(r.regionId) === String(region._id) && r.ratePer1K > 0) || null;
+const customRateFor = (region, custom) => (custom?.regionalRates || []).find((r) => String(r.regionId) === String(region._id) && r.pricePerCredit > 0) || null;
 const regionRowPx = (r, creditPackages, custom) =>
   Math.max(
     46,
@@ -188,7 +188,7 @@ const RegionalPricing = ({ refreshKey = 0, isDark = false, addRegionSignal = 0 }
             ))}
             {custom && (
               <span>
-                <b>{t("Custom amount")}</b>: {currencySymbol(data.currency)}{custom.ratePer1K} / {t("1,000 credits")}
+                <b>{t("Custom amount")}</b>: {currencySymbol(data.currency)}{custom.pricePerCredit} / {t("credit")}
               </span>
             )}
           </div>
