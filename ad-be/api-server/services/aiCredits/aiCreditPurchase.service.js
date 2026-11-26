@@ -173,6 +173,11 @@ async function findOrCreateCustomer(email) {
  * from the package and the visitor's region — never taken from the browser.
  */
 async function startCheckout({ organizationId, userId, packageId, req, frontendUrl = process.env.FRONTEND_REDIRECT_URL }) {
+  const appUrl = String(frontendUrl || '').trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//i.test(appUrl)) {
+    write_logs({ message: '[aiCredits] FRONTEND_REDIRECT_URL is missing or not an http(s) URL; cannot start a checkout', log_type: 'error' });
+    throw new AiCreditsError('PAYMENT_UNAVAILABLE', 'Payment could not be started. Please try again later.');
+  }
   if (!isId(packageId)) throw new AiCreditsError('PACKAGE_NOT_FOUND', 'Package not found');
   const pkg = await packageModel.findOne({ _id: packageId, isActive: true, isDeleted: { $ne: true } }).lean();
   if (!pkg) throw new AiCreditsError('PACKAGE_NOT_FOUND', 'This credit package is no longer available.');
@@ -219,8 +224,8 @@ async function startCheckout({ organizationId, userId, packageId, req, frontendU
       ],
       metadata,
       payment_intent_data: { metadata },
-      success_url: `${frontendUrl}/ai-credits?purchase=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${frontendUrl}/ai-credits?purchase=cancelled&payment_id=${paymentId}`,
+      success_url: `${appUrl}/ai-credits?purchase=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${appUrl}/ai-credits?purchase=cancelled&payment_id=${paymentId}`,
     });
     await paymentModel.findOneAndUpdate({ _id: payment._id }, { $set: { stripeSessionId: session.id } }).lean();
     return { url: session.url, paymentId, sessionId: session.id };

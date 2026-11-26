@@ -394,9 +394,9 @@ function splitCharge(wallet, credits) {
  * wallet's current buckets, so the update only applies if they haven't changed since they were
  * read (retried); the total balance change is the same whatever the split.
  */
-async function chargeWallet(walletId, { held, credits, $inc: extraInc = {}, now }) {
+async function chargeWallet(walletId, { held, credits, $inc: extraInc = {}, now, maxAttempts = 8 }) {
   const common = { reserved: -held, balance: round2(held - credits), lifetimeUsed: credits, ...extraInc };
-  for (let attempt = 0; attempt < 8; attempt += 1) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const w = await walletModel.findById(walletId).lean();
     if (!w) return null;
     const { fromMonthly, fromPurchased } = splitCharge(w, credits);
@@ -409,8 +409,29 @@ async function chargeWallet(walletId, { held, credits, $inc: extraInc = {}, now 
       .lean();
     if (updated) return updated;
   }
-  // Heavy contention: charge it all as monthly use (the total stays exact)
-  return walletModel.findOneAndUpdate({ _id: walletId }, { $inc: { ...common, used: credits }, $set: { lastUsedAt: now } }, { new: true }).lean();
+  // Heavy contention: let MongoDB split it in one atomic pipeline update (same rule as splitCharge)
+  return walletModel.findOneAndUpdate({ _id: walletId }, chargePipeline(credits, common, now), { new: true }).lean();
+}
+
+/** Pipeline update that charges `credits` monthly-first against the wallet's values at write time. */
+function chargePipeline(credits, common, now) {
+  const field = (name) => ({ $ifNull: [`$${name}`, 0] });
+  const monthlyLeft = { $max: [0, { $subtract: [field('allocated'), field('used')] }] };
+  const fromPurchased = { $round: [{ $min: [{ $max: [0, { $subtract: [credits, monthlyLeft] }] }, { $max: [0, field('purchasedBalance')] }] }, 2] };
+  const inc = Object.fromEntries(Object.entries(common).map(([k, v]) => [k, { $add: [field(k), v] }]));
+  return [
+    { $set: { _chargeFromPurchased: fromPurchased } },
+    {
+      $set: {
+        ...inc,
+        used: { $add: [field('used'), { $subtract: [credits, '$_chargeFromPurchased'] }] },
+        purchasedBalance: { $subtract: [field('purchasedBalance'), '$_chargeFromPurchased'] },
+        purchasedUsed: { $add: [field('purchasedUsed'), '$_chargeFromPurchased'] },
+        lastUsedAt: { $literal: now },
+      },
+    },
+    { $unset: '_chargeFromPurchased' },
+  ];
 }
 
 /**
@@ -602,6 +623,7 @@ module.exports = {
   transferHold,
   addPurchasedCredits,
   splitCharge,
+  chargeWallet,
   expireStaleHolds,
   adjustCredits,
   setMonthlyLimitOverride,

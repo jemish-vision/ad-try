@@ -6,7 +6,7 @@
  * completion in one step, so concurrent callers interleave between operations exactly like
  * separate MongoDB commands would. Supports what the AI credit code uses:
  * create, findOne, findById, find (sort/skip/limit/select), countDocuments,
- * findOneAndUpdate / updateOne ($set, $inc, $push, $setOnInsert, upsert, new), unique indexes.
+ * findOneAndUpdate / updateOne ($set, $inc, $push, $setOnInsert, upsert, new, pipeline $set/$unset), unique indexes.
  */
 const mongoose = require('mongoose');
 
@@ -47,7 +47,38 @@ function matches(doc, filter = {}) {
   });
 }
 
+// Aggregation-pipeline updates: $set / $unset stages with the arithmetic operators the app uses.
+function evalExpr(doc, e) {
+  if (typeof e === 'string' && e.startsWith('$')) return doc[e.slice(1)];
+  if (!e || typeof e !== 'object' || e instanceof Date) return e;
+  const [[op, args]] = Object.entries(e);
+  if (op === '$literal') return args;
+  const v = Array.isArray(args) ? args.map((a) => evalExpr(doc, a)) : evalExpr(doc, args);
+  switch (op) {
+    case '$add': return v.reduce((a, b) => (a ?? 0) + (b ?? 0), 0);
+    case '$subtract': return (v[0] ?? 0) - (v[1] ?? 0);
+    case '$min': return Math.min(...v);
+    case '$max': return Math.max(...v);
+    case '$ifNull': return v[0] ?? v[1];
+    case '$round': return Math.round(v[0] * 10 ** (v[1] || 0)) / 10 ** (v[1] || 0);
+    default: throw new Error(`fake: unsupported expression ${op}`);
+  }
+}
+
+function applyPipeline(doc, stages) {
+  for (const stage of stages) {
+    if (stage.$set) {
+      const input = clone(doc); // expressions in one stage all see the stage's input
+      for (const [k, e] of Object.entries(stage.$set)) doc[k] = evalExpr(input, e);
+    } else if (stage.$unset) {
+      for (const k of [].concat(stage.$unset)) Reflect.deleteProperty(doc, k);
+    } else throw new Error(`fake: unsupported pipeline stage ${Object.keys(stage)[0]}`);
+  }
+  return doc;
+}
+
 function applyUpdate(doc, update = {}, isInsert = false) {
+  if (Array.isArray(update)) return applyPipeline(doc, update);
   const plain = Object.keys(update).every((k) => !k.startsWith('$'));
   if (plain) return Object.assign(doc, clone(update));
   for (const [k, v] of Object.entries(update.$set || {})) doc[k] = clone(v);

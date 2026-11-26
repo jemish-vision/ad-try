@@ -184,6 +184,7 @@ exports.purchaseCredits = async (req, res) => {
 exports.verifyCreditPurchase = async (req, res) => {
   try {
     if (isDemo(req)) return notAllowed(res, "Buying credits isn't available in demo mode.");
+    if (!canPurchase(req)) return notAllowed(res, "Only the organization owner can manage AI credit purchases.");
     const orgId = orgOf(req);
     if (!validOrgId(orgId)) return res.status(200).json({ isSuccess: false, message: "No organization selected" });
     const result = await purchase.verifyCheckout({ sessionId: req.body?.sessionId, organizationId: orgId });
@@ -197,6 +198,7 @@ exports.verifyCreditPurchase = async (req, res) => {
 exports.cancelCreditPurchase = async (req, res) => {
   try {
     if (isDemo(req)) return notAllowed(res, "Buying credits isn't available in demo mode.");
+    if (!canPurchase(req)) return notAllowed(res, "Only the organization owner can manage AI credit purchases.");
     const orgId = orgOf(req);
     if (!validOrgId(orgId)) return res.status(200).json({ isSuccess: false, message: "No organization selected" });
     const payment = await purchase.cancelCheckout({ paymentId: req.body?.paymentId, organizationId: orgId });

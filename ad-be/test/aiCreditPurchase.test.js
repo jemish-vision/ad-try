@@ -10,6 +10,8 @@ const stub = (rel, exp) => {
   require.cache[resolved] = { id: resolved, filename: resolved, loaded: true, exports: exp };
 };
 
+process.env.FRONTEND_REDIRECT_URL = 'https://app.test/';
+
 // ── In-memory collections ──
 const wallets = createFakeModel('aicreditwallets', { unique: [['organizationId']], defaults: { monthlyLimitOverride: null, reserved: 0, used: 0, lifetimeUsed: 0 } });
 const transactions = createFakeModel('aicredittransactions', { unique: [['dedupeKey']] });
@@ -158,6 +160,27 @@ describe('wallet: monthly and purchased credits', () => {
     assert.equal(w.balance, 1000);
   });
 
+  test('under heavy contention the fallback still spends monthly first, so the reset cannot hand purchased credits back', async () => {
+    const NOV = new Date('2026-11-20T00:00:00Z');
+    await service.getWallet(orgId, { now: NOV });
+    await service.adjustCredits({ organizationId: orgId, credits: -1000, note: 'use up monthly', now: NOV });
+    await service.addPurchasedCredits({ organizationId: orgId, credits: 1000, paymentId: new mongoose.Types.ObjectId(), now: NOV });
+    const before = walletOf();
+    // maxAttempts 0 = every optimistic attempt lost, straight to the atomic fallback
+    const w = await service.chargeWallet(before._id, { held: 0, credits: 10, now: NOV, maxAttempts: 0 });
+    assert.deepEqual([w.used, w.purchasedBalance, w.purchasedUsed, w.balance, w.lifetimeUsed], [before.used, 990, 10, 990, 10]);
+    assert.equal('_chargeFromPurchased' in w, false);
+    const dec = service.walletView(await service.getWallet(orgId, { now: new Date('2026-12-01T00:05:00Z') }));
+    assert.deepEqual([dec.purchasedBalance, dec.available], [990, 1990]); // not 2000
+  });
+
+  test('the fallback splits a charge across both buckets like the normal path', async () => {
+    await service.addPurchasedCredits({ organizationId: orgId, credits: 500, paymentId: new mongoose.Types.ObjectId() });
+    const hold = await service.reserve({ organizationId: orgId, feature: 'AI_ASSISTANT', requestId: 'fb', amount: 1200 });
+    const w = await service.chargeWallet(hold.walletId, { held: 1200, credits: 1200, now: new Date(), maxAttempts: 0 });
+    assert.deepEqual([w.used, w.purchasedBalance, w.purchasedUsed, w.balance, w.reserved], [1000, 300, 200, 300, 0]);
+  });
+
   test('charges running at the same time split exactly', async () => {
     await service.addPurchasedCredits({ organizationId: orgId, credits: 500, paymentId: new mongoose.Types.ObjectId() });
     const holds = await Promise.all([1, 2, 3].map((i) => service.reserve({ organizationId: orgId, feature: 'AI_ASSISTANT', requestId: `p${i}`, amount: 400 })));
@@ -208,6 +231,19 @@ describe('buying credits with Stripe', () => {
     assert.deepEqual([params.metadata.kind, params.metadata.paymentId, params.payment_intent_data.metadata.paymentId], ['ai_credits', paymentId, paymentId]);
     assert.equal(params.success_url, 'https://app.test/ai-credits?purchase=success&session_id={CHECKOUT_SESSION_ID}');
     assert.equal(params.cancel_url, `https://app.test/ai-credits?purchase=cancelled&payment_id=${paymentId}`);
+  });
+
+  test('return links are built from the app URL with or without a trailing slash', async () => {
+    const { paymentId } = await purchase.startCheckout({ organizationId: orgId, userId, packageId: pkg._id, req: req(), frontendUrl: ' https://app.test// ' });
+    assert.equal(stripe.created[0].success_url, 'https://app.test/ai-credits?purchase=success&session_id={CHECKOUT_SESSION_ID}');
+    assert.equal(stripe.created[0].cancel_url, `https://app.test/ai-credits?purchase=cancelled&payment_id=${paymentId}`);
+  });
+
+  test('a missing app URL stops the checkout before any payment or Stripe session is created', async () => {
+    for (const frontendUrl of ['', '   ', 'undefined']) {
+      await assert.rejects(purchase.startCheckout({ organizationId: orgId, userId, packageId: pkg._id, req: req(), frontendUrl }), { code: 'PAYMENT_UNAVAILABLE' });
+    }
+    assert.deepEqual([payments.docs.length, stripe.created.length], [0, 0]);
   });
 
   test('successful payment (webhook): credits added once, even if Stripe sends the event twice', async () => {
@@ -391,6 +427,24 @@ describe('who can buy (controller)', () => {
     await controller.getCreditPackages(reqAs('Analyst'), k);
     assert.deepEqual([k.body.data.canPurchase, k.body.data.packages.length], [false, 1]);
     assert.equal(payments.docs.length, 0);
+  });
+
+  test("team members cannot cancel or verify the owner's checkout", async () => {
+    const started = res();
+    await controller.purchaseCredits(reqAs('ADMIN'), started);
+    const { paymentId } = started.body.data;
+    const sessionId = paymentDoc(paymentId).stripeSessionId;
+    const c = res();
+    await controller.cancelCreditPurchase(reqAs('Analyst', { body: { paymentId } }), c);
+    assert.deepEqual([c.body.isSuccess, c.body.code], [false, 'NOT_ALLOWED']);
+    const v = res();
+    await controller.verifyCreditPurchase(reqAs('Analyst', { body: { sessionId } }), v);
+    assert.deepEqual([v.body.isSuccess, v.body.code], [false, 'NOT_ALLOWED']);
+    assert.deepEqual([paymentDoc(paymentId).status, stripe.sessions.get(sessionId).status], ['PENDING', 'open']);
+    // The owner still can
+    const o = res();
+    await controller.cancelCreditPurchase(reqAs('ADMIN', { body: { paymentId } }), o);
+    assert.deepEqual([o.body.isSuccess, paymentDoc(paymentId).status, stripe.sessions.get(sessionId).status], [true, 'CANCELLED', 'expired']);
   });
 
   test('demo accounts see sample packages and payments but can never pay', async () => {
