@@ -38,7 +38,7 @@ export const CardHeader = ({ icon, title, subtitle, right }) => (
         {subtitle && <p className="text-[12px] text-slate-500 dark:text-slate-400 mt-0.5 mb-0">{subtitle}</p>}
       </div>
     </div>
-    {right && <div className="flex items-center gap-2 flex-wrap">{right}</div>}
+    {right && <div className="flex items-center justify-end gap-2 flex-wrap">{right}</div>}
   </div>
 );
 

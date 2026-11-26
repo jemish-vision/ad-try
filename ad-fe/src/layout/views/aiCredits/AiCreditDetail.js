@@ -115,7 +115,18 @@ export default function AiCreditDetail({ summary, loadUsage, loadTransactions, l
           subtitle={tab === "requests" ? t("Every AI request, its tokens and what it cost.") : tab === "payments" ? t("Credit packages bought online, with their payment status.") : t("Monthly allowances, purchases, usage, month closes and adjustments.")}
           right={
             <>
-              <div className="inline-flex rounded-lg border border-slate-200 dark:border-white/10 p-0.5 bg-slate-50 dark:bg-white/[0.03]" role="tablist">
+              {/* Filters first, tabs last: the tabs stay in the same place whichever tab is open */}
+              {tab === "requests" ? (
+                <>
+                  <Select id="ai-credits-feature-filter" label={t("Feature")} value={usage.filters.feature || ""} onChange={(v) => usage.setFilter("feature", v)} options={FEATURE_OPTIONS(t)} />
+                  <Select id="ai-credits-status-filter" label={t("Status")} value={usage.filters.status || ""} onChange={(v) => usage.setFilter("status", v)} options={USAGE_STATUS_OPTIONS(t)} />
+                </>
+              ) : tab === "payments" ? (
+                <Select id="ai-credits-payment-filter" label={t("Status")} value={pays.filters.status || ""} onChange={(v) => pays.setFilter("status", v)} options={PAYMENT_STATUS_OPTIONS(t)} />
+              ) : (
+                <Select id="ai-credits-type-filter" label={t("Type")} value={txs.filters.type || ""} onChange={(v) => txs.setFilter("type", v)} options={TX_TYPE_OPTIONS(t)} />
+              )}
+              <div className="inline-flex rounded-lg border border-slate-200 dark:border-white/10 p-0.5 bg-slate-50 dark:bg-white/[0.03] order-first md:order-last" role="tablist">
                 {[
                   ["requests", t("AI requests")],
                   ["transactions", t("Credit history")],
@@ -134,16 +145,6 @@ export default function AiCreditDetail({ summary, loadUsage, loadTransactions, l
                   </button>
                 ))}
               </div>
-              {tab === "requests" ? (
-                <>
-                  <Select id="ai-credits-feature-filter" label={t("Feature")} value={usage.filters.feature || ""} onChange={(v) => usage.setFilter("feature", v)} options={FEATURE_OPTIONS(t)} />
-                  <Select id="ai-credits-status-filter" label={t("Status")} value={usage.filters.status || ""} onChange={(v) => usage.setFilter("status", v)} options={USAGE_STATUS_OPTIONS(t)} />
-                </>
-              ) : tab === "payments" ? (
-                <Select id="ai-credits-payment-filter" label={t("Status")} value={pays.filters.status || ""} onChange={(v) => pays.setFilter("status", v)} options={PAYMENT_STATUS_OPTIONS(t)} />
-              ) : (
-                <Select id="ai-credits-type-filter" label={t("Type")} value={txs.filters.type || ""} onChange={(v) => txs.setFilter("type", v)} options={TX_TYPE_OPTIONS(t)} />
-              )}
             </>
           }
         />
