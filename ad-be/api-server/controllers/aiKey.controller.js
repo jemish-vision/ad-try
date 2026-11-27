@@ -41,7 +41,7 @@ function canChange(req, res) {
   return true;
 }
 
-/** Sample data for demo accounts: own keys on (OpenAI + Gemini saved), wallet fallback allowed. */
+/** Sample data for demo accounts: own keys on, OpenAI + Gemini saved (Anthropic uses AI credits). */
 function demoOverview() {
   const features = keys.featureProviders();
   const sample = {
@@ -49,7 +49,7 @@ function demoOverview() {
     gemini: { provider: "gemini", keyHint: "AIza…x9Lk", status: "RATE_LIMITED", statusMessage: "Too many requests right now.", lastValidatedAt: new Date(Date.now() - 86400000), lastUsedAt: new Date(Date.now() - 7200000), updatedAt: new Date(Date.now() - 6 * 86400000) },
   };
   return {
-    settings: { usePersonalKeys: true, allowWalletFallback: true },
+    settings: { usePersonalKeys: true },
     providers: PROVIDERS.map((p) => ({ provider: p, label: keys.labelOf(p), key: sample[p] || null, features: Object.entries(features).filter(([, ps]) => ps.includes(p)).map(([f]) => f) })),
     featureProviders: features,
   };
@@ -106,8 +106,8 @@ exports.removeKey = async (req, res) => {
 exports.updateSettings = async (req, res) => {
   try {
     if (!canChange(req, res)) return undefined;
-    const { usePersonalKeys, allowWalletFallback } = req.body || {};
-    const { before, after } = await keys.updateSettings({ organizationId: orgOf(req), usePersonalKeys, allowWalletFallback, actorId: req.user?._id });
+    const { usePersonalKeys } = req.body || {};
+    const { before, after } = await keys.updateSettings({ organizationId: orgOf(req), usePersonalKeys, actorId: req.user?._id });
     auditChange(req, { resourceType: "ai key settings", resourceId: String(orgOf(req)), organizationId: orgOf(req), previousValue: before, newValue: after });
     return res.status(200).json({ isSuccess: true, message: "Settings saved", data: after });
   } catch (err) {

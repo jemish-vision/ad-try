@@ -395,7 +395,7 @@ export default function AIAnalysisModal({
                             )}
                         </div>
 
-                        <AiCreditCostNote id="campaign-ai-credit-note" />
+                        <AiCreditCostNote id="campaign-ai-credit-note" feature="CAMPAIGN_ANALYSIS" />
 
                         {/* Image Preview Area */}
                         {imageFile && (

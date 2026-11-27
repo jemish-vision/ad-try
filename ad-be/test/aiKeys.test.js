@@ -66,7 +66,7 @@ async function saveOwn(provider, apiKey = OWN[provider]) {
   verdict = { status: 'VALID', message: null };
   return keys.saveKey({ organizationId: orgId, provider, apiKey });
 }
-const turnOn = (allowWalletFallback = false) => keys.updateSettings({ organizationId: orgId, usePersonalKeys: true, allowWalletFallback });
+const turnOn = () => keys.updateSettings({ organizationId: orgId, usePersonalKeys: true });
 
 /** A fake provider call: remembers the key it got, records 1,000 in / 500 out (= 3 credits). */
 function call(provider, { fail = null, seen = [] } = {}) {
@@ -196,13 +196,22 @@ describe('adding, checking and removing keys', () => {
     await assert.rejects(keys.removeKey({ organizationId: orgId, provider: 'openai' }), { code: 'KEY_NOT_FOUND' });
   });
 
-  test('own keys can only be turned on once a key is saved; the wallet fallback is off by default', async () => {
+  test('own keys can only be turned on once a key is saved', async () => {
     await assert.rejects(turnOn(), { code: 'KEYS_REQUIRED' });
     await saveOwn('gemini');
-    const { after: on } = await turnOn();
-    assert.deepEqual(on, { usePersonalKeys: true, allowWalletFallback: false });
-    const { after: fb } = await keys.updateSettings({ organizationId: orgId, allowWalletFallback: true });
-    assert.deepEqual(fb, { usePersonalKeys: true, allowWalletFallback: true });
+    const { before, after: on } = await turnOn();
+    assert.deepEqual([before, on], [{ usePersonalKeys: false }, { usePersonalKeys: true }]);
+    const { after: off } = await keys.updateSettings({ organizationId: orgId, usePersonalKeys: false });
+    assert.deepEqual(off, { usePersonalKeys: false });
+  });
+
+  test('the AI features learn which providers have a key, never the key itself', async () => {
+    await saveOwn('gemini');
+    await turnOn();
+    const summary = await keys.ownKeysSummary(orgId);
+    assert.deepEqual([summary.usePersonalKeys, summary.providers], [true, ['gemini']]);
+    assert.deepEqual(summary.featureProviders.APLUS_CONTENT, ['gemini']);
+    assert.ok(!JSON.stringify(summary).includes(OWN.gemini));
   });
 
   test('checking with the provider: what each answer means, and the key goes in a header (never the URL)', async () => {
@@ -320,20 +329,9 @@ describe('AI requests with the organization\'s own keys', () => {
     assert.equal(walletOf().used, 3);
   });
 
-  test('no key for the provider and no consent: stops with a clear message, nothing called or charged', async () => {
+  test('no key saved for the provider: platform key, charged to the wallet', async () => {
     await saveOwn('openai');
-    await turnOn(false);
-    const c = call('gemini');
-    const { r, log } = await runRequest([c]);
-    assert.deepEqual([r.body.isSuccess, r.body.code, r.body.provider], [false, 'PERSONAL_KEY_MISSING', 'gemini']);
-    assert.match(r.body.message, /no Google Gemini key is saved/);
-    assert.deepEqual(c.seen, []);
-    assert.deepEqual([log.status, log.credits, walletOf().used, walletOf().reserved], ['RELEASED', 0, 0, 0]);
-  });
-
-  test('no key for the provider, wallet fallback allowed: platform key, charged to the wallet', async () => {
-    await saveOwn('openai');
-    await turnOn(true);
+    await turnOn();
     const c = call('gemini');
     const { r, log } = await runRequest([c]);
     assert.equal(r.body.isSuccess, true);
@@ -344,7 +342,7 @@ describe('AI requests with the organization\'s own keys', () => {
 
   test('one request on both: own OpenAI key free, Gemini on the wallet → MIXED, only Gemini charged', async () => {
     await saveOwn('openai');
-    await turnOn(true);
+    await turnOn();
     const o = call('openai');
     const g = call('gemini');
     const { r, log } = await runRequest([o, g]);
@@ -359,9 +357,9 @@ describe('AI requests with the organization\'s own keys', () => {
     ['out of quota', providerError(429, 'You exceeded your current quota, please check your plan and billing details.'), 'PERSONAL_KEY_QUOTA', 'QUOTA_EXCEEDED'],
     ['rate limited', providerError(429, 'Rate limit reached for gpt-4o-mini'), 'PERSONAL_KEY_RATE_LIMITED', 'RATE_LIMITED'],
   ]) {
-    test(`own key ${label}, no consent: the request stops, the key is flagged, nothing charged, no retry`, async () => {
+    test(`own key ${label}: the request stops, the key is flagged, nothing charged, not retried on credits`, async () => {
       await saveOwn('openai');
-      await turnOn(false);
+      await turnOn();
       const c = call('openai', { fail: err });
       const { r, log } = await runRequest([c]);
       assert.deepEqual([r.body.isSuccess, r.body.code, r.body.provider], [false, code, 'openai']);
@@ -373,28 +371,41 @@ describe('AI requests with the organization\'s own keys', () => {
     });
   }
 
-  test('own key rejected, consent given: retried once on the platform key and charged', async () => {
-    await saveOwn('openai');
-    await turnOn(true);
-    const c = call('openai', { fail: (apiKey) => (apiKey === OWN.openai ? providerError(401, 'invalid x-api-key') : null) });
+  test('a feature with no key for any of its providers is metered exactly like before', async () => {
+    await saveOwn('gemini'); // listing generation only uses OpenAI
+    await turnOn();
+    await service.adjustCredits({ organizationId: orgId, credits: -1000, note: 'empty' });
+    const c = call('openai');
     const { r, log } = await runRequest([c]);
-    assert.equal(r.body.isSuccess, true);
-    assert.deepEqual(c.seen, [OWN.openai, PLATFORM.openai]);
-    assert.deepEqual([log.keySource, log.credits, keyDoc('openai').status], ['PLATFORM', 3, 'INVALID']);
+    // Normal up-front credit check: stopped before any AI call
+    assert.deepEqual([r.body.isSuccess, r.body.code, c.seen, log], [false, 'AI_CREDITS_EXHAUSTED', [], undefined]);
+    await service.adjustCredits({ organizationId: orgId, credits: 1000, note: 'refill' });
+    const again = await runRequest([call('openai')]);
+    assert.deepEqual([again.log.keySource, again.log.credits, again.log.reservedCredits > 0], ['PLATFORM', 3, true]);
+  });
+
+  test('a saved key that cannot be read stops the request (no silent switch to credits)', async () => {
+    await saveOwn('openai');
+    await turnOn();
+    keyDoc('openai').encryptedKey = 'v1:broken:broken:broken';
+    keys.invalidate(orgId);
+    const c = call('openai');
+    const { r } = await runRequest([c]);
+    assert.deepEqual([r.body.code, c.seen, walletOf().used], ['PERSONAL_KEY_UNREADABLE', [], 0]);
   });
 
   test('errors that are not about the key are passed through and leave the key alone', async () => {
     await saveOwn('openai');
-    await turnOn(true);
+    await turnOn();
     const c = call('openai', { fail: providerError(503, 'The model is overloaded') });
     const { r } = await runRequest([c]);
     assert.deepEqual([r.statusCode, r.body.message], [500, 'The model is overloaded']);
     assert.deepEqual([c.seen.length, keyDoc('openai').status, walletOf().used], [1, 'VALID', 0]);
   });
 
-  test('fallback with an empty wallet: out-of-credits message, nothing called on the platform key', async () => {
+  test('no key for the provider and an empty wallet: out-of-credits message, nothing called', async () => {
     await saveOwn('openai');
-    await turnOn(true);
+    await turnOn();
     await service.adjustCredits({ organizationId: orgId, credits: -1000, note: 'empty' });
     const c = call('gemini');
     const { r } = await runRequest([c]);
@@ -415,17 +426,20 @@ describe('AI requests with the organization\'s own keys', () => {
     assert.deepEqual([ran, r.body.code], [false, 'AI_KEY_SETTINGS_UNAVAILABLE']);
   });
 
-  test('a removed key stops being used within the request after the next lookup', async () => {
+  test('after a key is removed, its features use AI credits', async () => {
     await saveOwn('openai');
-    await turnOn(false);
+    await saveOwn('gemini');
+    await turnOn();
     await keys.removeKey({ organizationId: orgId, provider: 'openai' });
-    const { r } = await runRequest([call('openai')]);
-    assert.equal(r.body.code, 'PERSONAL_KEY_MISSING');
+    const c = call('openai');
+    const { r, log } = await runRequest([c]);
+    assert.equal(r.body.isSuccess, true);
+    assert.deepEqual([c.seen, log.keySource, log.credits], [[PLATFORM.openai], 'PLATFORM', 3]);
   });
 
   test('the shared AI provider layer (AI Assistant) uses the own key and records it as PERSONAL', async () => {
     await saveOwn('anthropic');
-    await turnOn(false);
+    await turnOn();
     const aiProvider = require('../api-server/services/aiProvider.service');
     const keysSeen = [];
     class FakeAnthropic {
@@ -459,7 +473,7 @@ describe('background work (A+ batch images) and pricing', () => {
 
   test('own Gemini key: the batch hold is 0 and the images are logged but not charged', async () => {
     await saveOwn('gemini');
-    await turnOn(false);
+    await turnOn();
     const req = await meterReq();
     const hold = await background.holdForBackgroundJob(req, 'APLUS_CONTENT', 70, { provider: 'gemini' });
     assert.deepEqual([hold.amount, hold.keySource, walletOf().reserved], [0, 'PERSONAL', 0]);
@@ -468,9 +482,9 @@ describe('background work (A+ batch images) and pricing', () => {
     assert.deepEqual([log.status, log.credits, log.images, log.keySource], ['SETTLED', 0, 7, 'PERSONAL']);
   });
 
-  test('no Gemini key, wallet fallback allowed: a normal wallet hold', async () => {
+  test('no Gemini key: a normal wallet hold', async () => {
     await saveOwn('openai');
-    await turnOn(true);
+    await turnOn();
     const req = await meterReq();
     const hold = await background.holdForBackgroundJob(req, 'APLUS_CONTENT', 70, { provider: 'gemini' });
     assert.deepEqual([hold.amount, hold.keySource, walletOf().reserved], [70, 'PLATFORM', 70]);

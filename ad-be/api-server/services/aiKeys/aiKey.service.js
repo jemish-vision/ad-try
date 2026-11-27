@@ -130,7 +130,13 @@ const keyView = (doc) =>
 
 async function getSettings(organizationId) {
   const s = await settingModel.findOne({ organizationId: toObjectId(organizationId) }).lean();
-  return { usePersonalKeys: Boolean(s?.usePersonalKeys), allowWalletFallback: Boolean(s?.allowWalletFallback) };
+  return { usePersonalKeys: Boolean(s?.usePersonalKeys) };
+}
+
+/** For the AI features: is the switch on, and which providers have a key (no key details). */
+async function ownKeysSummary(organizationId) {
+  const [settings, keys] = await Promise.all([getSettings(organizationId), keyModel.find({ organizationId: toObjectId(organizationId) }).select('provider').lean()]);
+  return { ...settings, providers: keys.map((k) => k.provider), featureProviders: featureProviders() };
 }
 
 /** Everything the AI API Keys page shows: switches, each provider's key (masked) and feature map. */
@@ -197,12 +203,11 @@ async function removeKey({ organizationId, provider }) {
 }
 
 /** The two switches. Own keys can only be turned on once at least one key is saved. */
-async function updateSettings({ organizationId, usePersonalKeys, allowWalletFallback, actorId = null }) {
+async function updateSettings({ organizationId, usePersonalKeys, actorId = null }) {
   const orgId = toObjectId(organizationId);
   const before = await getSettings(organizationId);
   const next = {
     usePersonalKeys: usePersonalKeys === undefined ? before.usePersonalKeys : Boolean(usePersonalKeys),
-    allowWalletFallback: allowWalletFallback === undefined ? before.allowWalletFallback : Boolean(allowWalletFallback),
   };
   if (next.usePersonalKeys && !before.usePersonalKeys && !(await keyModel.countDocuments({ organizationId: orgId }))) {
     throw new AiKeyError('KEYS_REQUIRED', 'Add at least one API key before turning on your own keys.');
@@ -229,7 +234,6 @@ async function getOrgKeyConfig(organizationId, { fresh = false } = {}) {
   const config = {
     organizationId: k,
     enabled: Boolean(s?.usePersonalKeys),
-    allowWalletFallback: Boolean(s?.allowWalletFallback),
     keys: Object.fromEntries(keys.map((d) => [d.provider, { encryptedKey: d.encryptedKey, status: d.status }])),
   };
   cache.set(k, { at: Date.now(), config });
@@ -279,6 +283,7 @@ module.exports = {
   defaultVerifier,
   checkFormat,
   getSettings,
+  ownKeysSummary,
   overview,
   saveKey,
   revalidateKey,

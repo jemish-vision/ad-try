@@ -30,11 +30,12 @@ const features = () => Object.values(service.FEATURES).map((f) => ({ key: f.key,
 // ── User panel (any member of the organization) ──────────────────────────────
 exports.getMyCredits = async (req, res) => {
   try {
-    if (isDemo(req)) return res.status(200).json({ isSuccess: true, data: { ...mock.summary(), features: features(), canPurchase: false, canViewPayments: true, ownKeys: { usePersonalKeys: true, allowWalletFallback: true } } });
+    if (isDemo(req)) return res.status(200).json({ isSuccess: true, data: { ...mock.summary(), features: features(), canPurchase: false, canViewPayments: true, ownKeys: { usePersonalKeys: true, providers: ["openai", "gemini"], featureProviders: aiKeys.featureProviders() } } });
     const orgId = orgOf(req);
     if (!validOrgId(orgId)) return res.status(200).json({ isSuccess: true, data: null, message: "No organization selected" });
-    // ownKeys: whether AI runs on the organization's own API keys (then no credits are used)
-    const [data, ownKeys] = await Promise.all([report.getUserSummary(orgId), aiKeys.getSettings(orgId)]);
+    // ownKeys: whether AI runs on the organization's own API keys, and which providers have one
+    // (features whose provider has no key still use credits)
+    const [data, ownKeys] = await Promise.all([report.getUserSummary(orgId), aiKeys.ownKeysSummary(orgId)]);
     const owner = canPurchase(req);
     return res.status(200).json({ isSuccess: true, data: { ...data, features: features(), canPurchase: owner, canViewPayments: owner, ownKeys } });
   } catch (err) {

@@ -9,10 +9,11 @@
  *   key (env), charged to the wallet as before.
  * - Own keys on: the organization's key for that provider. Calls made with it are recorded with
  *   keySource PERSONAL (tokens logged, no credits).
- * - Own keys on but no key for the provider, or the provider refuses it (invalid/expired, quota,
- *   rate limit): if the owner allowed wallet fallback, the call runs once on the platform's key and
- *   the wallet is held and charged for it; otherwise the request stops with a PERSONAL_KEY_* error.
- *   The key's status is updated so the owner sees what went wrong.
+ * - Own keys on but no key saved for the provider: the call runs on the platform's key and uses AI
+ *   credits (the wallet is held and charged for it), like an organization without own keys.
+ * - The provider refuses the saved key (invalid/expired, quota, rate limit) or it can't be read:
+ *   the request stops with a PERSONAL_KEY_* error and nothing is charged, so a broken key never
+ *   quietly turns into credit spending. The key's status is updated so the owner sees what's wrong.
  * Errors that aren't about the key (provider outage, bad request) are passed through unchanged.
  */
 const aiKeys = require('./aiKey.service');
@@ -28,10 +29,6 @@ const ENV_KEYS = {
 const platformKey = (provider) => ENV_KEYS[provider]?.() || null;
 
 const KEY_ERRORS = {
-  MISSING: {
-    code: 'PERSONAL_KEY_MISSING',
-    message: (label) => `Your organization uses its own AI API keys, but no ${label} key is saved. Add one on the AI API Keys page, or ask the owner to allow wallet credits when a key can't be used.`,
-  },
   UNREADABLE: {
     code: 'PERSONAL_KEY_UNREADABLE',
     message: (label) => `The saved ${label} key can't be read. Add it again on the AI API Keys page.`,
@@ -56,27 +53,23 @@ function keyError(provider, kind) {
 }
 
 /**
- * The key a call to `provider` should use now: { apiKey, source: 'PERSONAL'|'PLATFORM', fallbackAllowed }.
- * Holds wallet credits first when it falls back to the platform's key (own keys on).
+ * The key a call to `provider` should use now: { apiKey, source: 'PERSONAL'|'PLATFORM' }.
+ * Own keys on and no key saved for the provider: holds wallet credits, then the platform's key.
  */
 async function resolveProviderKey(provider) {
   const meter = getAiMeter();
-  if (!meter?.personal) return { apiKey: platformKey(provider), source: 'PLATFORM', fallbackAllowed: false };
+  if (!meter?.personal) return { apiKey: platformKey(provider), source: 'PLATFORM' };
   const cfg = meter.keyConfig;
   let personal = null;
-  let problem = 'MISSING';
   try {
     personal = aiKeys.personalKeyFor(cfg, provider);
   } catch (err) {
-    problem = 'UNREADABLE';
     write_logs({ message: `[aiKeys] stored ${provider} key for ${cfg.organizationId} can't be decrypted`, log_type: 'error' });
+    throw keyError(provider, 'UNREADABLE');
   }
-  if (personal) return { apiKey: personal, source: 'PERSONAL', fallbackAllowed: cfg.allowWalletFallback };
-  if (cfg.allowWalletFallback) {
-    await meter.useWallet();
-    return { apiKey: platformKey(provider), source: 'PLATFORM', fallbackAllowed: false, fellBack: true };
-  }
-  throw keyError(provider, problem);
+  if (personal) return { apiKey: personal, source: 'PERSONAL' };
+  await meter.useWallet();
+  return { apiKey: platformKey(provider), source: 'PLATFORM', usedWallet: true };
 }
 
 /**
@@ -95,9 +88,7 @@ async function withProviderKey(provider, fn) {
     const problem = aiKeys.classifyProviderError(err);
     if (!problem) throw err; // not about the key (outage, bad request): handled as before
     await aiKeys.markKeyProblem(meter.organizationId, provider, problem.kind, problem.message).catch(() => {});
-    if (!r.fallbackAllowed) throw keyError(provider, problem.kind);
-    await meter.useWallet();
-    return runWithKeySource('PLATFORM', () => fn(platformKey(provider), 'PLATFORM'));
+    throw keyError(provider, problem.kind);
   }
 }
 

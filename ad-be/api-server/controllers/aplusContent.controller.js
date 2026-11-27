@@ -535,14 +535,13 @@ exports.createAIAPlusContent = async (req, res) => {
                 const apiErrMsg = batchErr?.response?.data?.error?.message || batchErr.message || "";
                 write_logs({ message: `Batch submission failed: ${aiKeys.scrub(apiErrMsg)}`, log_type: "warn" });
 
-                // The organization's own Gemini key was refused: record it; with wallet fallback allowed,
-                // generate the images directly below (each falls back on its own), otherwise stop here.
+                // The organization's own Gemini key was refused: record it and stop (nothing is charged).
                 const keyProblem = personalBatch ? aiKeys.classifyProviderError(batchErr) : null;
                 if (keyProblem) {
                     await aiKeys.markKeyProblem(req.aiMeter.organizationId, "gemini", keyProblem.kind, keyProblem.message).catch(() => {});
                     await releaseBackgroundHold(aiCreditHold, "Own Gemini key refused");
                     aiCreditHold = null;
-                    if (!req.aiMeter.keyConfig?.allowWalletFallback) throw keyError("gemini", keyProblem.kind);
+                    throw keyError("gemini", keyProblem.kind);
                 }
 
                 if (!keyProblem && (apiErrMsg.includes("spending cap") || apiErrMsg.includes("quota") || batchErr?.response?.status === 429)) {

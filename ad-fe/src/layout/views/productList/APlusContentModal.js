@@ -833,7 +833,7 @@ export default function APlusContentModal({
                   </div>
 
                   <div className="flex flex-col gap-3">
-                    <AiCreditCostNote id="aplus-ai-credit-note" images={aplusType === "premium" ? 7 : 5} />
+                    <AiCreditCostNote id="aplus-ai-credit-note" feature="APLUS_CONTENT" images={aplusType === "premium" ? 7 : 5} />
                     <button
                       className="w-full py-3 px-6 rounded-xl font-bold text-sm bg-[var(--accent-primary)] hover:opacity-90 active:scale-[0.98] shadow-md shadow-[var(--accent-glow)] text-white transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50"
                       onClick={handleGeneratePreview}

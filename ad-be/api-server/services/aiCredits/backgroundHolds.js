@@ -27,13 +27,13 @@ async function imageCredits(n) {
  * store with the job, or null when the request isn't metered (demo user, no organization).
  * Throws AiCreditsError when the wallet can't cover it.
  * opts.provider: the AI provider the background work calls. When the organization uses its own
- * keys and has a key for it (or doesn't allow wallet fallback), nothing is held: keySource PERSONAL.
+ * keys and has a key for it, nothing is held: keySource PERSONAL. Without a key: credits as usual.
  */
 async function holdForBackgroundJob(req, feature, amount, { provider = null } = {}) {
   const meter = req?.aiMeter;
   if (!meter) return null;
   const cfg = meter.keyConfig;
-  const personal = Boolean(meter.personal && (!provider || cfg?.keys?.[provider] || !cfg?.allowWalletFallback));
+  const personal = Boolean(meter.personal && (!provider || cfg?.keys?.[provider]));
   const hold = await service.reserve({
     organizationId: meter.organizationId,
     userId: meter.userId,

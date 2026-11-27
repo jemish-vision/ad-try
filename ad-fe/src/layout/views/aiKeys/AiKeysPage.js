@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import moment from "moment";
-import { KeyRound, ShieldCheck, AlertTriangle, Eye, EyeOff, Lock, Plus, RefreshCw, Trash2, Info } from "lucide-react";
+import { KeyRound, ShieldCheck, Eye, EyeOff, Lock, Plus, RefreshCw, Trash2, Info } from "lucide-react";
 import Toast from "../../../common/helper/toast/Toast";
 import { CustomModal } from "../../../helper/modal/CustomModal";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../components/ui/dialog";
@@ -26,16 +26,14 @@ export const KEY_STATUS = {
   UNVERIFIED: { label: "Not checked", cls: "text-slate-600 bg-slate-100 dark:text-slate-300 dark:bg-white/[0.06]" },
 };
 
-/** Features that can't run fully on the saved keys (Campaign AI Analysis needs either provider). */
+/** Features that still use AI credits (fully or partly) because a provider they use has no saved key. */
 export function missingCoverage(data) {
   if (!data) return [];
   const saved = new Set((data.providers || []).filter((p) => p.key).map((p) => p.provider));
   return Object.entries(data.featureProviders || {})
     .map(([feature, providers]) => {
-      const anyOne = feature === "CAMPAIGN_ANALYSIS";
       const missing = providers.filter((p) => !saved.has(p));
-      const blocked = anyOne ? missing.length === providers.length : missing.length > 0;
-      return blocked ? { feature, missing, anyOne } : null;
+      return missing.length ? { feature, missing } : null;
     })
     .filter(Boolean);
 }
@@ -178,7 +176,7 @@ function ProviderCard({ item, canManage, ownKeysOn, onAdd, onCheck, onRemove, bu
         ) : (
           <div className="text-[12.5px] text-slate-500 dark:text-slate-400">
             {t("No key saved.")}
-            {ownKeysOn && <div className="text-amber-700 dark:text-amber-300 mt-1">{t("Features that use {{provider}} can't run on your own keys.", { provider: label })}</div>}
+            {ownKeysOn && <div className="mt-1">{t("Features that use {{provider}} use AI credits until a key is added.", { provider: label })}</div>}
           </div>
         )}
       </div>
@@ -298,40 +296,26 @@ export default function AiKeysPage() {
       )}
 
       <Card id="ai-keys-mode">
-        <CardHeader icon={<ShieldCheck className="w-3.5 h-3.5" />} title={t("How AI requests are paid")} subtitle={ownOn ? t("AI requests run on your keys below and don't use AI credits.") : t("AI runs on the platform's keys and uses your organization's AI credits.")} />
-        <div className="grid grid-cols-1 cq-md:grid-cols-2 gap-3">
-          <label className="flex items-start justify-between gap-4 rounded-xl border border-slate-200/80 dark:border-white/[0.08] px-4 py-3">
-            <span>
-              <span className="block text-[13px] font-semibold text-slate-800 dark:text-slate-100">{t("Use our own API keys")}</span>
-              <span className="block text-[12px] text-slate-500 dark:text-slate-400 mt-0.5">{t("AI Assistant, Optimize with AI, A+ Content and the other AI features use the keys saved below.")}</span>
-            </span>
-            <Switch id="ai-keys-use-own" checked={ownOn} disabled={!canManage || busy} onCheckedChange={(v) => changeSetting({ usePersonalKeys: v })} aria-label={t("Use our own API keys")} data-demo-block />
-          </label>
-          <label className="flex items-start justify-between gap-4 rounded-xl border border-slate-200/80 dark:border-white/[0.08] px-4 py-3">
-            <span>
-              <span className="block text-[13px] font-semibold text-slate-800 dark:text-slate-100">{t("Use AI credits when our key can't be used")}</span>
-              <span className="block text-[12px] text-slate-500 dark:text-slate-400 mt-0.5">
-                {settings.allowWalletFallback
-                  ? t("On: if a key is missing, rejected or out of quota, the request runs on the platform's key and uses AI credits.")
-                  : t("Off: if a key is missing, rejected or out of quota, the request stops with a message and nothing is charged.")}
-              </span>
-            </span>
-            <Switch id="ai-keys-wallet-fallback" checked={settings.allowWalletFallback} disabled={!canManage || busy || !ownOn} onCheckedChange={(v) => changeSetting({ allowWalletFallback: v })} aria-label={t("Use AI credits when our key can't be used")} data-demo-block />
-          </label>
-        </div>
+        <CardHeader icon={<ShieldCheck className="w-3.5 h-3.5" />} title={t("How AI requests are paid")} subtitle={ownOn ? t("Features with a saved key run on it and don't use AI credits. Features without a key use AI credits.") : t("AI runs on the platform's keys and uses your organization's AI credits.")} />
+        <label className="flex items-start justify-between gap-4 rounded-xl border border-slate-200/80 dark:border-white/[0.08] px-4 py-3">
+          <span>
+            <span className="block text-[13px] font-semibold text-slate-800 dark:text-slate-100">{t("Use our own API keys")}</span>
+            <span className="block text-[12px] text-slate-500 dark:text-slate-400 mt-0.5">{t("Each AI feature uses your saved key for its provider. Features whose provider has no key keep using AI credits.")}</span>
+            <span className="block text-[12px] text-slate-500 dark:text-slate-400 mt-0.5">{t("If a saved key is rejected or out of quota, the request stops with a message and nothing is charged.")}</span>
+          </span>
+          <Switch id="ai-keys-use-own" checked={ownOn} disabled={!canManage || busy} onCheckedChange={(v) => changeSetting({ usePersonalKeys: v })} aria-label={t("Use our own API keys")} data-demo-block />
+        </label>
         {ownOn && coverage.length > 0 && (
-          <div role="status" id="ai-keys-coverage" aria-labelledby="ai-keys-coverage-title" className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200/80 dark:border-amber-800/40 bg-amber-50/70 dark:bg-amber-950/30 px-3.5 py-2.5 text-[12.5px] text-amber-800 dark:text-amber-200">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
+          <div role="status" id="ai-keys-coverage" aria-labelledby="ai-keys-coverage-title" className="mt-3 flex items-start gap-2 rounded-xl border border-blue-200/70 dark:border-blue-800/40 bg-blue-50/70 dark:bg-blue-950/30 px-3.5 py-2.5 text-[12.5px] text-blue-800 dark:text-blue-200">
+            <Info className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
             <div>
-              <div id="ai-keys-coverage-title" className="font-semibold">
-                {settings.allowWalletFallback ? t("These features will use AI credits because a key is missing:") : t("These features will stop with a message because a key is missing:")}
-              </div>
+              <div id="ai-keys-coverage-title" className="font-semibold">{t("These features use AI credits until a key is added:")}</div>
               <ul className="m-0 mt-1 pl-4 list-disc">
                 {coverage.map((c) => (
                   <li key={c.feature}>
-                    {t(c.anyOne ? "{{feature}}: needs a {{providers}} key" : "{{feature}}: needs {{providers}}", {
+                    {t("{{feature}}: no {{providers}} key saved", {
                       feature: t(FEATURE_LABELS[c.feature] || c.feature),
-                      providers: c.missing.map((p) => t(AI_PROVIDER_LABELS[p])).join(c.anyOne ? ` ${t("or")} ` : ", "),
+                      providers: c.missing.map((p) => t(AI_PROVIDER_LABELS[p])).join(" / "),
                     })}
                   </li>
                 ))}
@@ -363,11 +347,7 @@ export default function AiKeysPage() {
         icon="delete"
         iconVariant="danger"
         message={
-          ownOn
-            ? settings.allowWalletFallback
-              ? t("Features that use this provider will run on the platform's key and use AI credits.")
-              : t("Features that use this provider will stop working until a new key is added or your own keys are turned off.")
-            : t("The key will be deleted.")
+          ownOn ? t("Features that use this provider will use AI credits after the key is removed.") : t("The key will be deleted.")
         }
         actions={[
           { label: t("Cancel"), cancel: true, icon: "close", onClick: () => setToRemove(null) },

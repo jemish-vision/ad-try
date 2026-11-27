@@ -47,7 +47,6 @@ export const AI_PROVIDER_LABELS = { anthropic: "Anthropic (Claude)", openai: "Op
 
 /** Why an AI request stopped when the organization uses its own keys (server error codes). */
 const AI_KEY_ERRORS = {
-  PERSONAL_KEY_MISSING: "Your organization uses its own AI API keys, but no {{provider}} key is saved. Add one on the AI API Keys page, or ask the owner to allow wallet credits when a key can't be used.",
   PERSONAL_KEY_UNREADABLE: "The saved {{provider}} key can't be read. Add it again on the AI API Keys page.",
   PERSONAL_KEY_INVALID: "{{provider}} rejected your organization's API key (invalid, expired or revoked). Update it on the AI API Keys page.",
   PERSONAL_KEY_QUOTA: "Your {{provider}} account has no quota or credit left. Check your billing with {{provider}}, or update the key on the AI API Keys page.",

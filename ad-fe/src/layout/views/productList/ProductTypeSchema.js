@@ -343,7 +343,7 @@ const ProductTypeSchema = () => {
                 Boolean(moveNext) && (
                     <div id="product-form-field p-0" className="budget_container">
                         <div className="data_content data_content_btn p-0">
-                            <AiCreditCostNote id="listing-generation-ai-credit-note" className="px-4 pt-3" />
+                            <AiCreditCostNote id="listing-generation-ai-credit-note" feature="LISTING_GENERATION" className="px-4 pt-3" />
                             <DynamicFormField
                                 formFields={formFields}
                                 group={productAmazonGroup}

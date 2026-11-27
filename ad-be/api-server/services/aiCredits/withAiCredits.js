@@ -15,9 +15,10 @@
  * - Clients may send an `X-AI-Request-Id` header (8–80 chars of A-Z a-z 0-9 _ -); a repeated id is
  *   rejected instead of charged twice.
  * - Demo (mock) users and requests without an organization (e.g. Super Admin) are not metered.
- * - Organizations that use their own AI API keys (aiKeys): the request is still logged (tokens,
- *   models, key source) but holds 0 credits and is never charged. Only when a key is missing or
- *   fails AND the owner allowed wallet fallback does the meter hold credits (useWallet()).
+ * - Organizations that use their own AI API keys (aiKeys): calls to a provider with a saved key are
+ *   logged (tokens, models, key source) but never charged; calls to a provider without a key use
+ *   AI credits as usual (useWallet()). A feature none of whose providers has a key is metered
+ *   exactly like a platform request.
  */
 const crypto = require('crypto');
 const service = require('./aiCredit.service');
@@ -27,8 +28,16 @@ const { write_logs } = require('../../../winston/utility/logger');
 
 const REQUEST_ID_RE = /^[A-Za-z0-9_-]{8,80}$/;
 
+/** Own keys apply to this feature: switched on and a key saved for at least one provider it uses. */
+function usesOwnKeys(feature, keyConfig) {
+  if (!keyConfig?.enabled) return false;
+  const providers = aiKeys.featureProviders()[feature];
+  if (!providers) return Object.keys(keyConfig.keys || {}).length > 0;
+  return providers.some((p) => keyConfig.keys?.[p]);
+}
+
 function createMeter({ feature, requestId, organizationId, userId, keyConfig = null }) {
-  const personal = Boolean(keyConfig?.enabled);
+  const personal = usesOwnKeys(feature, keyConfig);
   const meter = {
     feature,
     requestId,
@@ -68,9 +77,9 @@ function createMeter({ feature, requestId, organizationId, userId, keyConfig = n
       return meter.pendingReserve;
     },
     /**
-     * Own keys only: the organization's key can't be used for a call and the owner allowed wallet
-     * fallback. Holds the credits this request would normally hold (once). Throws AI_CREDITS_EXHAUSTED
-     * when the wallet can't cover it. No-op for requests that already use the wallet.
+     * Own keys only: a call goes to a provider the organization has no key for. Holds the credits
+     * this request would normally hold (once). Throws AI_CREDITS_EXHAUSTED when the wallet can't
+     * cover it. No-op for requests that already use the wallet.
      */
     useWallet() {
       if (!personal) return Promise.resolve(meter.hold);
@@ -202,4 +211,4 @@ async function reserveAiCredits(req, res, { extraCredits = 0 } = {}) {
   }
 }
 
-module.exports = { withAiCredits, creditErrorBody, createMeter, finalize, reserveAiCredits };
+module.exports = { usesOwnKeys, withAiCredits, creditErrorBody, createMeter, finalize, reserveAiCredits };

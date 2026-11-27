@@ -7,6 +7,7 @@ import Toast from "../../../common/helper/toast/Toast";
 import AiKeysPage, { missingCoverage } from "./AiKeysPage";
 import AiCreditsPage from "../aiCredits/AiCreditsPage";
 import { UsageTable } from "../aiCredits/aiCreditComponents";
+import AiCreditCostNote, { ownKeyCoverage } from "../../../helper/aiCredits/AiCreditCostNote";
 import { aiKeyErrorMessage, aiKeyErrorHtml, handleAiCreditResponse, isAiKeyError, __resetAiCreditCache } from "../../../helper/aiCredits/aiCredits";
 
 jest.mock("react-dom/test-utils", () => ({ ...jest.requireActual("react-dom/test-utils"), act: require("react").act }));
@@ -49,7 +50,7 @@ jest.mock("../../../helper/modal/CustomModal", () => ({
 
 const FEATURES = { AI_ASSISTANT: ["anthropic"], LISTING_OPTIMIZATION: ["gemini", "openai"], LISTING_GENERATION: ["openai"], APLUS_CONTENT: ["gemini"], CAMPAIGN_ANALYSIS: ["openai", "gemini"] };
 const openaiKey = { provider: "openai", keyHint: "sk-proj-…abcd", status: "VALID", statusMessage: null, lastValidatedAt: "2026-11-25T10:00:00Z", lastUsedAt: "2026-11-27T08:00:00Z" };
-const overview = ({ settings = { usePersonalKeys: false, allowWalletFallback: false }, keys = { openai: openaiKey }, canManage = true, isDemo = false } = {}) => ({
+const overview = ({ settings = { usePersonalKeys: false }, keys = { openai: openaiKey }, canManage = true, isDemo = false } = {}) => ({
   isSuccess: true,
   data: {
     settings,
@@ -61,7 +62,7 @@ const overview = ({ settings = { usePersonalKeys: false, allowWalletFallback: fa
 });
 const LABEL = { anthropic: "Anthropic (Claude)", openai: "OpenAI", gemini: "Google Gemini" };
 const card = (provider) => screen.findByRole("region", { name: LABEL[provider] });
-const coverageNote = () => screen.findByRole("status", { name: /These features will/ });
+const coverageNote = () => screen.findByRole("status", { name: /These features use AI credits/ });
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -82,8 +83,9 @@ describe("AI API Keys page (owner)", () => {
     expect(within(await card("gemini")).getByText("No key saved.")).toBeInTheDocument();
     expect(within(await card("gemini")).getByRole("button", { name: /Add key/ })).toBeInTheDocument();
     expect(screen.getByText("AI runs on the platform's keys and uses your organization's AI credits.")).toBeInTheDocument();
-    // Wallet fallback can only change while own keys are on
-    expect(screen.getByRole("switch", { name: "Use AI credits when our key can't be used" })).toBeDisabled();
+    // One switch only: providers without a key simply keep using AI credits
+    expect(screen.getAllByRole("switch")).toHaveLength(1);
+    expect(screen.queryByRole("status", { name: /These features use AI credits/ })).not.toBeInTheDocument();
   });
 
   test("turns own keys on", async () => {
@@ -155,33 +157,46 @@ describe("AI API Keys page (owner)", () => {
     await waitFor(() => expect(Keys.ApiRemoveAiKey).toHaveBeenCalledWith({ provider: "openai" }));
   });
 
-  test("own keys on: features without a key are listed, with what will happen", async () => {
-    Keys.ApiGetAiKeys.mockResolvedValue(overview({ settings: { usePersonalKeys: true, allowWalletFallback: false } }));
-    const { unmount } = render(<AiKeysPage />);
-    const warn = await coverageNote();
-    expect(warn).toHaveTextContent("These features will stop with a message because a key is missing:");
-    expect(warn).toHaveTextContent("AI Assistant: needs Anthropic (Claude)");
-    expect(warn).toHaveTextContent("Optimize with AI: needs Google Gemini");
-    expect(warn).toHaveTextContent("A+ Content: needs Google Gemini");
-    expect(warn).not.toHaveTextContent("Campaign AI Analysis"); // OpenAI alone is enough
-    expect(screen.getByRole("switch", { name: "Use AI credits when our key can't be used" })).toBeEnabled();
-    unmount();
-    Keys.ApiGetAiKeys.mockResolvedValue(overview({ settings: { usePersonalKeys: true, allowWalletFallback: true } }));
+  test("own keys on: features without a key are listed as using AI credits (not blocked)", async () => {
+    Keys.ApiGetAiKeys.mockResolvedValue(overview({ settings: { usePersonalKeys: true } }));
     render(<AiKeysPage />);
-    expect(await coverageNote()).toHaveTextContent("These features will use AI credits because a key is missing:");
+    const note = await coverageNote();
+    expect(note).toHaveTextContent("These features use AI credits until a key is added:");
+    expect(note).toHaveTextContent("AI Assistant: no Anthropic (Claude) key saved");
+    expect(note).toHaveTextContent("Optimize with AI: no Google Gemini key saved");
+    expect(note).toHaveTextContent("A+ Content: no Google Gemini key saved");
+    expect(note).toHaveTextContent("Campaign AI Analysis: no Google Gemini key saved"); // Gemini models there use credits
+    expect(note).not.toHaveTextContent("AI listing generation"); // OpenAI key saved
+    expect(within(await card("gemini")).getByText("Features that use Google Gemini use AI credits until a key is added.")).toBeInTheDocument();
+    expect(screen.getByText("If a saved key is rejected or out of quota, the request stops with a message and nothing is charged.")).toBeInTheDocument();
+    // Removing a key while own keys are on: its features go back to credits
+    fireEvent.click(within(await card("openai")).getByRole("button", { name: "Remove OpenAI key" }));
+    expect(await screen.findByRole("alertdialog", { name: "Remove API key" })).toHaveTextContent("Features that use this provider will use AI credits after the key is removed.");
+  });
+
+  test("every key saved: nothing listed", async () => {
+    const all = { openai: openaiKey, gemini: { ...openaiKey, provider: "gemini", keyHint: "AIza…9xQk" }, anthropic: { ...openaiKey, provider: "anthropic", keyHint: "sk-ant-…1234" } };
+    Keys.ApiGetAiKeys.mockResolvedValue(overview({ settings: { usePersonalKeys: true }, keys: all }));
+    render(<AiKeysPage />);
+    await card("anthropic");
+    expect(screen.queryByRole("status", { name: /These features use AI credits/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Features with a saved key run on it and don't use AI credits. Features without a key use AI credits.")).toBeInTheDocument();
   });
 
   test("coverage rules", () => {
     const data = overview({ keys: { gemini: { provider: "gemini" } } }).data;
-    expect(missingCoverage(data).map((c) => c.feature)).toEqual(["AI_ASSISTANT", "LISTING_OPTIMIZATION", "LISTING_GENERATION"]);
-    const none = overview({ keys: {} }).data;
-    expect(missingCoverage(none).find((c) => c.feature === "CAMPAIGN_ANALYSIS")).toEqual({ feature: "CAMPAIGN_ANALYSIS", missing: ["openai", "gemini"], anyOne: true });
+    expect(missingCoverage(data)).toEqual([
+      { feature: "AI_ASSISTANT", missing: ["anthropic"] },
+      { feature: "LISTING_OPTIMIZATION", missing: ["openai"] },
+      { feature: "LISTING_GENERATION", missing: ["openai"] },
+      { feature: "CAMPAIGN_ANALYSIS", missing: ["openai"] },
+    ]);
   });
 });
 
 describe("AI API Keys page (others)", () => {
   test("team members see the status but no buttons, and the switches are locked", async () => {
-    Keys.ApiGetAiKeys.mockResolvedValue(overview({ canManage: false, settings: { usePersonalKeys: true, allowWalletFallback: false } }));
+    Keys.ApiGetAiKeys.mockResolvedValue(overview({ canManage: false, settings: { usePersonalKeys: true } }));
     render(<AiKeysPage />);
     expect(await screen.findByText("Only the organization owner can manage AI API keys.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Add key|Replace|Check again|Remove/ })).not.toBeInTheDocument();
@@ -203,7 +218,7 @@ describe("own-key errors in the AI features", () => {
     expect(isAiKeyError(res)).toBe(true);
     expect(aiKeyErrorMessage(res)).toBe("Google Gemini rejected your organization's API key (invalid, expired or revoked). Update it on the AI API Keys page.");
     expect(handleAiCreditResponse(res).message).toBe(aiKeyErrorMessage(res));
-    expect(aiKeyErrorMessage({ code: "PERSONAL_KEY_MISSING", provider: "openai" })).toMatch(/^Your organization uses its own AI API keys, but no OpenAI key is saved/);
+    expect(aiKeyErrorMessage({ code: "PERSONAL_KEY_UNREADABLE", provider: "openai" })).toBe("The saved OpenAI key can't be read. Add it again on the AI API Keys page.");
     expect(aiKeyErrorMessage({ error: { code: "PERSONAL_KEY_RATE_LIMITED", provider: "anthropic" } })).toBe("Your Anthropic (Claude) key has hit its rate limit. Please try again in a minute.");
     expect(aiKeyErrorMessage({ code: "PERSONAL_KEY_QUOTA" })).toMatch(/Your your AI provider account/);
     expect(isAiKeyError({ isSuccess: false, code: "SOMETHING_ELSE" })).toBe(false);
@@ -211,9 +226,9 @@ describe("own-key errors in the AI features", () => {
   });
 
   test("chat reply links to the AI API Keys page and escapes text", () => {
-    const html = aiKeyErrorHtml({ code: "PERSONAL_KEY_MISSING", provider: "anthropic" });
+    const html = aiKeyErrorHtml({ code: "PERSONAL_KEY_INVALID", provider: "anthropic" });
     expect(html).toContain('<a href="/ai-keys">Open AI API Keys</a>');
-    expect(html).toContain("no Anthropic (Claude) key is saved");
+    expect(html).toContain("Anthropic (Claude) rejected your organization&#39;s API key");
   });
 
   test("usage history marks requests that ran on the organization's own key", () => {
@@ -230,12 +245,45 @@ describe("own-key errors in the AI features", () => {
 
   test("AI Credits page says when the organization uses its own keys", async () => {
     const wallet = { monthlyLimit: 1000, limitSource: "PLAN", allocated: 1000, used: 0, monthlyUsed: 0, monthlyAvailable: 1000, purchasedBalance: 0, reserved: 0, available: 1000, periodStart: "2026-11-01T00:00:00Z", nextResetAt: "2026-12-01T00:00:00Z" };
-    Credits.ApiGetAiCreditSummary.mockResolvedValue({ isSuccess: true, data: { wallet, tokensThisPeriod: { input: 0, output: 0, total: 0 }, byFeature: [], byDay: [], enforcementEnabled: true, ownKeys: { usePersonalKeys: true, allowWalletFallback: false } } });
+    Credits.ApiGetAiCreditSummary.mockResolvedValue({ isSuccess: true, data: { wallet, tokensThisPeriod: { input: 0, output: 0, total: 0 }, byFeature: [], byDay: [], enforcementEnabled: true, ownKeys: { usePersonalKeys: true, providers: ["openai"], featureProviders: FEATURES } } });
     Credits.ApiGetAiCreditUsage.mockResolvedValue({ isSuccess: true, data: [], totalRecords: 0 });
     Credits.ApiGetAiCreditTransactions.mockResolvedValue({ isSuccess: true, data: [], totalRecords: 0 });
     Credits.ApiGetAiCreditPackages.mockResolvedValue({ isSuccess: true, data: { packages: [] } });
     render(<MemoryRouter><AiCreditsPage /></MemoryRouter>);
-    expect(await screen.findByText(/Your organization uses its own AI API keys. Requests on your keys don't use credits./)).toBeInTheDocument();
+    expect(await screen.findByText(/Your organization uses its own AI API keys. Requests on your keys don't use credits; features without a key use credits./)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Manage AI API keys" })).toHaveAttribute("href", "/ai-keys");
+  });
+});
+
+describe("cost note next to each AI action", () => {
+  const summary = (ownKeys) => ({ isSuccess: true, data: { wallet: { allocated: 1000, available: 900, reserved: 0, used: 100 }, rates: { creditsPerImage: 10 }, ownKeys } });
+  const renderNote = async (feature, ownKeys) => {
+    Credits.ApiGetAiCreditSummary.mockResolvedValue(summary(ownKeys));
+    render(<MemoryRouter><AiCreditCostNote id="note" feature={feature} /></MemoryRouter>);
+    await waitFor(() => expect(Credits.ApiGetAiCreditSummary).toHaveBeenCalled());
+  };
+  const keysFor = (providers) => ({ usePersonalKeys: true, providers, featureProviders: FEATURES });
+
+  test("every provider the feature uses has a key: no credits", async () => {
+    await renderNote("APLUS_CONTENT", keysFor(["gemini"]));
+    expect(await screen.findByText("Runs on your organization's own AI API keys: no AI credits are used.")).toBeInTheDocument();
+  });
+
+  test("some of them: partly on credits", async () => {
+    await renderNote("LISTING_OPTIMIZATION", keysFor(["openai"]));
+    expect(await screen.findByText("Part of this runs on your organization's own AI API keys; the rest uses AI credits.")).toBeInTheDocument();
+  });
+
+  test("no key for the feature: the normal credits note", async () => {
+    await renderNote("LISTING_GENERATION", keysFor(["gemini"]));
+    expect(await screen.findByText("Uses AI credits from your organization's monthly allowance.")).toBeInTheDocument();
+  });
+
+  test("coverage rules", () => {
+    expect(ownKeyCoverage(null, "APLUS_CONTENT")).toBe("credits");
+    expect(ownKeyCoverage({ ...keysFor(["gemini"]), usePersonalKeys: false }, "APLUS_CONTENT")).toBe("credits");
+    expect(ownKeyCoverage(keysFor(["openai", "gemini"]), "CAMPAIGN_ANALYSIS")).toBe("own");
+    expect(ownKeyCoverage(keysFor(["gemini"]), "CAMPAIGN_ANALYSIS")).toBe("partial");
+    expect(ownKeyCoverage(keysFor(["gemini"]), undefined)).toBe("credits");
   });
 });
