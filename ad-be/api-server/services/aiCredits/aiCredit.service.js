@@ -45,7 +45,9 @@ const DEFAULT_SETTINGS = Object.freeze({
   creditsPerImage: 10,
   modelRates: [],
   featureReserves: {},
+  usageLogRetentionDays: 90,
 });
+const MAX_USAGE_LOG_RETENTION_DAYS = 3650;
 
 const STALE_HOLD_MINUTES = 15;
 // Holds for background work (A+ image batch jobs at Google) wait up to 72 hours for the job.
@@ -122,6 +124,7 @@ function normalizeSettings(doc) {
     minimumChargePerRequest: Number(s.minimumChargePerRequest) || 0,
     creditsPerImage: Number.isFinite(Number(s.creditsPerImage)) && s.creditsPerImage !== null ? Number(s.creditsPerImage) : DEFAULT_SETTINGS.creditsPerImage,
     modelRates: (s.modelRates || []).map((r) => ({ model: String(r.model), inputCreditsPer1K: Number(r.inputCreditsPer1K) || 0, outputCreditsPer1K: Number(r.outputCreditsPer1K) || 0 })),
+    usageLogRetentionDays: Number.isInteger(Number(s.usageLogRetentionDays)) && Number(s.usageLogRetentionDays) >= 0 && s.usageLogRetentionDays !== null ? Number(s.usageLogRetentionDays) : DEFAULT_SETTINGS.usageLogRetentionDays,
     updatedAt: s.updatedAt || null,
   };
   const featureReservePlans = Object.values(FEATURES).map(({ key, reserve }) => {
@@ -149,6 +152,12 @@ function validateSettingsInput(input = {}) {
     if (!Number.isFinite(v) || v < 0) errors.push(`${k} must be 0 or more`);
   };
   ['defaultMonthlyCredits', 'inputCreditsPer1K', 'outputCreditsPer1K', 'minimumChargePerRequest', 'creditsPerImage'].forEach(nonNeg);
+  if (input.usageLogRetentionDays !== undefined) {
+    const v = input.usageLogRetentionDays;
+    if (v === null || String(v).trim() === '' || !Number.isInteger(Number(v)) || Number(v) < 0 || Number(v) > MAX_USAGE_LOG_RETENTION_DAYS) {
+      errors.push(`usageLogRetentionDays must be a whole number from 0 to ${MAX_USAGE_LOG_RETENTION_DAYS}`);
+    }
+  }
   if (input.modelRates !== undefined) {
     if (!Array.isArray(input.modelRates)) errors.push('modelRates must be a list');
     else {
@@ -180,6 +189,7 @@ async function updateSettings(input, actorId) {
   const current = await getSettings({ fresh: true });
   const $set = { updatedBy: actorId ? toObjectId(actorId) : null };
   if (input.enforcementEnabled !== undefined) $set.enforcementEnabled = Boolean(input.enforcementEnabled);
+  if (input.usageLogRetentionDays !== undefined) $set.usageLogRetentionDays = Number(input.usageLogRetentionDays);
   ['defaultMonthlyCredits', 'inputCreditsPer1K', 'outputCreditsPer1K', 'minimumChargePerRequest', 'creditsPerImage'].forEach((k) => {
     if (input[k] !== undefined) $set[k] = round4(input[k]);
   });
@@ -604,6 +614,7 @@ async function runMonthlyMaintenance({ now = new Date(), batchSize = 200 } = {})
 module.exports = {
   FEATURES,
   DEFAULT_SETTINGS,
+  MAX_USAGE_LOG_RETENTION_DAYS,
   STALE_DEFERRED_HOLD_HOURS,
   AiCreditsError,
   getSettings,

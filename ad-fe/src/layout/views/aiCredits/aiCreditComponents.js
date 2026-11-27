@@ -299,6 +299,81 @@ export function UsageTable({ rows = [], loading, showOrganization = false }) {
   );
 }
 
+/**
+ * Daily totals of AI requests older than the retention period: one row per day, user, AI model(s),
+ * feature and outcome (the single requests were combined and removed by the nightly job).
+ */
+export function DailyUsageTable({ rows = [], loading, showOrganization = false }) {
+  const { t, i18n } = useTranslation();
+  const L = i18n.language;
+  const cols = [
+    { key: "day", label: t("Day") },
+    ...(showOrganization ? [{ key: "org", label: t("Organization") }] : []),
+    { key: "feature", label: t("Feature") },
+    { key: "user", label: t("User") },
+    { key: "model", label: t("Model") },
+    { key: "requests", label: t("Requests"), right: true },
+    { key: "tokens", label: t("Tokens"), right: true },
+    { key: "credits", label: t("Credits"), right: true },
+    { key: "status", label: t("Status") },
+  ];
+  return (
+    <TableShell loading={loading} empty={!rows.length} cols={cols} emptyText={t("No daily totals yet. Requests are combined once they are older than the retention period.")} minWidth={showOrganization ? 880 : 760}>
+      {rows.map((r) => {
+        const s = STATUS[r.status] || STATUS.RELEASED;
+        const Icon = s.icon;
+        return (
+          <tr key={r._id} className="hover:bg-slate-50/70 dark:hover:bg-white/[0.02]" data-testid="ai-daily-usage-row">
+            <td className={`${td} whitespace-nowrap`}>{moment.utc(r.day).format("DD MMM YYYY")}</td>
+            {showOrganization && <td className={td}>{r.organization?.name || "—"}</td>}
+            <td className={`${td} whitespace-nowrap`}>{t(FEATURE_LABELS[r.feature] || r.feature)}</td>
+            <td className={`${td} whitespace-nowrap`}>{r.user?.name || "—"}</td>
+            <td className={`${td} font-mono text-[11.5px]`}>
+              {r.models?.length ? r.models.map((m) => <div key={m} className="whitespace-nowrap">{m}</div>) : "—"}
+              {(r.images > 0 || r.backgroundRequests > 0) && (
+                <div className="font-sans text-[10.5px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  {[r.images > 0 ? t("{{n}} images", { n: r.images }) : null, r.backgroundRequests > 0 ? t("{{n}} background jobs", { n: r.backgroundRequests }) : null].filter(Boolean).join(" · ")}
+                </div>
+              )}
+            </td>
+            <td className={`${td} text-right tabular-nums font-semibold`}>{(r.requests || 0).toLocaleString(L)}</td>
+            <td className={`${td} text-right tabular-nums whitespace-nowrap`}>
+              <div>{(r.totalTokens || 0).toLocaleString(L)}</div>
+              <div className="text-[10.5px] text-slate-500 dark:text-slate-400">
+                {t("{{input}} in · {{output}} out", { input: (r.inputTokens || 0).toLocaleString(L), output: (r.outputTokens || 0).toLocaleString(L) })}
+              </div>
+            </td>
+            <td className={`${td} text-right tabular-nums font-semibold`}>{r.status === "SETTLED" ? formatCredits(r.credits, L) : "—"}</td>
+            <td className={td}>
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap ${s.cls}`}>
+                <Icon className="w-3 h-3" aria-hidden="true" />
+                {t(s.label)}
+              </span>
+            </td>
+          </tr>
+        );
+      })}
+    </TableShell>
+  );
+}
+
+/** Each request (kept for the retention period) or daily totals of older requests. */
+export const USAGE_VIEW_OPTIONS = (t) => [
+  { value: "", label: t("Each request") },
+  { value: "daily", label: t("Daily totals") },
+];
+
+/** "Requests older than N days are combined into daily totals." (nothing when retention is off) */
+export const RetentionNote = ({ days, className = "" }) => {
+  const { t } = useTranslation();
+  if (!(Number(days) > 0)) return null;
+  return (
+    <p className={`text-[11.5px] text-slate-500 dark:text-slate-400 mt-2 mb-0 ${className}`.trim()} id="ai-usage-retention-hint">
+      {t("Requests older than {{n}} days are combined into daily totals per user and AI model. Choose \"Daily totals\" to see them.", { n: Number(days) })}
+    </p>
+  );
+};
+
 /** Credit ledger: allocations, month closes, usage and admin adjustments. */
 export function TransactionsTable({ rows = [], loading }) {
   const { t, i18n } = useTranslation();

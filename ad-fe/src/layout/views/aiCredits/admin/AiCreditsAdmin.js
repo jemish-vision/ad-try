@@ -13,7 +13,7 @@ import {
   ApiAdminSetAiMonthlyLimit,
 } from "../../../../api-wrapper/ApiAiCredits";
 import { formatCredits, formatTokens, creditLevel } from "../../../../helper/aiCredits/aiCredits";
-import { Card, CardHeader, StatTile, DailyUsageChart, FeatureBreakdown, UsageTable, Pager, Select, FEATURE_OPTIONS, USAGE_STATUS_OPTIONS } from "../aiCreditComponents";
+import { Card, CardHeader, StatTile, DailyUsageChart, FeatureBreakdown, UsageTable, Pager, Select, FEATURE_OPTIONS, USAGE_STATUS_OPTIONS, DailyUsageTable, USAGE_VIEW_OPTIONS, RetentionNote } from "../aiCreditComponents";
 import { AdjustCreditsModal, MonthlyLimitModal, OrganizationCreditsModal } from "./AiCreditAdminModals";
 import AiCreditSettingsForm from "./AiCreditSettingsForm";
 import CreditPackagesAdmin, { PaymentsLog } from "./CreditPackagesAdmin";
@@ -211,7 +211,7 @@ function Organizations({ reloadKey, settings, onChanged }) {
   );
 }
 
-function UsageLog({ reloadKey }) {
+function UsageLog({ reloadKey, retentionDays }) {
   const { t } = useTranslation();
   const [filters, setFilters] = useState({});
   const [pageNo, setPageNo] = useState(1);
@@ -227,21 +227,25 @@ function UsageLog({ reloadKey }) {
   const setFilter = (k, v) => {
     setFilters((f) => ({ ...f, [k]: v || undefined }));
     setPageNo(1);
+    // Drop the old rows: another view (e.g. daily totals) has a different shape
+    setRes({ data: [], totalRecords: 0 });
   };
   return (
     <Card id="ai-credit-admin-usage">
       <CardHeader
         title={t("Usage log")}
-        subtitle={t("Every AI request across all organizations, with its tokens, model and cost.")}
+        subtitle={filters.view === "daily" ? t("Older AI requests across all organizations, combined into daily totals per user and AI model.") : t("Every AI request across all organizations, with its tokens, model and cost.")}
         right={
           <>
+            <Select id="ai-credit-admin-usage-view" label={t("Show")} value={filters.view || ""} onChange={(v) => setFilter("view", v)} options={USAGE_VIEW_OPTIONS(t)} />
             <Select id="ai-credit-admin-feature" label={t("Feature")} value={filters.feature || ""} onChange={(v) => setFilter("feature", v)} options={FEATURE_OPTIONS(t)} />
             <Select id="ai-credit-admin-status" label={t("Status")} value={filters.status || ""} onChange={(v) => setFilter("status", v)} options={USAGE_STATUS_OPTIONS(t)} />
           </>
         }
       />
-      <UsageTable rows={res.data} loading={loading} showOrganization />
+      {filters.view === "daily" ? <DailyUsageTable rows={res.data} loading={loading} showOrganization /> : <UsageTable rows={res.data} loading={loading} showOrganization />}
       <Pager pageNo={pageNo} perPage={PER_PAGE} total={res.totalRecords} onPage={setPageNo} />
+      {filters.view !== "daily" && <RetentionNote days={retentionDays} />}
     </Card>
   );
 }
@@ -299,7 +303,7 @@ export default function AiCreditsAdmin() {
 
       {tab === "overview" && <Overview reloadKey={reloadKey} />}
       {tab === "organizations" && <Organizations reloadKey={reloadKey} settings={settings} onChanged={() => {}} />}
-      {tab === "usage" && <UsageLog reloadKey={reloadKey} />}
+      {tab === "usage" && <UsageLog reloadKey={reloadKey} retentionDays={settings?.usageLogRetentionDays} />}
       {tab === "packages" && <CreditPackagesAdmin reloadKey={reloadKey} />}
       {tab === "payments" && <PaymentsLog reloadKey={reloadKey} />}
       {tab === "settings" && <AiCreditSettingsForm settings={settings} saving={saving} onSave={saveSettings} />}

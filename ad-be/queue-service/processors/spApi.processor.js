@@ -215,6 +215,13 @@ function createSpApiProcessor() {
           break;
         }
 
+        case SP_API_TASKS.AI_USAGE_LOG_RETENTION: {
+          const { cronAiUsageLogRetention } = require("../../api-server/controllers/aiCredit.controller");
+          result = await cronAiUsageLogRetention();
+          if (result?.failed) throw new Error(`AI usage log retention stopped: ${result.failed}`);
+          break;
+        }
+
         case SP_API_TASKS.OUT_OF_STOCK_ADS: {
           const { cronOutOfStockAds } = require("../../api-server/services/automation/outOfStockAds.service");
           result = await cronOutOfStockAds();

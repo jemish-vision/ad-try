@@ -108,6 +108,8 @@ const DEFAULT_SCHEDULES = [
   { cronName: "AdBlackoutMonitor", aliases: ["AdBlackoutMonitor", "Ad Blackout Monitor"], cronExpression: () => process.env.AD_BLACKOUT_MONITOR_CRON || "0 40 * * * *" },
   // :05 past every hour: monthly AI credit reset + return credits held by unfinished AI requests
   { cronName: "AiCreditMaintenance", aliases: ["AiCreditMaintenance", "AI Credit Maintenance", "Ai Credit Maintenance"], cronExpression: () => process.env.AI_CREDIT_MAINTENANCE_CRON || "0 5 * * * *" },
+  // 3:20 AM daily: combine AI usage logs older than the retention setting into daily totals
+  { cronName: "AiUsageLogRetention", aliases: ["AiUsageLogRetention", "AI Usage Log Retention", "Ai Usage Log Retention"], cronExpression: () => process.env.AI_USAGE_LOG_RETENTION_CRON || "0 20 3 * * *" },
 ];
 
 /**

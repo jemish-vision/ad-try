@@ -283,3 +283,5 @@ exports.adminPayments = async (req, res) => {
 
 /** Scheduled job: reset wallets whose month ended and return stale holds. */
 exports.cronAiCreditMaintenance = async () => service.runMonthlyMaintenance();
+// Daily: combine AI usage logs older than the retention setting into daily totals (0 days = off)
+exports.cronAiUsageLogRetention = async () => require("../services/aiCredits/aiUsageRetention.service").runUsageLogRetention();

@@ -63,6 +63,7 @@ const SP_API_TASKS = Object.freeze({
   FC_INVENTORY_LEDGER: "fc-inventory-ledger",
   FC_STORAGE_FEE: "fc-storage-fee",
   AI_CREDIT_MAINTENANCE: "ai-credit-maintenance",
+  AI_USAGE_LOG_RETENTION: "ai-usage-log-retention",
 });
 
 module.exports = {

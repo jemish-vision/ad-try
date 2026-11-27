@@ -63,6 +63,8 @@ const CRON_NAME_MAP = Object.freeze({
   "outofstockads": { queue: QUEUES.OUT_OF_STOCK_ADS, task: SP_API_TASKS.OUT_OF_STOCK_ADS, family: "sp-api" },
   // Monthly AI credit reset (+ returns holds left by unfinished AI requests); cheap, runs hourly
   "aicreditmaintenance": { queue: QUEUES.SP_API, task: SP_API_TASKS.AI_CREDIT_MAINTENANCE, family: "sp-api" },
+  // Combine AI usage logs older than the Super Admin retention setting into daily totals; daily
+  "aiusagelogretention": { queue: QUEUES.SP_API, task: SP_API_TASKS.AI_USAGE_LOG_RETENTION, family: "sp-api" },
 });
 
 /**

@@ -49,6 +49,9 @@ const aiCreditSettingSchema = new mongoose.Schema(
     // Credits held while a request runs; the request needs at least this much available.
     featureReserves: { type: Map, of: Number, default: {} },
     customPurchase: { type: customPurchaseSchema, default: () => ({}) },
+    // Days request-by-request AI usage logs are kept. Older logs are combined into daily totals
+    // (aiUsageDailySummary) and then deleted. 0 = keep every request, no combining or deleting.
+    usageLogRetentionDays: { type: Number, min: 0, default: 90 },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "user", default: null },
   },
   { timestamps: true, versionKey: false }

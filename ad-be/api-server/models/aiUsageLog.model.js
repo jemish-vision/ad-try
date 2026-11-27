@@ -42,6 +42,10 @@ const aiUsageLogSchema = new mongoose.Schema(
     // Held for background work that finishes after the request (A+ image batch jobs); released after 72 h if never settled
     deferred: { type: Boolean, default: false },
     settledAt: { type: Date, default: null },
+    // Set while the retention job combines this log into a daily total; the log is deleted once
+    // the total is saved and checked. A batch left behind by a crash is picked up on the next run.
+    aggregationBatch: { type: String, default: null },
+    aggregationClaimedAt: { type: Date, default: null },
   },
   { timestamps: true, versionKey: false }
 );
@@ -50,6 +54,8 @@ aiUsageLogSchema.index({ requestId: 1 }, { unique: true });
 aiUsageLogSchema.index({ organizationId: 1, createdAt: -1 });
 aiUsageLogSchema.index({ status: 1, createdAt: 1 }); // stale-hold sweep
 aiUsageLogSchema.index({ createdAt: -1, feature: 1 }); // Super Admin overview
-aiUsageLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 400 * 24 * 60 * 60 }); // keep ~13 months
+// Old logs are not expired by a TTL index: the retention job (Super Admin setting) combines them
+// into daily totals first, and a retention of 0 keeps every log.
+aiUsageLogSchema.index({ aggregationBatch: 1 }, { partialFilterExpression: { aggregationBatch: { $type: "string" } } });
 
 module.exports = mongoose.model("aiUsageLog", aiUsageLogSchema);

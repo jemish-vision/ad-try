@@ -1,5 +1,5 @@
 import { tourRegistry } from '../TourRegistry';
-import { Sparkle, Gauge, ChartBar, ChartPieSlice, ClockCounterClockwise, Receipt, Funnel, ShoppingCart, SlidersHorizontal } from '@phosphor-icons/react';
+import { Sparkle, Gauge, ChartBar, ChartPieSlice, ClockCounterClockwise, Receipt, Funnel, ShoppingCart, SlidersHorizontal, CalendarBlank } from '@phosphor-icons/react';
 
 export const aiCreditsTourConfig = {
     id: "ai-credits",
@@ -12,6 +12,7 @@ export const aiCreditsTourConfig = {
         { target: "#ai-credits-daily", icon: ChartBar, title: "Daily Usage", content: "Credits used each day this month. Hover a bar for the exact credits and number of requests.", blockTargetInteraction: true },
         { target: "#ai-credits-by-feature", icon: ChartPieSlice, title: "By Feature", content: "How the credits split between the AI features.", blockTargetInteraction: true },
         { target: "#ai-credits-tab-requests", icon: ClockCounterClockwise, title: "AI Requests", content: "Every AI request: who ran it, the AI model, input and output tokens and the credits it cost. Failed requests are not charged.", blockTargetInteraction: true },
+        { target: "#ai-credits-usage-view", icon: CalendarBlank, title: "Each Request or Daily Totals", content: "Each request is listed on its own for the number of days Super Admin keeps them; older requests are combined into daily totals per user and AI model. Switch here to see them.", blockTargetInteraction: true },
         { target: "#ai-credits-tab-transactions", icon: Receipt, title: "Credit History", content: "Click to see monthly allowances, usage, month closes and adjustments made by an administrator.", requireClick: true },
         { target: "#ai-credits-type-filter", icon: Funnel, title: "Filter History", content: "Show only one kind of entry, for example only adjustments.", blockTargetInteraction: true }
     ]

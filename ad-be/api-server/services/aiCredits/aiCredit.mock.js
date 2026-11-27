@@ -91,6 +91,7 @@ function summary(now = new Date()) {
     enforcementEnabled: true,
     rates: { inputCreditsPer1K: 1, outputCreditsPer1K: 4, creditsPerImage: 10 },
     featureReserves: { AI_ASSISTANT: 20, LISTING_OPTIMIZATION: 25, LISTING_GENERATION: 15, APLUS_CONTENT: 20, CAMPAIGN_ANALYSIS: 15 },
+    usageLogRetentionDays: 90,
     isDemo: true,
   };
 }
@@ -101,7 +102,45 @@ function paged(rows, body = {}) {
   return { data: rows.slice((pageNo - 1) * perPage, pageNo * perPage), totalRecords: rows.length, pageNo, perPage };
 }
 
+/** Demo daily totals for requests older than the (demo) 90-day retention period. */
+function dailyUsage(body = {}, now = new Date()) {
+  const rand = rng(91);
+  const users = [{ _id: 'demo-u', name: 'Demo Owner' }, { _id: 'demo-u2', name: 'Asha Patel' }, { _id: 'demo-u3', name: 'Rahul Mehta' }];
+  const combos = [['AI_ASSISTANT', ['claude-haiku-5-5']], ['LISTING_OPTIMIZATION', ['gemini-3.8-flash', 'gpt-4o-mini']], ['CAMPAIGN_ANALYSIS', ['gemini-3.8-flash']]];
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  let rows = [];
+  for (let d = 90; d < 120; d += 1) {
+    const day = new Date(today - d * 86400000);
+    combos.forEach(([feature, models], i) => {
+      if (rand() < 0.35) return;
+      const requests = 1 + Math.floor(rand() * 9);
+      const inputTokens = requests * (4000 + Math.floor(rand() * 6000));
+      const outputTokens = requests * (500 + Math.floor(rand() * 1500));
+      const failed = rand() < 0.08;
+      rows.push({
+        _id: `mock-day-${d}-${i}`,
+        day,
+        feature,
+        status: failed ? 'RELEASED' : 'SETTLED',
+        requests,
+        credits: failed ? 0 : round2(inputTokens / 1000 + (outputTokens / 1000) * 4),
+        inputTokens,
+        outputTokens,
+        totalTokens: inputTokens + outputTokens,
+        images: 0,
+        backgroundRequests: 0,
+        models,
+        user: users[(d + i) % users.length],
+      });
+    });
+  }
+  if (body.feature) rows = rows.filter((r) => r.feature === body.feature);
+  if (body.status) rows = rows.filter((r) => r.status === body.status);
+  return { ...paged(rows, body), view: 'daily' };
+}
+
 function usage(body = {}, now = new Date()) {
+  if (body.view === 'daily') return dailyUsage(body, now);
   let rows = buildRequests(now);
   if (body.feature) rows = rows.filter((r) => r.feature === body.feature);
   if (body.status) rows = rows.filter((r) => r.status === body.status);
@@ -151,4 +190,4 @@ function payments(body = {}, now = new Date()) {
   return { ...paged(rows, body), canView: true };
 }
 
-module.exports = { summary, usage, transactions, packages, customOffer, payments };
+module.exports = { summary, usage, dailyUsage, transactions, packages, customOffer, payments };

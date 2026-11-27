@@ -6,7 +6,8 @@
  * completion in one step, so concurrent callers interleave between operations exactly like
  * separate MongoDB commands would. Supports what the AI credit code uses:
  * create, findOne, findById, find (sort/skip/limit/select), countDocuments,
- * findOneAndUpdate / updateOne ($set, $inc, $push, $setOnInsert, upsert, new, pipeline $set/$unset), unique indexes.
+ * findOneAndUpdate / updateOne / updateMany ($set, $inc, $push incl. $each, $min, $max, $setOnInsert, upsert, new,
+ * pipeline $set/$unset), deleteMany, unique indexes.
  */
 const mongoose = require('mongoose');
 
@@ -83,7 +84,12 @@ function applyUpdate(doc, update = {}, isInsert = false) {
   if (plain) return Object.assign(doc, clone(update));
   for (const [k, v] of Object.entries(update.$set || {})) doc[k] = clone(v);
   for (const [k, v] of Object.entries(update.$inc || {})) doc[k] = (Number(doc[k]) || 0) + v;
-  for (const [k, v] of Object.entries(update.$push || {})) doc[k] = [...(Array.isArray(doc[k]) ? doc[k] : []), clone(v)];
+  for (const [k, v] of Object.entries(update.$push || {})) {
+    const items = v && typeof v === 'object' && Array.isArray(v.$each) ? v.$each : [v];
+    doc[k] = [...(Array.isArray(doc[k]) ? doc[k] : []), ...items.map(clone)];
+  }
+  for (const [k, v] of Object.entries(update.$min || {})) if (doc[k] == null || scalar(v) < scalar(doc[k])) doc[k] = clone(v);
+  for (const [k, v] of Object.entries(update.$max || {})) if (doc[k] == null || scalar(v) > scalar(doc[k])) doc[k] = clone(v);
   if (isInsert) for (const [k, v] of Object.entries(update.$setOnInsert || {})) doc[k] = clone(v);
   return doc;
 }
@@ -172,6 +178,23 @@ function createFakeModel(name, { unique = [], defaults = {} } = {}) {
       if (!d) return { matchedCount: 0, modifiedCount: 0 };
       Object.assign(d, applyUpdate(clone(d), update), { updatedAt: new Date() });
       return { matchedCount: 1, modifiedCount: 1 };
+    },
+    async updateMany(filter, update) {
+      await tick();
+      const hits = docs.filter((x) => matches(x, filter));
+      for (const d of hits) Object.assign(d, applyUpdate(clone(d), update), { updatedAt: new Date() });
+      return { matchedCount: hits.length, modifiedCount: hits.length };
+    },
+    async deleteMany(filter) {
+      await tick();
+      let n = 0;
+      for (let i = docs.length - 1; i >= 0; i -= 1) {
+        if (matches(docs[i], filter)) {
+          docs.splice(i, 1);
+          n += 1;
+        }
+      }
+      return { deletedCount: n };
     },
     async createIndexes() {},
     async aggregate() {

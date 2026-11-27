@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 const walletModel = require('../../models/aiCreditWallet.model');
 const transactionModel = require('../../models/aiCreditTransaction.model');
 const usageLogModel = require('../../models/aiUsageLog.model');
+const summaryModel = require('../../models/aiUsageDailySummary.model');
 const organizationModel = require('../../models/organization.model');
 const service = require('./aiCredit.service');
 
@@ -16,6 +17,8 @@ const page = (body = {}, max = 100) => {
   const perPage = Math.min(max, Math.max(1, parseInt(body.perPage, 10) || 10));
   return { pageNo, perPage, skip: (pageNo - 1) * perPage };
 };
+// Top-N lists are merged from the request logs and the daily totals; take enough of each
+const TOP_MERGE_LIMIT = 50;
 // "Low" = under 20% of the month's credits left (same rule as the frontend's creditLevel)
 const LOW_BALANCE_SHARE = 0.2;
 const VALID_STATUSES = ['RESERVED', 'SETTLED', 'RELEASED', 'EXPIRED'];
@@ -28,16 +31,43 @@ function dateRange(body = {}) {
   return Object.keys(range).length ? range : null;
 }
 
-/** Credits and tokens per feature and per day for one organization's current period. */
+/**
+ * Adds rows that share a key (from the request logs and from the daily totals of older, combined
+ * logs): numbers are summed. Sorted by `sortBy` descending, or by key ascending when not given.
+ */
+function mergeRows(lists, sumFields, { sortBy = null, limit = null } = {}) {
+  const byKey = new Map();
+  for (const row of lists.flat()) {
+    const key = String(row._id);
+    const cur = byKey.get(key) || { ...row, ...Object.fromEntries(sumFields.map((f) => [f, 0])) };
+    for (const f of sumFields) cur[f] += Number(row[f]) || 0;
+    byKey.set(key, cur);
+  }
+  const rows = [...byKey.values()].sort((a, b) => (sortBy ? b[sortBy] - a[sortBy] : String(a._id) < String(b._id) ? -1 : 1));
+  return limit ? rows.slice(0, limit) : rows;
+}
+
+const DAY_STRING = (field) => ({ $dateToString: { format: '%Y-%m-%d', date: field } });
+const FEATURE_SUMS = ['credits', 'requests', 'inputTokens', 'outputTokens'];
+
+/**
+ * Credits and tokens per feature and per day for one organization's current period, from the
+ * request logs plus the daily totals of logs already combined by the retention job.
+ */
 async function periodBreakdown(organizationId, wallet) {
-  const match = { organizationId: toObjectId(organizationId), status: 'SETTLED', createdAt: { $gte: new Date(wallet.periodStart), $lt: new Date(wallet.nextResetAt) } };
-  const [byFeature, byDay] = await Promise.all([
-    usageLogModel.aggregate([{ $match: match }, { $group: { _id: '$feature', credits: { $sum: '$credits' }, requests: { $sum: 1 }, inputTokens: { $sum: '$inputTokens' }, outputTokens: { $sum: '$outputTokens' } } }, { $sort: { credits: -1 } }]),
-    usageLogModel.aggregate([{ $match: match }, { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, credits: { $sum: '$credits' }, requests: { $sum: 1 } } }, { $sort: { _id: 1 } }]),
+  const orgId = toObjectId(organizationId);
+  const range = { $gte: new Date(wallet.periodStart), $lt: new Date(wallet.nextResetAt) };
+  const match = { organizationId: orgId, status: 'SETTLED', createdAt: range };
+  const daily = { organizationId: orgId, status: 'SETTLED', day: range };
+  const [byFeature, byDay, byFeatureDaily, byDayDaily] = await Promise.all([
+    usageLogModel.aggregate([{ $match: match }, { $group: { _id: '$feature', credits: { $sum: '$credits' }, requests: { $sum: 1 }, inputTokens: { $sum: '$inputTokens' }, outputTokens: { $sum: '$outputTokens' } } }]),
+    usageLogModel.aggregate([{ $match: match }, { $group: { _id: DAY_STRING('$createdAt'), credits: { $sum: '$credits' }, requests: { $sum: 1 } } }]),
+    summaryModel.aggregate([{ $match: daily }, { $group: { _id: '$feature', credits: { $sum: '$credits' }, requests: { $sum: '$requests' }, inputTokens: { $sum: '$inputTokens' }, outputTokens: { $sum: '$outputTokens' } } }]),
+    summaryModel.aggregate([{ $match: daily }, { $group: { _id: DAY_STRING('$day'), credits: { $sum: '$credits' }, requests: { $sum: '$requests' } } }]),
   ]);
   return {
-    byFeature: byFeature.map((f) => ({ feature: f._id, credits: round2(f.credits), requests: f.requests, inputTokens: f.inputTokens, outputTokens: f.outputTokens })),
-    byDay: byDay.map((d) => ({ date: d._id, credits: round2(d.credits), requests: d.requests })),
+    byFeature: mergeRows([byFeature, byFeatureDaily], FEATURE_SUMS, { sortBy: 'credits' }).map((f) => ({ feature: f._id, credits: round2(f.credits), requests: f.requests, inputTokens: f.inputTokens, outputTokens: f.outputTokens })),
+    byDay: mergeRows([byDay, byDayDaily], ['credits', 'requests']).map((d) => ({ date: d._id, credits: round2(d.credits), requests: d.requests })),
   };
 }
 
@@ -56,11 +86,63 @@ async function getUserSummary(organizationId) {
     enforcementEnabled: settings.enforcementEnabled,
     rates: { inputCreditsPer1K: settings.inputCreditsPer1K, outputCreditsPer1K: settings.outputCreditsPer1K, creditsPerImage: settings.creditsPerImage },
     featureReserves: settings.featureReserves,
+    usageLogRetentionDays: settings.usageLogRetentionDays,
   };
 }
 
-/** Paginated AI requests (newest first) for one organization, or all (Super Admin). */
+/**
+ * Daily totals of AI requests older than the retention period (newest day first), for one
+ * organization or all (Super Admin). Same filters as the request list.
+ */
+async function listDailyUsage(body = {}, { organizationId = null } = {}) {
+  const { pageNo, perPage, skip } = page(body);
+  const filter = {};
+  if (organizationId) filter.organizationId = toObjectId(organizationId);
+  else if (body.organizationId && mongoose.Types.ObjectId.isValid(String(body.organizationId))) filter.organizationId = toObjectId(body.organizationId);
+  if (body.feature && service.FEATURES[body.feature]) filter.feature = body.feature;
+  if (body.status && VALID_STATUSES.includes(body.status)) filter.status = body.status;
+  const day = dateRange(body);
+  if (day) filter.day = day;
+  const [rows, total] = await Promise.all([
+    summaryModel
+      .find(filter)
+      .sort({ day: -1, credits: -1, _id: 1 })
+      .skip(skip)
+      .limit(perPage)
+      .populate([{ path: 'userId', select: 'fullName email' }, ...(organizationId ? [] : [{ path: 'organizationId', select: 'organizationName' }])])
+      .lean(),
+    summaryModel.countDocuments(filter),
+  ]);
+  return {
+    data: rows.map((r) => ({
+      _id: r._id,
+      day: r.day,
+      feature: r.feature,
+      status: r.status,
+      requests: r.requests,
+      credits: round2(r.credits),
+      inputTokens: r.inputTokens,
+      outputTokens: r.outputTokens,
+      totalTokens: r.totalTokens,
+      images: r.images || 0,
+      backgroundRequests: r.backgroundRequests || 0,
+      models: r.models || [],
+      user: r.userId ? { _id: r.userId._id, name: r.userId.fullName || r.userId.email || null } : null,
+      organization: r.organizationId && r.organizationId.organizationName ? { _id: r.organizationId._id, name: r.organizationId.organizationName } : undefined,
+    })),
+    totalRecords: total,
+    pageNo,
+    perPage,
+    view: 'daily',
+  };
+}
+
+/**
+ * Paginated AI requests (newest first) for one organization, or all (Super Admin).
+ * view "daily": daily totals of requests older than the retention period instead.
+ */
 async function listUsage(body = {}, { organizationId = null } = {}) {
+  if (body.view === 'daily') return listDailyUsage(body, { organizationId });
   const { pageNo, perPage, skip } = page(body);
   const filter = {};
   if (organizationId) filter.organizationId = toObjectId(organizationId);
@@ -187,7 +269,8 @@ async function getAdminOverview(body = {}) {
   const { start } = service.monthPeriod();
   const createdAt = dateRange(body) || { $gte: start };
   const match = { createdAt };
-  const [totals, byFeature, byModel, topOrgs, walletStats, byDay] = await Promise.all([
+  const daily = { day: createdAt };
+  const [totals, byFeature, byModel, topOrgs, walletStats, byDay, dTotals, dByFeature, dByModel, dTopOrgs, dByDay] = await Promise.all([
     usageLogModel.aggregate([
       { $match: match },
       {
@@ -202,39 +285,70 @@ async function getAdminOverview(body = {}) {
         },
       },
     ]),
-    usageLogModel.aggregate([{ $match: { ...match, status: 'SETTLED' } }, { $group: { _id: '$feature', credits: { $sum: '$credits' }, requests: { $sum: 1 }, inputTokens: { $sum: '$inputTokens' }, outputTokens: { $sum: '$outputTokens' } } }, { $sort: { credits: -1 } }]),
+    usageLogModel.aggregate([{ $match: { ...match, status: 'SETTLED' } }, { $group: { _id: '$feature', credits: { $sum: '$credits' }, requests: { $sum: 1 }, inputTokens: { $sum: '$inputTokens' }, outputTokens: { $sum: '$outputTokens' } } }]),
     usageLogModel.aggregate([
       { $match: { ...match, status: 'SETTLED' } },
       { $unwind: '$calls' },
       { $group: { _id: '$calls.model', credits: { $sum: '$calls.credits' }, inputTokens: { $sum: '$calls.inputTokens' }, outputTokens: { $sum: '$calls.outputTokens' }, calls: { $sum: 1 } } },
       { $sort: { credits: -1 } },
-      { $limit: 10 },
+      { $limit: TOP_MERGE_LIMIT },
     ]),
     usageLogModel.aggregate([
       { $match: { ...match, status: 'SETTLED' } },
       { $group: { _id: '$organizationId', credits: { $sum: '$credits' }, requests: { $sum: 1 } } },
       { $sort: { credits: -1 } },
-      { $limit: 5 },
-      { $lookup: { from: 'organizations', localField: '_id', foreignField: '_id', as: 'org' } },
-      { $project: { credits: 1, requests: 1, name: { $arrayElemAt: ['$org.organizationName', 0] } } },
+      { $limit: TOP_MERGE_LIMIT },
     ]),
     walletModel.aggregate([
       { $match: { periodEnd: { $gt: new Date() } } },
       { $group: { _id: null, wallets: { $sum: 1 }, allocated: { $sum: '$allocated' }, used: { $sum: '$used' }, exhausted: { $sum: { $cond: [{ $lte: ['$balance', 0] }, 1, 0] } }, low: { $sum: { $cond: [{ $and: [{ $gt: ['$balance', 0] }, { $lt: ['$balance', { $multiply: ['$allocated', LOW_BALANCE_SHARE] }] }] }, 1, 0] } } } },
     ]),
-    usageLogModel.aggregate([{ $match: { ...match, status: 'SETTLED' } }, { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, credits: { $sum: '$credits' }, requests: { $sum: 1 } } }, { $sort: { _id: 1 } }]),
+    usageLogModel.aggregate([{ $match: { ...match, status: 'SETTLED' } }, { $group: { _id: DAY_STRING('$createdAt'), credits: { $sum: '$credits' }, requests: { $sum: 1 } } }]),
+    // Daily totals of older request logs combined by the retention job
+    summaryModel.aggregate([
+      { $match: daily },
+      {
+        $group: {
+          _id: null,
+          requests: { $sum: '$requests' },
+          charged: { $sum: { $cond: [{ $eq: ['$status', 'SETTLED'] }, '$requests', 0] } },
+          failed: { $sum: { $cond: [{ $in: ['$status', ['RELEASED', 'EXPIRED']] }, '$requests', 0] } },
+          credits: { $sum: '$credits' },
+          inputTokens: { $sum: '$inputTokens' },
+          outputTokens: { $sum: '$outputTokens' },
+        },
+      },
+    ]),
+    summaryModel.aggregate([{ $match: { ...daily, status: 'SETTLED' } }, { $group: { _id: '$feature', credits: { $sum: '$credits' }, requests: { $sum: '$requests' }, inputTokens: { $sum: '$inputTokens' }, outputTokens: { $sum: '$outputTokens' } } }]),
+    summaryModel.aggregate([
+      { $match: { ...daily, status: 'SETTLED' } },
+      { $unwind: '$byModel' },
+      { $group: { _id: '$byModel.model', credits: { $sum: '$byModel.credits' }, inputTokens: { $sum: '$byModel.inputTokens' }, outputTokens: { $sum: '$byModel.outputTokens' }, calls: { $sum: '$byModel.calls' } } },
+      { $sort: { credits: -1 } },
+      { $limit: TOP_MERGE_LIMIT },
+    ]),
+    summaryModel.aggregate([
+      { $match: { ...daily, status: 'SETTLED' } },
+      { $group: { _id: '$organizationId', credits: { $sum: '$credits' }, requests: { $sum: '$requests' } } },
+      { $sort: { credits: -1 } },
+      { $limit: TOP_MERGE_LIMIT },
+    ]),
+    summaryModel.aggregate([{ $match: { ...daily, status: 'SETTLED' } }, { $group: { _id: DAY_STRING('$day'), credits: { $sum: '$credits' }, requests: { $sum: '$requests' } } }]),
   ]);
-  const t = totals[0] || {};
+  const top = mergeRows([topOrgs, dTopOrgs], ['credits', 'requests'], { sortBy: 'credits', limit: 5 });
+  const orgNames = top.length ? await organizationModel.find({ _id: { $in: top.map((o) => o._id) } }).select('organizationName').lean() : [];
+  const nameOf = (id) => orgNames.find((o) => String(o._id) === String(id))?.organizationName || null;
+  const [t] = mergeRows([totals.map((x) => ({ ...x, _id: 'all' })), dTotals.map((x) => ({ ...x, _id: 'all' }))], ['requests', 'charged', 'failed', 'credits', 'inputTokens', 'outputTokens']);
   const w = walletStats[0] || {};
   return {
     range: { from: createdAt.$gte || null, to: createdAt.$lte || null },
-    totals: { requests: t.requests || 0, charged: t.charged || 0, failed: t.failed || 0, credits: round2(t.credits), inputTokens: t.inputTokens || 0, outputTokens: t.outputTokens || 0, totalTokens: (t.inputTokens || 0) + (t.outputTokens || 0) },
+    totals: { requests: t?.requests || 0, charged: t?.charged || 0, failed: t?.failed || 0, credits: round2(t?.credits), inputTokens: t?.inputTokens || 0, outputTokens: t?.outputTokens || 0, totalTokens: (t?.inputTokens || 0) + (t?.outputTokens || 0) },
     wallets: { active: w.wallets || 0, allocated: round2(w.allocated), used: round2(w.used), exhausted: w.exhausted || 0, low: w.low || 0 },
-    byFeature: byFeature.map((f) => ({ feature: f._id, credits: round2(f.credits), requests: f.requests, inputTokens: f.inputTokens, outputTokens: f.outputTokens })),
-    byModel: byModel.map((m) => ({ model: m._id || 'unknown', credits: round2(m.credits), inputTokens: m.inputTokens, outputTokens: m.outputTokens, calls: m.calls })),
-    topOrganizations: topOrgs.map((o) => ({ organizationId: o._id, name: o.name || null, credits: round2(o.credits), requests: o.requests })),
-    byDay: byDay.map((d) => ({ date: d._id, credits: round2(d.credits), requests: d.requests })),
+    byFeature: mergeRows([byFeature, dByFeature], FEATURE_SUMS, { sortBy: 'credits' }).map((f) => ({ feature: f._id, credits: round2(f.credits), requests: f.requests, inputTokens: f.inputTokens, outputTokens: f.outputTokens })),
+    byModel: mergeRows([byModel, dByModel], ['credits', 'inputTokens', 'outputTokens', 'calls'], { sortBy: 'credits', limit: 10 }).map((m) => ({ model: m._id || 'unknown', credits: round2(m.credits), inputTokens: m.inputTokens, outputTokens: m.outputTokens, calls: m.calls })),
+    topOrganizations: top.map((o) => ({ organizationId: o._id, name: nameOf(o._id), credits: round2(o.credits), requests: o.requests })),
+    byDay: mergeRows([byDay, dByDay], ['credits', 'requests']).map((d) => ({ date: d._id, credits: round2(d.credits), requests: d.requests })),
   };
 }
 
-module.exports = { getUserSummary, listUsage, listTransactions, listOrganizationWallets, getAdminOverview, periodBreakdown };
+module.exports = { getUserSummary, listUsage, listDailyUsage, listTransactions, listOrganizationWallets, getAdminOverview, periodBreakdown, mergeRows };

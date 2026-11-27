@@ -19,6 +19,9 @@ import {
   TX_TYPE_OPTIONS,
   PaymentsTable,
   PAYMENT_STATUS_OPTIONS,
+  DailyUsageTable,
+  USAGE_VIEW_OPTIONS,
+  RetentionNote,
 } from "./aiCreditComponents";
 
 const PER_PAGE = 10;
@@ -43,6 +46,8 @@ function usePagedList(load, deps) {
   const setFilter = (k, v) => {
     setFilters((f) => ({ ...f, [k]: v || undefined }));
     setPageNo(1);
+    // Drop the old rows: another view (e.g. daily totals) has a different shape
+    setRes({ data: [], totalRecords: 0 });
   };
   return { ...res, loading, pageNo, setPageNo, filters, setFilter, reload: fetchList };
 }
@@ -112,12 +117,13 @@ export default function AiCreditDetail({ summary, loadUsage, loadTransactions, l
         <CardHeader
           icon={<History className="w-3.5 h-3.5" />}
           title={t("History")}
-          subtitle={tab === "requests" ? t("Every AI request, its tokens and what it cost.") : tab === "payments" ? t("Credit packages bought online, with their payment status.") : t("Monthly allowances, purchases, usage, month closes and adjustments.")}
+          subtitle={tab === "requests" ? (usage.filters.view === "daily" ? t("Older AI requests combined into daily totals per user and AI model.") : t("Every AI request, its tokens and what it cost.")) : tab === "payments" ? t("Credit packages bought online, with their payment status.") : t("Monthly allowances, purchases, usage, month closes and adjustments.")}
           right={
             <>
               {/* Filters first, tabs last: the tabs stay in the same place whichever tab is open */}
               {tab === "requests" ? (
                 <>
+                  <Select id="ai-credits-usage-view" label={t("Show")} value={usage.filters.view || ""} onChange={(v) => usage.setFilter("view", v)} options={USAGE_VIEW_OPTIONS(t)} />
                   <Select id="ai-credits-feature-filter" label={t("Feature")} value={usage.filters.feature || ""} onChange={(v) => usage.setFilter("feature", v)} options={FEATURE_OPTIONS(t)} />
                   <Select id="ai-credits-status-filter" label={t("Status")} value={usage.filters.status || ""} onChange={(v) => usage.setFilter("status", v)} options={USAGE_STATUS_OPTIONS(t)} />
                 </>
@@ -150,8 +156,9 @@ export default function AiCreditDetail({ summary, loadUsage, loadTransactions, l
         />
         {tab === "requests" ? (
           <>
-            <UsageTable rows={usage.data} loading={usage.loading} />
+            {usage.filters.view === "daily" ? <DailyUsageTable rows={usage.data} loading={usage.loading} /> : <UsageTable rows={usage.data} loading={usage.loading} />}
             <Pager pageNo={usage.pageNo} perPage={PER_PAGE} total={usage.totalRecords} onPage={usage.setPageNo} />
+            {usage.filters.view !== "daily" && <RetentionNote days={summary.usageLogRetentionDays} />}
           </>
         ) : tab === "payments" ? (
           <>

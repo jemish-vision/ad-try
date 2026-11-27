@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus, Trash2, Settings2, Calculator } from "lucide-react";
+import { Plus, Trash2, Settings2, Calculator, Archive } from "lucide-react";
 import { Input } from "../../../../components/ui/input";
 import { Switch } from "../../../../components/ui/switch";
 import { Button } from "../../../../components/ui/button";
@@ -10,6 +10,8 @@ import { labelCls } from "./AiCreditAdminModals";
 
 const num = (v) => (v === "" || v === null || v === undefined ? NaN : Number(v));
 const nonNeg = (v) => Number.isFinite(num(v)) && num(v) >= 0;
+export const MAX_USAGE_LOG_RETENTION_DAYS = 3650;
+const RETENTION_PRESETS = [30, 60, 90];
 const round4 = (v) => Math.round(v * 10000) / 10000;
 const round2 = (v) => Math.round(v * 100) / 100;
 
@@ -39,6 +41,10 @@ export function validateSettings(form, t) {
   ["defaultMonthlyCredits", "inputCreditsPer1K", "outputCreditsPer1K", "minimumChargePerRequest", "creditsPerImage"].forEach((k) => {
     if (!nonNeg(form[k])) errors[k] = t("Enter 0 or more");
   });
+  if (form.usageLogRetentionDays !== undefined) {
+    const d = num(form.usageLogRetentionDays);
+    if (!Number.isInteger(d) || d < 0 || d > MAX_USAGE_LOG_RETENTION_DAYS) errors.usageLogRetentionDays = t("Enter whole days from 0 to {{max}}", { max: MAX_USAGE_LOG_RETENTION_DAYS });
+  }
   const seen = new Set();
   (form.modelRates || []).forEach((r, i) => {
     const key = String(r.model || "").trim().toLowerCase();
@@ -86,6 +92,7 @@ export default function AiCreditSettingsForm({ settings, onSave, saving }) {
       outputCreditsPer1K: String(settings.outputCreditsPer1K ?? ""),
       minimumChargePerRequest: String(settings.minimumChargePerRequest ?? 0),
       creditsPerImage: String(settings.creditsPerImage ?? 10),
+      usageLogRetentionDays: String(settings.usageLogRetentionDays ?? 90),
       modelRates: (settings.modelRates || []).map((r) => ({ model: r.model, inputCreditsPer1K: String(r.inputCreditsPer1K), outputCreditsPer1K: String(r.outputCreditsPer1K) })),
     });
     setErrors({});
@@ -113,6 +120,7 @@ export default function AiCreditSettingsForm({ settings, onSave, saving }) {
       outputCreditsPer1K: Number(form.outputCreditsPer1K),
       minimumChargePerRequest: Number(form.minimumChargePerRequest),
       creditsPerImage: Number(form.creditsPerImage),
+      usageLogRetentionDays: Number(form.usageLogRetentionDays),
       modelRates: form.modelRates.map((r) => ({ model: r.model.trim(), inputCreditsPer1K: Number(r.inputCreditsPer1K), outputCreditsPer1K: Number(r.outputCreditsPer1K) })),
     });
   };
@@ -220,6 +228,56 @@ export default function AiCreditSettingsForm({ settings, onSave, saving }) {
                 </div>
               );
             })}
+          </div>
+        </Card>
+
+        <Card id="ai-usage-retention">
+          <CardHeader
+            icon={<Archive className="w-3.5 h-3.5" />}
+            title={t("Usage history")}
+            subtitle={t("How long each AI request is kept on its own before it is combined into a daily total.")}
+          />
+          <div className="grid grid-cols-1 cq-sm:grid-cols-2 gap-4 items-start">
+            <Field
+              id="ai-usage-retention-days"
+              label={t("Keep request-by-request logs for (days)")}
+              hint={t("0 = keep every request; nothing is combined or deleted.")}
+              error={errors.usageLogRetentionDays}
+            >
+              <div className="flex items-center gap-2 flex-wrap">
+                <Input
+                  id="ai-usage-retention-days"
+                  type="number"
+                  min="0"
+                  max={MAX_USAGE_LOG_RETENTION_DAYS}
+                  step="1"
+                  className="w-28"
+                  value={form.usageLogRetentionDays}
+                  onChange={(e) => set("usageLogRetentionDays", e.target.value)}
+                />
+                {[...RETENTION_PRESETS, 0].map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => set("usageLogRetentionDays", String(d))}
+                    aria-pressed={String(form.usageLogRetentionDays) === String(d)}
+                    className={`h-8 px-2.5 rounded-lg border text-[12px] font-semibold ${String(form.usageLogRetentionDays) === String(d) ? "border-[#2374F2] text-blue-700 bg-blue-50 dark:bg-blue-950/40 dark:text-sky-300" : "border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-slate-300"}`}
+                  >
+                    {d === 0 ? t("Keep all") : t("{{n}} days", { n: d })}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            <div className="rounded-xl border border-slate-200/80 dark:border-white/[0.08] bg-slate-50/60 dark:bg-white/[0.02] px-3.5 py-3 text-[12px] text-slate-600 dark:text-slate-300 space-y-1.5" id="ai-usage-retention-note">
+              {Number(form.usageLogRetentionDays) > 0 && Number.isInteger(Number(form.usageLogRetentionDays)) ? (
+                <p className="m-0">
+                  {t("Every night, requests older than {{n}} days are combined into one daily total per user and AI model (requests, input and output tokens, total tokens and credits), then the single requests are deleted.", { n: Number(form.usageLogRetentionDays) })}
+                </p>
+              ) : (
+                <p className="m-0">{t("Every AI request is kept on its own. The history can grow large over time.")}</p>
+              )}
+              <p className="m-0 text-slate-500 dark:text-slate-400">{t("Wallet transactions (allowances, purchases, deductions and adjustments) are never combined or deleted.")}</p>
+            </div>
           </div>
         </Card>
 
