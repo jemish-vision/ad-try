@@ -3,6 +3,7 @@ const { withDownloadedReportFile } = require("../helper/reportFile.helper");
 const reports = require("../models/report.model");
 const { stageReportFileInRedis } = require("./reportFileStager.service");
 const { acquireImportLock, renewImportLock, checkImportLock, releaseImportLock } = require("./reportStaging.service");
+const { write_logs } = require("../../winston/utility/logger");
 
 const ATTACHED_STATUSES = ["COMPLETED", "SUCCESS", "STAGED", "IMPORTING", "VERIFYING", "WRITE_FAILED"];
 const LEASE_SECONDS = 120;
@@ -37,6 +38,12 @@ async function stageDownloadedAdsReport({ report, url, entity, runPrefix, meta, 
     }));
     return "STAGED";
   } catch (error) {
+    // Logged here once for every report type: some callers (and the historical
+    // import runner) only keep the status, which would hide why staging failed.
+    write_logs({
+      message: `[Ads Report Staging] ${entity} report ${report.reportId} (profile ${meta.profileId}) failed: ${error.message}`,
+      log_type: "error",
+    });
     if (current && await checkImportLock(lockScope, token)) {
       await reports.updateOne({
         _id: report._id,

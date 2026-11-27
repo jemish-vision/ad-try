@@ -23,6 +23,16 @@ const STAGE_BATCH_SIZE = 500;
  *
  * Sets manifest status to READY only after every single batch is confirmed staged in Redis.
  */
+const ROW_SAMPLE_LIMIT = 500;
+const rowSample = (value) => {
+  try {
+    const text = JSON.stringify(value) ?? String(value);
+    return text.length > ROW_SAMPLE_LIMIT ? `${text.slice(0, ROW_SAMPLE_LIMIT)}…` : text;
+  } catch (_) {
+    return "[unreadable row]";
+  }
+};
+
 const stageReportFileInRedis = async ({
   importRunId,
   entity,
@@ -120,14 +130,21 @@ const stageReportFileInRedis = async ({
     for await (const { value } of pipeline) {
       // 1. Validate & Normalize
       const normalize = isExtendedEntity(entity) ? normalizeExtendedRow : normalizeReportRow;
-      const normalized = normalize(value, {
-        importRunId,
-        entity,
-        configId,
-        profileId,
-        accountType,
-        targetIdMap,
-      });
+      let normalized;
+      try {
+        normalized = normalize(value, {
+          importRunId,
+          entity,
+          configId,
+          profileId,
+          accountType,
+          targetIdMap,
+        });
+      } catch (rowError) {
+        // Keep which row was rejected, so the bad row can be found in the provider file.
+        rowError.reportRow = { number: totalRows + 1, sample: rowSample(value) };
+        throw rowError;
+      }
 
       // 2. Intra-file duplicate detection
       let dedupKey = "";
@@ -213,9 +230,15 @@ const stageReportFileInRedis = async ({
     return { importRunId, totalRows, totalBatches: batchIndex, fileChecksum };
   } catch (error) {
     pipeline.destroy();
+    const row = error.reportRow;
+    write_logs({
+      message: `[stageReportFileInRedis] ${entity} run ${importRunId} (report ${reportId}) failed`
+        + (row ? ` at row #${row.number}: ${error.message} | row: ${row.sample}` : ` after ${totalRows} rows: ${error.message}`),
+      log_type: "error",
+    });
     await saveRunManifest(importRunId, {
       status: RUN_STATUS.VALIDATION_FAILED,
-      error: error.message,
+      error: row ? `Row #${row.number}: ${error.message}` : error.message,
     }).catch(() => {});
     throw error;
   }

@@ -25,6 +25,7 @@ function fixture({ stage } = {}) {
   const attempts = [];
   const staged = [];
   const states = [];
+  const logs = [];
   const matches = filter => Object.entries(filter).every(([key, value]) => {
     if (key === "$or") return value.some(matches);
     return value === null ? record[key] == null : record[key] === value;
@@ -56,6 +57,7 @@ function fixture({ stage } = {}) {
         return stage ? stage(input, record) : input.beforeReady();
       },
     },
+    "../../winston/utility/logger": { write_logs: entry => logs.push(entry) },
   });
   const run = (bytes, beforeDownload = async () => {}) => stageDownloadedAdsReport({
     report: { _id: "record", reportId: "same-report" },
@@ -67,7 +69,7 @@ function fixture({ stage } = {}) {
       await fs.promises.writeFile(file, bytes);
     },
   });
-  return { run, record, attempts, staged, states };
+  return { run, record, attempts, staged, states, logs };
 }
 
 test("two workers staging the same provider report perform one download and publish one run", async () => {
@@ -99,6 +101,10 @@ test("truncated gzip fails before parsing and a retry uses a fresh temporary fil
   assert.equal(h.record.status, "PENDING");
   assert.equal(h.staged.length, 0);
   assert.match(h.record.errorMessage, /Staging failed/);
+  // Logged once here, so failures stay visible when a caller only keeps the status.
+  assert.equal(h.logs.length, 1);
+  assert.equal(h.logs[0].log_type, "error");
+  assert.match(h.logs[0].message, /productAd report same-report \(profile 123\) failed: .*unexpected end of file/i);
   assert.equal(await h.run(Buffer.from("[{}]")), "STAGED");
   assert.notEqual(h.attempts[0], h.attempts[1]);
   assert.ok(h.attempts.every(file => !fs.existsSync(path.dirname(file))));
@@ -178,6 +184,48 @@ test("a staging run waits for a stream batch before publishing READY", async () 
     failBatch(new Error("redis batch fixture"));
     await rejection;
     assert.deepEqual(transitions, ["STAGING", "VALIDATION_FAILED"]);
+  } finally {
+    await fs.promises.rm(folder, { recursive: true, force: true });
+  }
+});
+
+test("a rejected row is reported with its number and a short sample", async () => {
+  const folder = await fs.promises.mkdtemp(path.join(os.tmpdir(), "advertiseiq-report-row-test-"));
+  try {
+    const filePath = path.join(folder, "report.json");
+    const rows = [{ id: 1 }, { id: 2 }, { id: 3, bad: "x".repeat(2000) }];
+    await fs.promises.writeFile(filePath, JSON.stringify(rows));
+    const manifests = [];
+    const logs = [];
+    const { stageReportFileInRedis } = loadModule("reportFileStager", {
+      "stream-chain": { chain: streams => require("stream-chain").chain(Array.from(streams)) },
+      "../helper/reportNormalization.helper": {
+        normalizeReportRow: row => {
+          if (row.bad) throw new Error("Missing campaignId");
+          return { campaignId: row.id, reportDate: "2026-11-27", metrics: {} };
+        },
+      },
+      "../helper/reportExtendedEntities.helper": { isExtendedEntity: () => false },
+      "./redis.service": { redisClient: { async sAdd() {}, async expire() {} } },
+      "./reportStaging.service": {
+        getFileChecksum: async () => "checksum",
+        saveRunManifest: async (_id, update) => manifests.push(update),
+        stageBatchInRedis: async () => {},
+        RUN_STATUS: { STAGING: "STAGING", READY: "READY", VALIDATION_FAILED: "VALIDATION_FAILED" },
+        MANIFEST_KEY_PREFIX: "test:",
+      },
+      "../../winston/utility/logger": { write_logs: entry => logs.push(entry) },
+    });
+    await assert.rejects(stageReportFileInRedis({
+      filePath, entity: "campaign", importRunId: "run",
+      meta: { reportId: "report", profileId: 123, configId: "config" },
+    }), /^Error: Missing campaignId$/);
+    const failed = manifests.at(-1);
+    assert.equal(failed.status, "VALIDATION_FAILED");
+    assert.equal(failed.error, "Row #3: Missing campaignId");
+    const entry = logs.find(l => l.log_type === "error");
+    assert.match(entry.message, /campaign run run \(report report\) failed at row #3: Missing campaignId \| row: \{"id":3,"bad":"x+…$/);
+    assert.ok(entry.message.length < 800, "row sample is truncated");
   } finally {
     await fs.promises.rm(folder, { recursive: true, force: true });
   }
