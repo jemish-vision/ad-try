@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Loader2, Minus, Plus, SlidersHorizontal } from "lucide-react";
 import { formatCredits } from "../../../helper/aiCredits/aiCredits";
@@ -45,6 +45,20 @@ export default function CustomCreditsRow({ offer, canPurchase, buying, onBuy }) 
   const { t, i18n } = useTranslation();
   const L = i18n.language;
   const [value, setValue] = useState(() => String(defaultCustomAmount(offer)));
+  const boundsRef = useRef({ min: offer.minCredits, max: offer.maxCredits });
+  useEffect(() => {
+    const prevBounds = boundsRef.current;
+    if (prevBounds.min === offer.minCredits && prevBounds.max === offer.maxCredits) return;
+    boundsRef.current = { min: offer.minCredits, max: offer.maxCredits };
+    setValue((prev) => {
+      if (String(prev).trim() === "") return String(defaultCustomAmount(offer));
+      const n = Number(prev);
+      if (!Number.isFinite(n)) return prev;
+      const clamped = Math.min(offer.maxCredits, Math.max(offer.minCredits, Math.round(n)));
+      return clamped === n ? prev : String(clamped);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offer.minCredits, offer.maxCredits]);
   const error = customAmountError(value, offer, t, L);
   const credits = Number(value);
   const total = error ? null : customTotal(credits, offer.pricePerCredit, offer.currency);

@@ -421,6 +421,8 @@ describe('custom amount of credits', () => {
     const india = await regions.create({ name: 'India', currency: 'INR', countries: ['IN'], isActive: true });
     const byId = new Map([[String(india._id), india]]);
     assert.match(purchase.validateCustomInput({ ...CUSTOM, regionalRates: [{ regionId: india._id, pricePerCredit: 0.002 }] }, byId).join(), /India: 100 credits would cost 0.2 INR/);
+    assert.match(purchase.validateCustomInput({ ...CUSTOM, regionalRates: [{ regionId: india._id, pricePerCredit: 0.1 }] }, byId).join(), /India: 100 credits would cost 10 INR, below Stripe's minimum charge of 50 INR/);
+    assert.deepEqual(purchase.validateCustomInput({ ...CUSTOM, regionalRates: [{ regionId: india._id, pricePerCredit: 0.5 }] }, byId), []);
     assert.match(purchase.validateCustomInput({ ...CUSTOM, regionalRates: [{ regionId: india._id, pricePerCredit: 0 }] }, byId).join(), /pricePerCredit must be greater than 0/);
     await assert.rejects(setCustom({ pricePerCredit: 0 }), { code: 'INVALID_CUSTOM_PRICING' });
   });

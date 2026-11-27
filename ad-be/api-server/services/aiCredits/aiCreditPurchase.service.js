@@ -173,9 +173,10 @@ const PRICE_DECIMALS = 6; // a credit can cost a fraction of a cent, e.g. $0.019
 const roundPrice = (n) => Math.round((Number(n) || 0) * 10 ** PRICE_DECIMALS) / 10 ** PRICE_DECIMALS;
 
 // Stripe's minimum charge per currency, major units (https://docs.stripe.com/currencies#minimum-and-maximum-charge-amounts).
+// INR uses 50 (~$0.50 USD) because non-India (USD-settled) Stripe accounts reject INR charges below ~$0.50 USD.
 // Currencies not listed are left to Stripe, which refuses the checkout if the amount is too small.
 const STRIPE_MINIMUM = {
-  USD: 0.5, EUR: 0.5, GBP: 0.3, INR: 0.5, AUD: 0.5, CAD: 0.5, NZD: 0.5, SGD: 0.5, CHF: 0.5, BRL: 0.5,
+  USD: 0.5, EUR: 0.5, GBP: 0.3, INR: 50, AUD: 0.5, CAD: 0.5, NZD: 0.5, SGD: 0.5, CHF: 0.5, BRL: 0.5,
   AED: 2, SAR: 2, PLN: 2, RON: 2, MYR: 2, DKK: 2.5, NOK: 3, SEK: 3, HKD: 4, MXN: 10, THB: 10, CZK: 15, JPY: 50, HUF: 175,
 };
 const stripeMinimum = (currency) => STRIPE_MINIMUM[String(currency || '').toUpperCase()] || 0;

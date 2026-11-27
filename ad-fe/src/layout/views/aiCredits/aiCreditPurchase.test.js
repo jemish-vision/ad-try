@@ -10,7 +10,7 @@ import AiCreditsPage from "./AiCreditsPage";
 import { CreditMeter } from "./aiCreditComponents";
 import CreditPackagesAdmin, { PaymentsLog, validatePackageForm } from "./admin/CreditPackagesAdmin";
 import CustomPricingCard, { validateCustomForm, cheaperThanPackages } from "./admin/CustomPricingCard";
-import { customTotal, customAmountError, defaultCustomAmount } from "./CustomCreditsRow";
+import CustomCreditsRow, { customTotal, customAmountError, defaultCustomAmount } from "./CustomCreditsRow";
 import { PaymentsTable } from "./aiCreditComponents";
 import { __resetAiCreditCache } from "../../../helper/aiCredits/aiCredits";
 
@@ -221,6 +221,16 @@ describe("Need a different amount? (custom credits)", () => {
     const buy = screen.getByRole("button", { name: "Buy 1,000 credits" });
     expect(buy).toBeDisabled();
     expect(buy).toHaveAttribute("data-demo-block");
+  });
+
+  test("reclamps input cleanly if minCredits or maxCredits changes without reload", () => {
+    const { rerender } = render(<CustomCreditsRow offer={OFFER} canPurchase buying={null} onBuy={jest.fn()} />);
+    const box = screen.getByLabelText("Number of credits");
+    expect(box).toHaveValue(1000);
+    rerender(<CustomCreditsRow offer={{ ...OFFER, minCredits: 2000 }} canPurchase buying={null} onBuy={jest.fn()} />);
+    expect(box).toHaveValue(2000);
+    rerender(<CustomCreditsRow offer={{ ...OFFER, minCredits: 100, maxCredits: 500 }} canPurchase buying={null} onBuy={jest.fn()} />);
+    expect(box).toHaveValue(500);
   });
 
   test("custom purchases are labelled in the payment history", () => {
