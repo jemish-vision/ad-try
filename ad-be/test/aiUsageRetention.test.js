@@ -15,7 +15,7 @@ const stub = (rel, exp) => {
 const wallets = createFakeModel('aicreditwallets', { unique: [['organizationId']], defaults: { monthlyLimitOverride: null, reserved: 0, used: 0, lifetimeUsed: 0 } });
 const transactions = createFakeModel('aicredittransactions', { unique: [['dedupeKey']] });
 const usageLogs = createFakeModel('aiusagelogs', { unique: [['requestId']], defaults: { aggregationBatch: null, aggregationClaimedAt: null } });
-const summaries = createFakeModel('aiusagedailysummaries', { unique: [['organizationId', 'day', 'userId', 'feature', 'modelKey', 'status']], defaults: { appliedBatches: [], byModel: [] } });
+const summaries = createFakeModel('aiusagedailysummaries', { unique: [['organizationId', 'day', 'userId', 'feature', 'modelKey', 'status', 'keySource']], defaults: { appliedBatches: [], byModel: [] } });
 const settings = createFakeModel('aicreditsettings', { unique: [['key']] });
 const organizations = createFakeModel('organizations');
 const plans = createFakeModel('packages');
@@ -278,6 +278,17 @@ describe('combining old logs into daily totals', () => {
     assert.equal(transactions.docs.length, 2);
   });
 
+  test("requests on the organization's own key and on the wallet stay separate daily totals", async () => {
+    await setRetention(30);
+    await log(40, { keySource: 'PERSONAL', credits: 0 });
+    await log(40, { keySource: 'PERSONAL', credits: 0 });
+    await log(40);
+    await run();
+    const own = summaries.docs.find((s) => s.keySource === 'PERSONAL');
+    const wallet = summaries.docs.find((s) => s.keySource === 'PLATFORM');
+    assert.deepEqual([own.requests, own.credits, wallet.requests, wallet.credits], [2, 0, 1, 10]);
+  });
+
   test('organizations and days stay separate', async () => {
     await setRetention(30);
     await log(40);
@@ -299,7 +310,8 @@ describe('usage history and reports include the daily totals', () => {
     assert.equal(all.view, 'daily');
     assert.equal(all.totalRecords, 3);
     assert.equal(new Date(all.data[0].day).toISOString(), '2026-10-18T00:00:00.000Z');
-    assert.deepEqual(Object.keys(all.data[0]).sort(), ['_id', 'backgroundRequests', 'credits', 'day', 'feature', 'images', 'inputTokens', 'models', 'organization', 'outputTokens', 'requests', 'status', 'totalTokens', 'user'].sort());
+    assert.deepEqual(Object.keys(all.data[0]).sort(), ['_id', 'backgroundRequests', 'credits', 'day', 'feature', 'images', 'inputTokens', 'keySource', 'models', 'organization', 'outputTokens', 'requests', 'status', 'totalTokens', 'user'].sort());
+    assert.equal(all.data[0].keySource, 'PLATFORM');
     const charged = await report.listUsage({ view: 'daily', status: 'SETTLED', feature: 'CAMPAIGN_ANALYSIS' }, { organizationId: orgA });
     assert.deepEqual(charged.data.map((r) => [r.feature, r.requests, r.credits]), [['CAMPAIGN_ANALYSIS', 1, 3]]);
     const other = await report.listUsage({ view: 'daily' }, { organizationId: orgB });

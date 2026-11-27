@@ -7,7 +7,7 @@
  * separate MongoDB commands would. Supports what the AI credit code uses:
  * create, findOne, findById, find (sort/skip/limit/select), countDocuments,
  * findOneAndUpdate / updateOne / updateMany ($set, $inc, $push incl. $each, $min, $max, $setOnInsert, upsert, new,
- * pipeline $set/$unset), deleteMany, unique indexes.
+ * pipeline $set/$unset), deleteOne, deleteMany, unique indexes.
  */
 const mongoose = require('mongoose');
 
@@ -184,6 +184,12 @@ function createFakeModel(name, { unique = [], defaults = {} } = {}) {
       const hits = docs.filter((x) => matches(x, filter));
       for (const d of hits) Object.assign(d, applyUpdate(clone(d), update), { updatedAt: new Date() });
       return { matchedCount: hits.length, modifiedCount: hits.length };
+    },
+    async deleteOne(filter) {
+      await tick();
+      const i = docs.findIndex((x) => matches(x, filter));
+      if (i >= 0) docs.splice(i, 1);
+      return { deletedCount: i >= 0 ? 1 : 0 };
     },
     async deleteMany(filter) {
       await tick();

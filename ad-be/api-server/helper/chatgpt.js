@@ -4,6 +4,9 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GoogleGenAI } from "@google/genai";
 import axios from "axios";
 import { recordAiResponse } from "../services/aiCredits/aiUsageMeter.js";
+// The organization's own API key when it uses its own keys, else the platform's (see aiKeyRouting)
+import { withProviderKey, isAiAccessError } from "../services/aiKeys/aiKeyRouting.js";
+import { openaiClient, geminiClient, genAiClient } from "../services/aiKeys/aiClients.js";
 
 const openai = new OpenAI({
     apiKey: `${process.env.OPENAI_API_KEY}`,
@@ -78,12 +81,15 @@ export async function runModuleCreation(productData) {
         { role: "user", content: [{ type: "text", text }] }
     ];
 
-    const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages,
-        response_format: { type: "json_object" }
+    const completion = await withProviderKey("openai", async (apiKey) => {
+        const out = await openaiClient(apiKey).chat.completions.create({
+            model: "gpt-4o-mini",
+            messages,
+            response_format: { type: "json_object" }
+        });
+        recordAiResponse("openai", "gpt-4o-mini", out); // AI credits: token usage
+        return out;
     });
-    recordAiResponse("openai", "gpt-4o-mini", completion); // AI credits: token usage
 
     console.log("OpenAI Usage:", completion.usage);
 
@@ -253,6 +259,7 @@ export async function CampaignAnalysis(data) {
         }
 
     } catch (error) {
+        if (isAiAccessError(error)) throw error; // own API key refused / missing, or no credits
         console.log(`Failed to parse Module 2 JSON response: ${error.message}`);
         return {
             parsedContent: {}
@@ -312,29 +319,29 @@ export async function AIPlacementAndTargetingAnalysis(data) {
     try {
 
         if (data?.aiModel === "gemini") {
-            const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_STUDIO_KEY);
-            const model = genAI.getGenerativeModel({
-                model: "gemini-3.8-flash",
-                systemInstruction: system,
+            const result = await withProviderKey("gemini", async (apiKey) => {
+                const model = geminiClient(apiKey).getGenerativeModel({
+                    model: "gemini-3.8-flash",
+                    systemInstruction: system,
+                });
+                const out = await model.generateContent({
+                    contents: [
+                        { role: "user", parts: [{ text: text }] },
+                        ...data?.messages
+                    ],
+
+                    // Model configuration
+                    generationConfig: {
+                        temperature: 1,
+                        responseMimeType: "application/json"
+                    },
+
+                    safetySettings: [],
+                    tools: [],
+                });
+                recordAiResponse("gemini", "gemini-3.8-flash", out.response); // AI credits: token usage
+                return out;
             });
-
-            const result = await model.generateContent({
-                contents: [
-                    { role: "user", parts: [{ text: text }] },
-                    ...data?.messages
-                ],
-
-                // Model configuration
-                generationConfig: {
-                    temperature: 1,
-                    responseMimeType: "application/json"
-                },
-
-                safetySettings: [],
-                tools: [],
-            });
-
-            recordAiResponse("gemini", "gemini-3.8-flash", result.response); // AI credits: token usage
             return {
                 parsedContent: safeJsonParse(result.response.text())
             }
@@ -347,13 +354,16 @@ export async function AIPlacementAndTargetingAnalysis(data) {
                 ...data?.messages
             ];
 
-            const completion = await openai.chat.completions.create({
-                model: "gpt-4o-mini",
-                // model: "gpt-5-nano-2025-08-07",
-                messages,
-                response_format: { type: "json_object" }
+            const completion = await withProviderKey("openai", async (apiKey) => {
+                const out = await openaiClient(apiKey).chat.completions.create({
+                    model: "gpt-4o-mini",
+                    // model: "gpt-5-nano-2025-08-07",
+                    messages,
+                    response_format: { type: "json_object" }
+                });
+                recordAiResponse("openai", "gpt-4o-mini", out); // AI credits: token usage
+                return out;
             });
-            recordAiResponse("openai", "gpt-4o-mini", completion); // AI credits: token usage
 
             const jsonResponse = safeJsonParse(completion.choices[0].message.content ?? {});
 
@@ -364,6 +374,8 @@ export async function AIPlacementAndTargetingAnalysis(data) {
         }
 
     } catch (error) {
+        // Own API key refused / missing, or no credits: the user must see why (not "Analysis Failed")
+        if (isAiAccessError(error)) throw error;
         console.log(error);
         console.log(`Failed to parse Module 2 JSON response: ${error.message}`);
         return {
@@ -439,29 +451,29 @@ export async function AISearchTermsAnalysis(data) {
 
     try {
         if (data?.aiModel === "gemini") {
-            const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_STUDIO_KEY);
-            const model = genAI.getGenerativeModel({
-                model: "gemini-3.8-flash",
-                systemInstruction: system,
+            const result = await withProviderKey("gemini", async (apiKey) => {
+                const model = geminiClient(apiKey).getGenerativeModel({
+                    model: "gemini-3.8-flash",
+                    systemInstruction: system,
+                });
+                const out = await model.generateContent({
+                    contents: [
+                        { role: "user", parts: [{ text: text }] },
+                        ...data?.messages
+                    ],
+
+                    // Model configuration
+                    generationConfig: {
+                        temperature: 1,
+                        responseMimeType: "application/json"
+                    },
+
+                    safetySettings: [],
+                    tools: [],
+                });
+                recordAiResponse("gemini", "gemini-3.8-flash", out.response); // AI credits: token usage
+                return out;
             });
-
-            const result = await model.generateContent({
-                contents: [
-                    { role: "user", parts: [{ text: text }] },
-                    ...data?.messages
-                ],
-
-                // Model configuration
-                generationConfig: {
-                    temperature: 1,
-                    responseMimeType: "application/json"
-                },
-
-                safetySettings: [],
-                tools: [],
-            });
-
-            recordAiResponse("gemini", "gemini-3.8-flash", result.response); // AI credits: token usage
             return {
                 parsedContent: safeJsonParse(result.response.text())
             }
@@ -474,13 +486,16 @@ export async function AISearchTermsAnalysis(data) {
                 ...data?.messages
             ];
 
-            const completion = await openai.chat.completions.create({
-                model: "gpt-4o-mini",
-                // model: "gpt-5-nano-2025-08-07",
-                messages,
-                response_format: { type: "json_object" }
+            const completion = await withProviderKey("openai", async (apiKey) => {
+                const out = await openaiClient(apiKey).chat.completions.create({
+                    model: "gpt-4o-mini",
+                    // model: "gpt-5-nano-2025-08-07",
+                    messages,
+                    response_format: { type: "json_object" }
+                });
+                recordAiResponse("openai", "gpt-4o-mini", out); // AI credits: token usage
+                return out;
             });
-            recordAiResponse("openai", "gpt-4o-mini", completion); // AI credits: token usage
 
             const jsonResponse = safeJsonParse(completion.choices[0].message.content ?? {});
 
@@ -1041,7 +1056,8 @@ async function analyzeImageWithGPT4oMini(imageURL) {
         return { score: 0, issues: ["No image URL provided"], tips: ["Upload a high-quality main product image on a plain white background"] };
     }
     try {
-        const completion = await openai.chat.completions.create({
+        const completion = await withProviderKey("openai", async (apiKey) => {
+          const out = await openaiClient(apiKey).chat.completions.create({
             model: "gpt-4o-mini",
             messages: [
                 {
@@ -1087,10 +1103,13 @@ If the image fully complies with Amazon standards, return empty issues array and
             ],
             response_format: { type: "json_object" },
             max_tokens: 600,
+          });
+          recordAiResponse("openai", "gpt-4o-mini", out); // AI credits: token usage
+          return out;
         });
-        recordAiResponse("openai", "gpt-4o-mini", completion); // AI credits: token usage
         return safeJsonParse(completion.choices[0].message.content);
     } catch (err) {
+        if (isAiAccessError(err)) throw err; // own API key refused / missing, or no credits
         console.warn("Image analysis failed:", err.message);
         return { score: 50, issues: ["Image could not be analyzed automatically"], tips: ["Ensure the product image uses a plain white background, is well-lit, and the product fills at least 85% of the frame"] };
     }
@@ -1230,24 +1249,25 @@ Return EXACTLY this JSON structure:
   "priorityActions": ["<action1 — highest impact>", "<action2>", "<action3>"]
 }`;
 
-    const model = genAI.getGenerativeModel({
-        model: "gemini-3.8-flash",
-        systemInstruction: system,
+    const result = await withProviderKey("gemini", async (apiKey) => {
+        const model = geminiClient(apiKey).getGenerativeModel({
+            model: "gemini-3.8-flash",
+            systemInstruction: system,
+        });
+        const out = await model.generateContent({
+            contents: [{ role: "user", parts: [{ text: userText }] }],
+            generationConfig: {
+                temperature: 0,       // deterministic — same input = same output
+                topP: 1,
+                topK: 1,
+                responseMimeType: "application/json",
+            },
+            safetySettings: [],
+            tools: [],
+        });
+        recordAiResponse("gemini", "gemini-3.8-flash", out.response); // AI credits: token usage
+        return out;
     });
-
-    const result = await model.generateContent({
-        contents: [{ role: "user", parts: [{ text: userText }] }],
-        generationConfig: {
-            temperature: 0,       // deterministic — same input = same output
-            topP: 1,
-            topK: 1,
-            responseMimeType: "application/json",
-        },
-        safetySettings: [],
-        tools: [],
-    });
-
-    recordAiResponse("gemini", "gemini-3.8-flash", result.response); // AI credits: token usage
     const parsed = safeJsonParse(result.response.text());
 
     // Server-side override — average of all 5 sections, each out of 100
@@ -1479,10 +1499,6 @@ export function formatOfContentModuleList() {
 
 export async function generateAPlusModulesAI({ asin, prompt, productData, type = "basic" }) {
 
-    const apiKey = process.env.GOOGLE_AI_STUDIO_KEY;
-    if (!apiKey) throw new Error("GOOGLE_AI_STUDIO_KEY not set");
-
-    const ai = new GoogleGenAI({ apiKey });
     const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-3.8-flash";
     const PREMIUM_SIZES = ["970x600", "970x300"];
 
@@ -1639,12 +1655,15 @@ with EXACTLY ${count} items.`;
         required: ["modules"],
     };
 
-    const res = await ai.models.generateContent({
-        model: TEXT_MODEL,
-        contents: [{ role: "user", parts }],
-        config: { responseMimeType: "application/json", responseSchema: RESPONSE_SCHEMA, temperature: 0.9 },
+    const res = await withProviderKey("gemini", async (apiKey) => {
+        const out = await genAiClient(apiKey).models.generateContent({
+            model: TEXT_MODEL,
+            contents: [{ role: "user", parts }],
+            config: { responseMimeType: "application/json", responseSchema: RESPONSE_SCHEMA, temperature: 0.9 },
+        });
+        recordAiResponse("gemini", TEXT_MODEL, out); // AI credits: token usage
+        return out;
     });
-    recordAiResponse("gemini", TEXT_MODEL, res); // AI credits: token usage
 
     let json;
     try {

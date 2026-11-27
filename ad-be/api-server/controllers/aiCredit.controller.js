@@ -3,6 +3,7 @@ const service = require("../services/aiCredits/aiCredit.service");
 const report = require("../services/aiCredits/aiCreditReport.service");
 const mock = require("../services/aiCredits/aiCredit.mock");
 const purchase = require("../services/aiCredits/aiCreditPurchase.service");
+const aiKeys = require("../services/aiKeys/aiKey.service");
 const { ROLES } = require("../constants/roles");
 const { write_logs } = require("../../winston/utility/logger");
 
@@ -29,12 +30,13 @@ const features = () => Object.values(service.FEATURES).map((f) => ({ key: f.key,
 // ── User panel (any member of the organization) ──────────────────────────────
 exports.getMyCredits = async (req, res) => {
   try {
-    if (isDemo(req)) return res.status(200).json({ isSuccess: true, data: { ...mock.summary(), features: features(), canPurchase: false, canViewPayments: true } });
+    if (isDemo(req)) return res.status(200).json({ isSuccess: true, data: { ...mock.summary(), features: features(), canPurchase: false, canViewPayments: true, ownKeys: { usePersonalKeys: true, allowWalletFallback: true } } });
     const orgId = orgOf(req);
     if (!validOrgId(orgId)) return res.status(200).json({ isSuccess: true, data: null, message: "No organization selected" });
-    const data = await report.getUserSummary(orgId);
+    // ownKeys: whether AI runs on the organization's own API keys (then no credits are used)
+    const [data, ownKeys] = await Promise.all([report.getUserSummary(orgId), aiKeys.getSettings(orgId)]);
     const owner = canPurchase(req);
-    return res.status(200).json({ isSuccess: true, data: { ...data, features: features(), canPurchase: owner, canViewPayments: owner } });
+    return res.status(200).json({ isSuccess: true, data: { ...data, features: features(), canPurchase: owner, canViewPayments: owner, ownKeys } });
   } catch (err) {
     return fail(res, err, "getMyCredits");
   }

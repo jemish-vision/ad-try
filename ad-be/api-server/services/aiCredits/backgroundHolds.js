@@ -26,10 +26,14 @@ async function imageCredits(n) {
  * Hold credits for background work started by this (metered) request. Returns a plain object to
  * store with the job, or null when the request isn't metered (demo user, no organization).
  * Throws AiCreditsError when the wallet can't cover it.
+ * opts.provider: the AI provider the background work calls. When the organization uses its own
+ * keys and has a key for it (or doesn't allow wallet fallback), nothing is held: keySource PERSONAL.
  */
-async function holdForBackgroundJob(req, feature, amount) {
+async function holdForBackgroundJob(req, feature, amount, { provider = null } = {}) {
   const meter = req?.aiMeter;
   if (!meter) return null;
+  const cfg = meter.keyConfig;
+  const personal = Boolean(meter.personal && (!provider || cfg?.keys?.[provider] || !cfg?.allowWalletFallback));
   const hold = await service.reserve({
     organizationId: meter.organizationId,
     userId: meter.userId,
@@ -37,6 +41,7 @@ async function holdForBackgroundJob(req, feature, amount) {
     requestId: `${meter.organizationId}:bg:${crypto.randomUUID()}`,
     amount,
     deferred: true,
+    personal,
   });
   return {
     requestId: hold.requestId,
@@ -46,6 +51,7 @@ async function holdForBackgroundJob(req, feature, amount) {
     feature,
     amount: hold.amount,
     enforced: hold.enforced,
+    keySource: personal ? 'PERSONAL' : 'PLATFORM',
   };
 }
 
@@ -53,7 +59,8 @@ async function holdForBackgroundJob(req, feature, amount) {
 async function settleBackgroundHold(hold, calls) {
   if (!hold?.requestId) return null;
   try {
-    return await service.settle(hold, calls);
+    // Work done on the organization's own key is logged but not charged
+    return await service.settle(hold, (calls || []).map((c) => ({ keySource: hold.keySource || 'PLATFORM', ...c })));
   } catch (err) {
     write_logs({ message: `[aiCredits] background settle failed for ${hold.requestId}: ${err.message}`, log_type: 'error' });
     return null;

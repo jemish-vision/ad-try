@@ -37,8 +37,8 @@ async function resizeToExact(base64, size) {
 /**
  * Submits an asynchronous batch image generation request to Google Gemini Batch API (50% cost discount)
  */
-exports.submitAPlusImageBatchJob = async ({ imageModules = [], productRef = null, type = "basic" }) => {
-  const apiKey = process.env.GOOGLE_AI_STUDIO_KEY;
+exports.submitAPlusImageBatchJob = async ({ imageModules = [], productRef = null, type = "basic", apiKey = process.env.GOOGLE_AI_STUDIO_KEY }) => {
+  // apiKey: the platform's key, or the organization's own Gemini key (the job is then polled with it)
   if (!apiKey) throw new Error("GOOGLE_AI_STUDIO_KEY is not configured");
 
   const model = IMAGE_MODEL();
@@ -71,7 +71,8 @@ exports.submitAPlusImageBatchJob = async ({ imageModules = [], productRef = null
     };
   });
 
-  const batchEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:batchGenerateContent?key=${apiKey}`;
+  // The key goes in a header, not the URL, so it never ends up in proxy or request logs
+  const batchEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:batchGenerateContent`;
 
   const payload = {
     batch: {
@@ -85,7 +86,7 @@ exports.submitAPlusImageBatchJob = async ({ imageModules = [], productRef = null
 
   try {
     const res = await axios.post(batchEndpoint, payload, {
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       timeout: 60000,
     });
 
@@ -114,15 +115,15 @@ exports.submitAPlusImageBatchJob = async ({ imageModules = [], productRef = null
 /**
  * Polls Google Gemini Batch Job status
  */
-exports.checkBatchJobStatus = async (batchJobName) => {
-  const apiKey = process.env.GOOGLE_AI_STUDIO_KEY;
+exports.checkBatchJobStatus = async (batchJobName, apiKey = process.env.GOOGLE_AI_STUDIO_KEY) => {
+  // apiKey: the key the job was submitted with (the platform's or the organization's own)
   if (!apiKey) throw new Error("GOOGLE_AI_STUDIO_KEY is not configured");
 
   // Ensure batchJobName has proper prefix
   const cleanName = batchJobName.startsWith("batches/") ? batchJobName : `batches/${batchJobName}`;
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/${cleanName}?key=${apiKey}`;
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/${cleanName}`;
 
-  const res = await axios.get(endpoint, { timeout: 30000 });
+  const res = await axios.get(endpoint, { timeout: 30000, headers: { "x-goog-api-key": apiKey } });
   const data = res.data;
 
   const state = data?.metadata?.state || data?.state || data?.status || "BATCH_STATE_RUNNING";

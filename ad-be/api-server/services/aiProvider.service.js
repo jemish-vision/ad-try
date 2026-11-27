@@ -2,6 +2,7 @@
 
 const { write_logs } = require('../../winston/utility/logger');
 const { ensureAiCredits, recordAiUsage } = require('./aiCredits/aiUsageMeter');
+const { withProviderKey } = require('./aiKeys/aiKeyRouting');
 
 const SUPPORTED_PROVIDERS = Object.freeze(['anthropic', 'openai', 'gemini']);
 
@@ -507,24 +508,28 @@ async function requestTurn(input = {}, clientFactory = null) {
     config = resolveConfig(input.options || {});
     // Inside a metered request (AI credits): hold credits before calling the model, record tokens after.
     await ensureAiCredits();
-    let result;
-    switch (config.provider) {
-      case 'anthropic':
-        result = await requestAnthropic(config, input, clientFactory);
-        break;
-      case 'openai':
-        result = await requestOpenAI(config, input, clientFactory);
-        break;
-      case 'gemini':
-        result = await requestGemini(config, input, clientFactory);
-        break;
-      default:
-        throw providerError('UNSUPPORTED_AI_PROVIDER', `Unknown provider: ${config.provider}`);
-    }
-    if (result?.usage) recordAiUsage({ provider: result.provider || config.provider, model: result.model || config.model, ...result.usage });
-    return result;
+    // The organization's own API key when it uses its own keys, else the platform's (see aiKeyRouting)
+    return await withProviderKey(config.provider, async (apiKey, source) => {
+      const callConfig = source === 'PERSONAL' ? { ...config, apiKey } : config;
+      let result;
+      switch (callConfig.provider) {
+        case 'anthropic':
+          result = await requestAnthropic(callConfig, input, clientFactory);
+          break;
+        case 'openai':
+          result = await requestOpenAI(callConfig, input, clientFactory);
+          break;
+        case 'gemini':
+          result = await requestGemini(callConfig, input, clientFactory);
+          break;
+        default:
+          throw providerError('UNSUPPORTED_AI_PROVIDER', `Unknown provider: ${callConfig.provider}`);
+      }
+      if (result?.usage) recordAiUsage({ provider: result.provider || callConfig.provider, model: result.model || callConfig.model, ...result.usage });
+      return result;
+    });
   } catch (error) {
-    const code = /^([A-Z]+_)*AI_[A-Z_]+$/.test(error?.code) ? error.code : 'AI_TURN_ERROR';
+    const code = /^([A-Z]+_)*AI_[A-Z_]+$/.test(error?.code) || /^PERSONAL_KEY_[A-Z_]+$/.test(error?.code) ? error.code : 'AI_TURN_ERROR';
     const provider = config?.provider || 'unresolved';
     const status = error?.providerStatus ?? 'unavailable';
     write_logs({

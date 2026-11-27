@@ -18,6 +18,9 @@ function fixture({ countryCode, marketplaceId, expectedLocale, existingLocale })
         batchJobName: "batches/fixture", status: "PENDING", save: async () => {},
     };
     const mocks = {
+      // Platform keys (the organization doesn't use its own AI keys in these tests)
+      '../services/aiKeys/aiKeyRouting': { platformKey: () => 'platform-gemini-key', keyError: (p, k) => new Error(`${p} ${k}`), sendAiAccessError: () => false },
+      '../services/aiKeys/aiKey.service': { personalKeyFor: () => null, getOrgKeyConfig: async () => ({ enabled: false, keys: {} }), classifyProviderError: () => null, markKeyProblem: async () => {}, scrub: (t) => String(t || '') },
         "../services/aiCredits/withAiCredits": { reserveAiCredits: async () => true },
         "../services/aiCredits/backgroundHolds": {
             imageCredits: async () => 0,

@@ -63,6 +63,10 @@ const aPlusBatchJobSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    // Whose Gemini key submitted the batch: the platform's, or the organization's own (PERSONAL).
+    // The status checks must use the same key; own-key jobs are never charged.
+    keySource: { type: String, enum: ["PLATFORM", "PERSONAL"], default: "PLATFORM" },
+    organizationId: { type: mongoose.Schema.Types.ObjectId, ref: "organization", default: null },
     // AI credits held for this job's images; charged when the images arrive, returned if the job fails
     aiCreditHold: {
       type: Object,

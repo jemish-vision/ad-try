@@ -37,6 +37,9 @@ function loadController({ batchStatus, images }) {
       saveBatchImageToDisk: async () => '/tmp/x.png',
     },
     '../helper/sendNotification': { sendNotificationToUser: async () => {} },
+    // Platform keys (the organization doesn't use its own AI keys in these tests)
+    '../services/aiKeys/aiKeyRouting': { platformKey: () => 'platform-gemini-key', keyError: (p, k) => new Error(`${p} ${k}`), sendAiAccessError: () => false },
+    '../services/aiKeys/aiKey.service': { personalKeyFor: () => null, getOrgKeyConfig: async () => ({ enabled: false, keys: {} }), classifyProviderError: () => null, markKeyProblem: async () => {}, scrub: (t) => String(t || '') },
     '../services/aiCredits/backgroundHolds': {
       settleBackgroundHold: async (hold, calls) => credit.settled.push({ hold, calls }),
       releaseBackgroundHold: async (hold, reason) => credit.released.push({ hold, reason }),
@@ -113,6 +116,9 @@ function loadCreate({ walletCredits, batchError = null, textError = null }) {
       },
       creditErrorBody: (e) => ({ isSuccess: false, code: e.code }),
     },
+    // Platform keys (the organization doesn't use its own AI keys in these tests)
+    '../services/aiKeys/aiKeyRouting': { platformKey: () => 'platform-gemini-key', keyError: (p, k) => new Error(`${p} ${k}`), sendAiAccessError: () => false },
+    '../services/aiKeys/aiKey.service': { personalKeyFor: () => null, getOrgKeyConfig: async () => ({ enabled: false, keys: {} }), classifyProviderError: () => null, markKeyProblem: async () => {}, scrub: (t) => String(t || '') },
     '../services/aiCredits/backgroundHolds': {
       imageCredits,
       holdForBackgroundJob: async (_req, _f, amount) => { take(amount); calls.push(['hold:images', amount]); return { requestId: 'bg-1', amount }; },

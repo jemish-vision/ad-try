@@ -214,7 +214,10 @@ const STATUS = {
   RELEASED: { label: "Not charged", icon: XCircle, cls: "text-slate-600 bg-slate-100 dark:text-slate-300 dark:bg-white/[0.06]" },
   EXPIRED: { label: "Expired", icon: Hourglass, cls: "text-slate-600 bg-slate-100 dark:text-slate-300 dark:bg-white/[0.06]" },
   RESERVED: { label: "Running", icon: Clock, cls: "text-blue-700 bg-blue-50 dark:text-blue-300 dark:bg-blue-950/40" },
+  // Finished on the organization's own API key: nothing was taken from the wallet, so not "Charged".
+  OWN_KEY_DONE: { label: "Completed", icon: CheckCircle2, cls: "text-emerald-700 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-950/40" },
 };
+const statusOf = (r) => (r.status === "SETTLED" && r.keySource === "PERSONAL" ? STATUS.OWN_KEY_DONE : STATUS[r.status] || STATUS.RELEASED);
 
 const TX = {
   ALLOCATION: { label: "Monthly allowance" },
@@ -249,6 +252,21 @@ const TableShell = ({ loading, empty, cols, children, emptyText, minWidth = 720 
   );
 };
 
+/** "Your key" when the request ran on the organization's own API key (no credits), "Your key + credits" when mixed. */
+export const KeySourceTag = ({ source }) => {
+  const { t } = useTranslation();
+  if (source !== "PERSONAL" && source !== "MIXED") return null;
+  return (
+    <span
+      data-testid="ai-key-source"
+      className="inline-flex items-center px-1.5 py-0.5 mt-1 rounded text-[10.5px] font-semibold whitespace-nowrap text-violet-700 bg-violet-50 dark:text-violet-300 dark:bg-violet-950/40"
+      title={source === "PERSONAL" ? t("Ran on your organization's own API key: no credits used") : t("Partly on your own API key, partly on AI credits")}
+    >
+      {source === "PERSONAL" ? t("Your key") : t("Your key + credits")}
+    </span>
+  );
+};
+
 /** AI requests: when, feature, who, models, tokens, credits, outcome. */
 export function UsageTable({ rows = [], loading, showOrganization = false }) {
   const { t, i18n } = useTranslation();
@@ -266,7 +284,7 @@ export function UsageTable({ rows = [], loading, showOrganization = false }) {
   return (
     <TableShell loading={loading} empty={!rows.length} cols={cols} emptyText={t("No AI requests yet.")} minWidth={showOrganization ? 1040 : 920}>
       {rows.map((r) => {
-        const s = STATUS[r.status] || STATUS.RELEASED;
+        const s = statusOf(r);
         const Icon = s.icon;
         return (
           <tr key={r._id} className="hover:bg-slate-50/70 dark:hover:bg-white/[0.02]">
@@ -291,6 +309,7 @@ export function UsageTable({ rows = [], loading, showOrganization = false }) {
                 {t(s.label)}
               </span>
               {r.enforced === false && <div className="text-[10.5px] text-slate-400 mt-0.5">{t("Limits paused")}</div>}
+              <div><KeySourceTag source={r.keySource} /></div>
             </td>
           </tr>
         );
@@ -320,7 +339,7 @@ export function DailyUsageTable({ rows = [], loading, showOrganization = false }
   return (
     <TableShell loading={loading} empty={!rows.length} cols={cols} emptyText={t("No daily totals yet. Requests are combined once they are older than the retention period.")} minWidth={showOrganization ? 880 : 760}>
       {rows.map((r) => {
-        const s = STATUS[r.status] || STATUS.RELEASED;
+        const s = statusOf(r);
         const Icon = s.icon;
         return (
           <tr key={r._id} className="hover:bg-slate-50/70 dark:hover:bg-white/[0.02]" data-testid="ai-daily-usage-row">
@@ -349,6 +368,7 @@ export function DailyUsageTable({ rows = [], loading, showOrganization = false }
                 <Icon className="w-3 h-3" aria-hidden="true" />
                 {t(s.label)}
               </span>
+              <div><KeySourceTag source={r.keySource} /></div>
             </td>
           </tr>
         );

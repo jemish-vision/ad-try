@@ -199,6 +199,7 @@ app.use("/api/rule-blocked-time", require("./routes/superAdmin/ruleBlockedTime.r
 app.use("/api/retention", require("./routes/retention.route"));
 app.use("/api/admin/global-settings", require("./routes/admin/globalSettings.route"));
 app.use("/api/ai-credits", require("./routes/aiCredit.route"));
+app.use("/api/ai-keys", require("./routes/aiKey.route"));
 
 // Global 404 Route Not Found Handler
 app.use((req, res, next) => {

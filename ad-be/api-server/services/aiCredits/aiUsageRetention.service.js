@@ -49,11 +49,12 @@ function groupLogs(logs) {
     const day = startOfUtcDay(log.createdAt);
     const modelKey = modelKeyOf(log.models);
     const userId = log.userId || null;
-    const key = [String(log.organizationId), day.toISOString(), String(userId || ''), log.feature, modelKey, log.status].join('|');
+    const keySource = log.keySource || 'PLATFORM';
+    const key = [String(log.organizationId), day.toISOString(), String(userId || ''), log.feature, modelKey, log.status, keySource].join('|');
     let g = groups.get(key);
     if (!g) {
       g = {
-        key: { organizationId: log.organizationId, day, userId, feature: log.feature, modelKey, status: log.status },
+        key: { organizationId: log.organizationId, day, userId, feature: log.feature, modelKey, status: log.status, keySource },
         models: modelKey ? modelKey.split(', ') : [],
         totals: { requests: 0, credits: 0, meteredCredits: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, images: 0, backgroundRequests: 0 },
         byModel: new Map(),

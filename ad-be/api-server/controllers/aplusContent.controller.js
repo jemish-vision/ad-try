@@ -25,6 +25,8 @@ const { submitAPlusImageBatchJob, checkBatchJobStatus, saveBatchImageToDisk } = 
 const { AiCreditsError } = require("../services/aiCredits/aiCredit.service");
 const { reserveAiCredits, creditErrorBody } = require("../services/aiCredits/withAiCredits");
 const { imageCredits, holdForBackgroundJob, settleBackgroundHold, releaseBackgroundHold, moveHoldToRequest } = require("../services/aiCredits/backgroundHolds");
+const aiKeys = require("../services/aiKeys/aiKey.service");
+const { keyError, sendAiAccessError, platformKey } = require("../services/aiKeys/aiKeyRouting");
 
 // Images generated per A+ document (matches generateAPlusModulesAI: 5 basic, 7 premium)
 const expectedAPlusImages = (type) => (type === "premium" ? 7 : 5);
@@ -442,10 +444,11 @@ exports.createAIAPlusContent = async (req, res) => {
         const isGenerateImage = generateImageOption === true || generateImageOption === "true";
         const useBatchImages = Boolean(useBatch) && isGenerateImage;
         const imageHold = await imageCredits(isGenerateImage ? expectedAPlusImages(type) : 0);
-        if (!(await reserveAiCredits(req, res, { extraCredits: useBatchImages ? 0 : imageHold }))) return;
+        // Own API keys: nothing is held now; the full amount is only used if the wallet has to step in
+        if (!(await reserveAiCredits(req, res, { extraCredits: useBatchImages && !req.aiMeter?.personal ? 0 : imageHold }))) return;
         if (useBatchImages) {
             try {
-                aiCreditHold = await holdForBackgroundJob(req, "APLUS_CONTENT", imageHold);
+                aiCreditHold = await holdForBackgroundJob(req, "APLUS_CONTENT", imageHold, { provider: "gemini" });
             } catch (creditErr) {
                 if (!(creditErr instanceof AiCreditsError)) throw creditErr;
                 return res.status(200).json(creditErrorBody(creditErr));
@@ -477,11 +480,27 @@ exports.createAIAPlusContent = async (req, res) => {
                 }
             }
 
+            // The batch runs on the organization's own Gemini key when the hold says so, else the platform's
+            const personalBatch = aiCreditHold?.keySource === "PERSONAL";
+            let batchApiKey = platformKey("gemini");
+            if (personalBatch) {
+                try {
+                    batchApiKey = aiKeys.personalKeyFor(req.aiMeter.keyConfig, "gemini");
+                } catch (_) {
+                    batchApiKey = null;
+                }
+                if (!batchApiKey) {
+                    await releaseBackgroundHold(aiCreditHold, "No Gemini key");
+                    aiCreditHold = null;
+                    throw keyError("gemini", "MISSING");
+                }
+            }
             try {
                 const batchSubmission = await submitAPlusImageBatchJob({
                     imageModules,
                     productRef,
                     type,
+                    apiKey: batchApiKey,
                 });
 
                 const batchJobDoc = await aPlusBatchJobModel.create({
@@ -495,6 +514,8 @@ exports.createAIAPlusContent = async (req, res) => {
                     imageModules,
                     productData: { title: productData.title, brand: productData.brand },
                     aiCreditHold,
+                    keySource: personalBatch ? "PERSONAL" : "PLATFORM",
+                    organizationId: req.aiMeter?.organizationId || null,
                 });
                 aiCreditHold = null; // the batch job settles it now
 
@@ -512,9 +533,19 @@ exports.createAIAPlusContent = async (req, res) => {
                 });
             } catch (batchErr) {
                 const apiErrMsg = batchErr?.response?.data?.error?.message || batchErr.message || "";
-                write_logs({ message: `Batch submission failed: ${apiErrMsg}`, log_type: "warn" });
+                write_logs({ message: `Batch submission failed: ${aiKeys.scrub(apiErrMsg)}`, log_type: "warn" });
 
-                if (apiErrMsg.includes("spending cap") || apiErrMsg.includes("quota") || batchErr?.response?.status === 429) {
+                // The organization's own Gemini key was refused: record it; with wallet fallback allowed,
+                // generate the images directly below (each falls back on its own), otherwise stop here.
+                const keyProblem = personalBatch ? aiKeys.classifyProviderError(batchErr) : null;
+                if (keyProblem) {
+                    await aiKeys.markKeyProblem(req.aiMeter.organizationId, "gemini", keyProblem.kind, keyProblem.message).catch(() => {});
+                    await releaseBackgroundHold(aiCreditHold, "Own Gemini key refused");
+                    aiCreditHold = null;
+                    if (!req.aiMeter.keyConfig?.allowWalletFallback) throw keyError("gemini", keyProblem.kind);
+                }
+
+                if (!keyProblem && (apiErrMsg.includes("spending cap") || apiErrMsg.includes("quota") || batchErr?.response?.status === 429)) {
                     await releaseBackgroundHold(aiCreditHold, "Batch submission failed");
                     aiCreditHold = null;
                     return res.status(203).json({
@@ -612,6 +643,8 @@ exports.createAIAPlusContent = async (req, res) => {
 
     } catch (error) {
         await releaseBackgroundHold(aiCreditHold, "A+ request failed"); // AI credits: nothing charged
+        // Own API key refused / missing, or no credits: say exactly that
+        if (sendAiAccessError(res, error)) return;
         const detailedError =
             error?.response?.data?.errors?.[0]?.message ||
             error?.response?.data?.errors?.[0]?.description ||
@@ -769,6 +802,7 @@ exports.editAIAPlusContent = async (req, res) => {
         });
 
     } catch (error) {
+        if (sendAiAccessError(res, error)) return; // own API key refused / missing, or no credits
         write_logs({ message: `editAIAPlusContent: Error: ${error.message} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
 
         let errorMessage = "AI analysis failed. Please try again later.";
@@ -929,8 +963,25 @@ exports.cronProcessPendingAPlusBatchJobs = async () => {
             try {
                 const { configId, profileId, marketplaceId, asin, type, batchJobName, imageModules, productData } = job;
 
-                // 1. Check Batch Status with Google
-                const statusRes = await checkBatchJobStatus(batchJobName);
+                // 1. Check Batch Status with Google, with the key the job was submitted with
+                let pollKey = platformKey("gemini");
+                if (job.keySource === "PERSONAL") {
+                    const orgId = job.organizationId || job.aiCreditHold?.organizationId;
+                    try {
+                        pollKey = orgId ? aiKeys.personalKeyFor(await aiKeys.getOrgKeyConfig(orgId, { fresh: true }), "gemini") : null;
+                    } catch (_) {
+                        pollKey = null;
+                    }
+                    if (!pollKey) {
+                        job.status = "FAILED";
+                        job.error = "The organization's Google Gemini key was removed, so the batch result can't be fetched. Generate the A+ content again.";
+                        await job.save();
+                        await releaseBackgroundHold(job.aiCreditHold, job.error);
+                        cron_logs({ message: `A+ Batch Job ${job._id} failed: own Gemini key no longer available`, log_type: "error" });
+                        continue;
+                    }
+                }
+                const statusRes = await checkBatchJobStatus(batchJobName, pollKey);
 
                 if (statusRes.isFailed) {
                     job.status = "FAILED";
@@ -1107,9 +1158,19 @@ exports.cronProcessPendingAPlusBatchJobs = async () => {
                 });
             } catch (jobErr) {
                 cron_logs({
-                    message: `Error processing A+ batch job ${job._id}: ${jobErr.message}`,
+                    message: `Error processing A+ batch job ${job._id}: ${aiKeys.scrub(jobErr.message)}`,
                     log_type: "error",
                 });
+                // The organization's own key now refuses access (revoked / expired): the job can't finish
+                const keyProblem = job.keySource === "PERSONAL" ? aiKeys.classifyProviderError(jobErr) : null;
+                if (keyProblem?.kind === "AUTH") {
+                    const orgId = job.organizationId || job.aiCreditHold?.organizationId;
+                    if (orgId) await aiKeys.markKeyProblem(orgId, "gemini", keyProblem.kind, keyProblem.message).catch(() => {});
+                    job.status = "FAILED";
+                    job.error = "The organization's Google Gemini key was rejected, so the batch result can't be fetched. Update the key and generate the A+ content again.";
+                    await job.save();
+                    await releaseBackgroundHold(job.aiCreditHold, job.error);
+                }
             }
         }
     } catch (err) {

@@ -39,6 +39,7 @@ import './settingsTour';
 import './packagesTour';
 import './aiCreditsTour';
 import './aiCreditsAdminTour';
+import './aiKeysTour';
 import './holidaysTour';
 import './roleTour';
 import './cronJobTour';

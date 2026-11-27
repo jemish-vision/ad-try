@@ -1,5 +1,5 @@
 import axios from "axios";
-import { newAiRequestId, isCreditsExhausted, creditsExhaustedHtml, notifyAiCreditsChanged } from "../../helper/aiCredits/aiCredits";
+import { newAiRequestId, isCreditsExhausted, creditsExhaustedHtml, notifyAiCreditsChanged, isAiKeyError, aiKeyErrorHtml } from "../../helper/aiCredits/aiCredits";
 import { getAccountScopeHeaders } from "../../helper/accountScopeHeaders";
 
 const api = `${process.env.REACT_APP_API_BASE}/api/customer/`;
@@ -60,7 +60,7 @@ const ApiSiteTourCompleted = (data) => {
 
 const ApiCustomChatBot = (data) => {
   return axios.post(`${api}chatbot`, data, { headers: { ...headers } })
-    .then((res) => res.data)
+    .then((res) => (isAiKeyError(res.data) ? { ...res.data, replyMessage: aiKeyErrorHtml(res.data) } : res.data))
     .catch((error) => ({
       ...(error.response?.data || {}),
       replyMessage: error.response?.data?.replyMessage || "I could not load this report right now. Please try again in a moment.",
@@ -71,7 +71,11 @@ const ApiCustomChatBot = (data) => {
 const ApiCustomChatBotStream = async ({ data, signal, onStatus, onReport, onToken, onDone: onDoneRaw, onError }) => {
   // AI credits: show a translated "out of credits" reply, and refresh the credit badges after every answer.
   const onDone = (payload) => {
-    const res = isCreditsExhausted(payload) ? { ...payload, replyMessage: creditsExhaustedHtml() } : payload;
+    const res = isCreditsExhausted(payload)
+      ? { ...payload, replyMessage: creditsExhaustedHtml() }
+      : isAiKeyError(payload) // the organization's own AI key couldn't be used
+        ? { ...payload, replyMessage: aiKeyErrorHtml(payload) }
+        : payload;
     onDoneRaw?.(res);
     notifyAiCreditsChanged();
   };

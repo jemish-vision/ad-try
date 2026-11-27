@@ -16,6 +16,7 @@ const callSchema = new mongoose.Schema(
     cacheCreationInputTokens: { type: Number, default: 0 },
     images: { type: Number, default: 0 },
     credits: { type: Number, default: 0 },
+    keySource: { type: String, enum: ["PLATFORM", "PERSONAL"], default: "PLATFORM" },
   },
   { _id: false }
 );
@@ -39,6 +40,9 @@ const aiUsageLogSchema = new mongoose.Schema(
     models: { type: [String], default: [] },
     calls: { type: [callSchema], default: [] },
     enforced: { type: Boolean, default: true }, // false when credit enforcement was switched off
+    // Whose API key ran the request: the platform's (charged to the wallet), the organization's own
+    // (PERSONAL, never charged) or both (MIXED: own key for some calls, wallet fallback for others)
+    keySource: { type: String, enum: ["PLATFORM", "PERSONAL", "MIXED"], default: "PLATFORM" },
     // Held for background work that finishes after the request (A+ image batch jobs); released after 72 h if never settled
     deferred: { type: Boolean, default: false },
     settledAt: { type: Date, default: null },

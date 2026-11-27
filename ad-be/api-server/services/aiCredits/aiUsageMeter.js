@@ -13,6 +13,9 @@
 const { AsyncLocalStorage } = require('async_hooks');
 
 const storage = new AsyncLocalStorage();
+// Whose API key the AI calls inside this context use: 'PERSONAL' (the organization's own key, not
+// charged) or 'PLATFORM' (the platform's key, charged to the wallet). See aiKeys/aiKeyRouting.
+const keySourceStorage = new AsyncLocalStorage();
 
 const toInt = (n) => {
   const v = Number(n);
@@ -71,8 +74,18 @@ function recordAiUsage(usage) {
   if (!meter || !usage) return false;
   const call = normalizeUsage(usage);
   if (!call.inputTokens && !call.outputTokens && !call.images) return false;
+  call.keySource = usage.keySource || currentKeySource();
   meter.calls.push(call);
   return true;
+}
+
+/** Key source of the AI call running now ('PLATFORM' unless inside runWithKeySource('PERSONAL')). */
+function currentKeySource() {
+  return keySourceStorage.getStore()?.source || 'PLATFORM';
+}
+
+function runWithKeySource(source, fn) {
+  return keySourceStorage.run({ source }, fn);
 }
 
 /**
@@ -104,6 +117,8 @@ function runOutsideAiMeter(fn) {
 }
 
 module.exports = {
+  currentKeySource,
+  runWithKeySource,
   normalizeUsage,
   usageFromResponse,
   getAiMeter,

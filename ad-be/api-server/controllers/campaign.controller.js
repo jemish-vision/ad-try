@@ -1,5 +1,6 @@
 const { runHistoricalAdsReportPhase } = require("../services/historicalAdsReportPhase.service");
 const { reserveAiCredits } = require("../services/aiCredits/withAiCredits");
+const { sendAiAccessError } = require("../services/aiKeys/aiKeyRouting");
 const moment = require("moment-timezone");
 const fs = require("fs");
 const mongoose = require("mongoose");
@@ -8356,6 +8357,7 @@ exports.AIAnalysis = async (req, res) => {
       });
     }
   } catch (error) {
+    if (sendAiAccessError(res, error)) return; // own API key refused / missing, or no credits
     write_logs({ message: `[AIAnalysis Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
     return res.status(500).json({
       isSuccess: false,

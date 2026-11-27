@@ -941,6 +941,11 @@ function Sidebar({ open, setOpen }) {
                         {t("AI Credits")}
                       </DropdownMenuItem>
                     )}
+                    {role !== ROLES.SUPER_ADMIN && (
+                      <DropdownMenuItem id="sidebar-ai-keys-item" className="cursor-pointer py-2 px-3 rounded-md" onClick={() => navigate("/ai-keys")}>
+                        {t("AI API Keys")}
+                      </DropdownMenuItem>
+                    )}
                     {role === ROLES.ADMIN && (
                       <DropdownMenuItem className="cursor-pointer py-2 px-3 rounded-md" onClick={() => navigate("/purchase-plans")}>
                         {t("Purchase Plans")}

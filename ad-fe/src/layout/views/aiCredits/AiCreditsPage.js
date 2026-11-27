@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Sparkles, RefreshCw, AlertTriangle } from "lucide-react";
+import { Sparkles, RefreshCw, AlertTriangle, KeyRound } from "lucide-react";
+import { Link } from "react-router-dom";
 import { ApiGetAiCreditSummary, ApiGetAiCreditUsage, ApiGetAiCreditTransactions, ApiGetAiCreditPayments } from "../../../api-wrapper/ApiAiCredits";
 import { AI_CREDITS_CHANGED, notifyAiCreditsChanged } from "../../../helper/aiCredits/aiCredits";
 import AiCreditDetail from "./AiCreditDetail";
@@ -99,6 +100,17 @@ export default function AiCreditsPage() {
       ) : (
         <>
           <PurchaseResultBanner result={purchaseResult} />
+          {summary?.ownKeys?.usePersonalKeys && (
+            <div id="ai-credits-own-keys" className="flex items-start gap-2.5 rounded-xl border border-blue-200/70 dark:border-blue-800/40 bg-blue-50/70 dark:bg-blue-950/30 px-4 py-3 text-[12.5px] text-blue-800 dark:text-blue-200">
+              <KeyRound className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
+              <span className="flex-1">
+                {summary.ownKeys.allowWalletFallback
+                  ? t("Your organization uses its own AI API keys. Requests on your keys don't use credits; credits are used only when a key can't be used.")
+                  : t("Your organization uses its own AI API keys. Requests on your keys don't use credits.")}{" "}
+                <Link to="/ai-keys" className="font-semibold underline">{t("Manage AI API keys")}</Link>
+              </span>
+            </div>
+          )}
           <AiCreditDetail
             summary={summary}
             loadUsage={ApiGetAiCreditUsage}

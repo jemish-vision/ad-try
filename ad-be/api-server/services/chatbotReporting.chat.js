@@ -686,6 +686,9 @@ function knownSummaryRequest(message, input, authContext) {
 }
 
 function safeAiFailure(error) {
+  // The organization's own API key was refused or is missing: say exactly that (no key is shown)
+  if (typeof error?.code === 'string' && error.code.startsWith('PERSONAL_KEY_')) return error.message;
+  if (error?.code === 'AI_CREDITS_EXHAUSTED') return "You've run out of AI credits for this month.";
   if (error?.code === 'AI_CREDENTIALS_MISSING') {
     return 'The AI service is unavailable because its server API key is not configured (ANTHROPIC_API_KEY, OPENAI_API_KEY or GEMINI_API_KEY).';
   }
@@ -1222,7 +1225,8 @@ When the user asks relative follow-up questions:
         onToken: input.onToken,
       }, clientFactory);
     } catch (err) {
-      const fallbackRequest = knownSummaryRequest(message, input, authContext);
+      const keyProblem = typeof err?.code === 'string' && err.code.startsWith('PERSONAL_KEY_');
+      const fallbackRequest = keyProblem ? null : knownSummaryRequest(message, input, authContext);
 
       if (fallbackRequest) {
         turn1 = {
@@ -1429,7 +1433,7 @@ When the user asks relative follow-up questions:
         isReport: true,
         stopConversion: false,
         timings,
-        warning: 'AI explanation unavailable; displaying structured report.',
+        warning: typeof err?.code === 'string' && err.code.startsWith('PERSONAL_KEY_') ? err.message : 'AI explanation unavailable; displaying structured report.',
       };
     }
     timings.turn2DurationMs = now() - t2Start;

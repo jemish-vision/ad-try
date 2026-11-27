@@ -5,6 +5,9 @@ const FormData = require("form-data");
 const axios = require("axios");
 const { write_logs } = require("../../winston/utility/logger");
 const { recordAiResponse } = require("../services/aiCredits/aiUsageMeter");
+// The organization's own API key when it uses its own keys, else the platform's (see aiKeyRouting)
+const { withProviderKey, isAiAccessError } = require("../services/aiKeys/aiKeyRouting");
+const { genAiClient } = require("../services/aiKeys/aiClients");
 const sharp = require("sharp");
 
 // ---------------------------------------------------------------------------
@@ -326,6 +329,7 @@ exports.generateAndUploadModuleImages = async ({
                         productRef
                     });
                 } catch (err) {
+                    if (isAiAccessError(err)) throw err; // own API key refused / missing, or no credits
                     write_logs({ message: `Gemini image generation failed for "${mod.title}": ${err.message}`, log_type: "error" });
                 }
             } else if (existingImages.length > 0) {
@@ -353,6 +357,7 @@ exports.generateAndUploadModuleImages = async ({
                             productRef
                         });
                     } catch (err) {
+                        if (isAiAccessError(err)) throw err; // own API key refused / missing, or no credits
                         write_logs({ message: `Fallback Gemini generation failed: ${err.message}`, log_type: "error" });
                     }
                 }
@@ -411,12 +416,6 @@ exports.generateAndUploadModuleImages = async ({
 // Returns a local file path to the resized PNG.
 // ---------------------------------------------------------------------------
 async function generateImageWithGemini({ prompt, imageKey, width, height, productRef }) {
-    const { GoogleGenAI } = require("@google/genai");
-
-    const apiKey = process.env.GOOGLE_AI_STUDIO_KEY;
-    if (!apiKey) throw new Error("GOOGLE_AI_STUDIO_KEY not set");
-
-    const ai = new GoogleGenAI({ apiKey });
     const size = `${width}x${height}`;
 
     const parts = [];
@@ -440,16 +439,18 @@ async function generateImageWithGemini({ prompt, imageKey, width, height, produc
             `Do NOT blur, distort, warp, soften, replace or generate fake/gibberish text. Avoid strong reflections. The product must look like a real professionally photographed physical product — matte, realistic, label to be clearly visible. The entire visible label must be extremely sharp, crisp, high-resolution`,
     });
 
-    const res = await ai.models.generateContent({
-        model: IMAGE_MODEL(),
-        contents: [{ role: "user", parts }],
+    const img = await withProviderKey("gemini", async (apiKey) => {
+        const res = await genAiClient(apiKey).models.generateContent({
+            model: IMAGE_MODEL(),
+            contents: [{ role: "user", parts }],
+        });
+        const candParts = res?.candidates?.[0]?.content?.parts || [];
+        const found = candParts.find((p) => p?.inlineData?.data);
+        if (!found) throw new Error("Gemini image generation returned no image.");
+        // AI credits: one generated image (priced per image; tokens kept for reporting)
+        recordAiResponse("gemini", IMAGE_MODEL(), res, { images: 1 });
+        return found;
     });
-
-    const candParts = res?.candidates?.[0]?.content?.parts || [];
-    const img = candParts.find((p) => p?.inlineData?.data);
-    if (!img) throw new Error("Gemini image generation returned no image.");
-    // AI credits: one generated image (priced per image; tokens kept for reporting)
-    recordAiResponse("gemini", IMAGE_MODEL(), res, { images: 1 });
 
     // Resize to EXACT target pixels (lossless PNG, Lanczos3 kernel) — matching aplus-demo
     const resized = await resizeToExact(img.inlineData.data, size);

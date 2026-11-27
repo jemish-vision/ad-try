@@ -23,6 +23,9 @@ stub('api-server/models/aiUsageLog.model.js', usageLogs);
 stub('api-server/models/aiCreditSetting.model.js', settings);
 stub('api-server/models/organization.model.js', organizations);
 stub('api-server/models/packages.model.js', packages);
+// The organization's own AI keys (off in these tests: platform keys and the wallet)
+stub('api-server/models/aiProviderKey.model.js', createFakeModel('aiproviderkeys', { unique: [['organizationId', 'provider']] }));
+stub('api-server/models/aiKeySetting.model.js', createFakeModel('aikeysettings', { unique: [['organizationId']] }));
 const logs = [];
 stub('winston/utility/logger.js', { write_logs: (l) => logs.push(l) });
 
@@ -88,7 +91,8 @@ describe('token tracking', () => {
     const client = { messages: { create: async (payload) => { order.push('call'); return { model: payload.model, content: [{ type: 'text', text: 'hi' }], stop_reason: 'end_turn', usage: { input_tokens: 1200, output_tokens: 80, cache_read_input_tokens: 300 } }; } } };
     await meterLib.runWithAiMeter(meter, () => requestTurn({ messages: [{ role: 'user', content: 'hi' }], options: { provider: 'anthropic', model: 'claude-haiku-5-5', apiKey: 'test' } }, client));
     assert.deepEqual(order, ['reserve', 'call']);
-    assert.deepEqual(meter.calls, [{ provider: 'anthropic', model: 'claude-haiku-5-5', inputTokens: 1500, outputTokens: 80, cacheReadInputTokens: 300, cacheCreationInputTokens: 0, images: 0 }]);
+    // keySource: the platform's key (the organization doesn't use its own AI keys here)
+    assert.deepEqual(meter.calls, [{ provider: 'anthropic', model: 'claude-haiku-5-5', inputTokens: 1500, outputTokens: 80, cacheReadInputTokens: 300, cacheCreationInputTokens: 0, images: 0, keySource: 'PLATFORM' }]);
   });
 });
 

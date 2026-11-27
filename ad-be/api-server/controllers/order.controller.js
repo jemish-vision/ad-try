@@ -59,6 +59,7 @@ const { sendNotificationToUser } = require("../helper/sendNotification");
 const { ConditionRegistry, ConditionEvaluator, FlattenedFieldBuilder, ensureEnumIntegrity } = require("../helper/parseField");
 const { generateListingWithGPT, buildListingBodyPayload, buildListingDynamicBodyPayload, analyzeExistingListingWithGPT, buildOptimizationPatchPayload } = require("../helper/chatgpt");
 const { reserveAiCredits } = require("../services/aiCredits/withAiCredits");
+const { sendAiAccessError } = require("../services/aiKeys/aiKeyRouting");
 
 const { write_logs } = require("../../winston/orders/logger");
 const { cron_logs } = require("../../winston/cronAutomation/logger");
@@ -2055,6 +2056,7 @@ exports.createProduct = async (req, res) => {
             });
         }
     } catch (error) {
+        if (sendAiAccessError(res, error)) return; // own API key refused / missing, or no credits
         write_logs({ message: `[createProduct Error] ${error?.message || error} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
         return res.status(203).json({
             message: "Failed to create product",
@@ -2106,6 +2108,7 @@ exports.generateProduct = async (req, res) => {
             data: { finalData: body, generated }
         });
     } catch (error) {
+        if (sendAiAccessError(res, error)) return; // own API key refused / missing, or no credits
 
         write_logs({
             message: `GenerateProduct: Error: ${error}`,
@@ -4219,6 +4222,7 @@ exports.analyzeListingWithAI = async (req, res) => {
 
 
     } catch (error) {
+        if (sendAiAccessError(res, error)) return; // own API key refused / missing, or no credits
         write_logs({ message: `analyzeListingWithAI: Error: ${error.message} [body] ${JSON.stringify(req?.body)}`, log_type: "error" });
 
         let errorMessage = "AI analysis failed. Please try again later.";

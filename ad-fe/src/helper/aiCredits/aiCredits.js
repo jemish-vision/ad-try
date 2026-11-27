@@ -42,12 +42,48 @@ export function creditsExhaustedHtml() {
   return `<p><b>${esc(t("You've run out of AI credits for this month."))}</b></p><p>${esc(t("Your organization's credits refill on the next reset date. Ask your administrator if you need more credits sooner."))} <a href="/ai-credits">${esc(t("View AI credits"))}</a></p>`;
 }
 
+// ── The organization's own AI API keys ────────────────────────────────────────
+export const AI_PROVIDER_LABELS = { anthropic: "Anthropic (Claude)", openai: "OpenAI", gemini: "Google Gemini" };
+
+/** Why an AI request stopped when the organization uses its own keys (server error codes). */
+const AI_KEY_ERRORS = {
+  PERSONAL_KEY_MISSING: "Your organization uses its own AI API keys, but no {{provider}} key is saved. Add one on the AI API Keys page, or ask the owner to allow wallet credits when a key can't be used.",
+  PERSONAL_KEY_UNREADABLE: "The saved {{provider}} key can't be read. Add it again on the AI API Keys page.",
+  PERSONAL_KEY_INVALID: "{{provider}} rejected your organization's API key (invalid, expired or revoked). Update it on the AI API Keys page.",
+  PERSONAL_KEY_QUOTA: "Your {{provider}} account has no quota or credit left. Check your billing with {{provider}}, or update the key on the AI API Keys page.",
+  PERSONAL_KEY_RATE_LIMITED: "Your {{provider}} key has hit its rate limit. Please try again in a minute.",
+  AI_KEY_SETTINGS_UNAVAILABLE: "AI is unavailable right now. Please try again in a moment.",
+};
+
+const keyErrorCode = (res) => [res?.code, res?.error?.code].find((c) => typeof c === "string" && AI_KEY_ERRORS[c]) || null;
+
+/** True when an API response says the organization's own AI key couldn't be used. */
+export const isAiKeyError = (res) => Boolean(keyErrorCode(res));
+
+/** Translated message for an own-key error (null for other responses). */
+export function aiKeyErrorMessage(res) {
+  const code = keyErrorCode(res);
+  if (!code) return null;
+  const t = (k, v) => (typeof i18n?.t === "function" ? i18n.t(k, v) : k.replace(/\{\{(\w+)\}\}/g, (_, x) => v?.[x] ?? ""));
+  const providerKey = res?.provider || res?.error?.provider;
+  const provider = AI_PROVIDER_LABELS[providerKey] ? t(AI_PROVIDER_LABELS[providerKey]) : t("your AI provider");
+  return t(AI_KEY_ERRORS[code], { provider });
+}
+
+/** Chat reply (HTML) for an own-key error, with a link to the AI API Keys page. */
+export function aiKeyErrorHtml(res) {
+  const t = (k) => (typeof i18n?.t === "function" ? i18n.t(k) : k);
+  return `<p><b>${esc(aiKeyErrorMessage(res) || "")}</b></p><p><a href="/ai-keys">${esc(t("Open AI API Keys"))}</a></p>`;
+}
+
 /**
  * For API calls that run an AI feature: refresh the credit badges and, when the organization is
- * out of credits, put a translated message in res.message (screens show res.message on failure).
+ * out of credits or its own AI key can't be used, put a translated message in res.message
+ * (screens show res.message on failure).
  */
 export function handleAiCreditResponse(res) {
   notifyAiCreditsChanged();
+  if (isAiKeyError(res)) return { ...res, message: aiKeyErrorMessage(res) };
   if (!isCreditsExhausted(res)) return res;
   const t = (k) => (typeof i18n?.t === "function" ? i18n.t(k) : k);
   return { ...res, message: t("You've run out of AI credits for this month.") };

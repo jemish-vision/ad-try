@@ -38,7 +38,9 @@ function buildRequests(now = new Date()) {
       const outputTokens = feature === 'AI_ASSISTANT' ? 400 + Math.floor(rand() * 1200) : 1500 + Math.floor(rand() * 1500);
       const images = feature === 'APLUS_CONTENT' ? (rand() < 0.5 ? 5 : 7) : 0;
       const failed = rand() < 0.05;
-      const credits = failed ? 0 : round2(inputTokens / 1000 + (outputTokens / 1000) * 4 + images * 10);
+      // Demo: own OpenAI + Gemini keys from the 20th (not charged); the AI Assistant (Claude) uses the wallet
+      const keySource = d >= 19 && feature !== 'AI_ASSISTANT' ? 'PERSONAL' : 'PLATFORM';
+      const credits = failed || keySource === 'PERSONAL' ? 0 : round2(inputTokens / 1000 + (outputTokens / 1000) * 4 + images * 10);
       const createdAt = new Date(start.getTime() + d * 86400000 + Math.floor(rand() * 86400000));
       if (createdAt > now) continue;
       rows.push({
@@ -54,6 +56,7 @@ function buildRequests(now = new Date()) {
         totalTokens: inputTokens + outputTokens,
         images,
         models: MODELS[feature],
+        keySource,
         enforced: true,
         user: USERS[Math.floor(rand() * USERS.length)],
       });

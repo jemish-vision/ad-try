@@ -127,6 +127,7 @@ async function listDailyUsage(body = {}, { organizationId = null } = {}) {
       images: r.images || 0,
       backgroundRequests: r.backgroundRequests || 0,
       models: r.models || [],
+      keySource: r.keySource || 'PLATFORM',
       user: r.userId ? { _id: r.userId._id, name: r.userId.fullName || r.userId.email || null } : null,
       organization: r.organizationId && r.organizationId.organizationName ? { _id: r.organizationId._id, name: r.organizationId.organizationName } : undefined,
     })),
@@ -177,6 +178,7 @@ async function listUsage(body = {}, { organizationId = null } = {}) {
       images: r.images || 0,
       background: Boolean(r.deferred),
       models: r.models || [],
+      keySource: r.keySource || 'PLATFORM', // PERSONAL = the organization's own API key (not charged)
       enforced: r.enforced !== false,
       user: r.userId ? { _id: r.userId._id, name: r.userId.fullName || r.userId.email || null } : null,
       organization: r.organizationId && r.organizationId.organizationName ? { _id: r.organizationId._id, name: r.organizationId.organizationName } : undefined,

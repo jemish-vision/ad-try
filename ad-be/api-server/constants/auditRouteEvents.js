@@ -186,6 +186,12 @@ const modules = {
     "/purchase/verify": "AI_CREDIT_PURCHASE_VERIFIED",
     "/purchase/cancel": "AI_CREDIT_PURCHASE_CANCELLED",
   },
+  "ai-keys": {
+    "/save": "AI_KEY_SAVED",
+    "/validate": "AI_KEY_VALIDATED",
+    "/remove": "AI_KEY_REMOVED",
+    "/settings": "AI_KEY_SETTINGS_UPDATED",
+  },
   "support": { "/closeSupportTicket": "SUPPORT_TICKET_CLOSED" },
   "asana": { "/assignSupportUser": "SUPPORT_ASSIGNMENT_UPDATED", "/addWebhook": "ASANA_WEBHOOK_CONFIGURATION_UPDATED" },
   "columns": { "/updateColumns": "TABLE_COLUMNS_UPDATED", "/updateChartSettings": "CHART_SETTINGS_UPDATED" },

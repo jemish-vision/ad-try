@@ -234,14 +234,26 @@ function creditsForCall(call, settings) {
 }
 
 /** Total cost of a request's calls, rounded to 0.01, with the minimum charge applied when any AI was used. */
+/** 'PERSONAL', 'PLATFORM' or 'MIXED' for a set of calls (fallback when there are none). */
+function keySourceOf(calls = [], fallback = 'PLATFORM') {
+  const sources = new Set(calls.map((c) => (c.keySource === 'PERSONAL' ? 'PERSONAL' : 'PLATFORM')));
+  if (!sources.size) return fallback;
+  return sources.size > 1 ? 'MIXED' : [...sources][0];
+}
+
+/**
+ * Credits for a request's AI calls. Calls made with the organization's own API key (keySource
+ * PERSONAL) cost nothing; their tokens are still counted. The minimum charge only applies when at
+ * least one call used the platform's key.
+ */
 function priceCalls(calls = [], settings) {
-  const priced = calls.map((c) => ({ ...c, credits: creditsForCall(c, settings) }));
+  const priced = calls.map((c) => ({ ...c, credits: c.keySource === 'PERSONAL' ? 0 : creditsForCall(c, settings) }));
   let total = priced.reduce((s, c) => s + c.credits, 0);
-  if (priced.length && total < settings.minimumChargePerRequest) total = settings.minimumChargePerRequest;
+  if (priced.some((c) => c.keySource !== 'PERSONAL') && total < settings.minimumChargePerRequest) total = settings.minimumChargePerRequest;
   const inputTokens = priced.reduce((s, c) => s + c.inputTokens, 0);
   const outputTokens = priced.reduce((s, c) => s + c.outputTokens, 0);
   const images = priced.reduce((s, c) => s + (c.images || 0), 0);
-  return { calls: priced, credits: round2(total), inputTokens, outputTokens, totalTokens: inputTokens + outputTokens, images, models: [...new Set(priced.map((c) => c.model).filter(Boolean))] };
+  return { calls: priced, credits: round2(total), inputTokens, outputTokens, totalTokens: inputTokens + outputTokens, images, models: [...new Set(priced.map((c) => c.model).filter(Boolean))], keySource: keySourceOf(priced) };
 }
 
 // ── Periods & allowance ──────────────────────────────────────────────────────
@@ -359,16 +371,17 @@ function walletView(w) {
  * Hold credits for one AI request. Returns the hold; throws AiCreditsError when the wallet can't
  * cover it (AI_CREDITS_EXHAUSTED) or the requestId was already used (DUPLICATE_AI_REQUEST).
  */
-async function reserve({ organizationId, userId = null, feature, requestId, amount: customAmount, deferred = false, now = new Date() }) {
+async function reserve({ organizationId, userId = null, feature, requestId, amount: customAmount, deferred = false, personal = false, now = new Date() }) {
   if (!FEATURES[feature]) throw new Error(`Unknown AI feature ${feature}`);
   const settings = await getSettings();
   const wallet = await getWallet(organizationId, { now, settings });
   const enforced = settings.enforcementEnabled;
   // customAmount: callers that know the cost up front (e.g. N images) hold that instead of the feature default
-  const amount = enforced ? round2(customAmount !== undefined && customAmount !== null ? Math.max(0, customAmount) : settings.featureReserves[feature]) : 0;
+  // personal: the request runs on the organization's own API keys — nothing is held or charged
+  const amount = enforced && !personal ? round2(customAmount !== undefined && customAmount !== null ? Math.max(0, customAmount) : settings.featureReserves[feature]) : 0;
 
   let held = wallet;
-  if (enforced && amount <= 0 && !(wallet.balance > 0)) {
+  if (enforced && !personal && amount <= 0 && !(wallet.balance > 0)) {
     throw new AiCreditsError('AI_CREDITS_EXHAUSTED', 'Not enough AI credits for this request.', { wallet: walletView(wallet), required: 0 });
   }
   if (amount > 0) {
@@ -379,13 +392,41 @@ async function reserve({ organizationId, userId = null, feature, requestId, amou
     }
   }
   try {
-    await usageLogModel.create({ requestId, organizationId: wallet.organizationId, walletId: wallet._id, userId: userId ? toObjectId(userId) : null, feature, status: 'RESERVED', reservedCredits: amount, enforced, deferred: Boolean(deferred) });
+    await usageLogModel.create({ requestId, organizationId: wallet.organizationId, walletId: wallet._id, userId: userId ? toObjectId(userId) : null, feature, status: 'RESERVED', reservedCredits: amount, enforced, deferred: Boolean(deferred), keySource: personal ? 'PERSONAL' : 'PLATFORM' });
   } catch (err) {
     if (amount > 0) await walletModel.findOneAndUpdate({ _id: wallet._id }, { $inc: { reserved: -amount, balance: amount } }).lean();
     if (isDuplicateKey(err)) throw new AiCreditsError('DUPLICATE_AI_REQUEST', 'This AI request was already submitted.');
     throw err;
   }
-  return { requestId, organizationId: wallet.organizationId, walletId: wallet._id, userId, feature, amount, enforced, wallet: walletView(held) };
+  return { requestId, organizationId: wallet.organizationId, walletId: wallet._id, userId, feature, amount, enforced, personal: Boolean(personal), wallet: walletView(held) };
+}
+
+/**
+ * Add credits to an existing hold: a request that started on the organization's own API key falls
+ * back to the platform's key (only when the owner allowed it). Throws AI_CREDITS_EXHAUSTED when the
+ * wallet can't cover it. Returns the hold with the new amount.
+ */
+async function topUpHold(hold, amount, { now = new Date() } = {}) {
+  const settings = await getSettings();
+  if (!settings.enforcementEnabled) return hold; // limits paused: nothing is held or charged
+  const add = round2(amount !== undefined && amount !== null && amount > 0 ? amount : settings.featureReserves[hold.feature]);
+  const wallet = await getWallet(hold.organizationId, { now, settings });
+  if (add <= 0) {
+    if (!(wallet.balance > 0)) throw new AiCreditsError('AI_CREDITS_EXHAUSTED', 'Not enough AI credits for this request.', { wallet: walletView(wallet), required: 0 });
+    return hold;
+  }
+  const held = await walletModel.findOneAndUpdate({ _id: wallet._id, balance: { $gte: add } }, { $inc: { reserved: add, balance: -add } }, { new: true }).lean();
+  if (!held) {
+    const fresh = await walletModel.findById(wallet._id).lean();
+    throw new AiCreditsError('AI_CREDITS_EXHAUSTED', 'Not enough AI credits for this request.', { wallet: walletView(fresh || wallet), required: add });
+  }
+  const log = await usageLogModel.findOneAndUpdate({ requestId: hold.requestId, status: 'RESERVED' }, { $inc: { reservedCredits: add } }, { new: true }).lean();
+  if (!log) {
+    // The request already finished: give the credits back
+    await walletModel.findOneAndUpdate({ _id: wallet._id }, { $inc: { reserved: -add, balance: add } }).lean();
+    throw new AiCreditsError('AI_REQUEST_FINISHED', 'This AI request has already finished.');
+  }
+  return { ...hold, amount: round2((hold.amount || 0) + add), wallet: walletView(held) };
 }
 
 /**
@@ -483,7 +524,7 @@ async function settle(hold, rawCalls = [], { now = new Date() } = {}) {
     // A background image hold can move onto this request between the read and settlement.
     log = await usageLogModel.findOneAndUpdate(
       { ...scope, reservedCredits: current.reservedCredits },
-      { $set: { status: 'SETTLED', credits, meteredCredits: priced.credits, inputTokens: priced.inputTokens, outputTokens: priced.outputTokens, totalTokens: priced.totalTokens, images: priced.images, models: priced.models, calls: priced.calls, settledAt: now } },
+      { $set: { status: 'SETTLED', credits, meteredCredits: priced.credits, inputTokens: priced.inputTokens, outputTokens: priced.outputTokens, totalTokens: priced.totalTokens, images: priced.images, models: priced.models, calls: priced.calls, keySource: keySourceOf(priced.calls, current.keySource || 'PLATFORM'), settledAt: now } },
       { new: true }
     ).lean();
   }
@@ -510,7 +551,7 @@ async function release(hold, reason, rawCalls = [], { status = 'RELEASED', now =
   const log = await usageLogModel
     .findOneAndUpdate(
       { requestId: hold.requestId, status: 'RESERVED' },
-      { $set: { status, failureReason: reason || null, credits: 0, inputTokens: priced.inputTokens, outputTokens: priced.outputTokens, totalTokens: priced.totalTokens, images: priced.images, models: priced.models, calls: priced.calls, settledAt: now } },
+      { $set: { status, failureReason: reason || null, credits: 0, inputTokens: priced.inputTokens, outputTokens: priced.outputTokens, totalTokens: priced.totalTokens, images: priced.images, models: priced.models, calls: priced.calls, ...(priced.calls.length ? { keySource: keySourceOf(priced.calls) } : {}), settledAt: now } },
       { new: true }
     )
     .lean();
@@ -624,6 +665,8 @@ module.exports = {
   rateForModel,
   creditsForCall,
   priceCalls,
+  keySourceOf,
+  topUpHold,
   monthPeriod,
   resolveMonthlyLimit,
   getWallet,

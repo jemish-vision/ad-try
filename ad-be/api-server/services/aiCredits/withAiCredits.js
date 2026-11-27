@@ -15,20 +15,30 @@
  * - Clients may send an `X-AI-Request-Id` header (8–80 chars of A-Z a-z 0-9 _ -); a repeated id is
  *   rejected instead of charged twice.
  * - Demo (mock) users and requests without an organization (e.g. Super Admin) are not metered.
+ * - Organizations that use their own AI API keys (aiKeys): the request is still logged (tokens,
+ *   models, key source) but holds 0 credits and is never charged. Only when a key is missing or
+ *   fails AND the owner allowed wallet fallback does the meter hold credits (useWallet()).
  */
 const crypto = require('crypto');
 const service = require('./aiCredit.service');
+const aiKeys = require('../aiKeys/aiKey.service');
 const { runWithAiMeter } = require('./aiUsageMeter');
 const { write_logs } = require('../../../winston/utility/logger');
 
 const REQUEST_ID_RE = /^[A-Za-z0-9_-]{8,80}$/;
 
-function createMeter({ feature, requestId, organizationId, userId }) {
+function createMeter({ feature, requestId, organizationId, userId, keyConfig = null }) {
+  const personal = Boolean(keyConfig?.enabled);
   const meter = {
     feature,
     requestId,
     organizationId,
     userId,
+    // The organization's own-key settings for this request (null/disabled = platform keys + wallet)
+    keyConfig,
+    personal,
+    requestedAmount: undefined,
+    walletPromise: null,
     calls: [],
     hold: null,
     failed: false,
@@ -41,9 +51,11 @@ function createMeter({ feature, requestId, organizationId, userId }) {
      */
     reserve(opts = {}) {
       if (meter.hold) return Promise.resolve(meter.hold);
+      // Own keys: remember the amount in case the wallet is needed later, hold nothing now
+      if (personal && meter.requestedAmount === undefined && opts.amount !== undefined) meter.requestedAmount = opts.amount;
       if (!meter.pendingReserve) {
         meter.pendingReserve = service
-          .reserve({ organizationId, userId, feature, requestId, amount: opts.amount })
+          .reserve({ organizationId, userId, feature, requestId, amount: opts.amount, personal })
           .then((hold) => {
             meter.hold = hold;
             return hold;
@@ -54,6 +66,28 @@ function createMeter({ feature, requestId, organizationId, userId }) {
           });
       }
       return meter.pendingReserve;
+    },
+    /**
+     * Own keys only: the organization's key can't be used for a call and the owner allowed wallet
+     * fallback. Holds the credits this request would normally hold (once). Throws AI_CREDITS_EXHAUSTED
+     * when the wallet can't cover it. No-op for requests that already use the wallet.
+     */
+    useWallet() {
+      if (!personal) return Promise.resolve(meter.hold);
+      if (!meter.walletPromise) {
+        meter.walletPromise = meter
+          .reserve()
+          .then((hold) => service.topUpHold(hold, meter.requestedAmount))
+          .then((hold) => {
+            meter.hold = hold;
+            return hold;
+          })
+          .catch((err) => {
+            meter.walletPromise = null;
+            throw err;
+          });
+      }
+      return meter.walletPromise;
     },
     markFailed(reason) {
       meter.failed = true;
@@ -102,7 +136,16 @@ function withAiCredits(feature, handler) {
 
     const clientId = String(req.headers?.['x-ai-request-id'] || '');
     const requestId = REQUEST_ID_RE.test(clientId) ? `${organizationId}:${clientId}` : crypto.randomUUID();
-    const meter = createMeter({ feature, requestId, organizationId, userId: req.user?._id || req.user?.id || null });
+    // The organization's own-key settings decide whose key (and whose money) this request uses.
+    // If they can't be read, stop: guessing "wallet" could charge credits the owner didn't agree to.
+    let keyConfig;
+    try {
+      keyConfig = await aiKeys.getOrgKeyConfig(organizationId);
+    } catch (err) {
+      write_logs({ message: `[aiKeys] could not load key settings for ${organizationId}: ${aiKeys.scrub(err.message)}`, log_type: 'error' });
+      return res.status(200).json({ isSuccess: false, code: 'AI_KEY_SETTINGS_UNAVAILABLE', message: 'AI is unavailable right now. Please try again in a moment.' });
+    }
+    const meter = createMeter({ feature, requestId, organizationId, userId: req.user?._id || req.user?.id || null, keyConfig });
     req.aiMeter = meter;
 
     // Express's res.send(object) goes through res.json, so this sees every JSON body.
