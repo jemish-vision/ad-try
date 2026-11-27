@@ -5,7 +5,6 @@ const moment = require("moment-timezone");
 const fs = require("fs");
 const mongoose = require("mongoose");
 const { ObjectId } = mongoose.Types;
-const path = require("path");
 const axios = require("axios");
 const { Buffer } = require("buffer");
 const pLimit = require("p-limit").default;
@@ -69,7 +68,6 @@ const {
   getAccessToken,
   parallelBulkWrite,
   downloadFile,
-  unzipReport,
   calcMetrics,
   parseStrictMetric,
   safeJSON,
@@ -80,7 +78,7 @@ const {
   getAllowedSyncProfiles,
   getAxiosErrorMessage,
 } = require("../helper/common");
-const { stageReportFileInRedis } = require("../services/reportFileStager.service");
+const { stageDownloadedAdsReport } = require("../services/adsReportImport.service");
 const { processStagedReportBatches } = require("../services/reportBatchWriter.service");
 const { linkReportHistory, finalizeReportHistory } = require("../services/reportHistoryCompletion.service");
 const mockTestingDataService = require("../services/mockTestingData.service");
@@ -3490,24 +3488,14 @@ async function spGenerateReport(
     return statusResp.data.status;
   }
 
-  // 3️⃣ Download file
-  const zipPath = path.resolve(
-    __dirname,
-    "../../uploads/campaigns/sp-report",
-    `${existing.reportId}.gz.json`,
-  );
-  const extractionPath = zipPath.replace(".gz.json", ".json");
-
-  await downloadFile(statusResp.data.url, zipPath);
-  await unzipReport(zipPath, extractionPath);
-
-  // 4️⃣ Stage report into Redis Streams for durable scheduled bulk writing
-  const importRunId = `run_campaign_${existing.reportId}_${Date.now()}`;
   try {
-    await stageReportFileInRedis({
-      importRunId,
+    const status = await stageDownloadedAdsReport({
+      report: existing,
+      url: statusResp.data.url,
       entity: "campaign",
-      filePath: extractionPath,
+      runPrefix: "run_campaign",
+      downloadFile,
+      retryOnFailure: Boolean(historicalPhase),
       meta: {
         profileId,
         configId,
@@ -3519,29 +3507,20 @@ async function spGenerateReport(
         reportCreatedAt: existing.createdAt || statusResp.data?.createdAt || new Date().toISOString(),
       },
     });
+    if (status !== "STAGED") return status;
 
-    await reportsSchema.updateOne(
-      { _id: existing._id },
-      { $set: { status: "STAGED", importRunId } },
-    );
-
-    // Trigger an immediate processing pass of staged batches
     processStagedReportBatches(["campaign"]).catch((err) => {
       cron_logs({
         message: `[Campaign Report SP] Background batch writer invocation error: ${err.message}`,
         log_type: "error",
       });
     });
-  } catch (parseErr) {
+  } catch (error) {
     cron_logs({
-      message: `[Campaign Report SP] Staging failed for report ${existing.reportId}: ${parseErr.message}`,
+      message: `[Campaign Report SP] Staging failed for report ${existing.reportId}: ${error.message}`,
       log_type: "error",
     });
-    await reportsSchema.updateOne(
-      { _id: existing._id },
-      { $set: { status: historicalPhase ? "PENDING" : "FAILED" } },
-    );
-    throw parseErr;
+    throw error;
   }
 
   // ♻️ RECURRING POLL — SAFE RECURSION
@@ -3563,7 +3542,7 @@ async function spGenerateReport(
     }
   }
 
-  return "COMPLETED";
+  return "STAGED";
 }
 
 async function sbGenerateReport(
@@ -3678,24 +3657,14 @@ async function sbGenerateReport(
     return statusResp.data.status;
   }
 
-  // 3️⃣ Download file
-  const zipPath = path.resolve(
-    __dirname,
-    "../../uploads/campaigns/sb-report",
-    `${existing.reportId}.gz.json`,
-  );
-  const extractionPath = zipPath.replace(".gz.json", ".json");
-
-  await downloadFile(statusResp.data.url, zipPath);
-  await unzipReport(zipPath, extractionPath);
-
-  // Stage the full report; only the verified writer marks it COMPLETED.
-  const importRunId = `run_sbCampaign_${existing.reportId}_${Date.now()}`;
   try {
-    await stageReportFileInRedis({
-      importRunId,
+    const status = await stageDownloadedAdsReport({
+      report: existing,
+      url: statusResp.data.url,
       entity: "sbCampaign",
-      filePath: extractionPath,
+      runPrefix: "run_sbCampaign",
+      downloadFile,
+      retryOnFailure: Boolean(historicalPhase),
       meta: {
         profileId,
         configId,
@@ -3707,16 +3676,12 @@ async function sbGenerateReport(
         reportCreatedAt: existing.createdAt || statusResp.data?.createdAt || new Date().toISOString(),
       },
     });
-    await reportsSchema.updateOne(
-      { _id: existing._id },
-      { $set: { status: "STAGED", importRunId } },
-    );
+    if (status !== "STAGED") return status;
     processStagedReportBatches(["sbCampaign"]).catch((err) => {
       cron_logs({ message: `[Campaign Report SB] Batch writer failed for report ${existing.reportId}: ${err.message}`, log_type: "error" });
     });
   } catch (stageErr) {
     cron_logs({ message: `[Campaign Report SB] Staging failed for report ${existing.reportId}: ${stageErr.message}`, log_type: "error" });
-    await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: historicalPhase ? "PENDING" : "FAILED" } });
     throw stageErr;
   }
 
@@ -3907,24 +3872,14 @@ async function sdGenerateReport(
     return statusResp.data.status;
   }
 
-  // 3️⃣ Download file
-  const zipPath = path.resolve(
-    __dirname,
-    "../../uploads/campaigns/sd-report",
-    `${existing.reportId}.gz.json`,
-  );
-  const extractionPath = zipPath.replace(".gz.json", ".json");
-
-  await downloadFile(statusResp.data.url, zipPath);
-  await unzipReport(zipPath, extractionPath);
-
-  // Stage the full report; only the verified writer marks it COMPLETED.
-  const importRunId = `run_sdCampaign_${existing.reportId}_${Date.now()}`;
   try {
-    await stageReportFileInRedis({
-      importRunId,
+    const status = await stageDownloadedAdsReport({
+      report: existing,
+      url: statusResp.data.url,
       entity: "sdCampaign",
-      filePath: extractionPath,
+      runPrefix: "run_sdCampaign",
+      downloadFile,
+      retryOnFailure: Boolean(historicalPhase),
       meta: {
         profileId,
         configId,
@@ -3936,16 +3891,12 @@ async function sdGenerateReport(
         reportCreatedAt: existing.createdAt || statusResp.data?.createdAt || new Date().toISOString(),
       },
     });
-    await reportsSchema.updateOne(
-      { _id: existing._id },
-      { $set: { status: "STAGED", importRunId } },
-    );
+    if (status !== "STAGED") return status;
     processStagedReportBatches(["sdCampaign"]).catch((err) => {
       cron_logs({ message: `[Campaign Report SD] Batch writer failed for report ${existing.reportId}: ${err.message}`, log_type: "error" });
     });
   } catch (stageErr) {
     cron_logs({ message: `[Campaign Report SD] Staging failed for report ${existing.reportId}: ${stageErr.message}`, log_type: "error" });
-    await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: historicalPhase ? "PENDING" : "FAILED" } });
     throw stageErr;
   }
 
@@ -8389,28 +8340,28 @@ exports.hourlyCampaignTracking = async (req, res) => {
       });
     }
 
-    // Indexed (profileId + purchaseDate) range for the orders lookup below. The
-    // lookup already filters precisely by timezone-local date/time via $expr
-    // (which can't use an index); adding this direct range lets Mongo narrow to
-    // the window with an index first instead of scanning every order. Buffered
-    // by a day each side so timezone conversion can never exclude a valid order
-    // — the precise $expr still does the exact per-slot matching.
+    // Use the purchase-date index first, then apply the exact local-day filter.
     const ordersTz = profile?.timezone || "UTC";
     const ordersRangeStart = moment.tz(startDate, "YYYY-MM-DD", ordersTz).subtract(1, "day").startOf("day").toDate();
     const ordersRangeEnd = moment.tz(endDate, "YYYY-MM-DD", ordersTz).add(1, "day").endOf("day").toDate();
 
+    const adsFilter = { configId: new mongoose.Types.ObjectId(configId), profileId: Number(profileId) };
+    if (campaignId?.length) adsFilter.campaignId = { $in: campaignId.map(Number) };
+
+    let adsDateRanges = [{ $gte: startDate, $lte: endDate }];
+    if (!campaignId?.length && typeof startDate === "string" && typeof endDate === "string") {
+      const firstDay = moment.utc(startDate, "YYYY-MM-DD", true);
+      const lastDay = moment.utc(endDate, "YYYY-MM-DD", true);
+      const dayCount = lastDay.diff(firstDay, "days") + 1;
+      // Every hourly bucket belongs to a single day. Two disjoint index ranges
+      // can run in parallel without combining or recalculating bucket totals.
+      if (dayCount >= 21) {
+        const splitDay = firstDay.add(Math.ceil(dayCount / 2), "days").format("YYYY-MM-DD");
+        adsDateRanges = [{ $gte: startDate, $lt: splitDay }, { $gte: splitDay, $lte: endDate }];
+      }
+    }
+
     const pipeline = [
-      {
-        $match: {
-          configId: new mongoose.Types.ObjectId(configId),
-          profileId: Number(profileId),
-          ...(campaignId &&
-            campaignId.length > 0 && {
-            campaignId: { $in: campaignId.map((cp) => Number(cp)) },
-          }),
-          reportDate: { $gte: startDate, $lte: endDate },
-        },
-      },
       {
         $group: {
           _id: {
@@ -8426,10 +8377,14 @@ exports.hourlyCampaignTracking = async (req, res) => {
           orders: { $sum: "$orders" },
         },
       },
+      // A campaign name is shared by all its hourly rows. Look it up once.
+      {
+        $group: { _id: "$_id.campaignId", hours: { $push: "$$ROOT" } },
+      },
       {
         $lookup: {
           from: "campaigns",
-          let: { cId: "$_id.campaignId" },
+          let: { cId: "$_id" },
           pipeline: [
             { $match: { $expr: { $eq: ["$campaignId", "$$cId"] } } },
             { $limit: 1 },
@@ -8441,6 +8396,8 @@ exports.hourlyCampaignTracking = async (req, res) => {
       {
         $unwind: { path: "$campaign", preserveNullAndEmptyArrays: true },
       },
+      { $unwind: "$hours" },
+      { $replaceWith: { $mergeObjects: ["$hours", { campaign: "$campaign" }] } },
       {
         $group: {
           _id: {
@@ -8583,18 +8540,12 @@ exports.hourlyCampaignTracking = async (req, res) => {
       },
     ];
 
-    const adsRows =
-      await keywordsHourlyPerformanceSchema.aggregate(pipeline).allowDiskUse(true);
+    const adsQueries = adsDateRanges.map(reportDate => keywordsHourlyPerformanceSchema
+      .aggregate([{ $match: { ...adsFilter, reportDate } }, ...pipeline])
+      .allowDiskUse(true));
 
-    // ── Orders / organic totals, decorrelated ──────────────────────────────
-    // The previous version joined `orders` as a correlated $lookup INSIDE every
-    // hourly bucket (up to 24×days ≈ hundreds of executions), and each run
-    // re-scanned the whole order window computing three timezone conversions per
-    // order plus a nested per-order `transactions` lookup — the 20–40s cost.
-    // The per-hour order/sales totals don't depend on the keyword grouping, so
-    // compute them ONCE here (one indexed scan over { profileId, purchaseDate },
-    // grouped by the timezone-local date + hour) and merge in memory below.
-    const ordersByHour = await orderSchema
+    // Calculate seller totals independently, then merge by local date and hour.
+    const ordersQuery = orderSchema
       .aggregate([
         {
           $match: {
@@ -8647,6 +8598,8 @@ exports.hourlyCampaignTracking = async (req, res) => {
         },
       ])
       .allowDiskUse(true);
+    const [adsBatches, ordersByHour] = await Promise.all([Promise.all(adsQueries), ordersQuery]);
+    const adsRows = adsBatches.flat();
 
     // Key order totals by `${date}|${HH}` for O(1) lookup per hourly slot.
     const ordersByKey = new Map();

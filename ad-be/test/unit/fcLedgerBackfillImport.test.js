@@ -25,6 +25,38 @@ const profile = { profileId: 1001, configId: "config", isActive: true, isSpSyncE
 const date = "2020-11-22";
 const headers = "Date\tFNSKU\tASIN\tMSKU\tDisposition\tEnding Warehouse Balance\tLocation";
 const row = (day, sku) => `${day}\tfsku\tB001234567\t${sku}\tSELLABLE\t15\tDEL1`;
+
+test("warehouse report decoder rejects corrupt archives instead of parsing their compressed bytes as TSV", async t => {
+  const zlib = require("node:zlib");
+  const start = source.indexOf("async function decompressReportFile(");
+  const end = source.indexOf("exports.cronGenerateFcInventoryLedgerReport", start);
+  const decode = vm.runInNewContext(source.slice(start, end) + "\ndecompressReportFile", { fs, zlib, Buffer });
+  const input = testFile(t, "");
+  const output = path.join(path.dirname(input), "unpacked.tsv");
+  const tsv = "date\tsku\n2026-11-27\tfixture";
+  fs.writeFileSync(input, zlib.gzipSync(tsv).subarray(0, -5));
+  await assert.rejects(decode(input, output), /unexpected end of file/i);
+  assert.equal(fs.existsSync(output), false);
+  fs.writeFileSync(input, Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+  await assert.rejects(decode(input, output), /Invalid ZIP report directory/);
+  assert.equal(fs.existsSync(output), false);
+  fs.writeFileSync(input, zlib.gzipSync(tsv));
+  await decode(input, output);
+  assert.equal(fs.readFileSync(output, "utf8"), tsv);
+  const compressed = zlib.deflateRawSync(tsv);
+  const local = Buffer.alloc(30);
+  local.writeUInt32LE(0x04034b50);
+  const central = Buffer.alloc(46);
+  central.writeUInt32LE(0x02014b50);
+  central.writeUInt16LE(8, 10);
+  central.writeUInt32LE(compressed.length, 20);
+  const footer = Buffer.alloc(22);
+  footer.writeUInt32LE(0x06054b50);
+  footer.writeUInt32LE(local.length + compressed.length, 16);
+  fs.writeFileSync(input, Buffer.concat([local, compressed, central, footer]));
+  await decode(input, output);
+  assert.equal(fs.readFileSync(output, "utf8"), tsv);
+});
 const testFile = (t, contents) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "fc-ledger-test-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
@@ -92,6 +124,7 @@ test("resumes a pending Amazon report and records actual stored rows for its exa
   const fixture = load({
     __dirname: path.join(path.dirname(file), "api-server", "controllers"),
     ensureDirExists: dir => fs.mkdirSync(dir, { recursive: true }),
+    withReportWorkspace: require("../../api-server/helper/reportFile.helper").withReportWorkspace,
     downloadFile: async (_url, dest) => fs.copyFileSync(file, dest),
     decompressReportFile: async (sourcePath, target) => fs.copyFileSync(sourcePath, target),
     amazonAxios: async (request) => {

@@ -2,8 +2,8 @@ const { runHistoricalAdsReportPhase } = require("../services/historicalAdsReport
 
 const moment = require("moment-timezone");
 const fs = require("fs");
-const zlib = require("node:zlib");
-const path = require("path");
+const { pipeline: streamPipeline } = require("node:stream/promises");
+const { withDownloadedReportFile } = require("../helper/reportFile.helper");
 const axios = require("axios");
 const mongoose = require("mongoose");
 const { ObjectId } = mongoose.Types;
@@ -731,18 +731,6 @@ async function spGenerateReport(
             meta: { configId, tokenKey: "adsAccessToken" }
           };
 
-          const unzipReport = (zipFilePath, extractionPath, callback) => {
-            const unzip = zlib.createUnzip();
-            const output = fs.createWriteStream(extractionPath);
-            output.on("finish", () => {
-              callback(null);
-            });
-            output.on("error", (error) => {
-              callback(error);
-            });
-            const input = fs.createReadStream(zipFilePath);
-            input.pipe(unzip).pipe(output);
-          };
           try {
             const response = await phaseRetry(() => amazonAxios(reportIdOptions));
             if (historicalPhase) historicalPhase.onProviderStatus?.(response.data?.status);
@@ -752,124 +740,59 @@ async function spGenerateReport(
                 resolve(body.status);
               }
               else {
-                await reportsSchema.updateOne(
-                  {
-                    profileId,
-                    ...(historicalPhase && { configId, startDate, endDate }),
-                    reportId: getReportData.reportId,
-                  },
-                  {
-                    $set: {
-                      status: historicalPhase ? "IMPORTING" : body.status,
-                    },
-                  }
-                );
-                const zipFilePath = path.resolve(__dirname, '../../uploads/keywords/sp-report', `${getReportData.endDate}-${getReportData.reportId}.zip`);
-                const extractionPath = path.resolve(__dirname, '../../uploads/keywords/sp-report', `${getReportData.endDate}-${getReportData.reportId}.json`);
-
-                const file = fs.createWriteStream(zipFilePath);
-                try {
-                  const fileResponse = await phaseRetry(() => amazonAxios({
-                    method: 'get',
-                    url: body.url,
-                    responseType: 'stream'
-                  }));
-
-                  fileResponse.data.pipe(file);
-
-                  file.on("error", (error) => {
-                    cron_logs({
-                      message: `Config ID: ${configId} ProfileID: ${profileId} SP Report File err: ${error}`,
-                      log_type: "error",
-                    });
-                    resolve("ERROR");
-                  });
-
-                  file.on("finish", () => {
-                    unzipReport(
-                      zipFilePath,
-                      extractionPath,
-                      async (unzipError) => {
-                        try {
-                        if (unzipError) {
-                          cron_logs({
-                            message: `Config ID: ${configId}, Profile ID: ${profileId} SP Report zip err: ${unzipError}`,
-                            log_type: "error",
-                          });
-                          resolve("ERROR");
-                          if (historicalPhase) return;
+                await withDownloadedReportFile(body.url, async (url, filePath) => {
+                  const fileResponse = await phaseRetry(() => amazonAxios({ method: "get", url, responseType: "stream" }));
+                  await streamPipeline(fileResponse.data, fs.createWriteStream(filePath));
+                }, async filePath => {
+                  const data = JSON.parse(await fs.promises.readFile(filePath, "utf8"));
+                  if (!Array.isArray(data)) throw new Error("Expected an array in the keyword report");
+                  await Promise.all(
+                    (data ?? []).map(async (item) => {
+                      await keywordSchema.updateOne(
+                        {
+                          configId,
+                          profileId,
+                          campaignId: item.campaignId,
+                          adGroupId: item.adGroupId,
+                          keywordId: item.keywordId,
+                          reportDate: item.date,
+                        },
+                        {
+                          $set: {
+                            name: item.keyword,
+                            status: item.adKeywordStatus.toUpperCase(),
+                            matchType: item.matchType,
+                            spend: item.cost ? item.cost : 0,
+                            sales: item.sales7d ? item.sales7d : 0,
+                            impressions: item.impressions,
+                            clicks: item.clicks,
+                            orders: item.purchases7d,
+                            roas:
+                              item.sales7d != 0 && item.cost != 0
+                                ? (item.sales7d / item.cost).toFixed(2)
+                                : 0,
+                            acos:
+                              !isNaN(item.sales7d) &&
+                                !isNaN(item.cost) &&
+                                item.sales7d != 0 &&
+                                item.cost != 0
+                                ? (
+                                  (item.cost / item.sales7d) *
+                                  100
+                                ).toFixed(2)
+                                : 0,
+                          },
                         }
-                        const data = safeJsonParse(fs.readFileSync(extractionPath, "utf8"));
-                        if (historicalPhase && !Array.isArray(data)) return resolve("ERROR");
-                        await Promise.all(
-                          (data ?? []).map(async (item) => {
-                            await keywordSchema.updateOne(
-                              {
-                                configId,
-                                profileId,
-                                campaignId: item.campaignId,
-                                adGroupId: item.adGroupId,
-                                keywordId: item.keywordId,
-                                reportDate: item.date,
-                              },
-                              {
-                                $set: {
-                                  name: item.keyword,
-                                  status: item.adKeywordStatus.toUpperCase(),
-                                  matchType: item.matchType,
-                                  spend: item.cost ? item.cost : 0,
-                                  sales: item.sales7d ? item.sales7d : 0,
-                                  impressions: item.impressions,
-                                  clicks: item.clicks,
-                                  orders: item.purchases7d,
-                                  roas:
-                                    item.sales7d != 0 && item.cost != 0
-                                      ? (item.sales7d / item.cost).toFixed(2)
-                                      : 0,
-                                  acos:
-                                    !isNaN(item.sales7d) &&
-                                      !isNaN(item.cost) &&
-                                      item.sales7d != 0 &&
-                                      item.cost != 0
-                                      ? (
-                                        (item.cost / item.sales7d) *
-                                        100
-                                      ).toFixed(2)
-                                      : 0,
-                                },
-                              }
-                            );
-                          })
-                        );
+                      );
+                    })
+                  );
+                });
 
-                        if (historicalPhase) await reportsSchema.updateOne({ _id: getReportData._id }, { $set: { status: "COMPLETED", completedAt: new Date() } });
-                        if (recurring && currentTime != "23:10") {
-                          await spGenerateReport(
-                            profileId,
-                            timezone,
-                            startDate,
-                            endDate,
-                            checkConfigAds,
-                            configId
-                          )
-                        }
-
-                        resolve(body.status);
-                        } catch (importError) {
-                          if (historicalPhase) { resolve("ERROR"); return; }
-                          throw importError;
-                        }
-                      }
-                    );
-                  });
-
-                } catch (error) {
-                  cron_logs({
-                    message: `Config ID: ${configId} ProfileID: ${profileId} SP report err: ${error}`,
-                    log_type: "error",
-                  });
-                  resolve("ERROR");
+                await reportsSchema.updateOne({ _id: getReportData._id }, { $set: { status: "COMPLETED", completedAt: new Date() } });
+                if (recurring && currentTime != "23:10") {
+                  await spGenerateReport(profileId, timezone, startDate, endDate, checkConfigAds, configId);
                 }
+                resolve(body.status);
               }
             }
             else {

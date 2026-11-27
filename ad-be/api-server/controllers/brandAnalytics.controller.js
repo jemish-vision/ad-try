@@ -1,10 +1,10 @@
 const { settleTerminalReportStatus } = require("../helpers/spReportStatus.helper");
+const { withDownloadedReportFile } = require("../helper/reportFile.helper");
 const { runHistoricalSellerReport, aggregateSellerReportStatus, saveHistoricalSellerHistory } = require("../services/historicalSellerReport.service");
 const mongoose = require("mongoose");
 const crypto = require("node:crypto");
 const moment = require("moment-timezone");
 const fs = require("fs");
-const path = require("path");
 const pLimit = require("p-limit").default;
 const limit = pLimit(Number(process.env.PROCESS_LIMIT) || 5);
 
@@ -19,7 +19,6 @@ const {
     getSPAccessToken,
     getActivePlanProfiles,
     downloadFile,
-    unzipReport,
     wait,
     safeJsonParse,
     getAllowedSyncProfiles,
@@ -397,16 +396,8 @@ exports.storeMonthlyBrandAnalysisData = async ({ profile, checkSPConfig, marketP
                         }
 
                         if (docRes?.data?.url) {
-                            const dirPath = path.resolve(__dirname, "../../uploads/brandAnalytics");
-                            if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
-
-                            const zipPath = path.join(dirPath, `${existing.reportId}.gz`);
-                            const extractionPath = path.join(dirPath, `${existing.reportId}.json`);
-
-                            await downloadFile(docRes.data.url, zipPath);
-                            await unzipReport(zipPath, extractionPath);
-
-                            const reportData = safeJsonParse(fs.readFileSync(extractionPath, "utf8"));
+                            const reportData = await withDownloadedReportFile(docRes.data.url, downloadFile,
+                                async filePath => JSON.parse(await fs.promises.readFile(filePath, "utf8")));
                             const items = reportData.dataByAsin || [];
 
                             cron_logs({

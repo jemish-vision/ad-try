@@ -35,6 +35,7 @@ function fixture(kind) {
     if (name === 'p-limit') return { default: () => fn => fn() };
     if (name === '../services/historicalSellerReport.service') return shared.module.exports;
     if (name === '../helper/retryHelper') return { retryWithBackoff: fn => fn() };
+    if (name === '../helper/reportFile.helper') return { withDownloadedReportFile: (_url, _download, read) => read('fixture-report') };
     if (name === '../models/report.model') return reports;
     if (name === '../models/marketPlaceConfig.model') return { findOne: () => query({ endPoint: 'https://amazon.invalid' }) };
     if (name === '../models/cronJobHistory.model') return { findByIdAndUpdate: async (id, update) => { history.push({ id, ...update }); } };

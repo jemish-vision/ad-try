@@ -1,9 +1,9 @@
 const moment = require("moment");
+const { withDownloadedReportFile } = require("../helper/reportFile.helper");
 const { retryWithBackoff } = require("../helper/retryHelper");
 const { runHistoricalSellerReport, aggregateSellerReportStatus } = require("../services/historicalSellerReport.service");
 
 const fs = require("fs");
-const path = require("path");
 const { chain } = require("stream-chain");
 const { parser } = require("stream-json");
 const { pick } = require("stream-json/filters/Pick");
@@ -19,7 +19,7 @@ const marketPlaceConfigSchema = require("../models/marketPlaceConfig.model");
 const reportsSchema = require("../models/report.model");
 
 const { cron_logs } = require("../../winston/cronAutomation/logger");
-const { getActivePlanProfiles, getSPAccessToken, parallelBulkWrite, getRuleDate, downloadFile, unzipReport, getAllowedSyncProfiles } = require("../helper/common");
+const { getActivePlanProfiles, getSPAccessToken, parallelBulkWrite, getRuleDate, downloadFile, getAllowedSyncProfiles } = require("../helper/common");
 const amazonAxios = require("../helper/amazonAxios");
 const { write_logs } = require("../../winston/utility/logger");
 
@@ -304,13 +304,8 @@ async function generateSPReport(profile, startDate, endDate, token, recurring = 
         meta: { configId: profile.configId, tokenKey: "spAccessToken", sp: true, profileId: profile?.profileId }
     }));
 
-    const zipPath = path.resolve(__dirname, "../../uploads/coupons", `${existing.reportId}.gz`);
-    const extractionPath = zipPath.replace(".gz", ".json");
-
-    await downloadFile(docRes.data.url, zipPath);
-    await unzipReport(zipPath, extractionPath);
-
-    await processCouponReportStream(couponSchema, extractionPath, { profileId: profile.profileId, configId: profile.configId });
+    await withDownloadedReportFile(docRes.data.url, downloadFile,
+      filePath => processCouponReportStream(couponSchema, filePath, { profileId: profile.profileId, configId: profile.configId }));
 
     await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "COMPLETED" } });
 

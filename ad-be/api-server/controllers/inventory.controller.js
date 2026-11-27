@@ -1,4 +1,5 @@
 const { runHistoricalSellerReport, aggregateSellerReportStatus, saveHistoricalSellerHistory, sellerReportStreamHandler } = require("../services/historicalSellerReport.service");
+const { withDownloadedReportFile } = require("../helper/reportFile.helper");
 
 const mongoose = require("mongoose");
 const moment = require("moment-timezone");
@@ -8,7 +9,6 @@ const { getCacheWithLog, setCacheWithLog } = require("../services/redis.service"
 const pLimit = require("p-limit").default;
 const limit = pLimit(Number(process.env.PROCESS_LIMIT));
 const fs = require("fs");
-const path = require("path");
 const { chain } = require("stream-chain");
 const { parser } = require("stream-json");
 const { pick } = require("stream-json/filters/Pick");
@@ -50,7 +50,6 @@ const {
     getActivePlanProfiles,
     parallelBulkWrite,
     downloadFile,
-    unzipReport,
     safeJSON,
     getDatesBetween,
     getAllowedSyncProfiles
@@ -599,20 +598,10 @@ async function generateSalesReportForDate(profile, date, token, recurring = true
     }));
 
 
-    // Download file
-    const zipPath = path.resolve(__dirname, "../../uploads/businessProductSales/sp-report", `${existing.reportId}.gz.json`);
-    const extractionPath = zipPath.replace(".gz.json", ".json");
-
-    cron_logs({
-        message: `Sales Report: Zip Generate Successfully for profile: ${profile?.profileId}`
-        , log_type: "info"
+    await withDownloadedReportFile(docRes?.data?.url, downloadFile, async filePath => {
+        await processDailyOrderSalesStream(filePath, { profileId: profile?.profileId, configId: profile?.configId, date, strict: Boolean(phaseReport) });
+        await processReportFileStream(businessProductSalesSchema, filePath, { profileId: profile?.profileId, configId: profile?.configId, date });
     });
-
-    await downloadFile(docRes?.data?.url, zipPath);
-    await unzipReport(zipPath, extractionPath);
-
-    await processDailyOrderSalesStream(extractionPath, { profileId: profile?.profileId, configId: profile?.configId, date, strict: Boolean(phaseReport) });
-    await processReportFileStream(businessProductSalesSchema, extractionPath, { profileId: profile?.profileId, configId: profile?.configId, date });
 
     await reportsSchema.updateOne(
         { _id: existing._id },

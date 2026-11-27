@@ -1,4 +1,5 @@
 const { settleTerminalReportStatus } = require("../helpers/spReportStatus.helper");
+const { withReportWorkspace } = require("../helper/reportFile.helper");
 const { runHistoricalSellerReport, aggregateSellerReportStatus, saveHistoricalSellerHistory, sellerReportStreamHandler } = require("../services/historicalSellerReport.service");
 
 const moment = require("moment-timezone");
@@ -930,27 +931,28 @@ async function generateReturnsSPReport(profile, startDate, endDate, token, recur
         meta: { configId: profile.configId, tokenKey: "spAccessToken", sp: true, profileId: profile?.profileId }
     }));
 
-    const xmlPath = path.resolve(__dirname, "../../uploads/returns", `${existing.reportId}.xml`);
-    const jsonPath = xmlPath.replace(".xml", ".json");
-    console.log("docRes.data.url", docRes.data.url)
-    await downloadFile(docRes.data.url, xmlPath);
-    await convertXMLToJSON(xmlPath, jsonPath);
+    return await withReportWorkspace(async directory => {
+      const xmlPath = path.join(directory, "report.xml");
+      const jsonPath = xmlPath.replace(".xml", ".json");
+      await downloadFile(docRes.data.url, xmlPath);
+      await convertXMLToJSON(xmlPath, jsonPath);
 
-    const check = validateReportFile(jsonPath);
-    if (!check.isValid) {
-        cron_logs({
-            message: `[Refund Report MFN] Skipping profile ${profile.profileId} because report JSON is invalid: ${check.reason}`,
-            log_type: "warn"
-        });
-        await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
-        return "FAILED";
-    }
+      const check = validateReportFile(jsonPath);
+      if (!check.isValid) {
+          cron_logs({
+              message: `[Refund Report MFN] Skipping profile ${profile.profileId} because report JSON is invalid: ${check.reason}`,
+              log_type: "warn"
+          });
+          await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+          return "FAILED";
+      }
 
-    await processReturnsReportStream(returnSchema, jsonPath, { profileId: profile.profileId, configId: profile.configId, currencyCode: profile?.currencyCode });
+      await processReturnsReportStream(returnSchema, jsonPath, { profileId: profile.profileId, configId: profile.configId, currencyCode: profile?.currencyCode });
 
-    await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "COMPLETED" } });
+      await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "COMPLETED" } });
 
-    return "COMPLETED";
+      return "COMPLETED";
+    });
 }
 
 const processReturnsReportStream = async (schema, filePath, { profileId, configId, currencyCode }) => {
@@ -1180,65 +1182,67 @@ async function generateFBAReturnsSPReport(profile, startDate, endDate, token, re
         meta: { configId: profile.configId, tokenKey: "spAccessToken", sp: true, profileId: profile?.profileId }
     }));
 
-    const zipPath = path.resolve(__dirname, "../../uploads/returns", `${existing.reportId}.txt`);
+    return await withReportWorkspace(async directory => {
+      const zipPath = path.join(directory, "report.txt");
 
-    await downloadFile(docRes.data.url, zipPath);
+      await downloadFile(docRes.data.url, zipPath);
 
-    if (!fs.existsSync(zipPath)) {
-        cron_logs({
-            message: `[Refund Report FBA] Skipping profile ${profile.profileId} because TSV file does not exist.`,
-            log_type: "warn"
-        });
-        await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
-        return "FAILED";
-    }
-    const stats = fs.statSync(zipPath);
-    if (stats.size === 0) {
-        cron_logs({
-            message: `[Refund Report FBA] Skipping profile ${profile.profileId} because TSV file is empty (0 bytes).`,
-            log_type: "warn"
-        });
-        await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
-        return "FAILED";
-    }
-    let fd = null;
-    let isHtmlError = false;
-    try {
-        fd = fs.openSync(zipPath, "r");
-        const buffer = Buffer.alloc(100);
-        const bytesRead = fs.readSync(fd, buffer, 0, 100, 0);
-        fs.closeSync(fd);
-        fd = null;
-        const sample = buffer.toString("utf8", 0, bytesRead).trim();
-        if (sample.startsWith("<")) {
-            isHtmlError = true;
-            cron_logs({
-                message: `[Refund Report FBA] Skipping profile ${profile.profileId} because file content appears to be HTML/XML instead of TSV: ${sample.slice(0, 30)}`,
-                log_type: "warn"
-            });
-        }
-    } catch (err) {
-        if (fd !== null) {
-            try { fs.closeSync(fd); } catch (_) {}
-        }
-        cron_logs({
-            message: `[Refund Report FBA] Skipping profile ${profile.profileId} because of read failure: ${err.message}`,
-            log_type: "warn"
-        });
-        await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
-        return "FAILED";
-    }
+      if (!fs.existsSync(zipPath)) {
+          cron_logs({
+              message: `[Refund Report FBA] Skipping profile ${profile.profileId} because TSV file does not exist.`,
+              log_type: "warn"
+          });
+          await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+          return "FAILED";
+      }
+      const stats = fs.statSync(zipPath);
+      if (stats.size === 0) {
+          cron_logs({
+              message: `[Refund Report FBA] Skipping profile ${profile.profileId} because TSV file is empty (0 bytes).`,
+              log_type: "warn"
+          });
+          await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+          return "FAILED";
+      }
+      let fd = null;
+      let isHtmlError = false;
+      try {
+          fd = fs.openSync(zipPath, "r");
+          const buffer = Buffer.alloc(100);
+          const bytesRead = fs.readSync(fd, buffer, 0, 100, 0);
+          fs.closeSync(fd);
+          fd = null;
+          const sample = buffer.toString("utf8", 0, bytesRead).trim();
+          if (sample.startsWith("<")) {
+              isHtmlError = true;
+              cron_logs({
+                  message: `[Refund Report FBA] Skipping profile ${profile.profileId} because file content appears to be HTML/XML instead of TSV: ${sample.slice(0, 30)}`,
+                  log_type: "warn"
+              });
+          }
+      } catch (err) {
+          if (fd !== null) {
+              try { fs.closeSync(fd); } catch (_) {}
+          }
+          cron_logs({
+              message: `[Refund Report FBA] Skipping profile ${profile.profileId} because of read failure: ${err.message}`,
+              log_type: "warn"
+          });
+          await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+          return "FAILED";
+      }
 
-    if (isHtmlError) {
-        await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
-        return "FAILED";
-    }
+      if (isHtmlError) {
+          await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED" } });
+          return "FAILED";
+      }
 
-    await processFBAReturnsReportStream(returnSchema, zipPath, { profileId: profile.profileId, configId: profile.configId, currencyCode: profile?.currencyCode });
+      await processFBAReturnsReportStream(returnSchema, zipPath, { profileId: profile.profileId, configId: profile.configId, currencyCode: profile?.currencyCode });
 
-    await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "COMPLETED" } });
+      await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "COMPLETED" } });
 
-    return "COMPLETED";
+      return "COMPLETED";
+    });
 }
 
 const processFBAReturnsReportStream = async (schema, filePath, { profileId, configId, currencyCode }) => {
@@ -3122,13 +3126,17 @@ exports.cronRequestReview = async () => {
                 log_type: "info",
             });
         }
-        const getProfileId = await getActivePlanProfiles();
-        getProfileId.map((profile) => limit(async () => {
+        const getProfileId = await getActivePlanProfiles("ALL", "sp");
+        const profileResults = await Promise.allSettled(getProfileId.map((profile) => limit(async () => {
 
             const start = moment().tz(profile.timezone).startOf("day").toDate();
             const end = moment().tz(profile.timezone).add(1, "day").startOf("day").toDate();
 
-            const checkConfigSP = await getSPAccessToken(profile.configId, profile.profileId);
+            const checkConfigSP = await getSPAccessToken(profile.configId, profile.profileId).catch(error => {
+                if (error.status !== 404 || !error.message?.startsWith("Credentials or refresh token missing/inactive")) throw error;
+                cron_logs({ message: `[Review Request] Skipping profile ${profile.profileId}: Seller Central credentials are inactive or missing.`, log_type: "warn" });
+                return null;
+            });
             if (
                 checkConfigSP &&
                 checkConfigSP.spAccessToken
@@ -3196,7 +3204,7 @@ exports.cronRequestReview = async () => {
                 ];
 
                 let orderList = await orderSchema.aggregate(pipeline);
-                orderList.map(async (order) => {
+                const orderResults = await Promise.allSettled(orderList.map(async (order) => {
 
                     const marketPlaceSetting = await marketPlaceConfigSchema.findOne({ marketPlaceId: order.marketplaceId }).lean();
 
@@ -3261,7 +3269,11 @@ exports.cronRequestReview = async () => {
 
                     }
 
-                });
+                }));
+                const failedOrders = orderResults.filter(result => result.status === "rejected");
+                if (failedOrders.length) {
+                    throw new Error(`Profile ${profile.profileId}: ${failedOrders.length} review request(s) failed. ${failedOrders[0].reason?.message || failedOrders[0].reason}`);
+                }
 
                 const createCronHistory = new cronJobHistorySchema({
                     configId: profile.configId,
@@ -3272,12 +3284,17 @@ exports.cronRequestReview = async () => {
                 });
                 await createCronHistory.save();
             }
-        }));
+        })));
+        const failures = profileResults.filter(result => result.status === "rejected");
+        if (failures.length) {
+            throw new Error(`${failures.length} profile(s) failed Review Request. ${failures[0].reason?.message || failures[0].reason}`);
+        }
     } catch (error) {
-        return cron_logs({
+        cron_logs({
             message: `Something went wrong. Error: ${error}`,
             log_type: "error",
         });
+        throw error;
     }
 }
 

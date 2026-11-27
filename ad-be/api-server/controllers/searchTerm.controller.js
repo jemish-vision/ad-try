@@ -9,7 +9,6 @@ const { retryWithBackoff } = require("../helper/retryHelper");
 const crypto = require("crypto");
 
 const fs = require("fs");
-const zlib = require("node:zlib");
 const path = require("path");
 const axios = require("axios");
 const pLimit = require("p-limit").default;
@@ -51,7 +50,6 @@ const { getCacheWithLog, setCacheWithLog, deletePatternWithLog } = require("../s
 const {
     getProfile,
     getAccessToken,
-    unzipReport,
     calcMetrics,
     getSPAccessToken,
     buildFieldFilter,
@@ -77,7 +75,7 @@ const AD_TYPE_COLLECTIONS = require("../helper/adTypeCollections");
 const { getSuggestedBid } = require("../helper/recommendation");
 const { logAudit } = require("../helpers/auditHelper");
 const { auditValues, readAuditValues, ruleAuditFields } = require("../helpers/auditChanges");
-const { stageReportFileInRedis } = require("../services/reportFileStager.service");
+const { stageDownloadedAdsReport } = require("../services/adsReportImport.service");
 const { processStagedReportBatches } = require("../services/reportBatchWriter.service");
 const { getRunManifest } = require("../services/reportStaging.service");
 const { linkReportHistory, finalizeReportHistory } = require("../services/reportHistoryCompletion.service");
@@ -560,18 +558,11 @@ async function spGenerateReport(
         }
 
         // 3️⃣ Download file
-        const zipPath = path.resolve(__dirname, "../../uploads/search-term/sp-report", `${existing.reportId}.gz.json`);
-        const extractionPath = zipPath.replace(".gz.json", ".json");
-
-        await downloadFile(statusResp.data.url, zipPath);
-        await unzipReport(zipPath, extractionPath);
-
-        // The writer marks this report COMPLETED only after MongoDB verification.
-        await stageSearchTermReport({
-            entity: "searchTerm", existing, extractionPath, profileId, configId,
+        return await stageSearchTermReport({
+            url: statusResp.data.url, retryOnFailure: Boolean(historicalPhase),
+            entity: "searchTerm", existing, profileId, configId,
             accountType: getAccount?.type, startDate, endDate,
         });
-        return "STAGED";
 
     } catch (err) {
         cron_logs({
@@ -735,17 +726,11 @@ async function sbGenerateReport(
         }
 
         // 3️⃣ Download file
-        const zipPath = path.resolve(__dirname, "../../uploads/search-term/sb-report", `${existing.reportId}.gz.json`);
-        const extractionPath = zipPath.replace(".gz.json", ".json");
-
-        await downloadFile(statusResp.data.url, zipPath);
-        await unzipReport(zipPath, extractionPath);
-
-        await stageSearchTermReport({
-            entity: "sbSearchTerm", existing, extractionPath, profileId, configId,
+        return await stageSearchTermReport({
+            url: statusResp.data.url, retryOnFailure: Boolean(historicalPhase),
+            entity: "sbSearchTerm", existing, profileId, configId,
             accountType: getAccount?.type, startDate, endDate,
         });
-        return "STAGED";
 
     } catch (err) {
         cron_logs({
@@ -757,46 +742,22 @@ async function sbGenerateReport(
 };
 
 const stageSearchTermReport = async ({
-    entity, existing, extractionPath, profileId, configId, accountType, startDate, endDate,
+    entity, existing, url, retryOnFailure, profileId, configId, accountType, startDate, endDate,
 }) => {
-    const importRunId = `run_${entity}_${existing.reportId}_${Date.now()}`;
-    try {
-        await stageReportFileInRedis({
-            importRunId,
-            entity,
-            filePath: extractionPath,
-            meta: {
-                profileId,
-                configId,
-                accountType,
-                reportId: existing.reportId,
-                reportTypeId: existing.reportTypeId,
-                startDate,
-                endDate,
-                reportCreatedAt: existing.createdAt,
-            },
+    const status = await stageDownloadedAdsReport({
+        report: existing, url, entity, runPrefix: `run_${entity}`, downloadFile, retryOnFailure,
+        meta: {
+            profileId, configId, accountType, reportId: existing.reportId, startDate, endDate,
+            reportTypeId: existing.reportTypeId,
+            reportCreatedAt: existing.createdAt,
+        },
+    });
+    if (status === "STAGED") {
+        processStagedReportBatches([entity]).catch((error) => {
+            cron_logs({ message: `[SearchTerm Report ${entity}] Background writer failed: ${error.message}`, log_type: "error" });
         });
-        await reportsSchema.updateOne(
-            { _id: existing._id },
-            { $set: { status: "STAGED", importRunId } },
-        );
-        processStagedReportBatches([entity]).catch((err) => {
-            cron_logs({
-                message: `[SearchTerm Report ${entity}] Background batch writer failed: ${err.message}`,
-                log_type: "error",
-            });
-        });
-    } catch (err) {
-        cron_logs({
-            message: `[SearchTerm Report ${entity}] Staging failed for ${existing.reportId}: ${err.message}`,
-            log_type: "error",
-        });
-        await reportsSchema.updateOne(
-            { _id: existing._id },
-            { $set: { status: "FAILED", errorMessage: `Staging failed: ${err.message}` } },
-        );
-        throw err;
     }
+    return status;
 };
 
 const processReportFileStream = async (

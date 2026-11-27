@@ -1,9 +1,9 @@
 const mongoose = require("mongoose");
+const { withDownloadedReportFile } = require("../helper/reportFile.helper");
 const { retryWithBackoff } = require("../helper/retryHelper");
 const { runHistoricalSellerReport, aggregateSellerReportStatus } = require("../services/historicalSellerReport.service");
 
 const moment = require("moment-timezone");
-const path = require("path");
 const fs = require("fs");
 const { chain } = require("stream-chain");
 const { parser } = require("stream-json");
@@ -22,7 +22,6 @@ const {
     getActivePlanProfiles,
     parallelBulkWrite,
     downloadFile,
-    unzipReport,
     getAllowedSyncProfiles
 } = require("../helper/common");
 
@@ -271,27 +270,10 @@ const syncDealsReport = async (profile, token, startDate, endDate, recurring = t
 
     if (!docRes?.data?.url) return "FAILED";
 
-    // Download & Process
-    const dir = path.resolve(__dirname, "../../uploads/deals/sp-report");
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-
-    const zipPath = path.join(dir, `${reportId}.gz.json`);
-    const extractionPath = zipPath.replace(".gz.json", ".json");
-
-    await downloadFile(docRes?.data?.url, zipPath);
-    await unzipReport(zipPath, extractionPath);
-
-    await processDealsReport(extractionPath, { profileId: profile?.profileId, configId: profile?.configId });
+    await withDownloadedReportFile(docRes.data.url, downloadFile,
+      filePath => processDealsReport(filePath, { profileId: profile?.profileId, configId: profile?.configId }));
 
     await reportsSchema.updateOne({ reportId }, { $set: { status: "COMPLETED" } });
-
-    // Cleanup files
-    try {
-        if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
-        if (fs.existsSync(extractionPath)) fs.unlinkSync(extractionPath);
-    } catch (e) {
-        write_logs({ message: `[syncDealsReport Error] ${e?.message || e}`, log_type: "error" });
-    }
     return "COMPLETED";
 };
 

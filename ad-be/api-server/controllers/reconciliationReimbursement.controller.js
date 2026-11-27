@@ -1,9 +1,9 @@
 const { runHistoricalSellerReport, aggregateSellerReportStatus, saveHistoricalSellerHistory, sellerReportStreamHandler } = require("../services/historicalSellerReport.service");
+const { withDownloadedReportFile } = require("../helper/reportFile.helper");
 const moment = require("moment");
 const { retryWithBackoff } = require("../helper/retryHelper");
 
 const fs = require("fs");
-const path = require("path");
 const { chain } = require("stream-chain");
 const csv = require("csv-parser");
 
@@ -24,7 +24,7 @@ const marketPlaceConfigSchema = require("../models/marketPlaceConfig.model");
 const reportsSchema = require("../models/report.model");
 
 const { cron_logs } = require("../../winston/cronAutomation/logger");
-const { getActivePlanProfiles, getSPAccessToken, parallelBulkWrite, getRuleDate, downloadFile, unzipReport, getAllowedSyncProfiles, wait } = require("../helper/common");
+const { getActivePlanProfiles, getSPAccessToken, parallelBulkWrite, getRuleDate, downloadFile, getAllowedSyncProfiles, wait } = require("../helper/common");
 const amazonAxios = require("../helper/amazonAxios");
 const { sendNotificationToUser } = require("../helper/sendNotification");
 const { logAudit } = require("../helpers/auditHelper");
@@ -325,11 +325,8 @@ async function generateReimbursementSPReport(profile, startDate, endDate, token,
         meta: { configId: profile.configId, tokenKey: "spAccessToken", sp: true, profileId: profile?.profileId }
     }));
 
-    const zipPath = path.resolve(__dirname, "../../uploads/reimbursements", `${existing.reportId}.txt`);
-
-    await downloadFile(docRes.data.url, zipPath);
-
-    await processReimbursementReportStream(reimbursementSchema, zipPath, { profileId: profile.profileId, configId: profile.configId });
+    await withDownloadedReportFile(docRes.data.url, downloadFile,
+        filePath => processReimbursementReportStream(reimbursementSchema, filePath, { profileId: profile.profileId, configId: profile.configId }));
 
     await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "COMPLETED" } });
 

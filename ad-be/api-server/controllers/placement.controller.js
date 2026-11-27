@@ -10,7 +10,6 @@ const crypto = require("crypto");
 const mongoose = require("mongoose");
 const { ObjectId } = mongoose.Types;
 const fs = require("fs");
-const zlib = require("node:zlib");
 const path = require("path");
 const axios = require("axios");
 const ExcelJS = require("exceljs");
@@ -50,7 +49,6 @@ const {
   getAccessToken,
   getProfile,
   getRuleDate,
-  unzipReport,
   calcMetrics,
   removeCampaignIdFromQuery,
   safeJSON,
@@ -61,7 +59,6 @@ const {
   getRuleSettings,
   safeJsonParse,
   getAllowedSyncProfiles,
-  validateReportFile,
   getAxiosErrorMessage,
 } = require("../helper/common");
 
@@ -73,7 +70,7 @@ const { isDuplicatePlacementRule, checkDuplicatePlacementRule } = require("../he
 const amazonAxios = require("../helper/amazonAxios");
 const { processBatchUpdates } = require("../services/amazonBatchService");
 const AD_TYPE_COLLECTIONS = require("../helper/adTypeCollections");
-const { stageReportFileInRedis } = require("../services/reportFileStager.service");
+const { stageDownloadedAdsReport } = require("../services/adsReportImport.service");
 const { processStagedReportBatches } = require("../services/reportBatchWriter.service");
 const { getRunManifest } = require("../services/reportStaging.service");
 const { linkReportHistory, finalizeReportHistory } = require("../services/reportHistoryCompletion.service");
@@ -424,27 +421,11 @@ async function spGenerateReport(
   }
 
   // 3️⃣ Download file
-  const zipPath = path.resolve(__dirname, "../../uploads/placements/sp-report", `${existing.reportId}.gz.json`);
-  const extractionPath = zipPath.replace(".gz.json", ".json");
-
-  await downloadFile(statusResp.data.url, zipPath);
-  await unzipReport(zipPath, extractionPath);
-
-  const check = validateReportFile(extractionPath);
-  if (!check.isValid) {
-    cron_logs({
-      message: `[Placement Report SP] Skipping profile ${profileId} because report JSON is invalid: ${check.reason}`,
-      log_type: "warn"
-    });
-    await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: historicalPhase ? "PENDING" : "FAILED" } });
-    return "FAILED";
-  }
-
-  await stagePlacementReport({
-    entity: "placement", existing, extractionPath, profileId, configId,
+  return await stagePlacementReport({
+      url: statusResp.data.url, retryOnFailure: Boolean(historicalPhase),
+    entity: "placement", existing, profileId, configId,
     accountType: getAccount?.type, startDate, endDate,
   });
-  return "STAGED";
 
 };
 
@@ -597,71 +578,31 @@ async function sbGenerateReport(
   }
 
   // 3️⃣ Download file
-  const zipPath = path.resolve(__dirname, "../../uploads/placements/sb-report", `${existing.reportId}.gz.json`);
-  const extractionPath = zipPath.replace(".gz.json", ".json");
-
-  await downloadFile(statusResp.data.url, zipPath);
-  await unzipReport(zipPath, extractionPath);
-
-  const check = validateReportFile(extractionPath);
-  if (!check.isValid) {
-    cron_logs({
-      message: `[Placement Report SB] Skipping profile ${profileId} because report JSON is invalid: ${check.reason}`,
-      log_type: "warn"
-    });
-    await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: historicalPhase ? "PENDING" : "FAILED" } });
-    return "FAILED";
-  }
-
-  await stagePlacementReport({
-    entity: "sbPlacement", existing, extractionPath, profileId, configId,
+  return await stagePlacementReport({
+      url: statusResp.data.url, retryOnFailure: Boolean(historicalPhase),
+    entity: "sbPlacement", existing, profileId, configId,
     accountType: getAccount?.type, startDate, endDate,
   });
-  return "STAGED";
 
 };
 
 const stagePlacementReport = async ({
-  entity, existing, extractionPath, profileId, configId, accountType, startDate, endDate,
+  entity, existing, url, retryOnFailure, profileId, configId, accountType, startDate, endDate,
 }) => {
-  const importRunId = `run_${entity}_${existing.reportId}_${Date.now()}`;
-  try {
-    await stageReportFileInRedis({
-      importRunId,
-      entity,
-      filePath: extractionPath,
-      meta: {
-        profileId,
-        configId,
-        accountType,
-        reportId: existing.reportId,
-        reportTypeId: existing.reportTypeId,
-        startDate,
-        endDate,
-        reportCreatedAt: existing.createdAt,
-      },
+  const status = await stageDownloadedAdsReport({
+    report: existing, url, entity, runPrefix: `run_${entity}`, downloadFile, retryOnFailure,
+    meta: {
+      profileId, configId, accountType, reportId: existing.reportId, startDate, endDate,
+      reportTypeId: existing.reportTypeId,
+      reportCreatedAt: existing.createdAt,
+    },
+  });
+  if (status === "STAGED") {
+    processStagedReportBatches([entity]).catch((error) => {
+      cron_logs({ message: `[Placement Report ${entity}] Background writer failed: ${error.message}`, log_type: "error" });
     });
-    await reportsSchema.updateOne(
-      { _id: existing._id },
-      { $set: { status: "STAGED", importRunId } },
-    );
-    processStagedReportBatches([entity]).catch((err) => {
-      cron_logs({
-        message: `[Placement Report ${entity}] Background batch writer failed: ${err.message}`,
-        log_type: "error",
-      });
-    });
-  } catch (err) {
-    cron_logs({
-      message: `[Placement Report ${entity}] Staging failed for ${existing.reportId}: ${err.message}`,
-      log_type: "error",
-    });
-    await reportsSchema.updateOne(
-      { _id: existing._id },
-      { $set: { status: "FAILED", errorMessage: `Staging failed: ${err.message}` } },
-    );
-    throw err;
   }
+  return status;
 };
 
 const processReportFileStream = async (

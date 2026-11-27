@@ -70,7 +70,11 @@ function fixture(initial = [], { busy = false, loseLock = false, getStatus = 'PE
     },
     downloadFile: async () => {},
     unzipReport: async () => {},
-    stageReportFileInRedis: async data => { calls.push({ method: 'STAGE', data }); },
+    stageDownloadedAdsReport: async data => {
+      calls.push({ method: 'STAGE', data });
+      await model.updateOne({ _id: data.report._id }, { $set: { status: 'STAGED', importRunId: 'fixture-run' } });
+      return 'STAGED';
+    },
     processStagedReportBatches: async entities => { calls.push({ method: 'DRAIN', entities }); },
     cron_logs: () => {}, getAxiosErrorMessage: err => err.message,
   };

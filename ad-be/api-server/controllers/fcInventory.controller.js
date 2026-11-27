@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { withReportWorkspace } = require("../helper/reportFile.helper");
 const moment = require("moment-timezone");
 const fs = require("fs");
 const path = require("path");
@@ -13,7 +14,6 @@ const {
   getActivePlanProfiles,
   parallelBulkWrite,
   downloadFile,
-  unzipReport,
   getAllowedSyncProfiles,
 } = require("../helper/common");
 const amazonAxios = require("../helper/amazonAxios");
@@ -39,13 +39,6 @@ const {
   registerDiscoveredWarehouses,
 } = require("../helper/fcLocationHelper");
 
-// Helper: Ensure directory exists
-const ensureDirExists = (dirPath) => {
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
-  }
-};
-
 /**
  * Universal helper to decompress any Amazon SP-API report file.
  * Handles GZIP (.gz), PKZIP (.zip), and plain text.
@@ -56,39 +49,29 @@ async function decompressReportFile(inputFilePath, outputFilePath) {
 
   // 1. If GZIP compressed (magic bytes 0x1f 0x8b), gunzip it
   if (buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b) {
-    try {
-      buf = zlib.gunzipSync(buf);
-    } catch (e) {
-      console.warn("[Decompress] GZIP unpack warning:", e.message);
-    }
+    buf = zlib.gunzipSync(buf);
   }
 
   // 2. If PKZIP compressed (magic bytes 0x50 0x4b), extract inner file
   if (buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b) {
-    try {
-      const eocdSig = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
-      const eocdIndex = buf.lastIndexOf(eocdSig);
-      if (eocdIndex !== -1) {
-        const cdOffset = buf.readUInt32LE(eocdIndex + 16);
-        const cdSig = Buffer.from([0x50, 0x4b, 0x01, 0x02]);
-        if (buf.slice(cdOffset, cdOffset + 4).equals(cdSig)) {
-          const compSize = buf.readUInt32LE(cdOffset + 20);
-          const compMethod = buf.readUInt16LE(cdOffset + 10);
-          const locOffset = buf.readUInt32LE(cdOffset + 42);
-          const locFnLen = buf.readUInt16LE(locOffset + 26);
-          const locExLen = buf.readUInt16LE(locOffset + 28);
-          const dataStart = locOffset + 30 + locFnLen + locExLen;
-          const compData = buf.slice(dataStart, dataStart + compSize);
-          if (compMethod === 8) {
-            buf = zlib.inflateRawSync(compData);
-          } else if (compMethod === 0) {
-            buf = compData;
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("[Decompress] PKZIP unpack warning:", e.message);
+    const eocdIndex = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+    if (eocdIndex < 0 || eocdIndex + 22 > buf.length) throw new Error("Invalid ZIP report directory");
+    const cdOffset = buf.readUInt32LE(eocdIndex + 16);
+    if (cdOffset + 46 > eocdIndex || buf.readUInt32LE(cdOffset) !== 0x02014b50) {
+      throw new Error("Invalid ZIP report entry");
     }
+    const compSize = buf.readUInt32LE(cdOffset + 20);
+    const compMethod = buf.readUInt16LE(cdOffset + 10);
+    const locOffset = buf.readUInt32LE(cdOffset + 42);
+    if (locOffset + 30 > cdOffset || buf.readUInt32LE(locOffset) !== 0x04034b50) {
+      throw new Error("Invalid ZIP report file header");
+    }
+    const dataStart = locOffset + 30 + buf.readUInt16LE(locOffset + 26) + buf.readUInt16LE(locOffset + 28);
+    if (dataStart + compSize > cdOffset) throw new Error("Truncated ZIP report file");
+    const compData = buf.subarray(dataStart, dataStart + compSize);
+    if (compMethod === 8) buf = zlib.inflateRawSync(compData);
+    else if (compMethod === 0) buf = compData;
+    else throw new Error(`Unsupported ZIP report compression method ${compMethod}`);
   }
 
   fs.writeFileSync(outputFilePath, buf);
@@ -247,45 +230,45 @@ async function generateFcLedgerReportForDate(profile, startDate, endDate, token,
           cron_logs({ message: `[FC Ledger] Download URL missing for ${existing.reportId}`, log_type: "error" });
           return "FAILED";
         }
-        const uploadDir = path.resolve(__dirname, "../../uploads/inventoryLedger");
-        ensureDirExists(uploadDir);
-        const rawFilePath = path.join(uploadDir, `fc_ledger_${existing.reportId}.raw`);
-        const extractedFilePath = path.join(uploadDir, `fc_ledger_${existing.reportId}.txt`);
-        await downloadFile(downloadUrl, rawFilePath);
-        await decompressReportFile(rawFilePath, extractedFilePath);
+        return await withReportWorkspace(async directory => {
+          const rawFilePath = path.join(directory, "report.raw");
+          const extractedFilePath = path.join(directory, "report.txt");
+          await downloadFile(downloadUrl, rawFilePath);
+          await decompressReportFile(rawFilePath, extractedFilePath);
 
-        if (!fs.existsSync(extractedFilePath)) {
-          cron_logs({ message: `[FC Ledger] Extracted file not found: ${extractedFilePath}`, log_type: "error" });
-          return "FAILED";
-        }
-        console.log("[FC Ledger] Extracted file")
-        const stats = fs.statSync(extractedFilePath);
-        console.log("stats", stats.size)
-        if (stats.size === 0) {
-          cron_logs({ message: `[FC Ledger] Extracted file is empty`, log_type: "error" });
-          return "FAILED";
-        }
-        console.log("Start processFcLedgerFile")
-        const affectedRecords = await processFcLedgerFile(extractedFilePath, {
-          profileId: profile.profileId,
-          configId: profile.configId,
-          sellerId: token?.sellerId,
-          defaultDate: startDate,
-          exactDate: backfill ? startDate : undefined,
+          if (!fs.existsSync(extractedFilePath)) {
+            cron_logs({ message: `[FC Ledger] Extracted file not found: ${extractedFilePath}`, log_type: "error" });
+            return "FAILED";
+          }
+          console.log("[FC Ledger] Extracted file")
+          const stats = fs.statSync(extractedFilePath);
+          console.log("stats", stats.size)
+          if (stats.size === 0) {
+            cron_logs({ message: `[FC Ledger] Extracted file is empty`, log_type: "error" });
+            return "FAILED";
+          }
+          console.log("Start processFcLedgerFile")
+          const affectedRecords = await processFcLedgerFile(extractedFilePath, {
+            profileId: profile.profileId,
+            configId: profile.configId,
+            sellerId: token?.sellerId,
+            defaultDate: startDate,
+            exactDate: backfill ? startDate : undefined,
+          });
+          const completed = backfill
+            ? {
+                completedAt: new Date(),
+                verifiedRows: await fcInventoryLedgerSchema.countDocuments({
+                  profileId: profile.profileId, configId: profile.configId, reportDate: startDate,
+                }),
+              }
+            : { processedAt: new Date(), recordCount: affectedRecords };
+          await reportsSchema.updateOne(
+            { _id: existing._id },
+            { $set: { status: "COMPLETED", ...completed } }
+          );
+          return "COMPLETED";
         });
-        const completed = backfill
-          ? {
-              completedAt: new Date(),
-              verifiedRows: await fcInventoryLedgerSchema.countDocuments({
-                profileId: profile.profileId, configId: profile.configId, reportDate: startDate,
-              }),
-            }
-          : { processedAt: new Date(), recordCount: affectedRecords };
-        await reportsSchema.updateOne(
-          { _id: existing._id },
-          { $set: { status: "COMPLETED", ...completed } }
-        );
-        return "COMPLETED";
       }
       if (["CANCELLED", "FATAL", "FAILED"].includes(processingStatus)) {
         await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "FAILED", failedAt: new Date() } });
@@ -747,44 +730,43 @@ async function generateFcStorageFeeReportForMonth(profile, targetMonth, startDat
           })
         );
 
-        const uploadDir = path.resolve(__dirname, "../../uploads/storageFee");
-        ensureDirExists(uploadDir);
+        return await withReportWorkspace(async directory => {
+          const rawFilePath = path.join(directory, "report.raw");
+          const extractedFilePath = path.join(directory, "report.txt");
 
-        const rawFilePath = path.join(uploadDir, `storage_fee_${existing.reportId}.raw`);
-        const extractedFilePath = path.join(uploadDir, `storage_fee_${existing.reportId}.txt`);
+          await downloadFile(docRes?.data?.url, rawFilePath);
+          await decompressReportFile(rawFilePath, extractedFilePath);
 
-        await downloadFile(docRes?.data?.url, rawFilePath);
-        await decompressReportFile(rawFilePath, extractedFilePath);
+          if (!fs.existsSync(extractedFilePath)) {
+            cron_logs({ message: `[FC Storage] Extracted report file not found: ${extractedFilePath}`, log_type: "error" });
+            return "FAILED";
+          }
 
-        if (!fs.existsSync(extractedFilePath)) {
-          cron_logs({ message: `[FC Storage] Extracted report file not found: ${extractedFilePath}`, log_type: "error" });
-          return "FAILED";
-        }
+          const stats = fs.statSync(extractedFilePath);
+          if (stats.size === 0) {
+            cron_logs({ message: `[FC Storage] Extracted file is empty for report ${existing.reportId}`, log_type: "warn" });
+            await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "COMPLETED", processedAt: new Date(), recordCount: 0 } });
+            return "COMPLETED";
+          }
 
-        const stats = fs.statSync(extractedFilePath);
-        if (stats.size === 0) {
-          cron_logs({ message: `[FC Storage] Extracted file is empty for report ${existing.reportId}`, log_type: "warn" });
-          await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: "COMPLETED", processedAt: new Date(), recordCount: 0 } });
+          const { totalRows, validRows, upsertedCount } = await processStorageFeeFile(extractedFilePath, {
+            profileId: profile.profileId,
+            configId: profile.configId,
+            sellerId: token?.sellerId,
+            monthYear: targetMonth,
+          });
+
+          cron_logs({
+            message: `[FC Storage] Completed processing: totalRows=${totalRows}, validRows=${validRows}, upserted=${upsertedCount}`,
+            log_type: "info",
+          });
+
+          await reportsSchema.updateOne(
+            { _id: existing._id },
+            { $set: { status: "COMPLETED", processedAt: new Date(), recordCount: validRows } }
+          );
           return "COMPLETED";
-        }
-
-        const { totalRows, validRows, upsertedCount } = await processStorageFeeFile(extractedFilePath, {
-          profileId: profile.profileId,
-          configId: profile.configId,
-          sellerId: token?.sellerId,
-          monthYear: targetMonth,
         });
-
-        cron_logs({
-          message: `[FC Storage] Completed processing: totalRows=${totalRows}, validRows=${validRows}, upserted=${upsertedCount}`,
-          log_type: "info",
-        });
-
-        await reportsSchema.updateOne(
-          { _id: existing._id },
-          { $set: { status: "COMPLETED", processedAt: new Date(), recordCount: validRows } }
-        );
-        return "COMPLETED";
       }
 
       if (["CANCELLED", "FATAL", "FAILED"].includes(processingStatus)) {

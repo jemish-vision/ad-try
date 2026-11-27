@@ -31,6 +31,11 @@ const { write_logs } = require("../../winston/utility/logger");
 
 const CONSUMER_ID = `worker_${process.pid}_${Date.now()}`;
 
+const reportForRun = ({ reportId, profileId, configId, importRunId }) => ({
+  reportId, profileId, configId,
+  $or: [{ importRunId }, { importRunId: null }],
+});
+
 const getModelForEntity = (entity) => {
   if (isExtendedEntity(entity)) return getExtendedModel(entity);
   if (entity === "campaign" || entity === "test_campaign") return campaignsSchema;
@@ -289,8 +294,8 @@ const reconcileStagedRuns = async (entities = ["campaign", "adGroup", "productAd
 
       // Case 1: Manifest is COMPLETED in Redis, but Mongo reportsSchema is still not COMPLETED
       if (manifest.status === RUN_STATUS.COMPLETED) {
-        await reportsSchema.updateOne(
-          { _id: rep._id },
+        const update = await reportsSchema.updateOne(
+          { _id: rep._id, importRunId },
           {
             $set: {
               status: "COMPLETED",
@@ -299,6 +304,7 @@ const reconcileStagedRuns = async (entities = ["campaign", "adGroup", "productAd
             },
           }
         );
+        if (update.matchedCount === 0) continue;
         reconciledCount++;
         write_logs({
           message: `[Reconciliation] Repaired Mongo report ${rep.reportId} status to COMPLETED for run ${importRunId}.`,
@@ -318,8 +324,8 @@ const reconcileStagedRuns = async (entities = ["campaign", "adGroup", "productAd
       ) {
         try {
           const verifyResult = await verifyImportedRun(manifest);
-          await reportsSchema.updateOne(
-            { _id: rep._id },
+          const update = await reportsSchema.updateOne(
+            { _id: rep._id, importRunId },
             {
               $set: {
                 status: "COMPLETED",
@@ -329,6 +335,7 @@ const reconcileStagedRuns = async (entities = ["campaign", "adGroup", "productAd
               },
             }
           );
+          if (update.matchedCount === 0) continue;
           if (rep.cronHistoryId) {
             await finalizeReportHistory(rep.cronHistoryId).catch((err) =>
               write_logs({ message: `[Report History Finalize] ${err.message}`, log_type: "warn" }));
@@ -503,23 +510,24 @@ const drainStagedReportBatches = async (entities = ["campaign", "adGroup", "prod
           continue;
         }
 
-        // If the report was marked FAILED in MongoDB, abandon and clean up stream
+        // A superseded run cannot write rows or change the replacement report's status.
         if (manifest.reportId) {
           const mongoReport = await reportsSchema.findOne({
             $or: [
               { importRunId },
               { reportId: manifest.reportId, profileId: manifest.profileId, configId: manifest.configId },
             ],
-          }).select("status").lean();
+          }).select("status importRunId").lean();
 
-          if (mongoReport && mongoReport.status === "FAILED") {
+          const superseded = manifest.reportStatePublished && mongoReport?.importRunId && mongoReport.importRunId !== importRunId;
+          if (superseded || mongoReport?.status === "FAILED") {
             await redisClient.del(`${MANIFEST_KEY_PREFIX}${importRunId}:keys`);
             await redisClient.expire(`${MANIFEST_KEY_PREFIX}${importRunId}`, 300);
             await redisClient.xAck(streamKey, CONSUMER_GROUP, streamMsgId);
             await redisClient.xDel(streamKey, streamMsgId);
             await saveRunManifest(importRunId, {
               status: RUN_STATUS.VALIDATION_FAILED,
-              lastError: "Report marked FAILED in MongoDB.",
+              lastError: superseded ? "Report replaced by another import run." : "Report marked FAILED in MongoDB.",
             });
             passActivity++;
             continue;
@@ -633,11 +641,7 @@ const drainStagedReportBatches = async (entities = ["campaign", "adGroup", "prod
             // 1. Mark corresponding reportsSchema document COMPLETED in MongoDB FIRST
             if (manifest.reportId) {
               await reportsSchema.updateOne(
-                {
-                  reportId: manifest.reportId,
-                  profileId: manifest.profileId,
-                  configId: manifest.configId,
-                },
+                reportForRun(manifest),
                 {
                   $set: {
                     status: "COMPLETED",
@@ -649,7 +653,7 @@ const drainStagedReportBatches = async (entities = ["campaign", "adGroup", "prod
               );
             }
             const completedReport = manifest.reportId && await reportsSchema.findOne({
-              reportId: manifest.reportId, profileId: manifest.profileId, configId: manifest.configId,
+              ...reportForRun(manifest), importRunId, status: "COMPLETED",
             }).select("cronHistoryId").lean();
             if (completedReport?.cronHistoryId) {
               await finalizeReportHistory(completedReport.cronHistoryId).catch((err) =>
@@ -716,10 +720,8 @@ const drainStagedReportBatches = async (entities = ["campaign", "adGroup", "prod
             if (manifest.reportId) {
               await reportsSchema.updateOne(
                 {
-                  $or: [
-                    { importRunId },
-                    { reportId: manifest.reportId, profileId: manifest.profileId, configId: manifest.configId },
-                  ],
+                  ...reportForRun(manifest),
+                  status: { $nin: ["COMPLETED", "SUCCESS"] },
                 },
                 {
                   $set: {

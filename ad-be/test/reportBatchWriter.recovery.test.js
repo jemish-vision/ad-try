@@ -69,7 +69,7 @@ function writerFixture({ blocked = 0, healthyPending = false, healthyNew = false
   const context = { module: { exports: {} }, process, setInterval, clearInterval, require(name) {
     if (name === './redis.service') return { redisClient: redis };
     if (name === './reportStaging.service') return staging;
-    if (name === '../models/report.model') return { find: () => chain([]), findOne: () => chain({ status: 'STAGED', cronHistoryId }), updateOne: async (filter, update) => updates.push({ filter, update }) };
+    if (name === '../models/report.model') return { find: () => chain([]), findOne: () => chain(staging.report || { status: 'STAGED', cronHistoryId }), updateOne: async (filter, update) => updates.push({ filter, update }) };
     if (name === './reportHistoryCompletion.service') return { finalizeReportHistory: async id => finalizedHistories.push(id) };
     if (name === 'mongoose') return require('mongoose');
     if (name === '../models/campaign.model') return { countDocuments: async () => verifiedCount };
@@ -101,6 +101,17 @@ test('blocked pending entries do not prevent new batches from being read', async
   assert.ok(f.writes.includes('new'));
 });
 
+test('a queued run already replaced on the report cannot write rows or change report state', async () => {
+  const f = writerFixture({ healthyPending: true });
+  f.runs.get('healthy').reportStatePublished = true;
+  f.staging.report = { status: 'STAGED', importRunId: 'replacement' };
+  await f.run();
+  assert.deepEqual(f.writes, []);
+  assert.deepEqual(f.updates, []);
+  assert.equal(f.pending.length, 0);
+  assert.equal(f.runs.get('healthy').status, 'VALIDATION_FAILED');
+});
+
 test('five distinct failing batches do not exhaust one another\'s retries', async () => {
   const f = writerFixture({ failingBatches: 5 });
   await f.run();
@@ -122,6 +133,8 @@ test('five real failures of the same batch preserve the terminal error', async (
   for (let i = 0; i < 5; i++) await f.run();
   assert.equal(f.updates.length, 1);
   assert.equal(f.updates[0].update.$set.status, 'FAILED');
+  assert.equal(f.updates[0].filter.$or[0].importRunId, 'failing');
+  assert.ok(f.updates[0].filter.status.$nin.includes('COMPLETED'));
   assert.match(f.updates[0].update.$set.errorMessage, /temporary write failure/);
 });
 

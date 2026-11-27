@@ -1,8 +1,6 @@
 const { runHistoricalAdsReportPhase } = require("../services/historicalAdsReportPhase.service");
 const moment = require("moment-timezone");
 const fs = require("fs");
-const zlib = require("node:zlib");
-const path = require("path");
 const mongoose = require("mongoose");
 const { ObjectId } = mongoose.Types;
 const axios = require("axios");
@@ -24,7 +22,6 @@ const cronJobSchema = require("../models/cronJob.model");
 const {
   getProfile,
   getAccessToken,
-  unzipReport,
   calcMetrics,
   parseStrictMetric,
   downloadFile,
@@ -32,7 +29,8 @@ const {
   getAllowedSyncProfiles,
   getAxiosErrorMessage
 } = require("../helper/common");
-const { stageReportFileInRedis } = require("../services/reportFileStager.service");
+const { stageDownloadedAdsReport } = require("../services/adsReportImport.service");
+const { withDownloadedReportFile } = require("../helper/reportFile.helper");
 const { processStagedReportBatches } = require("../services/reportBatchWriter.service");
 const { linkReportHistory, finalizeReportHistory } = require("../services/reportHistoryCompletion.service");
 
@@ -877,20 +875,14 @@ async function spGenerateReport(
       return statusResp.data.status;
     }
 
-    // 3️⃣ Download file
-    const zipPath = path.resolve(__dirname, "../../uploads/ad-groups/sp-report", `${existing.reportId}.gz.json`);
-    const extractionPath = zipPath.replace(".gz.json", ".json");
-
-    await downloadFile(statusResp.data.url, zipPath);
-    await unzipReport(zipPath, extractionPath);
-
-    // 4️⃣ Stage report into Redis Streams for durable scheduled bulk writing
-    const importRunId = `run_adgroup_${existing.reportId}_${Date.now()}`;
     try {
-      await stageReportFileInRedis({
-        importRunId,
+      const status = await stageDownloadedAdsReport({
+        report: existing,
+        url: statusResp.data.url,
         entity: "adGroup",
-        filePath: extractionPath,
+        runPrefix: "run_adgroup",
+        downloadFile,
+        retryOnFailure: Boolean(historicalPhase),
         meta: {
           profileId,
           configId,
@@ -902,11 +894,7 @@ async function spGenerateReport(
           reportCreatedAt: existing.createdAt || statusResp.data?.createdAt || new Date().toISOString(),
         },
       });
-
-      await reportsSchema.updateOne(
-        { _id: existing._id },
-        { $set: { status: "STAGED", importRunId } }
-      );
+      if (status !== "STAGED") return status;
 
       // Trigger an immediate processing pass of staged batches
       processStagedReportBatches(["adGroup"]).catch((err) => {
@@ -920,10 +908,6 @@ async function spGenerateReport(
         message: `[Ad Group Report SP] Staging failed for report ${existing.reportId}: ${parseErr.message}`,
         log_type: "error",
       });
-      await reportsSchema.updateOne(
-        { _id: existing._id },
-        { $set: { status: historicalPhase ? "PENDING" : "FAILED", errorMessage: `Staging failed: ${parseErr.message}` } }
-      );
       throw parseErr;
     }
 
@@ -948,7 +932,7 @@ async function spGenerateReport(
       }
     }
 
-    return "COMPLETED";
+    return "STAGED";
   } catch (err) {
     cron_logs({
       message: `[AdGroups Report SP] Report creation failed for profile ${profileId}: ${getAxiosErrorMessage(err)}`,
@@ -1110,18 +1094,8 @@ async function sbGenerateReport(
     return statusResp.data.status;
   }
 
-  // 3️⃣ Download file
-  const zipPath = path.resolve(__dirname, "../../uploads/ad-groups/sb-report", `${existing.reportId}.gz.json`);
-  const extractionPath = zipPath.replace(".gz.json", ".json");
-
-  await downloadFile(statusResp.data.url, zipPath);
-  await unzipReport(zipPath, extractionPath);
-
-  // 4️⃣ Stream parse + write
-  await processReportFileStream(sbAdGroupsSchema, extractionPath, {
-    profileId,
-    configId
-  });
+  await withDownloadedReportFile(statusResp.data.url, downloadFile,
+    filePath => processReportFileStream(sbAdGroupsSchema, filePath, { profileId, configId }));
 
   await reportsSchema.updateOne(
     { _id: existing._id },
@@ -1307,20 +1281,14 @@ async function sdGenerateReport(
     return statusResp.data.status;
   }
 
-  // 3️⃣ Download file
-  const zipPath = path.resolve(__dirname, "../../uploads/ad-groups/sd-report", `${existing.reportId}.gz.json`);
-  const extractionPath = zipPath.replace(".gz.json", ".json");
-
-  await downloadFile(statusResp.data.url, zipPath);
-  await unzipReport(zipPath, extractionPath);
-
-  // Stage the full report; only the verified writer marks it COMPLETED.
-  const importRunId = `run_sdAdGroup_${existing.reportId}_${Date.now()}`;
   try {
-    await stageReportFileInRedis({
-      importRunId,
+    const status = await stageDownloadedAdsReport({
+      report: existing,
+      url: statusResp.data.url,
       entity: "sdAdGroup",
-      filePath: extractionPath,
+      runPrefix: "run_sdAdGroup",
+      downloadFile,
+      retryOnFailure: Boolean(historicalPhase),
       meta: {
         profileId,
         configId,
@@ -1332,16 +1300,12 @@ async function sdGenerateReport(
         reportCreatedAt: existing.createdAt || statusResp.data?.createdAt || new Date().toISOString(),
       },
     });
-    await reportsSchema.updateOne(
-      { _id: existing._id },
-      { $set: { status: "STAGED", importRunId } }
-    );
+    if (status !== "STAGED") return status;
     processStagedReportBatches(["sdAdGroup"]).catch((err) => {
       cron_logs({ message: `[AdGroups Report SD] Batch writer failed for report ${existing.reportId}: ${err.message}`, log_type: "error" });
     });
   } catch (stageErr) {
     cron_logs({ message: `[AdGroups Report SD] Staging failed for report ${existing.reportId}: ${stageErr.message}`, log_type: "error" });
-    await reportsSchema.updateOne({ _id: existing._id }, { $set: { status: historicalPhase ? "PENDING" : "FAILED" } });
     throw stageErr;
   }
 

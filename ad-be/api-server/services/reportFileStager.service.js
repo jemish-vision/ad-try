@@ -27,6 +27,7 @@ const stageReportFileInRedis = async ({
   importRunId,
   entity,
   filePath,
+  beforeReady,
   meta: { profileId, configId, accountType, reportId, reportTypeId, startDate, endDate, reportCreatedAt },
 }) => {
   const fileChecksum = await getFileChecksum(filePath);
@@ -99,163 +100,125 @@ const stageReportFileInRedis = async ({
     }
   }
 
-  return new Promise((resolve, reject) => {
-    const pipeline = chain([
-      fs.createReadStream(filePath),
-      parser(),
-      streamArray(),
-    ]);
+  const pipeline = chain([
+    fs.createReadStream(filePath),
+    parser(),
+    streamArray(),
+  ]);
 
-    let currentBatch = [];
-    let batchIndex = 0;
-    let totalRows = 0;
-    let totalSpend = 0;
-    let totalClicks = 0;
-    let totalImpressions = 0;
-    let totalSales = 0;
-    let totalPurchases = 0;
-    const seenEntityKeys = new Set();
-    const stagedBatchIds = [];
+  let currentBatch = [];
+  let batchIndex = 0;
+  let totalRows = 0;
+  let totalSpend = 0;
+  let totalClicks = 0;
+  let totalImpressions = 0;
+  let totalSales = 0;
+  let totalPurchases = 0;
+  const seenEntityKeys = new Set();
 
-    pipeline.on("data", async ({ value }) => {
-      pipeline.pause();
+  try {
+    for await (const { value } of pipeline) {
+      // 1. Validate & Normalize
+      const normalize = isExtendedEntity(entity) ? normalizeExtendedRow : normalizeReportRow;
+      const normalized = normalize(value, {
+        importRunId,
+        entity,
+        configId,
+        profileId,
+        accountType,
+        targetIdMap,
+      });
 
-      try {
-        // 1. Validate & Normalize
-        const normalize = isExtendedEntity(entity) ? normalizeExtendedRow : normalizeReportRow;
-        const normalized = normalize(value, {
-          importRunId,
-          entity,
-          configId,
-          profileId,
-          accountType,
-          targetIdMap,
-        });
+      // 2. Intra-file duplicate detection
+      let dedupKey = "";
+      if (isExtendedEntity(entity)) {
+        dedupKey = extendedRowKey(normalized);
+      } else if (entity.includes("campaign")) {
+        dedupKey = `${normalized.campaignId}#${normalized.reportDate}`;
+      } else if (entity.includes("adGroup")) {
+        dedupKey = `${normalized.campaignId}#${normalized.adGroupId}#${normalized.reportDate}`;
+      } else if (entity.includes("productAd")) {
+        dedupKey = `${normalized.campaignId}#${normalized.adGroupId}#${normalized.adId}#${normalized.reportDate}`;
+      }
 
-        // 2. Intra-file duplicate detection
-        let dedupKey = "";
+      if (seenEntityKeys.has(dedupKey)) {
         if (isExtendedEntity(entity)) {
-          dedupKey = extendedRowKey(normalized);
-        } else if (entity.includes("campaign")) {
-          dedupKey = `${normalized.campaignId}#${normalized.reportDate}`;
-        } else if (entity.includes("adGroup")) {
-          dedupKey = `${normalized.campaignId}#${normalized.adGroupId}#${normalized.reportDate}`;
-        } else if (entity.includes("productAd")) {
-          dedupKey = `${normalized.campaignId}#${normalized.adGroupId}#${normalized.adId}#${normalized.reportDate}`;
+          throw new Error(`[Validation Failure] Duplicate ${entity} row identity ${dedupKey} in report ${reportId}`);
         }
-
-        if (seenEntityKeys.has(dedupKey)) {
-          if (isExtendedEntity(entity)) {
-            throw new Error(`[Validation Failure] Duplicate ${entity} row identity ${dedupKey} in report ${reportId}`);
-          }
-          write_logs({
-            message: `[Report Staging Notice] Duplicate key within report file: ${dedupKey} in run ${importRunId}. Latest occurrence retained.`,
-            log_type: "warn",
-          });
-        }
-        seenEntityKeys.add(dedupKey);
-
-        totalSpend += Number(normalized.metrics.spend || 0);
-        totalClicks += Number(normalized.metrics.clicks || 0);
-        totalImpressions += Number(normalized.metrics.impressions || 0);
-        totalSales += Number(normalized.metrics.sales || 0);
-        totalPurchases += Number(normalized.metrics.purchases || 0);
-
-        currentBatch.push(normalized);
-        totalRows++;
-
-        if (currentBatch.length >= STAGE_BATCH_SIZE) {
-          const batchToStage = currentBatch;
-          currentBatch = [];
-          const idx = batchIndex++;
-
-          const staged = await stageBatchInRedis(importRunId, entity, idx, batchToStage);
-          stagedBatchIds.push(staged.batchId);
-        }
-
-        pipeline.resume();
-      } catch (err) {
-        console.error(`\n❌ [stageReportFileInRedis Validation Error] Entity: ${entity}, Run: ${importRunId}, Row #${totalRows}: ${err.message}`);
-        console.error(`   Offending Row Data:`, JSON.stringify(value));
         write_logs({
-          message: `[stageReportFileInRedis Validation Error] ${entity} run ${importRunId} row #${totalRows}: ${err.message}`,
-          log_type: "error",
+          message: `[Report Staging Notice] Duplicate key within report file: ${dedupKey} in run ${importRunId}. Latest occurrence retained.`,
+          log_type: "warn",
         });
-        pipeline.destroy(err);
-        await saveRunManifest(importRunId, {
-          status: RUN_STATUS.VALIDATION_FAILED,
-          error: err.message,
-        }).catch(() => {});
-        return reject(err);
       }
-    });
+      seenEntityKeys.add(dedupKey);
 
-    pipeline.on("end", async () => {
-      try {
-        if (currentBatch.length > 0) {
-          const idx = batchIndex++;
-          const staged = await stageBatchInRedis(importRunId, entity, idx, currentBatch);
-          stagedBatchIds.push(staged.batchId);
-          currentBatch = [];
-        }
+      totalSpend += Number(normalized.metrics.spend || 0);
+      totalClicks += Number(normalized.metrics.clicks || 0);
+      totalImpressions += Number(normalized.metrics.impressions || 0);
+      totalSales += Number(normalized.metrics.sales || 0);
+      totalPurchases += Number(normalized.metrics.purchases || 0);
 
-        // Store expected entity keys in Redis set for strict verification
-        const keysKey = `${MANIFEST_KEY_PREFIX}${importRunId}:keys`;
-        if (seenEntityKeys.size > 0) {
-          const keysArray = Array.from(seenEntityKeys);
-          for (let i = 0; i < keysArray.length; i += 1000) {
-            await redisClient.sAdd(keysKey, keysArray.slice(i, i + 1000));
-          }
-          await redisClient.expire(keysKey, 7 * 24 * 3600);
-        }
+      currentBatch.push(normalized);
+      totalRows++;
 
-        // Even an empty report needs a stream entry so the writer can verify and
-        // transition the report record to COMPLETED.
-        if (batchIndex === 0) {
-          const staged = await stageBatchInRedis(importRunId, entity, batchIndex++, []);
-          stagedBatchIds.push(staged.batchId);
-        }
+      if (currentBatch.length >= STAGE_BATCH_SIZE) {
+        const batchToStage = currentBatch;
+        currentBatch = [];
+        const idx = batchIndex++;
 
-        // Mark run as READY now that every single batch is staged
-        await saveRunManifest(importRunId, {
-          status: RUN_STATUS.READY,
-          expectedRows: totalRows,
-          expectedUniqueKeys: seenEntityKeys.size,
-          expectedBatches: batchIndex,
-          stagedBatches: batchIndex,
-          expectedSpend: Number(totalSpend.toFixed(2)),
-          expectedImpressions: totalImpressions,
-          expectedClicks: totalClicks,
-          expectedSales: Number(totalSales.toFixed(2)),
-          expectedOrders: totalPurchases,
-          stagedAt: new Date().toISOString(),
-        });
-
-        resolve({
-          importRunId,
-          totalRows,
-          totalBatches: batchIndex,
-          fileChecksum,
-        });
-      } catch (endErr) {
-        await saveRunManifest(importRunId, {
-          status: RUN_STATUS.VALIDATION_FAILED,
-          error: endErr.message,
-        }).catch(() => {});
-        reject(endErr);
+        await stageBatchInRedis(importRunId, entity, idx, batchToStage);
       }
-    });
+    }
 
-    pipeline.on("error", async (err) => {
-      pipeline.removeAllListeners();
-      pipeline.destroy();
-      await saveRunManifest(importRunId, {
-        status: RUN_STATUS.VALIDATION_FAILED,
-        error: err.message,
-      }).catch(() => {});
-      reject(err);
+    if (currentBatch.length > 0) {
+      const idx = batchIndex++;
+      await stageBatchInRedis(importRunId, entity, idx, currentBatch);
+      currentBatch = [];
+    }
+
+    // Store expected entity keys in Redis set for strict verification
+    const keysKey = `${MANIFEST_KEY_PREFIX}${importRunId}:keys`;
+    if (seenEntityKeys.size > 0) {
+      const keysArray = Array.from(seenEntityKeys);
+      for (let i = 0; i < keysArray.length; i += 1000) {
+        await redisClient.sAdd(keysKey, keysArray.slice(i, i + 1000));
+      }
+      await redisClient.expire(keysKey, 7 * 24 * 3600);
+    }
+
+    // Even an empty report needs a stream entry so the writer can verify and
+    // transition the report record to COMPLETED.
+    if (batchIndex === 0) {
+      await stageBatchInRedis(importRunId, entity, batchIndex++, []);
+    }
+
+    // Publish the Mongo report state before the writer can claim this run.
+    if (beforeReady) await beforeReady();
+
+    // Mark run as READY now that every single batch is staged
+    await saveRunManifest(importRunId, {
+      status: RUN_STATUS.READY,
+      ...(beforeReady && { reportStatePublished: true }),
+      expectedRows: totalRows,
+      expectedUniqueKeys: seenEntityKeys.size,
+      expectedBatches: batchIndex,
+      stagedBatches: batchIndex,
+      expectedSpend: Number(totalSpend.toFixed(2)),
+      expectedImpressions: totalImpressions,
+      expectedClicks: totalClicks,
+      expectedSales: Number(totalSales.toFixed(2)),
+      expectedOrders: totalPurchases,
+      stagedAt: new Date().toISOString(),
     });
-  });
+    return { importRunId, totalRows, totalBatches: batchIndex, fileChecksum };
+  } catch (error) {
+    pipeline.destroy();
+    await saveRunManifest(importRunId, {
+      status: RUN_STATUS.VALIDATION_FAILED,
+      error: error.message,
+    }).catch(() => {});
+    throw error;
+  }
 };
 
 module.exports = {

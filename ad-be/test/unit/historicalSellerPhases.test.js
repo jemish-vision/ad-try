@@ -71,6 +71,8 @@ function fixture(kind) {
       return { status: 200, data: { processingStatus: amazonStatus, reportDocumentId: 'document-1' } };
     },
     downloadFile: async () => {}, unzipReport: async () => {}, convertXMLToJSON: async () => {},
+    withReportWorkspace: async consumeFile => consumeFile("fixture-folder"),
+    withDownloadedReportFile: async (_url, _download, consumeFile) => consumeFile("fixture-report"),
     downloadReport: async () => { await consume(); return []; },
     validateReportFile: () => ({ isValid: true }),
     processReturnsReportStream: consume, processFBAReturnsReportStream: consume, processReimbursementReportStream: consume,
@@ -79,7 +81,7 @@ function fixture(kind) {
     brandAnalyticsSchema: { bulkWrite: consume },
     fs: { existsSync: () => true, mkdirSync() {}, statSync: () => ({ size: 100 }), openSync: () => 1,
       readSync: (_fd, buffer) => buffer.write('return-date\torder-id\n2026-10-01\tfixture-order'), closeSync() {},
-      readFileSync: () => JSON.stringify({ dataByAsin: [{ asin: 'B0FIXTURE', startDate: '2026-10-04', endDate: '2026-10-10' }] }), unlinkSync() {} },
+      promises: { readFile: async () => JSON.stringify({ dataByAsin: [{ asin: 'B0FIXTURE', startDate: '2026-10-04', endDate: '2026-10-10' }] }) }, unlinkSync() {} },
     safeJsonParse: JSON.parse, write_logs() {}, cron_logs() {}, console: { log() {}, error() {} },
     wait: async ms => { waits.push(ms); throw new Error('Report phase must not wait'); },
     cronJobHistorySchema: { findByIdAndUpdate: async (id, update) => history.push({ id, ...(update.$set || update) }) },

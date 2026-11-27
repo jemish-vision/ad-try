@@ -1,5 +1,8 @@
 const { test, describe } = require("node:test");
 const assert = require("node:assert");
+const fs = require("node:fs");
+const { createRequire } = require("node:module");
+const vm = require("node:vm");
 const mongoose = require("mongoose");
 const cronJobHistorySchema = require("../../../api-server/models/cronJobHistory.model");
 const {
@@ -8,9 +11,28 @@ const {
   recordCronFailure,
   recordCronExecution,
 } = require("../../../api-server/helper/cronHistory.helper");
-const {
-  createRunJobSafely,
-} = require("../../../worker-service/runJobSafely.helper");
+function loadWithOverrides(filename, overrides) {
+  const requireFromModule = createRequire(filename);
+  const module = { exports: {} };
+  vm.runInNewContext(fs.readFileSync(filename, "utf8"), {
+    module,
+    require: name => Object.hasOwn(overrides, name) ? overrides[name] : requireFromModule(name),
+    process: { env: { RECEIVER_EMAIL: "cron-test@example.invalid" } },
+    console,
+  }, { filename });
+  return module.exports;
+}
+
+function createTestRunner(workerName, alerts) {
+  const heartbeat = loadWithOverrides(require.resolve("../../../api-server/helper/heartbeat.helper"), {
+    "./emailHelper": { sendEmailHelper: async (to, subject, html) => alerts.push({ to, subject, html }) },
+  });
+  const { createRunJobSafely } = loadWithOverrides(require.resolve("../../../worker-service/runJobSafely.helper"), {
+    "../api-server/helper/heartbeat.helper": heartbeat,
+    "../winston/cronAutomation/logger": { cron_logs() {} },
+  });
+  return createRunJobSafely(workerName);
+}
 
 describe("Schema & Helper: cronJobHistory Details & Execution Tracking", () => {
   test("Schema accepts and validates details, recordsCount, durationMs, and error fields", () => {
@@ -195,7 +217,8 @@ describe("Schema & Helper: cronJobHistory Details & Execution Tracking", () => {
     cronJobHistorySchema.findOneAndUpdate = mockSchema.findOneAndUpdate;
 
     try {
-      const runner = createRunJobSafely("worker-fast");
+      const alerts = [];
+      const runner = createTestRunner("worker-fast", alerts);
       let taskExecuted = false;
 
       await runner("Review Request", async () => {
@@ -204,6 +227,7 @@ describe("Schema & Helper: cronJobHistory Details & Execution Tracking", () => {
       });
 
       assert.strictEqual(taskExecuted, true);
+      assert.strictEqual(alerts.length, 0);
       assert.strictEqual(recordedEvents.length, 2);
 
       // Event 1: Start
@@ -236,12 +260,18 @@ describe("Schema & Helper: cronJobHistory Details & Execution Tracking", () => {
     cronJobHistorySchema.findOneAndUpdate = mockSchema.findOneAndUpdate;
 
     try {
-      const runner = createRunJobSafely("worker-heavy");
+      const alerts = [];
+      const runner = createTestRunner("worker-heavy", alerts);
 
       await runner("FC Storage Fee", async () => {
         throw new Error("Amazon SP-API 500 Internal Error");
       });
 
+      assert.strictEqual(alerts.length, 1);
+      assert.strictEqual(alerts[0].to, "cron-test@example.invalid");
+      assert.strictEqual(alerts[0].subject, "Cron Failure Alert: FC Storage Fee");
+      assert.match(alerts[0].html, /JOB_FAILED/);
+      assert.match(alerts[0].html, /Amazon SP-API 500 Internal Error/);
       assert.strictEqual(recordedEvents.length, 2);
 
       // Event 1: Start

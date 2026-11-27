@@ -15,7 +15,6 @@ const mongoose = require("mongoose");
 const { ObjectId } = mongoose.Types;
 const axios = require("axios");
 const path = require("path");
-const zlib = require("node:zlib");
 const ExcelJS = require("exceljs");
 const pLimit = require("p-limit").default;
 const profileLimit = pLimit(Number(process.env.PROCESS_LIMIT) || 3);
@@ -59,7 +58,6 @@ const {
     getRuleDate,
     getAccessToken,
     getBidThreshold,
-    unzipReport,
     removeCampaignIdFromQuery,
     getActivePlanProfiles,
     parallelBulkWrite,
@@ -89,7 +87,7 @@ const { logAudit } = require("../helpers/auditHelper");
 const { auditValues, readAuditValues, ruleAuditFields } = require("../helpers/auditChanges");
 const adNotificationSchema = require("../models/adNotification.model");
 const { sendNotificationToUser } = require("../helper/sendNotification");
-const { stageReportFileInRedis } = require("../services/reportFileStager.service");
+const { stageDownloadedAdsReport } = require("../services/adsReportImport.service");
 const { processStagedReportBatches } = require("../services/reportBatchWriter.service");
 const { linkReportHistory, finalizeReportHistory } = require("../services/reportHistoryCompletion.service");
 const { deletePatternWithLog } = require("../services/redis.service");
@@ -504,16 +502,10 @@ async function spGenerateReport(
         }
 
         // 3️⃣ Download file
-        const zipPath = path.resolve(__dirname, "../../uploads/targeting/sp-report", `${existing.reportId}.gz.json`);
-        const extractionPath = zipPath.replace(".gz.json", ".json");
-
-        await downloadFile(statusResp.data.url, zipPath);
-        await unzipReport(zipPath, extractionPath);
-
-        await stageTargetingReport({
+        const status = await stageTargetingReport({
+            url: statusResp.data.url, retryOnFailure: Boolean(historicalPhase),
             entity: "targeting",
             report: existing,
-            filePath: extractionPath,
             profileId,
             configId,
             accountType: getAccount?.type,
@@ -522,6 +514,7 @@ async function spGenerateReport(
             endDate,
             reportCreatedAt: statusResp.data?.createdAt || existing.createdAt,
         });
+        if (status !== "STAGED") return status;
 
         // ♻️ RECURRING POLL — SAFE RECURSION
         if (recurring) {
@@ -721,16 +714,10 @@ async function sbGenerateReport(
     }
 
     // 3️⃣ Download file
-    const zipPath = path.resolve(__dirname, "../../uploads/targeting/sb-report", `${existing.reportId}.gz.json`);
-    const extractionPath = zipPath.replace(".gz.json", ".json");
-
-    await downloadFile(statusResp.data.url, zipPath);
-    await unzipReport(zipPath, extractionPath);
-
-    await stageTargetingReport({
+    const status = await stageTargetingReport({
+        url: statusResp.data.url, retryOnFailure: Boolean(historicalPhase),
         entity: "sbTargeting",
         report: existing,
-        filePath: extractionPath,
         profileId,
         configId,
         accountType: getAccount?.type,
@@ -739,6 +726,7 @@ async function sbGenerateReport(
         endDate,
         reportCreatedAt: statusResp.data?.createdAt || existing.createdAt,
     });
+    if (status !== "STAGED") return status;
 
     // ♻️ RECURRING POLL — SAFE RECURSION
     if (recurring) {
@@ -915,16 +903,10 @@ async function sdGenerateReport(
         }
 
         // 3️⃣ Download file
-        const zipPath = path.resolve(__dirname, "../../uploads/targeting/sd-report", `${existing.reportId}.gz.json`);
-        const extractionPath = zipPath.replace(".gz.json", ".json");
-
-        await downloadFile(statusResp.data.url, zipPath);
-        await unzipReport(zipPath, extractionPath);
-
-        await stageTargetingReport({
+        const status = await stageTargetingReport({
+            url: statusResp.data.url, retryOnFailure: Boolean(historicalPhase),
             entity: "sdTargeting",
             report: existing,
-            filePath: extractionPath,
             profileId,
             configId,
             accountType: getAccount?.type,
@@ -933,6 +915,7 @@ async function sdGenerateReport(
             endDate,
             reportCreatedAt: statusResp.data?.createdAt || existing.createdAt,
         });
+        if (status !== "STAGED") return status;
 
         // ♻️ RECURRING POLL — SAFE RECURSION
         if (recurring) {
@@ -966,45 +949,23 @@ async function sdGenerateReport(
 };
 
 const stageTargetingReport = async ({
-    entity, report, filePath, profileId, configId, accountType,
-    reportTypeId, startDate, endDate, reportCreatedAt,
+    entity, report, url, retryOnFailure, profileId, configId, accountType, startDate, endDate,
+    reportTypeId, reportCreatedAt,
 }) => {
-    const importRunId = `run_${entity}_${report.reportId}_${Date.now()}`;
-    try {
-        await stageReportFileInRedis({
-            importRunId,
-            entity,
-            filePath,
-            meta: {
-                profileId,
-                configId,
-                accountType,
-                reportId: report.reportId,
-                reportTypeId,
-                startDate,
-                endDate,
-                reportCreatedAt: reportCreatedAt || new Date().toISOString(),
-            },
+    const status = await stageDownloadedAdsReport({
+        report: report, url, entity, runPrefix: `run_${entity}`, downloadFile, retryOnFailure,
+        meta: {
+            profileId, configId, accountType, reportId: report.reportId, startDate, endDate,
+            reportTypeId: reportTypeId,
+            reportCreatedAt: reportCreatedAt || new Date().toISOString(),
+        },
+    });
+    if (status === "STAGED") {
+        processStagedReportBatches([entity]).catch((error) => {
+            cron_logs({ message: `[Targeting Report ${entity}] Background writer failed: ${error.message}`, log_type: "error" });
         });
-
-        await reportsSchema.updateOne(
-            { _id: report._id },
-            { $set: { status: "STAGED", importRunId } },
-        );
-
-        processStagedReportBatches([entity]).catch((err) => {
-            cron_logs({
-                message: `[Targeting Report ${entity}] Background writer failed for ${report.reportId}: ${err.message}`,
-                log_type: "error",
-            });
-        });
-    } catch (err) {
-        await reportsSchema.updateOne(
-            { _id: report._id },
-            { $set: { status: "FAILED", errorMessage: `Staging failed: ${err.message}` } },
-        );
-        throw err;
     }
+    return status;
 };
 
 exports.getTargeting = async (req, res) => {

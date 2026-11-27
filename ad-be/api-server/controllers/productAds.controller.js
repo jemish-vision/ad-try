@@ -4,8 +4,6 @@ const moment = require("moment-timezone");
 const { retryWithBackoff } = require("../helper/retryHelper");
 
 const fs = require("fs");
-const zlib = require("node:zlib");
-const path = require("path");
 const axios = require("axios");
 const mongoose = require("mongoose");
 const { ObjectId } = mongoose.Types;
@@ -40,7 +38,6 @@ const {
   getSPAccessToken,
   getProfile,
   buildFieldFilter,
-  unzipReport,
   calcMetrics,
   parseStrictMetric,
   getActivePlanProfiles,
@@ -48,7 +45,8 @@ const {
   downloadFile,
   getAllowedSyncProfiles
 } = require("../helper/common");
-const { stageReportFileInRedis } = require("../services/reportFileStager.service");
+const { stageDownloadedAdsReport } = require("../services/adsReportImport.service");
+const { withDownloadedReportFile } = require("../helper/reportFile.helper");
 const { processStagedReportBatches } = require("../services/reportBatchWriter.service");
 
 const { sendNotificationToUser } = require("../helper/sendNotification");
@@ -1484,20 +1482,14 @@ async function spGenerateReport(
     return statusResp.data.status;
   }
 
-  // 3️⃣ Download file
-  const zipPath = path.resolve(__dirname, "../../uploads/productAds/sp-report", `${existing.reportId}.gz.json`);
-  const extractionPath = zipPath.replace(".gz.json", ".json");
-
-  await downloadFile(statusResp.data.url, zipPath);
-  await unzipReport(zipPath, extractionPath);
-
-  // 4️⃣ Stage report into Redis Streams for durable scheduled bulk writing
-  const importRunId = `run_productad_${existing.reportId}_${Date.now()}`;
   try {
-    await stageReportFileInRedis({
-      importRunId,
+    const status = await stageDownloadedAdsReport({
+      report: existing,
+      url: statusResp.data.url,
       entity: "productAd",
-      filePath: extractionPath,
+      runPrefix: "run_productad",
+      downloadFile,
+      retryOnFailure: Boolean(historicalPhase),
       meta: {
         profileId,
         configId,
@@ -1509,29 +1501,20 @@ async function spGenerateReport(
         reportCreatedAt: existing.createdAt || statusResp.data?.createdAt || new Date().toISOString(),
       },
     });
+    if (status !== "STAGED") return status;
 
-    await reportsSchema.updateOne(
-      { _id: existing._id },
-      { $set: { status: "STAGED", importRunId } }
-    );
-
-    // Trigger an immediate processing pass of staged batches
     processStagedReportBatches(["productAd"]).catch((err) => {
       cron_logs({
         message: `[Product Ads Report SP] Background batch writer invocation error: ${err.message}`,
         log_type: "error",
       });
     });
-  } catch (parseErr) {
+  } catch (error) {
     cron_logs({
-      message: `[Product Ads Report SP] Staging failed for report ${existing.reportId}: ${parseErr.message}`,
+      message: `[Product Ads Report SP] Staging failed for report ${existing.reportId}: ${error.message}`,
       log_type: "error",
     });
-    await reportsSchema.updateOne(
-      { _id: existing._id },
-      { $set: { status: historicalPhase ? "PENDING" : "FAILED", errorMessage: `Staging failed: ${parseErr.message}` } }
-    );
-    throw parseErr;
+    throw error;
   }
 
   // ♻️ RECURRING POLL — SAFE RECURSION
@@ -1555,7 +1538,7 @@ async function spGenerateReport(
     }
   }
 
-  return "COMPLETED";
+  return "STAGED";
 }
 
 async function sdGenerateReport(
@@ -1688,18 +1671,8 @@ async function sdGenerateReport(
     return statusResp.data.status;
   }
 
-  // 3️⃣ Download file
-  const zipPath = path.resolve(__dirname, "../../uploads/productAds/sd-report", `${existing.reportId}.gz.json`);
-  const extractionPath = zipPath.replace(".gz.json", ".json");
-
-  await downloadFile(statusResp.data.url, zipPath);
-  await unzipReport(zipPath, extractionPath);
-
-  // 4️⃣ Stream parse + write
-  await processReportFileStream(sdProductAdsSchema, extractionPath, {
-    profileId,
-    configId
-  });
+  await withDownloadedReportFile(statusResp.data.url, downloadFile,
+    filePath => processReportFileStream(sdProductAdsSchema, filePath, { profileId, configId }));
 
   await reportsSchema.updateOne(
     { _id: existing._id },
