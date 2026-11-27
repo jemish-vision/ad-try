@@ -1052,7 +1052,9 @@ function Sidebar({ open, setOpen }) {
                   style={{ left: "9px" }}
                 />
                 <input
-                  type="text"
+                  type="search"
+                  name="sidebar-menu-search"
+                  autoComplete="off"
                   placeholder={t("Search menus...")}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}

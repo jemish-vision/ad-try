@@ -66,7 +66,7 @@ export function aiKeyErrorMessage(res) {
   if (!code) return null;
   const t = (k, v) => (typeof i18n?.t === "function" ? i18n.t(k, v) : k.replace(/\{\{(\w+)\}\}/g, (_, x) => v?.[x] ?? ""));
   const providerKey = res?.provider || res?.error?.provider;
-  const provider = AI_PROVIDER_LABELS[providerKey] ? t(AI_PROVIDER_LABELS[providerKey]) : t("your AI provider");
+  const provider = AI_PROVIDER_LABELS[providerKey] ? t(AI_PROVIDER_LABELS[providerKey]) : t("AI provider");
   return t(AI_KEY_ERRORS[code], { provider });
 }
 

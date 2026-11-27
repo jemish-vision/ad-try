@@ -1,12 +1,29 @@
 import React from "react";
 import { friendlyText } from "./reportDisplay";
 
+const decodeEntities = (s) =>
+  s
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+
 function inlineText(text) {
-  return text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => (
-    part.startsWith("**") && part.endsWith("**")
-      ? <strong key={index}>{part.slice(2, -2)}</strong>
-      : <React.Fragment key={index}>{part}</React.Fragment>
-  ));
+  return text.split(/(\*\*[^*]+\*\*|<a\s+href="(?:\/[^"]*|https?:\/\/[^"]+)"[^>]*>[^<]+<\/a>)/gi).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={index}>{inlineText(part.slice(2, -2))}</strong>;
+    }
+    const link = part.match(/^<a\s+href="([^"]+)"[^>]*>([^<]+)<\/a>$/i);
+    if (link) {
+      return (
+        <a key={index} href={link[1]} className="font-semibold text-blue-500 dark:text-blue-400 underline hover:opacity-80">
+          {decodeEntities(link[2])}
+        </a>
+      );
+    }
+    return <React.Fragment key={index}>{decodeEntities(part)}</React.Fragment>;
+  });
 }
 
 // React text nodes escape untrusted output. Only simple formatting is interpreted.
@@ -14,7 +31,8 @@ export default function ChatMessageText({ text = "", isReport = false, currencyC
   const normalized = String(text)
     .replace(/<\/?b>/gi, "**")
     .replace(/<br\s*\/?\s*>/gi, "\n")
-    .replace(/<\/?(?:span|div|p)(?:\s[^>]*)?>/gi, "");
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<p(?:\s[^>]*)?>|<\/?(?:span|div)(?:\s[^>]*)?>/gi, "");
   let value = isReport ? friendlyText(normalized) : normalized;
   if (isReport && /^[A-Z]{3}$/.test(currencyCode || "")) {
     value = value.replace(/\b(SALES|SPEND) (increased|decreased) by (-?\d+(?:\.\d+)?) currency\b/g,

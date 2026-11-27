@@ -1,6 +1,6 @@
 import moment from "moment";
 import AiCreditCostNote from "../../../helper/aiCredits/AiCreditCostNote";
-import { creditsExhaustedHtml, isCreditsExhausted } from "../../../helper/aiCredits/aiCredits";
+import { aiKeyErrorHtml, creditsExhaustedHtml, isAiKeyError, isCreditsExhausted } from "../../../helper/aiCredits/aiCredits";
 import { useContext, useEffect, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "../../../components/ui/dialog";
@@ -142,6 +142,8 @@ export default function AIAnalysisModal({
                 setAnalysisDone(true);
             } else if (isCreditsExhausted(res)) {
                 pushMessage(validModel, creditsExhaustedHtml());
+            } else if (isAiKeyError(res)) {
+                pushMessage(validModel, aiKeyErrorHtml(res));
             } else {
                 pushMessage(validModel, "❌ " + (res?.message || t("Analysis failed. Please try again.")));
             }
