@@ -8639,7 +8639,6 @@
   "Partly on your own API key, partly on AI credits": "Teils mit Ihrem eigenen API-Schlüssel, teils mit KI-Credits",
   "Your key": "Ihr Schlüssel",
   "Your key + credits": "Ihr Schlüssel + Credits",
-  "your AI provider": "Ihr KI-Anbieter",
   "Open AI API Keys": "KI-API-Schlüssel öffnen",
   "Runs on your organization's own AI API keys: no AI credits are used.": "Läuft mit den eigenen KI-API-Schlüsseln Ihrer Organisation: es werden keine KI-Credits verbraucht.",
   "Working": "Funktioniert",
@@ -8676,5 +8675,6 @@
   "Features that use this provider will use AI credits after the key is removed.": "Funktionen dieses Anbieters verbrauchen nach dem Entfernen des Schlüssels KI-Credits.",
   "Your organization uses its own AI API keys. Requests on your keys don't use credits; features without a key use credits.": "Ihre Organisation nutzt eigene KI-API-Schlüssel. Anfragen mit Ihren Schlüsseln verbrauchen keine Credits; Funktionen ohne Schlüssel verbrauchen Credits.",
   "Part of this runs on your organization's own AI API keys; the rest uses AI credits.": "Ein Teil davon läuft mit den eigenen KI-API-Schlüsseln Ihrer Organisation; der Rest verbraucht KI-Credits.",
-  "The organization owner turns this on once at least one key is saved. Each feature then uses the saved key for its provider; features without a key keep using AI credits. Models don't change.": "Der Organisationsinhaber aktiviert dies, sobald mindestens ein Schlüssel gespeichert ist. Jede Funktion nutzt dann den gespeicherten Schlüssel ihres Anbieters; Funktionen ohne Schlüssel verbrauchen weiterhin KI-Credits. Die Modelle ändern sich nicht."
+  "The organization owner turns this on once at least one key is saved. Each feature then uses the saved key for its provider; features without a key keep using AI credits. Models don't change.": "Der Organisationsinhaber aktiviert dies, sobald mindestens ein Schlüssel gespeichert ist. Jede Funktion nutzt dann den gespeicherten Schlüssel ihres Anbieters; Funktionen ohne Schlüssel verbrauchen weiterhin KI-Credits. Die Modelle ändern sich nicht.",
+  "AI provider": "KI-Anbieter"
 }

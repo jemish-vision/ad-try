@@ -8639,7 +8639,6 @@
   "Partly on your own API key, partly on AI credits": "In parte con la tua chiave API, in parte con crediti IA",
   "Your key": "La tua chiave",
   "Your key + credits": "La tua chiave + crediti",
-  "your AI provider": "il tuo fornitore di IA",
   "Open AI API Keys": "Apri chiavi API di IA",
   "Runs on your organization's own AI API keys: no AI credits are used.": "Usa le chiavi API di IA della tua organizzazione: non vengono usati crediti IA.",
   "Working": "Funzionante",
@@ -8676,5 +8675,6 @@
   "Features that use this provider will use AI credits after the key is removed.": "Le funzionalità di questo provider useranno crediti IA dopo la rimozione della chiave.",
   "Your organization uses its own AI API keys. Requests on your keys don't use credits; features without a key use credits.": "La tua organizzazione usa le proprie chiavi API IA. Le richieste con le tue chiavi non consumano crediti; le funzionalità senza chiave sì.",
   "Part of this runs on your organization's own AI API keys; the rest uses AI credits.": "Una parte viene eseguita con le chiavi API IA della tua organizzazione; il resto usa crediti IA.",
-  "The organization owner turns this on once at least one key is saved. Each feature then uses the saved key for its provider; features without a key keep using AI credits. Models don't change.": "Il proprietario dell'organizzazione lo attiva quando è salvata almeno una chiave. Ogni funzionalità usa quindi la chiave salvata del suo provider; quelle senza chiave continuano a usare crediti IA. I modelli non cambiano."
+  "The organization owner turns this on once at least one key is saved. Each feature then uses the saved key for its provider; features without a key keep using AI credits. Models don't change.": "Il proprietario dell'organizzazione lo attiva quando è salvata almeno una chiave. Ogni funzionalità usa quindi la chiave salvata del suo provider; quelle senza chiave continuano a usare crediti IA. I modelli non cambiano.",
+  "AI provider": "provider IA"
 }

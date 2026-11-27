@@ -8639,7 +8639,6 @@
   "Partly on your own API key, partly on AI credits": "En partie avec votre propre clé API, en partie avec des crédits IA",
   "Your key": "Votre clé",
   "Your key + credits": "Votre clé + crédits",
-  "your AI provider": "votre fournisseur d'IA",
   "Open AI API Keys": "Ouvrir les clés API d'IA",
   "Runs on your organization's own AI API keys: no AI credits are used.": "Utilise les propres clés API d'IA de votre organisation : aucun crédit IA n'est utilisé.",
   "Working": "Fonctionne",
@@ -8676,5 +8675,6 @@
   "Features that use this provider will use AI credits after the key is removed.": "Les fonctionnalités de ce fournisseur utiliseront des crédits IA une fois la clé supprimée.",
   "Your organization uses its own AI API keys. Requests on your keys don't use credits; features without a key use credits.": "Votre organisation utilise ses propres clés API IA. Les requêtes sur vos clés ne consomment pas de crédits ; les fonctionnalités sans clé en consomment.",
   "Part of this runs on your organization's own AI API keys; the rest uses AI credits.": "Une partie s'exécute avec les clés API IA de votre organisation ; le reste utilise des crédits IA.",
-  "The organization owner turns this on once at least one key is saved. Each feature then uses the saved key for its provider; features without a key keep using AI credits. Models don't change.": "Le propriétaire de l'organisation l'active dès qu'au moins une clé est enregistrée. Chaque fonctionnalité utilise alors la clé enregistrée de son fournisseur ; celles sans clé continuent d'utiliser des crédits IA. Les modèles ne changent pas."
+  "The organization owner turns this on once at least one key is saved. Each feature then uses the saved key for its provider; features without a key keep using AI credits. Models don't change.": "Le propriétaire de l'organisation l'active dès qu'au moins une clé est enregistrée. Chaque fonctionnalité utilise alors la clé enregistrée de son fournisseur ; celles sans clé continuent d'utiliser des crédits IA. Les modèles ne changent pas.",
+  "AI provider": "fournisseur d'IA"
 }

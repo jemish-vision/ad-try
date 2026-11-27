@@ -8639,7 +8639,6 @@
   "Partly on your own API key, partly on AI credits": "Partly on your own API key, partly on AI credits",
   "Your key": "Your key",
   "Your key + credits": "Your key + credits",
-  "your AI provider": "your AI provider",
   "Open AI API Keys": "Open AI API Keys",
   "Runs on your organization's own AI API keys: no AI credits are used.": "Runs on your organization's own AI API keys: no AI credits are used.",
   "Working": "Working",
@@ -8676,5 +8675,6 @@
   "Features that use this provider will use AI credits after the key is removed.": "Features that use this provider will use AI credits after the key is removed.",
   "Your organization uses its own AI API keys. Requests on your keys don't use credits; features without a key use credits.": "Your organization uses its own AI API keys. Requests on your keys don't use credits; features without a key use credits.",
   "Part of this runs on your organization's own AI API keys; the rest uses AI credits.": "Part of this runs on your organization's own AI API keys; the rest uses AI credits.",
-  "The organization owner turns this on once at least one key is saved. Each feature then uses the saved key for its provider; features without a key keep using AI credits. Models don't change.": "The organization owner turns this on once at least one key is saved. Each feature then uses the saved key for its provider; features without a key keep using AI credits. Models don't change."
+  "The organization owner turns this on once at least one key is saved. Each feature then uses the saved key for its provider; features without a key keep using AI credits. Models don't change.": "The organization owner turns this on once at least one key is saved. Each feature then uses the saved key for its provider; features without a key keep using AI credits. Models don't change.",
+  "AI provider": "AI provider"
 }

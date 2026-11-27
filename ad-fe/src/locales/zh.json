@@ -8639,7 +8639,6 @@
   "Partly on your own API key, partly on AI credits": "部分使用自有 API 密钥，部分使用 AI 积分",
   "Your key": "自有密钥",
   "Your key + credits": "自有密钥 + 积分",
-  "your AI provider": "您的 AI 服务商",
   "Open AI API Keys": "打开 AI API 密钥",
   "Runs on your organization's own AI API keys: no AI credits are used.": "使用组织自有的 AI API 密钥运行：不消耗 AI 积分。",
   "Working": "正常",
@@ -8676,5 +8675,6 @@
   "Features that use this provider will use AI credits after the key is removed.": "删除密钥后,使用此提供商的功能将使用 AI 积分。",
   "Your organization uses its own AI API keys. Requests on your keys don't use credits; features without a key use credits.": "您的组织使用自己的 AI API 密钥。使用您密钥的请求不消耗积分;没有密钥的功能会消耗积分。",
   "Part of this runs on your organization's own AI API keys; the rest uses AI credits.": "其中一部分使用您组织自己的 AI API 密钥运行,其余部分使用 AI 积分。",
-  "The organization owner turns this on once at least one key is saved. Each feature then uses the saved key for its provider; features without a key keep using AI credits. Models don't change.": "至少保存一个密钥后,组织所有者即可开启此选项。之后每个功能都会使用其提供商对应的已保存密钥;没有密钥的功能继续使用 AI 积分。模型不会改变。"
+  "The organization owner turns this on once at least one key is saved. Each feature then uses the saved key for its provider; features without a key keep using AI credits. Models don't change.": "至少保存一个密钥后,组织所有者即可开启此选项。之后每个功能都会使用其提供商对应的已保存密钥;没有密钥的功能继续使用 AI 积分。模型不会改变。",
+  "AI provider": "AI 提供商"
 }
