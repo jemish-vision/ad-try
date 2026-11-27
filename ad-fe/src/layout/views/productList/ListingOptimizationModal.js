@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../compo
 import Toast from "../../../common/helper/toast/Toast";
 import { ApiAnalyzeListingWithAI, ApiApplyListingOptimization } from "../../../api-wrapper/productList/ApiListingOptimization";
 import AiCreditBadge from "../../../helper/aiCredits/AiCreditBadge";
-import { isCreditsExhausted, notifyAiCreditsChanged } from "../../../helper/aiCredits/aiCredits";
+import { aiKeyErrorMessage, isAiKeyError, isCreditsExhausted, notifyAiCreditsChanged } from "../../../helper/aiCredits/aiCredits";
 import "./ListingOptimizationModal.css";
 import "./IllustratorLoader.css";
 import { AppTooltip } from "../../../components/ui/AppTooltip";
@@ -479,6 +479,7 @@ export default function ListingOptimizationModal({ show, onClose, product, profi
     // Toggles for what to analyze
     const [analyzeContent, setAnalyzeContent] = useState(true);
     const [creditBlocked, setCreditBlocked] = useState(false);
+    const [keyError, setKeyError] = useState(null);
     const [analyzeImage, setAnalyzeImage] = useState(false);
 
     // Editable fields
@@ -504,7 +505,7 @@ export default function ListingOptimizationModal({ show, onClose, product, profi
     const [showNotices, setShowNotices] = useState(false);
 
     const resetAll = () => {
-        setStep(0); setResult(null); setLoading(false); setFromCache(false); setCreditBlocked(false);
+        setStep(0); setResult(null); setLoading(false); setFromCache(false); setCreditBlocked(false); setKeyError(null);
         setAcceptTitle(false); setAcceptBullets(false);
         setAcceptDescription(false); setAcceptKeywords(false);
         setActiveReviewTab("title");
@@ -531,6 +532,7 @@ export default function ListingOptimizationModal({ show, onClose, product, profi
             });
             notifyAiCreditsChanged();
             setCreditBlocked(isCreditsExhausted(res));
+            setKeyError(isAiKeyError(res) ? aiKeyErrorMessage(res) : null);
             if (res?.isSuccess) {
                 const d = res.data;
                 setResult(d);
@@ -554,6 +556,8 @@ export default function ListingOptimizationModal({ show, onClose, product, profi
                 setStep(1);
             } else if (isCreditsExhausted(res)) {
                 Toast.error(t("You've run out of AI credits for this month."));
+            } else if (isAiKeyError(res)) {
+                Toast.error(aiKeyErrorMessage(res));
             } else {
                 Toast.error(res?.message || t("AI analysis failed. Please try again."));
             }
@@ -896,6 +900,13 @@ export default function ListingOptimizationModal({ show, onClose, product, profi
                                         <div className="mt-0.5">
                                             {t("Your organization's credits refill on the next reset date. Ask your administrator if you need more credits sooner.")}{" "}
                                             <a href="/ai-credits" className="font-semibold underline">{t("View AI credits")}</a>
+                                        </div>
+                                    </div>
+                                ) : keyError ? (
+                                    <div id="listing-ai-key-error" className="rounded-xl border border-rose-200 dark:border-rose-900/40 bg-rose-50 dark:bg-rose-950/30 px-4 py-3 text-[13px] text-rose-700 dark:text-rose-300">
+                                        <div className="font-semibold">{keyError}</div>
+                                        <div className="mt-1">
+                                            <a href="/ai-keys" className="font-semibold underline">{t("Open AI API Keys")}</a>
                                         </div>
                                     </div>
                                 ) : (

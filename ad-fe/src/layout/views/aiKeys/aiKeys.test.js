@@ -107,11 +107,12 @@ describe("AI API Keys page (owner)", () => {
     render(<AiKeysPage />);
     fireEvent.click(within(await card("gemini")).getByRole("button", { name: /Add key/ }));
     const input = await screen.findByLabelText("API key");
-    expect(input).toHaveAttribute("type", "password");
+    expect(input).toHaveAttribute("type", "text");
+    expect(input.style.WebkitTextSecurity).toBe("disc");
     expect(input).toHaveAttribute("autocomplete", "off");
     fireEvent.change(input, { target: { value: "  AIzaSyEXAMPLEkey1234567890abcdef  " } });
     fireEvent.click(screen.getByRole("button", { name: "Show key" }));
-    expect(input).toHaveAttribute("type", "text");
+    expect(input.style.WebkitTextSecurity).toBe("");
     fireEvent.click(screen.getByRole("button", { name: /Check and save/ }));
     await waitFor(() => expect(Keys.ApiSaveAiKey).toHaveBeenCalledWith({ provider: "gemini", apiKey: "AIzaSyEXAMPLEkey1234567890abcdef" }));
     await waitFor(() => expect(screen.queryByLabelText("API key")).not.toBeInTheDocument());
@@ -220,7 +221,7 @@ describe("own-key errors in the AI features", () => {
     expect(handleAiCreditResponse(res).message).toBe(aiKeyErrorMessage(res));
     expect(aiKeyErrorMessage({ code: "PERSONAL_KEY_UNREADABLE", provider: "openai" })).toBe("The saved OpenAI key can't be read. Add it again on the AI API Keys page.");
     expect(aiKeyErrorMessage({ error: { code: "PERSONAL_KEY_RATE_LIMITED", provider: "anthropic" } })).toBe("Your Anthropic (Claude) key has hit its rate limit. Please try again in a minute.");
-    expect(aiKeyErrorMessage({ code: "PERSONAL_KEY_QUOTA" })).toMatch(/Your your AI provider account/);
+    expect(aiKeyErrorMessage({ code: "PERSONAL_KEY_QUOTA" })).toMatch(/Your AI provider account/);
     expect(isAiKeyError({ isSuccess: false, code: "SOMETHING_ELSE" })).toBe(false);
     expect(handleAiCreditResponse({ isSuccess: true, data: 1 })).toEqual({ isSuccess: true, data: 1 });
   });

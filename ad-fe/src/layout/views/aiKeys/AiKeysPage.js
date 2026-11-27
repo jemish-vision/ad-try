@@ -107,12 +107,16 @@ function KeyModal({ target, onClose, onSaved }) {
           <div className="flex items-center gap-2">
             <input
               id="ai-key-input"
-              type={show ? "text" : "password"}
+              name="ai-provider-api-key"
+              type="text"
               autoComplete="off"
+              data-lpignore="true"
+              data-1p-ignore="true"
               spellCheck={false}
               value={value}
               onChange={(e) => setValue(e.target.value)}
               placeholder={target?.provider === "gemini" ? "AIza…" : target?.provider === "anthropic" ? "sk-ant-…" : "sk-…"}
+              style={show ? undefined : { WebkitTextSecurity: "disc" }}
               className="h-10 flex-1 min-w-0 px-3 rounded-lg font-mono text-[13px] bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white"
             />
             <button type="button" onClick={() => setShow((s) => !s)} aria-label={show ? t("Hide key") : t("Show key")} className="h-10 w-10 rounded-lg border border-slate-200 dark:border-white/10 flex items-center justify-center text-slate-500 hover:text-blue-600">
@@ -153,7 +157,7 @@ function ProviderCard({ item, canManage, ownKeysOn, onAdd, onCheck, onRemove, bu
   const status = KEY_STATUS[k?.status] || KEY_STATUS.UNVERIFIED;
   const label = t(AI_PROVIDER_LABELS[item.provider] || item.provider);
   const when = (d) => (d ? moment(d).locale(i18n.language || "en").fromNow() : null);
-  const btn = "h-8 px-3 rounded-lg text-[12px] font-semibold inline-flex items-center gap-1.5 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:border-slate-300 disabled:opacity-50";
+  const btn = "h-8 px-3 rounded-lg text-[12px] font-semibold inline-flex items-center gap-1.5 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:border-slate-300 dark:hover:border-white/25 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-colors disabled:opacity-50";
   return (
     <section id={`ai-keys-provider-${item.provider}`} aria-labelledby={`ai-keys-provider-${item.provider}-name`} data-testid="ai-key-provider" className="flex flex-col rounded-xl border border-slate-200/80 dark:border-white/[0.08] bg-white dark:bg-white/[0.02] px-4 py-4">
       <div className="flex items-start justify-between gap-2">
@@ -190,7 +194,7 @@ function ProviderCard({ item, canManage, ownKeysOn, onAdd, onCheck, onRemove, bu
               <button type="button" data-demo-block className={btn} disabled={busy} onClick={() => onCheck(item)}>
                 <RefreshCw className="w-3.5 h-3.5" /> {t("Check again")}
               </button>
-              <button type="button" data-demo-block className={`${btn} hover:!text-rose-600`} disabled={busy} onClick={() => onRemove(item)} aria-label={t("Remove {{provider}} key", { provider: label })}>
+              <button type="button" data-demo-block className={`${btn} hover:!text-rose-600 dark:hover:!text-rose-400 hover:!bg-rose-50 dark:hover:!bg-rose-950/40 hover:!border-rose-300 dark:hover:!border-rose-500/40`} disabled={busy} onClick={() => onRemove(item)} aria-label={t("Remove {{provider}} key", { provider: label })}>
                 <Trash2 className="w-3.5 h-3.5" /> {t("Remove")}
               </button>
             </>
